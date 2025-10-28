@@ -91,10 +91,10 @@ streamlit run app.py
 * **GET /** → Renders the Streamlit chat UI.
 * Messages are streamed token-by-token using the callback so users see responses typing out live.
 
-## Deploying to Wasmer Edge (Overview)
+## Deploying to Wasmer (Overview)
 
 1. Include `app.py` and `requirements.txt` in your project.
-2. Deploy to Wasmer Edge and point the web process/entrypoint to run Streamlit (e.g., `streamlit run app.py --server.port=$PORT --server.address=0.0.0.0`).
+2. Deploy to Wasmer and point the web process/entrypoint to run Streamlit (e.g., `streamlit run app.py --server.port=$PORT --server.address=0.0.0.0`).
 3. Visit `https://<your-subdomain>.wasmer.app/` and provide your OpenAI API key in the sidebar.
 
 ---

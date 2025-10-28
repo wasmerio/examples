@@ -57,10 +57,10 @@ Your FastAPI application is now available at `http://localhost:8000`.
   { "message": "Hello World" }
   ```
 
-## Deploying to Wasmer Edge (Overview)
+## Deploying to Wasmer (Overview)
 
 1. Ensure your project exposes `main:app`.
-2. Deploy to Wasmer Edge
+2. Deploy to Wasmer
 3. Visit `https://<your-subdomain>.wasmer.app/` to test.
 
 > Tip: Keep the app entrypoint as `main:app` (module\:variable) so the platform can discover it easily.

@@ -102,14 +102,8 @@ On failure, endpoints return JSON `{ "error": "<msg>" }` with status 400.
 
 ---
 
-## Deploying to Wasmer Edge (Overview)
+## Deploying to Wasmer (Overview)
 
 1. Include `app.py` and `requirements.txt`.
-2. Deploy to Wasmer Edge and point the web process to run Uvicorn (e.g., `uvicorn app:app --host 0.0.0.0 --port $PORT`).
+2. Deploy to Wasmer or point the web process to run Uvicorn (e.g., `uvicorn app:app --host 0.0.0.0 --port $PORT`).
 3. Open `https://<your-subdomain>.wasmer.app/` and try converting text between formats.
-
----
-
-⚡ With this setup, the key takeaway is how to call **`pypandoc.convert_text`** with `format` and `to` arguments to transform text between markup languages.
-
-Would you like me to also add a **minimal example without FastAPI** (just showing `pypandoc.convert_text` in a script) so the README highlights the conversion part even more directly?

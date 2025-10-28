@@ -92,15 +92,9 @@ This downloads an image, rotates it 45°, crops it, and returns the transformed 
 
 ---
 
-## Deploying to Wasmer Edge (Overview)
+## Deploying to Wasmer (Overview)
 
 1. Include `app.py` and `requirements.txt`.
-2. Deploy to Wasmer Edge and run with:
+2. Deploy to Wasmer or run it locally with:
    `uvicorn app:app --host 0.0.0.0 --port $PORT`
 3. Visit `https://<your-subdomain>.wasmer.app/process?...` with query parameters for URL, rotation, and crop.
-
----
-
-⚡ The key takeaway is how **Pillow** enables quick in-memory image processing with `Image.open`, `rotate`, `crop`, and `save`.
-
-Would you like me to extend the README with **extra Pillow examples** (like resizing, converting formats, or adding filters) so the demo feels more complete?

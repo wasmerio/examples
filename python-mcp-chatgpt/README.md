@@ -81,10 +81,10 @@ Your MCP server will now be running and ready for connections from an MCP client
 * **Fetch tool** (`fetch("42")`)
   Returns the full details of order `42`, including text, metadata, and an optional URL.
 
-## Deploying to Wasmer Edge (Overview)
+## Deploying to Wasmer (Overview)
 
 1. Include both `server.py` and `records.json` in your project.
-2. Deploy to Wasmer Edge, ensuring the entrypoint is `server.py`.
+2. Deploy to Wasmer, ensuring the entrypoint is `server.py`.
 3. Access it at:
    `https://<your-subdomain>.wasmer.app/sse`
 

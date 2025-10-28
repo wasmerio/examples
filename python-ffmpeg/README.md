@@ -96,16 +96,10 @@ curl "http://127.0.0.1:8000/process?url=https://.../video.mp4&time=1"
 
 ---
 
-## Deploying to Wasmer Edge (Overview)
+## Deploying to Wasmer (Overview)
 
 1. Include `app.py` and `requirements.txt`.
 2. Ensure the **ffmpeg binary** is available in your deployment environment.
-3. Deploy to Wasmer Edge and run the app with:
+3. Deploy to Wasmer and run the app with:
    `uvicorn app:app --host 0.0.0.0 --port $PORT`
 4. Visit `https://<your-subdomain>.wasmer.app/process?...` to extract frames.
-
----
-
-⚡ The key takeaway is how **ffmpeg-python** mirrors the ffmpeg CLI syntax in Python, making it easy to seek into a video and output a still frame with just a few chained calls.
-
-Would you like me to also show the **equivalent raw ffmpeg CLI command** that this Python chain produces, so readers can compare the two directly?

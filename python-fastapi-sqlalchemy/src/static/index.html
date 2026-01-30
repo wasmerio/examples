@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Todos</title>
+    <style>
+      :root {
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+        color: #222;
+        background: #f7f7f8;
+      }
+      body {
+        max-width: 720px;
+        margin: 48px auto;
+        padding: 0 16px 48px;
+      }
+      h1 {
+        margin-bottom: 8px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      }
+      form {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      label {
+        font-weight: 600;
+      }
+      input,
+      textarea,
+      button {
+        font: inherit;
+      }
+      input,
+      textarea {
+        width: 100%;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+        background: #fff;
+      }
+      button {
+        padding: 10px 14px;
+        border-radius: 8px;
+        border: 1px solid #2563eb;
+        background: #2563eb;
+        color: #fff;
+        cursor: pointer;
+      }
+      button.secondary {
+        border-color: #6b7280;
+        background: #fff;
+        color: #111827;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 16px 0 0;
+        display: grid;
+        gap: 8px;
+      }
+      li {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 12px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+      .todo-main {
+        flex: 1;
+      }
+      .done {
+        color: #059669;
+        font-weight: 700;
+      }
+      .error {
+        color: #b91c1c;
+        margin-top: 8px;
+      }
+      .muted {
+        color: #6b7280;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Todos</h1>
+    <p class="muted">Simple FastAPI + SQLAlchemy demo.</p>
+
+    <div class="card">
+      <form id="todo-form">
+        <div>
+          <label for="title">Title</label>
+          <input id="title" name="title" required placeholder="Buy milk" />
+        </div>
+        <div>
+          <label for="description">Description (optional)</label>
+          <textarea
+            id="description"
+            name="description"
+            rows="2"
+            placeholder="2% or oat"
+          ></textarea>
+        </div>
+        <button type="submit">Add todo</button>
+        <div id="form-error" class="error" hidden></div>
+      </form>
+    </div>
+
+    <ul id="todos"></ul>
+
+    <script>
+      const todosList = document.getElementById("todos");
+      const form = document.getElementById("todo-form");
+      const errorBox = document.getElementById("form-error");
+
+      async function fetchJSON(url, options) {
+        const res = await fetch(url, options);
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg || `Request failed (${res.status})`);
+        }
+        return res.json();
+      }
+
+      function renderTodo(todo) {
+        const li = document.createElement("li");
+        const main = document.createElement("div");
+        main.className = "todo-main";
+
+        const title = document.createElement("div");
+        title.textContent = todo.title;
+        title.style.fontWeight = "700";
+        main.appendChild(title);
+
+        if (todo.description) {
+          const desc = document.createElement("div");
+          desc.textContent = todo.description;
+          desc.className = "muted";
+          main.appendChild(desc);
+        }
+
+        const status = document.createElement("div");
+        status.textContent = todo.done ? "Done" : "Pending";
+        status.className = todo.done ? "done" : "muted";
+        main.appendChild(status);
+
+        li.appendChild(main);
+
+        if (!todo.done) {
+          const button = document.createElement("button");
+          button.textContent = "Mark done";
+          button.onclick = async () => {
+            button.disabled = true;
+            try {
+              await fetchJSON(`/todos/${todo.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ done: true }),
+              });
+              await loadTodos();
+            } catch (err) {
+              alert(err.message);
+              button.disabled = false;
+            }
+          };
+          li.appendChild(button);
+        }
+
+        return li;
+      }
+
+      async function loadTodos() {
+        todosList.innerHTML = "<li class='muted'>Loading...</li>";
+        try {
+          const todos = await fetchJSON("/todos");
+          todosList.innerHTML = "";
+          if (!todos.length) {
+            todosList.innerHTML = "<li class='muted'>No todos yet.</li>";
+            return;
+          }
+          todos.forEach((todo) => {
+            todosList.appendChild(renderTodo(todo));
+          });
+        } catch (err) {
+          todosList.innerHTML = `<li class="error">${err.message}</li>`;
+        }
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        errorBox.hidden = true;
+        const formData = new FormData(form);
+        const payload = {
+          title: formData.get("title"),
+          description: formData.get("description") || null,
+          done: false,
+        };
+        try {
+          await fetchJSON("/todos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          form.reset();
+          await loadTodos();
+        } catch (err) {
+          errorBox.textContent = err.message;
+          errorBox.hidden = false;
+        }
+      });
+
+      loadTodos();
+    </script>
+  </body>
+</html>
+

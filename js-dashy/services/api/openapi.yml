@@ -1,0 +1,638 @@
+openapi: 3.1.0
+
+info:
+  title: Dashy REST API
+  version: 1.0.0
+  summary: Read and write your Dashy config over HTTP.
+  description: |
+      The Dashy API is a simple opt-in REST API for CRUD actions over your config.
+      For full usage guide, examples and architecture, see the [API Docs](https://dashy.to/docs/api).
+
+      <details>
+      <summary>Enabling the API</summary>
+
+      The API is off by default. To enable it, set the `ENABLE_API` env var to true,
+      and restart Dashy.
+
+      </details>
+
+      <details>
+      <summary>Authenticating</summary>
+
+      By default, the API will use the same auth system as the rest of your Dashy instance.
+      If you don't have auth configured, or would prefer to use bearer token for the API instead,
+      then you can do so, by setting an `API_TOKEN` environmental variable,
+      and then passing that as a bearer token in the authorization header when making requests,
+      like `curl -H 'Authorization: Bearer <your-long-random-secret>' http://dashy.local/api/config`
+
+      </details>
+
+      > [!IMPORTANT]
+      > There is no warranty. It is your responsibility to correctly configure and protect your instance.
+      > The API is experimental.
+
+  contact:
+    name: GitHub
+    url: https://github.com/Lissy93/dashy
+  license:
+    name: MIT
+    url: https://github.com/Lissy93/dashy/blob/master/LICENSE
+  x-logo:
+    url: https://raw.githubusercontent.com/Lissy93/dashy/master/public/web-icons/dashy-logo.png
+    altText: Dashy
+    href: https://dashy.to
+
+externalDocs:
+  description: API guide
+  url: https://dashy.to/docs/api
+
+servers:
+  - url: "{scheme}://{host}/api"
+    description: Your Dashy instance
+    variables:
+      scheme:
+        enum: [http, https]
+        default: http
+      host:
+        default: localhost:4000
+
+tags:
+  - name: Files
+    description: List, read and replace whole config files.
+  - name: Keys
+    description: Read and replace a single top-level config key.
+  - name: Sections
+    description: Create, read, update and delete sections.
+  - name: Items
+    description: Create, read, update and delete items within a section.
+
+security:
+  - bearerAuth: []
+  - basicAuth: []
+  - {}
+
+paths:
+  /config:
+    get:
+      tags: [Files]
+      summary: List config files
+      operationId: listConfigFiles
+      description: Lists every YAML config file in the user-data directory.
+      responses:
+        "200":
+          description: Config files
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileList" }
+              example: { success: true, files: [conf.yml, home-lab.yml] }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/Disabled" }
+
+  /config/{filename}:
+    parameters:
+      - $ref: "#/components/parameters/Filename"
+    get:
+      tags: [Files]
+      summary: Get config file
+      operationId: getConfigFile
+      description: Returns the parsed config file as JSON.
+      responses:
+        "200":
+          description: Parsed config
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Config" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "500": { $ref: "#/components/responses/ParseError" }
+    put:
+      tags: [Files]
+      summary: Replace config file
+      operationId: replaceConfigFile
+      description: |
+        Overwrites the whole file. Writes to `conf.yml` are validated against the
+        config schema; sub-pages are not. A timestamped backup is taken first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Config" }
+            example: { pageInfo: { title: My Dashboard }, sections: [] }
+      responses:
+        "200": { $ref: "#/components/responses/Saved" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+
+  /config/{filename}/{key}:
+    parameters:
+      - $ref: "#/components/parameters/Filename"
+      - $ref: "#/components/parameters/Key"
+    get:
+      tags: [Keys]
+      summary: Get top-level key
+      operationId: getConfigKey
+      description: Returns a single top-level key from the config.
+      responses:
+        "200":
+          description: Key value
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyValue" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Keys]
+      summary: Replace top-level key
+      operationId: replaceConfigKey
+      description: Replaces a single top-level key, leaving the rest of the file untouched.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KeyValue" }
+            example: { theme: nord-frost, layout: auto }
+      responses:
+        "200": { $ref: "#/components/responses/Saved" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+
+  /config/{filename}/sections:
+    parameters:
+      - $ref: "#/components/parameters/Filename"
+    post:
+      tags: [Sections]
+      summary: Add section
+      operationId: addSection
+      description: Appends a new section. A `name` is required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Section" }
+            example: { name: Monitoring, icon: fas fa-chart-line, items: [] }
+      responses:
+        "201":
+          description: Section added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SectionResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /config/{filename}/sections/{sid}:
+    parameters:
+      - $ref: "#/components/parameters/Filename"
+      - $ref: "#/components/parameters/SectionId"
+    get:
+      tags: [Sections]
+      summary: Get section
+      operationId: getSection
+      responses:
+        "200":
+          description: Section
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Section" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Sections]
+      summary: Update section
+      operationId: updateSection
+      description: Shallow-merges the supplied fields. Sending `items` replaces the whole array.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SectionFields" }
+            example: { name: Renamed Section }
+      responses:
+        "200":
+          description: Updated section
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WriteResult"
+                  - type: object
+                    properties:
+                      section: { $ref: "#/components/schemas/Section" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Sections]
+      summary: Delete section
+      operationId: deleteSection
+      responses:
+        "200": { $ref: "#/components/responses/Saved" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /config/{filename}/sections/{sid}/items:
+    parameters:
+      - $ref: "#/components/parameters/Filename"
+      - $ref: "#/components/parameters/SectionId"
+    get:
+      tags: [Items]
+      summary: List items
+      operationId: listItems
+      responses:
+        "200":
+          description: Items in the section
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Item" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Items]
+      summary: Add item
+      operationId: addItem
+      description: Appends a new item to the section. A `title` is required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Item" }
+            example: { title: Grafana, url: https://grafana.local, icon: hl-grafana }
+      responses:
+        "201":
+          description: Item added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /config/{filename}/sections/{sid}/items/{iid}:
+    parameters:
+      - $ref: "#/components/parameters/Filename"
+      - $ref: "#/components/parameters/SectionId"
+      - $ref: "#/components/parameters/ItemId"
+    get:
+      tags: [Items]
+      summary: Get item
+      operationId: getItem
+      responses:
+        "200":
+          description: Item
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Items]
+      summary: Update item
+      operationId: updateItem
+      description: Shallow-merges the supplied fields onto the item.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ItemFields" }
+            example: { url: https://grafana.example.com }
+      responses:
+        "200":
+          description: Updated item
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WriteResult"
+                  - type: object
+                    properties:
+                      item: { $ref: "#/components/schemas/Item" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Items]
+      summary: Delete item
+      operationId: deleteItem
+      responses:
+        "200": { $ref: "#/components/responses/Saved" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Send `Authorization: Bearer <token>`. Use either an `API_TOKEN` (grants full
+        admin access) or, with OIDC/Keycloak, your ID token.
+    basicAuth:
+      type: http
+      scheme: basic
+      description: Dashy's HTTP basic auth (`ENABLE_HTTP_AUTH` users or `BASIC_AUTH_USERNAME`/`PASSWORD`).
+
+  parameters:
+    Filename:
+      name: filename
+      in: path
+      required: true
+      description: A YAML config file in your user-data directory.
+      schema: { type: string, pattern: "^[^/\\\\]+\\.ya?ml$" }
+      example: conf.yml
+    Key:
+      name: key
+      in: path
+      required: true
+      description: A top-level config key.
+      schema: { type: string, enum: [pageInfo, appConfig, sections, pages] }
+      example: appConfig
+    SectionId:
+      name: sid
+      in: path
+      required: true
+      description: Section index (zero-based) or exact `name` (URL-encoded).
+      schema: { type: string }
+      example: "0"
+    ItemId:
+      name: iid
+      in: path
+      required: true
+      description: Item index (zero-based) or exact `title` (URL-encoded).
+      schema: { type: string }
+      example: "0"
+
+  responses:
+    Saved:
+      description: Saved
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/WriteResult" }
+          example: { success: true, message: Config has been written to disk }
+    Disabled:
+      description: API not enabled
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { success: false, message: "API not enabled. Set ENABLE_API=true to use the REST API." }
+    BadRequest:
+      description: Invalid filename, key, body or schema
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { success: false, message: "Section must have a 'name'" }
+    Unauthorized:
+      description: Authentication required or invalid
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { success: false, message: Unauthorized }
+    Forbidden:
+      description: Authenticated, but not an admin
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: File, key, section or item not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example: { success: false, message: conf.yml not found }
+    ParseError:
+      description: File could not be read or parsed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooLarge:
+      description: Body exceeds the size limit (256 KB)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, enum: [false] }
+        message: { type: string }
+      required: [success, message]
+    WriteResult:
+      type: object
+      properties:
+        success: { type: boolean, enum: [true] }
+        message: { type: string }
+      required: [success, message]
+    FileList:
+      type: object
+      properties:
+        success: { type: boolean, enum: [true] }
+        files:
+          type: array
+          items: { type: string }
+      required: [success, files]
+    SectionResult:
+      allOf:
+        - $ref: "#/components/schemas/WriteResult"
+        - type: object
+          properties:
+            index: { type: integer, description: Array index of the section }
+            section: { $ref: "#/components/schemas/Section" }
+    ItemResult:
+      allOf:
+        - $ref: "#/components/schemas/WriteResult"
+        - type: object
+          properties:
+            index: { type: integer, description: Array index of the item }
+            item: { $ref: "#/components/schemas/Item" }
+
+    Config:
+      type: object
+      description: A full config file. `conf.yml` requires `sections`; sub-pages may hold any subset.
+      additionalProperties: false
+      properties:
+        pageInfo: { $ref: "#/components/schemas/PageInfo" }
+        appConfig: { $ref: "#/components/schemas/AppConfig" }
+        sections:
+          type: array
+          items: { $ref: "#/components/schemas/Section" }
+        pages:
+          type: array
+          items: { $ref: "#/components/schemas/Page" }
+    KeyValue:
+      description: The value of one top-level key.
+      oneOf:
+        - $ref: "#/components/schemas/PageInfo"
+        - $ref: "#/components/schemas/AppConfig"
+        - type: array
+          items: { $ref: "#/components/schemas/Section" }
+        - type: array
+          items: { $ref: "#/components/schemas/Page" }
+
+    PageInfo:
+      type: object
+      description: Branding shown in the header and footer.
+      additionalProperties: false
+      properties:
+        title: { type: string, description: Dashboard title }
+        description: { type: string, description: Sub-title }
+        navLinks: { type: array, description: Header navigation links, items: { type: object } }
+        footer: { type: string, description: Footer HTML or text }
+        logo: { type: string, description: Path or URL to the header logo }
+        favicon: { type: string, description: Path or URL to the favicon }
+        color: { type: string, description: Header text color }
+
+    AppConfig:
+      type: object
+      description: |
+        Global app settings (theme, layout, status checks, auth, etc.). Many fields are
+        supported. See the [configuring docs](https://github.com/Lissy93/dashy/blob/master/docs/configuring.md).
+      properties:
+        theme: { type: string, description: Default theme name }
+        layout: { type: string, enum: [horizontal, vertical, auto, masonry, sidebar], description: Section layout }
+        iconSize: { type: string, enum: [small, medium, large], description: Item icon size }
+        language: { type: string, description: UI language code }
+        startingView: { type: string, enum: [home, default, minimal, workspace], description: Initial view }
+        statusCheck: { type: boolean, description: Enable status checks globally }
+
+    SectionFields:
+      type: object
+      description: Any subset of a section's fields (used for PATCH).
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: Section heading (unique)
+        icon:
+          type: string
+          description: Section icon
+        displayData:
+          type: object
+          description: Per-section display options
+        items:
+          type: array
+          description: The links/apps in this section
+          items: { $ref: "#/components/schemas/Item" }
+        widgets:
+          type: array
+          description: Widgets shown in this section
+          items: { type: object }
+        filteredItems:
+          type: array
+          description: Items pulled from another source
+          items: { type: object }
+    Section:
+      description: A group of items, shown as a card. Requires a `name`.
+      allOf:
+        - $ref: "#/components/schemas/SectionFields"
+        - { type: object, required: [name] }
+
+    ItemFields:
+      type: object
+      description: Any subset of an item's fields (used for PATCH).
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          description: Display name
+        description:
+          type: string
+          description: Text shown on hover
+        icon:
+          type: string
+          description: "Icon (URL, favicon, font-awesome, etc.)"
+        url:
+          type: string
+          description: Target URL
+        target:
+          type: string
+          enum: [newtab, sametab, parent, top, modal, workspace, clipboard, newwindow]
+          description: How the link opens
+        provider:
+          type: string
+          description: Hosting provider name
+        id:
+          type: string
+          description: Unique identifier
+        tags:
+          type: array
+          description: Tags for filtering
+          items: { type: string }
+        hotkey:
+          type: integer
+          description: Numeric keyboard shortcut
+        rel:
+          type: string
+          description: Anchor rel attribute
+        color:
+          type: string
+          description: Text color
+        backgroundColor:
+          type: string
+          description: Background color
+        displayData:
+          type: object
+          description: Per-item display options
+        subItems:
+          type: array
+          description: Nested child items
+          items: { type: object }
+        statusCheck:
+          type: boolean
+          description: Enable status check for this item
+        statusCheckUrl:
+          type: string
+          description: Override URL to ping
+        statusCheckHeaders:
+          type: object
+          description: Headers sent with the status check
+        statusCheckAllowInsecure:
+          type: boolean
+          description: Allow invalid TLS certs
+        statusCheckAcceptCodes:
+          type: string
+          description: Extra HTTP codes treated as up
+        statusCheckMaxRedirects:
+          type: integer
+          description: Max redirects to follow
+        pingCheckEnabled:
+          type: boolean
+          description: Enable ICMP ping check
+        pingCheckHost:
+          type: string
+          description: Host to ping
+        pingCheckInterval:
+          type: integer
+          description: Ping interval (seconds)
+        pingCheckCount:
+          type: integer
+          description: Number of pings
+        pingCheckTimeout:
+          type: integer
+          description: Ping timeout (ms)
+    Item:
+      description: A single link, app or service. Requires a `title`.
+      allOf:
+        - $ref: "#/components/schemas/ItemFields"
+        - { type: object, required: [title] }
+
+    Page:
+      type: object
+      description: An extra config file loaded as a separate page.
+      additionalProperties: false
+      required: [name, path]
+      properties:
+        name: { type: string, description: Unique page identifier }
+        path: { type: string, description: File name or path of the page's config }
+        displayData: { type: object, description: Page visibility and display options }

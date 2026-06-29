@@ -1,0 +1,102 @@
+<style>
+	.~PATH~ figure { cursor: pointer; position: relative; margin-bottom: var(--gap); }
+	.~PATH~ figure > div { border-radius: var(--radius); border: 1px solid #E0E0E0; }
+	.~PATH~ figure .preview { padding: 10px; }
+	.~PATH~ figure img { border-radius: var(--radius); }
+	.~PATH~ figure .meta { border-top: 1px solid #E0E0E0; padding: 10px; font-size: 12px; }
+	.~PATH~ figure .meta .name { font-size: 13px; font-weight: bold; }
+	.~PATH~ figure .is { position: absolute; font-size: 30px; right: 5px; margin: -10px 0 0 0; color: #68B25B; display: none; background-color: #FFF; width: 40px; height: 40px; border-radius: 100px; text-align: center; line-height: 40px; box-shadow: 1px 1px 3px rgba(0,0,0,0.1); }
+	.~PATH~ figure.installed > div { background-color: #F0F0F0; }
+	.~PATH~ figure.installed .is { display: block; }
+	.~PATH~ .ui-listing-fixed .ui-listing-paginate { padding-left: 15px; }
+	.~PATH~ .items { padding: 5px; }
+	.jc-sm .~PATH~ figure { width: 33.33%; }
+	.jc-xs .~PATH~ figure { width: 50%; }
+</style>
+
+<ui-component name="box" path="common.form2" config="if:~PATH~;title:@(Import widgets);icon:ti ti-plug;autofocus:true;reload:?/reload;scrollbarshadow:1;submit:?/submit;width:1400;zindex:30" class="hidden ~PATH~" plugin="~PATH~">
+	<nav>
+		<ui-component name="searchinput" path="?.search" config="placeholder:@(Search widgets)"></ui-component>
+	</nav>
+	<div class="padding">
+		<ui-component name="search" path="?.search" config="selector:figure">
+			<ui-bind path="?.items" config="template:figure -> data-id" class="block grid-6 grid-sm-3 grid-xs-2">
+				<script type="text/plain">
+					{{ foreach m in value }}
+					<figure data-id="{{ m.id }}" class="exec{{ if m.imported }} installed{{ fi }}" data-exec="?/install" data-search="{{ m.name }}">
+						<div>
+							<div class="is"><i class="ti ti-check-circle"></i></div>
+							<div class="preview"><img src="{{ m.preview }}" class="img-responsive" onerror="onImageError(this)" data-empty="/_widgets/empty.png" loading="lazy" /></div>
+							<div class="meta">
+								<div class="name">{{ m.name }}</div>
+							</div>
+						</div>
+					</figure>
+					{{ end }}
+				</script>
+			</ui-bind>
+		</ui-component>
+	</div>
+	<nav>
+		<button name="cancel" style="width:100%">@(Cancel)</button>
+	</nav>
+</ui-component>
+
+<script>
+
+	PLUGIN(function(exports) {
+
+		exports.reload = function(com) {
+			exports.refresh();
+		};
+
+		exports.refresh = function() {
+			exports.ajax('GET https://cdn.totaljs.com/cms/db.json', function(response) {
+				var items = PARSE(response);
+				exports.tapi('widgets_list?list=1', function(response) {
+					for (var item of items) {
+						item.html = '<img src="{0}" style="width:30px" class="mr10" />{1}'.format(item.preview, item.name.encode());
+						item.search = item.name.toSearch();
+						item.imported = !!response.findItem('id', item.id);
+					}
+					items.quicksort('name');
+					exports.set('items', items);
+				});
+			});
+		};
+
+		exports.install = function(el) {
+			var id = ATTRD(el);
+			var item = exports.data.items.findItem('id', id);
+			SETTER('approve/show', '@(Are you sure you want to install the "{0}" widget?)'.format(item.name.encode()), '"ti ti-cloud-download" @(Install)', function() {
+				exports.ajax('GET {0}'.format(item.url), function(response) {
+					exports.tapi('widgets_save @showloading', { id: id, html: response }, function(response) {
+						el.aclass('installed');
+						EMIT('refresh_widgets @hideloading');
+					});
+				});
+			});
+		};
+
+		exports.search = function() {
+			var model = exports.data;
+			var opt = {};
+			opt.id = 'widgetsimport';
+			opt.search = function(q, next) {
+				q = q.toSearch();
+				var arr = [];
+				for (var m of model.items) {
+					if (m.search.indexOf(q) !== -1)
+						arr.push(m);
+				}
+				next(arr.take(30));
+			};
+			opt.callback = function(item) {
+				exports.install(item);
+			};
+			SETTER('spotlight/show', opt);
+		};
+
+	});
+
+</script>

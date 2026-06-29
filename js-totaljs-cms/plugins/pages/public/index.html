@@ -1,0 +1,269 @@
+<style>
+	.CLASS .listing .url { font-size: 10px; padding: 1px 3px; }
+	.CLASS .listing .preview { float: right; font-size: 11px; color: #777; margin-right: 10px; }
+	.CLASS .listing .language { padding: 2px 4px; font-family: Menlo,Consolas,monospace; margin-right: 5px; font-size: 11px; }
+	.CLASS .listing .disabled { color: #999; }
+</style>
+
+<div class="virtualwire hidden" data-if="CLASS">
+	<ui-plugin>
+		<ui-bind path="?.checked" config="enable .D:value && value.length">
+			<button class="exec" data-exec="?/create"><i class="ti ti-plus-circle"></i>@(Create)</button>
+			<button class="exec" data-exec="?/refresh"><i class="ti ti-refresh"></i>@(Refresh)</button>
+			<button class="exec D" data-exec="?/menu"><i class="ti ti-cog"></i>@(Options)</button>
+		</ui-bind>
+	</ui-plugin>
+</div>
+
+<ui-plugin class="CLASS">
+	<ui-component name="datagrid" path="?.items" config="margin:0;parent:auto;noborder:1;button:?/options;click:?/editor;checked:?.checked">
+		<script type="text/plain">
+			[
+				{ name: 'search', text: '@(Name)', template: '{{ language | colorize }}{{ if pinned }}<i class="ti ti-pin-alt orange mr5"></i>{{ fi }}{{ if icon }}<i class="{{ icon }} mr5"></i>{{ fi }}{{ breadcrumb | raw }}{{ if disabled }}<span class="badge badge-red ml5 badge-small">@(disabled)</span>{{ fi }}{{ if auth }}<span class="badge badge-orange ml5 badge-small">@(authorized)</span>{{ fi }}', width: 350 },
+				{ name: 'url', text: '@(URL address)', width: 250 },
+				{ name: 'layout', text: '@(Layout)', template: '{{ if layout }}<i class="icon {{ layout.icon | empty(\'ti ti-bull\') }} mr5"{{ if layout.color }} style="color:{{ layout.color }}"{{ fi }}></i>{{ layout.name }}{{ fi }}', width: 150 },
+				{ name: 'language', text: '@(Language)', width: 120, align: 1 },
+				{ name: 'dtupdated', text: '@(Updated)', format: '[ts]', type: 'date', align: 1 },
+				{ name: '@(Options)', filter: false, align: 1, sort: false, width: 130, template: '<a href="{{ url }}" class="fs12 mr5" target="_blank">@(Show)</a><div class="inline"><button name="edit" title="@(Edit)"><i class="ti ti-pencil"></i></button><button title="@(Options)" name="options"><i class="ti ti-cog"></i></button><button title="@(Remove)" name="remove"><i class="ti ti-trash"></i></button></div>' }
+			]
+		</script>
+	</ui-component>
+</ui-plugin>
+
+<ui-component name="importer" path="common.form" config="if:formpage;url:/~ID~/form.html"></ui-component>
+
+<script>
+
+	PLUGIN(function(exports) {
+
+		exports.reload = function() {
+			BREADCRUMB.add('@(Pages)', NAV.url);
+			exports.refresh();
+		};
+
+		exports.refresh = function(el) {
+			el && el.find('i').aclass('ti-spin').rclass('ti-spin', 800);
+			exports.tapi('layouts_list ERROR', function(layouts) {
+				exports.set('layouts', layouts);
+				exports.tapi('pages_list ERROR', function(response) {
+
+					var arr = [];
+
+					for (var item of response) {
+
+						if (item.parentid === item.id)
+							item.parentid = '';
+
+						item.breadcrumb = item.name.encode();
+						item.search = item.name;
+						item.layout = layouts.findItem('id', item.layoutid);
+
+						if (!item.pinned)
+							item.pinned = false;
+
+						if (!item.dtupdated)
+							item.dtupdated = item.dtcreated;
+
+						if (item.parentid) {
+
+							var parent = response.findItem('id', item.parentid);
+							if (parent) {
+								if (parent.children)
+									parent.children.push(item);
+								else
+									parent.children = [item];
+							} else
+								item.parentid = '';
+
+							parent = item;
+							while (true) {
+								parent = response.findItem('id', parent.parentid);
+								if (parent) {
+									if (parent.parentid) {
+										item.breadcrumb = '<span class="silver">' + parent.name.encode() + '</span> / ' + item.breadcrumb;
+										item.search = parent.name + ' / ' + item.search;
+									} else
+										break;
+								} else
+									break;
+							}
+						}
+					}
+
+					exports.set('sitemap', FUNC.sitemap(response));
+
+					for (var item of response) {
+						if (!item.parentid)
+							arr.push(item);
+					}
+
+					response.quicksort('pinned_desc, dtcreated_desc');
+					exports.set('items', response, 'noscroll');
+					exports.set('sitemap', FUNC.sitemap(response));
+					exports.set('items2', arr);
+				});
+			});
+
+		};
+
+		exports.menu = function(el) {
+
+			var model = exports.model;
+			var opt = {};
+			opt.element = el;
+			opt.align = 'right';
+			opt.items = [];
+
+			opt.items.push({ id: 'remove', name: '@(Remove selected ({0}x))'.format(model.checked.length), icon: 'ti ti-trash red' });
+
+			opt.callback = function(item) {
+				if (item.id === 'remove') {
+					SETTER('approve/show', '@(Are you sure you want to remove selected ({0}x) pages?)'.format(model.checked.length), '"ti ti-trash" @(Clear)', function() {
+						SETTER('loading/show');
+						model.checked.wait(function(item, next) {
+							exports.tapi('pages_remove', { id: item.id }, next);
+						}, function() {
+							SETTER('loading/hide');
+							exports.refresh();
+						});
+					});
+					return;
+				}
+
+			};
+			SETTER('menu/show', opt);
+		};
+
+		exports.editor = function(el, e) {
+
+			if (!el)
+				return;
+
+			if (e && e.target && e.target.tagName === 'A')
+				return;
+
+			var id = ATTRD(el);
+			REDIRECT('/admin/pages/{0}/'.format(id));
+		};
+
+		exports.remove = function(el) {
+			var items = exports.data.items;
+			var id = ATTRD(el);
+			var data = items.findItem('id', id);
+			SETTER('approve/show', '@(Are you sure you want to remove the "{name}" page?)'.arg(data, 'escape'), '"ti ti-trash" @(Remove)', function() {
+				exports.tapi('pages_remove ERROR', { id: id }, () => exports.refresh());
+			});
+		};
+
+		exports.edit = function(el) {
+			var id = ATTRD(el);
+			exports.tapi('pages_read @showloading ERROR', { id: id }, function(response) {
+				SET('formpage @reset @hideloading', response);
+				SET('*form', 'formpage');
+			});
+		};
+
+		exports.code = function(el) {
+			var id = ATTRD(el);
+			exports.tapi('pages_html ERROR', { id: id }, function(response) {
+				var opt = {};
+				opt.body = response.html;
+				opt.callback = function(value, hide) {
+					var model = {};
+					model.id = id;
+					model.html = value;
+					exports.tapi('pages_save_html', model, hide);
+				};
+				FUNC.code(opt);
+			});
+		};
+
+		exports.options = function(name, row, el) {
+
+			if (name === 'edit') {
+				exports.edit(row);
+				return;
+			}
+
+			if (name === 'remove') {
+				exports.remove(row);
+				return;
+			}
+
+			var model = exports.model;
+			var items = model.items;
+			var id = ATTRD(row);
+			var data = items.findItem('id', id);
+			var opt = {};
+			opt.element = el;
+			opt.align = 'right';
+			opt.items = [];
+			opt.items.push({ id: 'editor', name: '@(Open editor)', classname: 'b', icon: 'ti ti-object-group' });
+			opt.items.push({ id: 'code', name: '@(Source-code)', icon: 'ti ti-laptop-code' });
+			opt.items.push({ id: 'edit', name: '@(Edit)', icon: 'ti ti-pencil' });
+			opt.items.push({ id: 'clone', name: '@(Clone)', icon: 'ti ti-clone' });
+			opt.items.push({ id: 'copy', name: '@(Copy content to)', icon: 'ti ti-copy' });
+			opt.items.push('-');
+			opt.items.push({ id: 'remove', name: '@(Remove)', icon: 'ti ti-trash red' });
+			opt.callback = function(item) {
+
+				if (item.id === 'editor') {
+					exports.editor(id);
+					return;
+				}
+
+				if (item.id === 'code') {
+					exports.code(id);
+					return;
+				}
+
+				if (item.id === 'edit') {
+					exports.edit(id);
+					return;
+				}
+
+				if (item.id === 'copy') {
+
+					var opt = {};
+					opt.scrolltop = 1;
+					opt.placeholder = '@(Where to copy the content?)';
+					opt.items = CLONE(items).remove('id', id);
+
+					for (var item of opt.items)
+						item.icon = 'ti ti-copy';
+
+
+					opt.callback = function(item) {
+						SETTER('approve/show', '@(Are you sure you want to copy the content to the "{name}" page?)'.arg(item, 'escape'), '"ti ti-copy" @(Copy)', function() {
+							exports.tapi('pages_copy', { from: id, to: item.id }, ASETTER('notify/response', '@(Done, the content has been copied successfully.)'));
+						});
+					};
+
+					SETTER('features/show', opt);
+				}
+
+				if (item.id === 'clone') {
+					exports.tapi('pages_clone', { id: id }, ASETTER('notify/response', '@(The page has been cloned successfully)', function(response) {
+						exports.refresh();
+						exports.edit(response.value);
+					}));
+					return;
+				}
+
+				if (item.id === 'remove') {
+					exports.remove(id);
+					return;
+				}
+
+			};
+			SETTER('menu/show', opt);
+		};
+
+		exports.create = function() {
+			SET('formpage @default', {});
+			SET('*form', 'formpage');
+		};
+
+	});
+
+</script>

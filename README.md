@@ -36,15 +36,63 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 
 ### JavaScript & TypeScript
 
+- [`js-angular-staticsite`](js-angular-staticsite/README.md) – Angular-style static build.
+- [`js-assemble-staticsite`](js-assemble-staticsite/README.md) – Assemble-generated static site.
+- [`js-astro-ssr`](js-astro-ssr/README.md) – Astro server output using the Node adapter.
 - [`js-astro-staticsite`](js-astro-staticsite/README.md) – Astro static export.
+- [`js-brunch-staticsite`](js-brunch-staticsite/README.md) – Brunch-style static build.
+- [`js-create-react-app-staticsite`](js-create-react-app-staticsite/README.md) – Create React App-style static build.
 - [`js-docusaurus-staticsite`](js-docusaurus-staticsite/README.md) – Docusaurus docs site.
+- [`js-eleventy-staticsite`](js-eleventy-staticsite/README.md) – Eleventy-generated static site.
+- [`js-elysia`](js-elysia/README.md) – Elysia HTTP server.
+- [`js-ember-staticsite`](js-ember-staticsite/README.md) – Ember-style static build.
+- [`js-express`](js-express/README.md) – Express HTTP server.
+- [`js-fastify`](js-fastify/README.md) – Fastify HTTP server.
 - [`js-gatsby-staticsite`](js-gatsby-staticsite/README.md) – Gatsby static site.
+- [`js-gatsby-staticsite2`](js-gatsby-staticsite2/README.md) – Gatsby default starter static site.
+- [`js-h3`](js-h3/README.md) – H3 HTTP server.
+- [`js-harp-staticsite`](js-harp-staticsite/README.md) – Harp-generated static site.
+- [`js-hexo-staticsite`](js-hexo-staticsite/README.md) – Hexo-generated static site.
+- [`js-hono`](js-hono/README.md) – Hono app served by the Node.js adapter.
+- [`js-htmlwithjs-staticsite`](js-htmlwithjs-staticsite/README.md) – Plain static HTML/CSS/JavaScript site.
+- [`js-hydrogen`](js-hydrogen/README.md) – Hydrogen-oriented Node.js runtime example.
+- [`js-ionic-angular-staticsite`](js-ionic-angular-staticsite/README.md) – Ionic Angular-style static build.
+- [`js-ionic-react-staticsite`](js-ionic-react-staticsite/README.md) – Ionic React-style static build.
+- [`js-koa`](js-koa/README.md) – Koa HTTP server.
+- [`js-mastra`](js-mastra/README.md) – Mastra-oriented Node.js runtime example.
+- [`js-mcp`](js-mcp/README.md) – HTTP Model Context Protocol server.
+- [`js-metalsmith-staticsite`](js-metalsmith-staticsite/README.md) – Metalsmith-generated static site.
+- [`js-nestjs`](js-nestjs/README.md) – NestJS-oriented Node.js runtime example.
+- [`js-next-ssr`](js-next-ssr/README.md) – Next.js server-rendered app.
 - [`js-next-staticsite`](js-next-staticsite/README.md) – Next.js `output: "export"` sample.
+- [`js-nitro`](js-nitro/README.md) – Nitro-oriented Node.js runtime example.
+- [`js-node`](js-node/README.md) – Minimal Node.js HTTP server.
+- [`js-npm-file-subdir`](js-npm-file-subdir/README.md) – npm subdirectory app using a local `file:` dependency.
+- [`js-nuxt-staticsite`](js-nuxt-staticsite/README.md) – Nuxt-generated static site.
+- [`js-parcel-staticsite`](js-parcel-staticsite/README.md) – Parcel-style static build.
+- [`js-pnpm-workspace-subdir`](js-pnpm-workspace-subdir/README.md) – pnpm workspace app in a subdirectory.
+- [`js-polymer-staticsite`](js-polymer-staticsite/README.md) – Polymer-style static build.
+- [`js-preact-staticsite`](js-preact-staticsite/README.md) – Preact-style static build.
+- [`js-react-router`](js-react-router/README.md) – React Router-oriented Node.js runtime example.
+- [`js-remix-ssr`](js-remix-ssr/README.md) – Remix-oriented server runtime example.
+- [`js-remix-staticsite`](js-remix-staticsite/README.md) – Remix static export.
+- [`js-sanity-staticsite`](js-sanity-staticsite/README.md) – Sanity-style static build.
+- [`js-solidstart`](js-solidstart/README.md) – SolidStart-oriented Node.js runtime example.
+- [`js-stencil-staticsite`](js-stencil-staticsite/README.md) – Stencil-style static build.
+- [`js-storybook-staticsite`](js-storybook-staticsite/README.md) – Storybook static build.
 - [`js-svelte`](js-svelte/README.md) – Vite-powered Svelte app.
+- [`js-sveltekit-staticsite`](js-sveltekit-staticsite/README.md) – Compact SvelteKit-style static build.
+- [`js-tanstack-start`](js-tanstack-start/README.md) – TanStack Start-oriented Node.js runtime example.
+- [`js-umijs-staticsite`](js-umijs-staticsite/README.md) – UmiJS-style static build.
+- [`js-vite-react-staticsite`](js-vite-react-staticsite/README.md) – Vite React static build.
+- [`js-vite-staticsite`](js-vite-staticsite/README.md) – Vite-powered static site.
+- [`js-vitepress-staticsite`](js-vitepress-staticsite/README.md) – VitePress documentation site.
+- [`js-vue-staticsite`](js-vue-staticsite/README.md) – Vue static build.
+- [`js-vuepress-staticsite`](js-vuepress-staticsite/README.md) – VuePress documentation site.
+- [`js-xmcp`](js-xmcp/README.md) – XMCP-oriented Node.js runtime example.
 - [`skip-js-hono-wintercg`](skip-js-hono-wintercg/README.md) – Hono app targeting WinterCG workers.
 - [`skip-js-worker-wintercg`](skip-js-worker-wintercg/README.md) – Plain WinterCG-compatible worker template.
 - [`fail-js-nuxt-staticsite`](fail-js-nuxt-staticsite/README.md) – Nuxt static export (tracking open issues).
-- [`fail-js-remix-staticsite`](fail-js-remix-staticsite/README.md) – Remix static export (tracking open issues).
 
 ### PHP
 
@@ -63,12 +111,11 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 ### Static Sites & Misc
 
 - [`staticsite`](staticsite) – Shared static assets and helper scripts.
-- [`Shipit`](Shipit) – Build and deployment recipes used by Wasmer’s internal tooling.
 
 ## Working With the Examples
 
 - **Local development** – Most projects rely on the platform tooling for their language (e.g., `uvicorn`, `npm run dev`, `composer install`). Follow the steps in each example README to run locally.
-- **Deploying** – `wasmer deploy` reads the `wasmer.toml` (or Shipit configuration) in the example directory to bundle code, configure routes, and upload to your Edge namespace.
+- **Deploying** – `wasmer deploy` bundles the selected example, configures routes, and uploads it to your Edge namespace.
 - **Environment variables and secrets** – Use `wasmer secret add` or set values in your deployment pipeline. Examples that require API keys (e.g., `python-langchain-starter`) note them explicitly.
 
 ## Contributing

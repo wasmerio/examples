@@ -1,0 +1,107 @@
+import {expect, test} from "@playwright/test";
+import {loginToAdmin} from "../helper/adminhelper";
+
+// Install/uninstall mutates global server state (installed plugin set) that
+// all admin tests observe. Run these serially so one test's install can't
+// leak into another test's assertions.
+test.describe.configure({ mode: 'serial' });
+
+test.beforeEach(async ({ page })=>{
+    await loginToAdmin(page, 'admin', 'changeme1');
+    await page.goto('http://localhost:9001/admin/plugins')
+})
+
+
+test.describe('Plugins page',  ()=> {
+
+    test('List some plugins', async ({page}) => {
+        await page.waitForSelector('.pm-search-input');
+        // Installed plugins are now a flex list; available plugins are in the sole <table>
+        const pluginTable = page.locator('table tbody').first();
+        await expect(pluginTable).not.toBeEmpty()
+    })
+
+    test('Searches for a plugin', async ({page}) => {
+        await page.waitForSelector('.pm-search-input');
+        await page.click('.pm-search-input')
+        await page.keyboard.type('ep_set_title_on_pad')
+        const pluginTable = page.locator('table tbody').first();
+        await expect(pluginTable.locator('tr').first()).toContainText('ep_set_title_on_pad', {timeout: 60000})
+    })
+
+
+    test('Attempt to Install and Uninstall a plugin', async ({page}) => {
+        await page.waitForSelector('.pm-search-input');
+        const pluginTable = page.locator('table tbody').first();
+        await expect(pluginTable).not.toBeEmpty({
+            timeout: 15000
+        })
+
+        // Now everything is loaded, lets install a plugin
+
+        await page.click('.pm-search-input')
+        await page.keyboard.type('ep_set_title_on_pad')
+        await page.keyboard.press('Enter')
+
+        await expect(pluginTable.locator('tr')).toHaveCount(1, {timeout: 60000})
+        const pluginRow = pluginTable.locator('tr').first()
+        await expect(pluginRow).toContainText('ep_set_title_on_pad', {timeout: 60000})
+
+        // Install button is in the last table cell
+        await pluginRow.locator('td').last().locator('button').first().click()
+        await page.waitForSelector('.pm-installed')
+
+        // Installed plugins are now in .pm-installed-row flex items (not a table).
+        // Assert by name rather than by row count — transitive deps may also appear.
+        const installedPluginRow = page.locator('.pm-installed-row', {hasText: 'ep_set_title_on_pad'})
+        await expect(installedPluginRow).toHaveCount(1, {timeout: 15000})
+
+        // Uninstall button is inside .pm-installed-actions
+        await installedPluginRow.locator('.pm-installed-actions button').first().click()
+
+        // Wait for the uninstallation to complete: the row should disappear.
+        await expect(installedPluginRow).toHaveCount(0, {timeout: 15000})
+        await page.waitForTimeout(5000)
+    })
+})
+
+
+/*
+  it('Attempt to Update a plugin', async function () {
+    this.timeout(280000);
+
+    await helper.waitForPromise(() => helper.admin$('.results').children().length > 50, 20000);
+
+    if (helper.admin$('.ep_align').length === 0) this.skip();
+
+    await helper.waitForPromise(
+        () => helper.admin$('.ep_align .version').text().split('.').length >= 2);
+
+    const minorVersionBefore =
+        parseInt(helper.admin$('.ep_align .version').text().split('.')[1]);
+
+    if (!minorVersionBefore) {
+      throw new Error('Unable to get minor number of plugin, is the plugin installed?');
+    }
+
+    if (minorVersionBefore !== 2) this.skip();
+
+    helper.waitForPromise(
+        () => helper.admin$('.ep_align .do-update').length === 1);
+
+    await timeout(500); // HACK!  Please submit better fix..
+    const $doUpdateButton = helper.admin$('.ep_align .do-update');
+    $doUpdateButton.trigger('click');
+
+    // ensure its showing as Updating
+    await helper.waitForPromise(
+        () => helper.admin$('.ep_align .message').text() === 'Updating');
+
+    // Ensure it's a higher minor version IE 0.3.x as 0.2.x was installed
+    // Coverage for https://github.com/ether/etherpad-lite/issues/4536
+    await helper.waitForPromise(() => parseInt(helper.admin$('.ep_align .version')
+        .text()
+        .split('.')[1]) > minorVersionBefore, 60000, 1000);
+    // allow 50 seconds, check every 1 second.
+  });
+ */

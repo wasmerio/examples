@@ -1,0 +1,353 @@
+'use strict';
+
+import {PadType} from "../../../node/types/PadType";
+
+const Pad = require('../../../node/db/Pad');
+import { strict as assert } from 'assert';
+import {MapArrayType} from "../../../node/types/MapType";
+const authorManager = require('../../../node/db/AuthorManager');
+const common = require('../common');
+const padManager = require('../../../node/db/PadManager');
+const plugins = require('../../../static/js/pluginfw/plugin_defs');
+import settings from '../../../node/utils/Settings';
+
+describe(__filename, function () {
+  const backups:MapArrayType<any> = {};
+  let pad: PadType|null;
+  let padId: string;
+
+  before(async function () {
+    backups.hooks = {
+      padDefaultContent: plugins.hooks.padDefaultContent,
+    };
+    backups.defaultPadText = settings.defaultPadText;
+  });
+
+  beforeEach(async function () {
+    backups.hooks.padDefaultContent = [];
+    padId = common.randomString();
+    assert(!(await padManager.doesPadExist(padId)));
+  });
+
+  afterEach(async function () {
+    Object.assign(plugins.hooks, backups.hooks);
+    if (pad != null) await pad.remove();
+    pad = null;
+  });
+
+  describe('cleanText', function () {
+    const testCases = [
+      ['', ''],
+      ['\n', '\n'],
+      ['x', 'x'],
+      ['x\n', 'x\n'],
+      ['x\ny\n', 'x\ny\n'],
+      ['x\ry\n', 'x\ny\n'],
+      ['x\r\ny\n', 'x\ny\n'],
+      ['x\r\r\ny\n', 'x\n\ny\n'],
+      // Non-breaking space (U+00A0) must survive cleanText (issue #3037).
+      ['100\u00a0km\n', '100\u00a0km\n'],
+      ['a\u00a0\u00a0b\n', 'a\u00a0\u00a0b\n'],
+    ];
+    for (const [input, want] of testCases) {
+      it(`${JSON.stringify(input)} -> ${JSON.stringify(want)}`, async function () {
+        assert.equal(Pad.cleanText(input), want);
+      });
+    }
+  });
+
+  describe('non-breaking space preservation (issue #3037)', function () {
+    it('spliceText round-trips U+00A0', async function () {
+      pad = await padManager.getPad(padId, '');
+      // spliceText is an existing runtime Pad method; cast avoids
+      // adding a type-only declaration to PadType in this PR.
+      await (pad as any).spliceText(0, 0, '100\u00a0km', 'a.test');
+      assert.equal(pad!.text(), '100\u00a0km\n');
+    });
+
+    it('setText round-trips U+00A0', async function () {
+      pad = await padManager.getPad(padId, '');
+      await pad!.setText('a\u00a0b\n', 'a.test');
+      assert.equal(pad!.text(), 'a\u00a0b\n');
+    });
+
+    it('spliceText with empty authorId attributes to the system author', async function () {
+      pad = await padManager.getPad(padId, '');
+      // An unattributed insert (empty authorId, non-empty ins) used to
+      // produce an AText where text and attribs disagreed on length \u2014
+      // clients then failed setDocAText reconciliation on load. The
+      // server now substitutes a stable system author so the AText stays
+      // well-formed without forcing every caller to allocate one up-front.
+      await (pad as any).spliceText(0, 0, 'plugin-text', '');
+      assert.equal(pad!.text(), 'plugin-text\n');
+      const pool: any = (pad as any).pool;
+      let sawSystemAuthor = false;
+      for (const k of Object.keys(pool.numToAttrib || {})) {
+        const a = pool.numToAttrib[k];
+        if (a[0] === 'author' && a[1] === 'a.etherpad-system') {
+          sawSystemAuthor = true;
+          break;
+        }
+      }
+      assert(sawSystemAuthor, 'expected system-author binding in pad pool');
+    });
+  });
+
+  describe('padDefaultContent hook', function () {
+    it('runs when a pad is created without specific text', async function () {
+      const p = new Promise<void>((resolve) => {
+        plugins.hooks.padDefaultContent.push({hook_fn: () => resolve()});
+      });
+      pad = await padManager.getPad(padId);
+      await p;
+    });
+
+    it('not run if pad is created with specific text', async function () {
+      plugins.hooks.padDefaultContent.push(
+          {hook_fn: () => { throw new Error('should not be called'); }});
+      pad = await padManager.getPad(padId, '');
+    });
+
+    it('defaults to settings.defaultPadText', async function () {
+      const p = new Promise<void>((resolve, reject) => {
+        plugins.hooks.padDefaultContent.push({hook_fn: async (hookName:string, ctx:any) => {
+          try {
+            assert.equal(ctx.type, 'text');
+            assert.equal(ctx.content, settings.defaultPadText);
+          } catch (err) {
+            return reject(err);
+          }
+          resolve();
+        }});
+      });
+      pad = await padManager.getPad(padId);
+      await p;
+    });
+
+    it('passes the pad object', async function () {
+      const gotP = new Promise((resolve) => {
+        plugins.hooks.padDefaultContent.push({hook_fn: async (hookName:string, {pad}:{
+            pad: PadType,
+          }) => resolve(pad)});
+      });
+      pad = await padManager.getPad(padId);
+      assert.equal(await gotP, pad);
+    });
+
+    it('passes empty authorId if not provided', async function () {
+      const gotP = new Promise((resolve) => {
+        plugins.hooks.padDefaultContent.push(
+            {hook_fn: async (hookName:string, {authorId}:{
+                authorId: string,
+              }) => resolve(authorId)});
+      });
+      pad = await padManager.getPad(padId);
+      assert.equal(await gotP, '');
+    });
+
+    it('passes provided authorId', async function () {
+      const want = await authorManager.getAuthor4Token(`t.${padId}`);
+      const gotP = new Promise((resolve) => {
+        plugins.hooks.padDefaultContent.push(
+            {hook_fn: async (hookName: string, {authorId}:{
+                authorId: string,
+              }) => resolve(authorId)});
+      });
+      pad = await padManager.getPad(padId, null, want);
+      assert.equal(await gotP, want);
+    });
+
+    it('uses provided content', async function () {
+      const want = 'hello world';
+      assert.notEqual(want, settings.defaultPadText);
+      plugins.hooks.padDefaultContent.push({hook_fn: async (hookName:string, ctx:any) => {
+        ctx.type = 'text';
+        ctx.content = want;
+      }});
+      pad = await padManager.getPad(padId);
+      assert.equal(pad!.text(), `${want}\n`);
+    });
+
+    it('cleans provided content', async function () {
+      const input = 'foo\r\nbar\r\tbaz';
+      const want = 'foo\nbar\n        baz';
+      assert.notEqual(want, settings.defaultPadText);
+      plugins.hooks.padDefaultContent.push({hook_fn: async (hookName:string, ctx:any) => {
+        ctx.type = 'text';
+        ctx.content = input;
+      }});
+      pad = await padManager.getPad(padId);
+      assert.equal(pad!.text(), `${want}\n`);
+    });
+
+    // Returns the set of author IDs actually applied to the pad's text, by
+    // resolving every attribute marker in the current AText against the pool.
+    // This is what colours the text in the editor — distinct from
+    // getRevisionAuthor()/getAllAuthors() which also reflect pool bookkeeping.
+    const authorsAppliedToText = (p: any): Set<string> => {
+      const applied = new Set<string>();
+      const attribs: string = p.atext.attribs;
+      for (const m of attribs.matchAll(/\*([0-9a-z]+)/g)) {
+        const attr = p.pool.getAttrib(parseInt(m[1], 36));
+        if (attr && attr[0] === 'author' && attr[1] !== '') applied.add(attr[1]);
+      }
+      return applied;
+    };
+
+    it('does not colour default content with the creating user (issue #7885)',
+        async function () {
+      // When a user opens a brand-new pad, CLIENT_READY calls
+      // getPad(padId, null, session.author). The default welcome text is not
+      // written by that user, so its insert op must not carry their author
+      // attribute (which would colour it in the creator's colour). The system
+      // author owns the text instead.
+      const creator = await authorManager.getAuthorId(`t.${padId}`);
+      pad = await padManager.getPad(padId, null, creator);
+      const applied = authorsAppliedToText(pad);
+      assert(!applied.has(creator),
+          `default text must not be coloured with the creating author ${creator}`);
+      assert(applied.has('a.etherpad-system'),
+          'default text should be owned by the system author');
+    });
+
+    it('keeps the creating user as the revision-0 author so pad ownership is preserved',
+        async function () {
+      // isPadCreator()/the pad-wide settings gate and the deletion token all
+      // key off getRevisionAuthor(0). Reassigning the welcome-text colour to
+      // the system author (above) must not strip the creator's ownership.
+      const creator = await authorManager.getAuthorId(`t.${padId}`);
+      pad = await padManager.getPad(padId, null, creator);
+      assert.equal(await (pad as any).getRevisionAuthor(0), creator,
+          'the creating user must remain the revision-0 author');
+    });
+
+    it('still colours explicitly provided content with the creating author',
+        async function () {
+      // A real author providing real text (e.g. API createPad with text)
+      // keeps ownership of that text — only auto-generated default content is
+      // reassigned to the system author.
+      const creator = await authorManager.getAuthorId(`t.${padId}`);
+      pad = await padManager.getPad(padId, 'real user content', creator);
+      assert(authorsAppliedToText(pad).has(creator),
+          'explicitly provided text should be coloured with the creating author');
+    });
+  });
+
+  describe('normalizePadSettings lang (issue #7586)', function () {
+    it('defaults lang to null when not provided, so client auto-detects locale', function () {
+      const ps = Pad.Pad.normalizePadSettings({});
+      assert.equal(ps.lang, null);
+    });
+
+    it('preserves an explicit string lang (creator override)', function () {
+      const ps = Pad.Pad.normalizePadSettings({lang: 'de'});
+      assert.equal(ps.lang, 'de');
+    });
+
+    it('drops non-string lang values to null rather than coercing to "en"', function () {
+      for (const bogus of [42, true, {}, [], null, undefined]) {
+        const ps = Pad.Pad.normalizePadSettings({lang: bogus});
+        assert.equal(ps.lang, null, `bogus input ${JSON.stringify(bogus)}`);
+      }
+    });
+  });
+
+  describe('normalizePadSettings plugin passthrough (ep_* keys)', function () {
+    let originalFlag: boolean;
+    let warnSpy: any;
+    let warnings: string[];
+
+    before(function () { originalFlag = settings.enablePluginPadOptions; });
+    after(function () { settings.enablePluginPadOptions = originalFlag; });
+    beforeEach(function () {
+      warnings = [];
+      warnSpy = console.warn;
+      console.warn = (msg: string) => { warnings.push(msg); };
+    });
+    afterEach(function () { console.warn = warnSpy; });
+
+    describe('with enablePluginPadOptions = true (default)', function () {
+      before(function () { settings.enablePluginPadOptions = true; });
+
+      it('preserves ep_* keys verbatim so plugins can ride padoptions', function () {
+        const ps: any = Pad.Pad.normalizePadSettings({
+          ep_table_of_contents: {enabled: true, depth: 3},
+          ep_font_color: 'red',
+        });
+        assert.deepEqual(ps.ep_table_of_contents, {enabled: true, depth: 3});
+        assert.equal(ps.ep_font_color, 'red');
+      });
+
+      it('drops keys that do not match the ep_<lowercase> pattern', function () {
+        const ps: any = Pad.Pad.normalizePadSettings({
+          EP_SHOUTY: 1,        // uppercase rejected
+          ep_: 1,              // empty suffix rejected
+          'ep-dashy': 1,       // dash rejected
+          somethingElse: 1,    // no prefix rejected
+        });
+        assert.equal(ps.EP_SHOUTY, undefined);
+        assert.equal(ps.ep_, undefined);
+        assert.equal(ps['ep-dashy'], undefined);
+        assert.equal(ps.somethingElse, undefined);
+      });
+
+      it('does not overwrite reserved core keys when an ep_<core> alias is sent', function () {
+        // Core keys (showChat etc.) come first; ep_* loop runs after. A plugin
+        // key like ep_showchat is namespaced separately and cannot collide.
+        const ps: any = Pad.Pad.normalizePadSettings({
+          showChat: false,
+          ep_showchat: 'plugin-value',
+        });
+        assert.equal(ps.showChat, false);
+        assert.equal(ps.ep_showchat, 'plugin-value');
+      });
+
+      it('drops a non-JSON-serializable value with a warn-log', function () {
+        const ps: any = Pad.Pad.normalizePadSettings({
+          ep_bad: () => 'function values are not JSON-safe',
+        });
+        assert.equal(ps.ep_bad, undefined);
+        assert.ok(warnings.some((w) => w.includes('ep_bad')),
+            `expected warn mentioning ep_bad, got: ${JSON.stringify(warnings)}`);
+      });
+
+      it('drops a value larger than the 64 KB per-key cap', function () {
+        const oversized = 'x'.repeat(70 * 1024); // ~70 KB string
+        const ps: any = Pad.Pad.normalizePadSettings({
+          ep_huge: oversized,
+        });
+        assert.equal(ps.ep_huge, undefined);
+        assert.ok(warnings.some((w) => w.includes('ep_huge') && w.includes('per-key cap')),
+            `expected per-key cap warning, got: ${JSON.stringify(warnings)}`);
+      });
+
+      it('drops keys that would exceed the cumulative 256 KB cap', function () {
+        // Each value is well under the per-key cap but together they exceed
+        // the total cap. The first few must survive; the overflowing key
+        // must be dropped.
+        const big = 'y'.repeat(60 * 1024); // ~60 KB each
+        const input: any = {};
+        for (let i = 0; i < 6; i++) input[`ep_chunk${i}`] = big;
+        const ps: any = Pad.Pad.normalizePadSettings(input);
+        const survivors = Object.keys(ps).filter((k) => k.startsWith('ep_chunk'));
+        assert.ok(survivors.length < 6,
+            `at least one chunk must be dropped to keep total <= 256 KB, but all ${survivors.length}/6 survived`);
+        assert.ok(warnings.some((w) => w.includes('combined ep_* size')),
+            `expected combined-cap warning, got: ${JSON.stringify(warnings)}`);
+      });
+    });
+
+    describe('with enablePluginPadOptions = false (operator opt-out)', function () {
+      before(function () { settings.enablePluginPadOptions = false; });
+
+      it('drops every ep_* key — operator has opted out of plugin pad-wide state', function () {
+        const ps: any = Pad.Pad.normalizePadSettings({
+          ep_table_of_contents: {enabled: true},
+          ep_font_color: 'red',
+        });
+        assert.equal(ps.ep_table_of_contents, undefined);
+        assert.equal(ps.ep_font_color, undefined);
+      });
+    });
+  });
+});

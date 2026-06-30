@@ -1,0 +1,117 @@
+import {expect, test} from "@playwright/test";
+import {goToNewPad} from "../helper/padHelper";
+import {showSettings} from "../helper/settingsHelper";
+
+test.beforeEach(async ({ page, browser })=>{
+  const context = await browser.newContext()
+  await context.clearCookies()
+  await goToNewPad(page);
+})
+
+// niceSelect.js wraps each <select> with an immediately-following
+// <div class="nice-select"> sibling. Targeting via `#languagemenu +
+// .nice-select` is robust to plugins (ep_headings2, ep_font_size, etc.)
+// that add their own .nice-select dropdowns earlier in the page —
+// otherwise `.nice-select.nth(1)` drifts off the language menu.
+const langDropdown = (page: any) => page.locator('#languagemenu + .nice-select')
+
+test.describe('Language select and change', function () {
+
+  // Destroy language cookies
+  test('makes text german', async function ({page}) {
+    // click on the settings button to make settings visible
+    await showSettings(page)
+
+    // click the language button
+    const languageDropDown = langDropdown(page)
+
+    await languageDropDown.click()
+    await page.locator('.nice-select.open').locator('[data-value=de]').click()
+    await expect(languageDropDown.locator('.current')).toHaveText('Deutsch')
+
+    // select german
+    await page.locator('.buttonicon-bold').evaluate((el) => el.parentElement!.title === 'Fett (Strg-B)');
+  });
+
+  test('makes text English', async function ({page}) {
+
+    await showSettings(page)
+
+    // click the language button
+    await langDropdown(page).locator('.current').click()
+    await page.locator('.nice-select.open').locator('[data-value=de]').click()
+
+    // select german
+    await page.locator('.buttonicon-bold').evaluate((el) => el.parentElement!.title === 'Fett (Strg-B)');
+
+
+    // change to english
+    await langDropdown(page).locator('.current').click()
+    await page.locator('.nice-select.open').locator('[data-value=en]').click()
+
+    // check if the language is now English
+    await page.locator('.buttonicon-bold').evaluate((el) => el.parentElement!.title !== 'Fett (Strg-B)');
+  });
+
+  test('changes direction when picking an rtl lang', async function ({page}) {
+
+    await showSettings(page)
+
+    // click the language button
+    await langDropdown(page).locator('.current').click()
+    await page.locator('.nice-select.open').locator('[data-value=de]').click()
+
+    // select german
+    await page.locator('.buttonicon-bold').evaluate((el) => el.parentElement!.title === 'Fett (Strg-B)');
+
+    // click the language button
+    await langDropdown(page).locator('.current').click()
+    // select arabic
+    // $languageoption.attr('selected','selected'); // Breaks the test..
+    await page.locator('.nice-select.open').locator('[data-value=ar]').click()
+
+    await page.waitForSelector('html[dir="rtl"]')
+  });
+
+  test('changes direction when picking an ltr lang', async function ({page}) {
+    await showSettings(page)
+
+    // change to english
+    const languageDropDown = langDropdown(page)
+    await languageDropDown.locator('.current').click()
+    await page.locator('.nice-select.open').locator('[data-value=en]').click()
+
+    await expect(languageDropDown.locator('.current')).toHaveText('English')
+
+    // check if the language is now English
+    await page.locator('.buttonicon-bold').evaluate((el) => el.parentElement!.title !== 'Fett (Strg-B)');
+
+
+    await page.waitForSelector('html[dir="ltr"]')
+
+  });
+
+  // Regression test for #7925: when the UI language is auto-detected from the
+  // browser (no language cookie, no pad-wide lang set), the language dropdown
+  // must reflect the detected language instead of defaulting to English.
+  test('dropdown reflects the browser-detected language', async function ({browser}) {
+    const context = await browser.newContext({locale: 'de-DE'})
+    await context.clearCookies()
+    const page = await context.newPage()
+    try {
+      await goToNewPad(page)
+
+      // The toolbar should have rendered in German (detection works) — the
+      // bold button's parent <li> carries the localized German tooltip.
+      await expect(page.locator('.buttonicon-bold').locator('..'))
+          .toHaveAttribute('title', 'Fett (Strg-B)')
+
+      // ... and the language dropdown must show the detected language, not
+      // English, even though it was never explicitly selected.
+      await showSettings(page)
+      await expect(langDropdown(page).locator('.current')).toHaveText('Deutsch')
+    } finally {
+      await context.close()
+    }
+  });
+});

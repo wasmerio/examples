@@ -1,0 +1,1 @@
+(function(a){var t=a.mo.OPTYPES,e=a.TEXCLASS;MathJax.Hub.Insert(a.mo.prototype,{OPTABLE:{postfix:{"\xB0":t.ORD,"\xB4":t.ACCENT,"\xB8":t.ACCENT}}}),MathJax.Ajax.loadComplete(a.optableDir+"/Latin1Supplement.js")})(MathJax.ElementJax.mml);

@@ -1,0 +1,1 @@
+MathJax.Hub.Config({extensions:["mml2jax.js","MathEvents.js","MathZoom.js","MathMenu.js","toMathML.js","fast-preview.js","AssistiveMML.js","[a11y]/accessibility-menu.js"],jax:["input/MathML","output/SVG","output/PreviewHTML"]}),MathJax.Ajax.loadComplete("[MathJax]/config/MML_SVG-full.js");

@@ -1,0 +1,1 @@
+(function(a){var o=a.mo.OPTYPES,t=a.TEXCLASS;MathJax.Hub.Insert(a.mo.prototype,{OPTABLE:{postfix:{"\u20DB":o.ACCENT,"\u20DC":o.ACCENT}}}),MathJax.Ajax.loadComplete(a.optableDir+"/CombDiactForSymbols.js")})(MathJax.ElementJax.mml);

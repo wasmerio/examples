@@ -1,0 +1,1 @@
+MathJax.Localization.addTranslation("diq","HTML-CSS",{version:"2.7.9",isLoaded:!0,strings:{LoadWebFont:"Web font %1 bar beno",CantLoadWebFont:"Font\xEA web\xEA %1'i bar n\xEAb\u0131"}}),MathJax.Ajax.loadComplete("[MathJax]/localization/diq/HTML-CSS.js");

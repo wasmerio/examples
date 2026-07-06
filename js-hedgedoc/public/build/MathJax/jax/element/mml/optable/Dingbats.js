@@ -1,0 +1,1 @@
+(function(a){var t=a.mo.OPTYPES,o=a.TEXCLASS;MathJax.Hub.Insert(a.mo.prototype,{OPTABLE:{prefix:{"\u2772":t.OPEN},postfix:{"\u2773":t.CLOSE}}}),MathJax.Ajax.loadComplete(a.optableDir+"/Dingbats.js")})(MathJax.ElementJax.mml);

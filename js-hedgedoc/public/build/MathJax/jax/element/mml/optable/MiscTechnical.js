@@ -1,0 +1,1 @@
+(function(C){var E=C.mo.OPTYPES,a=C.TEXCLASS;MathJax.Hub.Insert(C.mo.prototype,{OPTABLE:{postfix:{"\u23B4":E.WIDEACCENT,"\u23B5":E.WIDEACCENT,"\u23DC":E.WIDEACCENT,"\u23DD":E.WIDEACCENT,"\u23E0":E.WIDEACCENT,"\u23E1":E.WIDEACCENT}}}),MathJax.Ajax.loadComplete(C.optableDir+"/MiscTechnical.js")})(MathJax.ElementJax.mml);

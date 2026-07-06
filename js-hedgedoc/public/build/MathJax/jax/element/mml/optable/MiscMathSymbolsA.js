@@ -1,0 +1,1 @@
+(function(a){var E=a.mo.OPTYPES,t=a.TEXCLASS;MathJax.Hub.Insert(a.mo.prototype,{OPTABLE:{prefix:{"\u27E6":E.OPEN,"\u27EA":E.OPEN,"\u27EC":E.OPEN},postfix:{"\u27E7":E.CLOSE,"\u27EB":E.CLOSE,"\u27ED":E.CLOSE}}}),MathJax.Ajax.loadComplete(a.optableDir+"/MiscMathSymbolsA.js")})(MathJax.ElementJax.mml);

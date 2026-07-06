@@ -1,0 +1,1 @@
+(function(u){MathJax.Hub.Insert(u.Parse.Entity,{YAcy:"\u042F",YIcy:"\u0407",YUcy:"\u042E",Yacute:"\xDD",Ycirc:"\u0176",Ycy:"\u042B",Yuml:"\u0178",yacute:"\xFD",yacy:"\u044F",ycirc:"\u0177",ycy:"\u044B",yicy:"\u0457",yucy:"\u044E",yuml:"\xFF"}),MathJax.Ajax.loadComplete(u.entityDir+"/y.js")})(MathJax.InputJax.MathML);

@@ -1,0 +1,199 @@
+const { Liquid } = require("liquidjs");
+const { DOWN } = require("../../src/util");
+const { HttpProxyAgent } = require("http-proxy-agent");
+const { HttpsProxyAgent } = require("https-proxy-agent");
+const { SocksProxyAgent } = require("socks-proxy-agent");
+
+class NotificationProvider {
+    /**
+     * Notification Provider Name
+     * @type {string}
+     */
+    name = undefined;
+
+    /**
+     * Send a notification
+     * @param {BeanModel} notification Notification to send
+     * @param {string} msg General Message
+     * @param {?object} monitorJSON Monitor details (For Up/Down only)
+     * @param {?object} heartbeatJSON Heartbeat details (For Up/Down only)
+     * @returns {Promise<string>} Return Successful Message
+     * @throws Error with fail msg
+     */
+    async send(notification, msg, monitorJSON = null, heartbeatJSON = null) {
+        throw new Error("Have to override Notification.send(...)");
+    }
+
+    /**
+     * Extracts the address from a monitor JSON object based on its type.
+     * @param {?object} monitorJSON Monitor details (For Up/Down only)
+     * @returns {string} The extracted address based on the monitor type.
+     */
+    extractAddress(monitorJSON) {
+        if (!monitorJSON) {
+            return "";
+        }
+        switch (monitorJSON["type"]) {
+            case "push":
+                return "Heartbeat";
+            case "ping":
+                return monitorJSON["hostname"];
+            case "port":
+            case "dns":
+            case "gamedig":
+            case "steam":
+                if (monitorJSON["port"]) {
+                    return monitorJSON["hostname"] + ":" + monitorJSON["port"];
+                }
+                return monitorJSON["hostname"];
+            case "globalping":
+                switch (monitorJSON["subtype"]) {
+                    case "ping":
+                    case "dns":
+                        return monitorJSON["hostname"];
+                    case "http":
+                        return monitorJSON["url"];
+                    default:
+                        return "";
+                }
+            default:
+                if (!["https://", "http://", ""].includes(monitorJSON["url"])) {
+                    return monitorJSON["url"];
+                }
+                return "";
+        }
+    }
+
+    /**
+     * Renders a message template with notification context
+     * @param {string} template the template
+     * @param {string} msg the message that will be included in the context
+     * @param {?object} monitorJSON Monitor details (For Up/Down/Cert-Expiry only)
+     * @param {?object} heartbeatJSON Heartbeat details (For Up/Down only)
+     * @returns {Promise<string>} rendered template
+     */
+    async renderTemplate(template, msg, monitorJSON, heartbeatJSON) {
+        const engine = new Liquid({
+            root: "./no-such-directory-uptime-kuma",
+            relativeReference: false,
+            dynamicPartials: false,
+        });
+        const parsedTpl = engine.parse(template);
+
+        // Let's start with dummy values to simplify code
+        let monitorName = "Monitor Name not available";
+        let monitorHostnameOrURL = "testing.hostname";
+
+        if (monitorJSON !== null) {
+            monitorName = monitorJSON["name"];
+            monitorHostnameOrURL = this.extractAddress(monitorJSON);
+        }
+
+        let serviceStatus = "⚠️ Test";
+        if (heartbeatJSON !== null) {
+            serviceStatus = heartbeatJSON["status"] === DOWN ? "🔴 Down" : "✅ Up";
+        }
+
+        const context = {
+            // for v1 compatibility, to be removed in v3
+            STATUS: serviceStatus,
+            NAME: monitorName,
+            HOSTNAME_OR_URL: monitorHostnameOrURL,
+
+            // variables which are officially supported
+            status: serviceStatus,
+            name: monitorName,
+            hostnameOrURL: monitorHostnameOrURL,
+            monitorJSON,
+            heartbeatJSON,
+            msg,
+        };
+
+        return engine.render(parsedTpl, context);
+    }
+
+    /**
+     * Throws an error
+     * @param {any} error The error to throw
+     * @returns {void}
+     * @throws {any} The error specified
+     */
+    throwGeneralAxiosError(error) {
+        let msg = error && error.message ? error.message : String(error);
+
+        if (error && error.code) {
+            msg += ` (code=${error.code})`;
+        }
+
+        if (error && error.response && error.response.status) {
+            msg += ` (HTTP ${error.response.status}${error.response.statusText ? " " + error.response.statusText : ""})`;
+        }
+
+        if (error && error.response && error.response.data) {
+            if (typeof error.response.data === "string") {
+                msg += " " + error.response.data;
+            } else {
+                try {
+                    msg += " " + JSON.stringify(error.response.data);
+                } catch (e) {
+                    msg += " " + String(error.response.data);
+                }
+            }
+        }
+
+        // Expand AggregateError to show underlying causes
+        let agg = null;
+        if (error && error.name === "AggregateError" && Array.isArray(error.errors)) {
+            agg = error;
+        } else if (error && error.cause && error.cause.name === "AggregateError" && Array.isArray(error.cause.errors)) {
+            agg = error.cause;
+        }
+
+        if (agg) {
+            let causes = agg.errors
+                .map((e) => {
+                    let m = e && e.message ? e.message : String(e);
+                    if (e && e.code) {
+                        m += ` (code=${e.code})`;
+                    }
+                    return m;
+                })
+                .join("; ");
+            msg += " - caused by: " + causes;
+        } else if (error && error.cause && error.cause.message) {
+            msg += " - cause: " + error.cause.message;
+        }
+
+        throw new Error(msg);
+    }
+
+    /**
+     * Returns axios config with proxy agent if proxy env is set.
+     * @param {object} axiosConfig - Axios config containing params
+     * @returns {object} Axios config
+     */
+    getAxiosConfigWithProxy(axiosConfig = {}) {
+        const proxyEnv = process.env.notification_proxy || process.env.NOTIFICATION_PROXY;
+        if (proxyEnv) {
+            const proxyUrl = new URL(proxyEnv);
+
+            if (proxyUrl.protocol === "http:") {
+                axiosConfig.httpAgent = new HttpProxyAgent(proxyEnv);
+                axiosConfig.httpsAgent = new HttpsProxyAgent(proxyEnv);
+            } else if (proxyUrl.protocol === "https:") {
+                const agent = new HttpsProxyAgent(proxyEnv);
+                axiosConfig.httpAgent = agent;
+                axiosConfig.httpsAgent = agent;
+            } else if (["socks:", "socks4:", "socks5:", "socks5h:"].includes(proxyUrl.protocol)) {
+                const agent = new SocksProxyAgent(proxyEnv);
+                axiosConfig.httpAgent = agent;
+                axiosConfig.httpsAgent = agent;
+            }
+
+            axiosConfig.proxy = false;
+        }
+        return axiosConfig;
+    }
+}
+
+module.exports = NotificationProvider;

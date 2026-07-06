@@ -1,0 +1,1 @@
+const a="עזרה",e="עברית",s="באיזה מסד נתונים אתה רוצה להשתמש?",t={Help:a,languageName:e,setupDatabaseChooseDatabase:s};export{a as Help,t as default,e as languageName,s as setupDatabaseChooseDatabase};

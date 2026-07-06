@@ -1,0 +1,1 @@
+var e={arrayRemove(e,t){return e.filter(function(e){return e!=t})},findArrayById:function(e,t){for(var n=-1,r=0;r<e.length;r++)if(e[r].id==t){n=r;break}return e[n]},findIndexById:function(e,t){for(var n=-1,r=0;r<e.length;r++)if(e[r].id==t){n=r;break}return n}};export{e as t};

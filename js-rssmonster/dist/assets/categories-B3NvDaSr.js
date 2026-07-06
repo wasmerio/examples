@@ -1,0 +1,1 @@
+import{w as e}from"./index-D77MFpA2.js";var t=(t,n)=>e.post(`/categories`,{name:t,iconName:n}),n=(t,n,r)=>e.put(`/categories/${t}`,{name:n,iconName:r}),r=t=>e.delete(`/categories/${t}`);export{r as n,n as r,t};

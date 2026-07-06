@@ -23,12 +23,11 @@ legacy `mysql` 2.x) cannot use MySQL 8's default `caching_sha2_password`;
 the harness creates its user with `mysql_native_password` (and pins MySQL
 8.0.x) for exactly this class of app.
 
-**WASIX**: skipped (edgejs Makefile `FRAMEWORK_TEST_EDGE_SKIP`). ThinkJS
-always serves through `cluster.fork()`, and the cluster IPC channel is not
-functional under WASIX today (`process.send` in the worker fails with EPIPE —
-extra fds are not passed through wasmer's process spawn), so the worker can
-never receive its listen handle and the master respawns it forever. Tracked
-as a WASIX runtime capability gap; green on Node baseline and QuickJS native.
+**WASIX**: ThinkJS serves through `cluster.fork()`. Under WASIX, EdgeJS's
+cluster uses a reuseport scheduling strategy (workers bind their own
+`SO_REUSEPORT` listeners; the host kernel balances connections) because
+listen handles cannot be passed between processes there. Green on the full
+matrix including WASIX.
 
 ## Deviations from the upstream release package
 

@@ -1,0 +1,10 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/pixels/[pixelId]/shares/route.js")
+R.c("server/chunks/[root-of-the-server]__034q8h2._.js")
+R.c("server/chunks/[root-of-the-server]__0b5j907._.js")
+R.c("server/chunks/src_0btg564._.js")
+R.c("server/chunks/[root-of-the-server]__0qwqxaj._.js")
+R.c("server/chunks/[root-of-the-server]__0redgnd._.js")
+R.c("server/chunks/[root-of-the-server]__0x5gcqq._.js")
+R.c("server/chunks/_next-internal_server_app_api_pixels_[pixelId]_shares_route_actions_00tj-rl.js")
+R.m(533114)
+module.exports=R.m(533114).exports

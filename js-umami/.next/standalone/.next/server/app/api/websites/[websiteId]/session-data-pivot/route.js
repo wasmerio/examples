@@ -1,0 +1,10 @@
+var R=require("../../../../../chunks/[turbopack]_runtime.js")("server/app/api/websites/[websiteId]/session-data-pivot/route.js")
+R.c("server/chunks/[root-of-the-server]__01g.nf~._.js")
+R.c("server/chunks/[root-of-the-server]__13a_u~.._.js")
+R.c("server/chunks/src_0btg564._.js")
+R.c("server/chunks/[root-of-the-server]__0qwqxaj._.js")
+R.c("server/chunks/[root-of-the-server]__0glqmxu._.js")
+R.c("server/chunks/[root-of-the-server]__0x5gcqq._.js")
+R.c("server/chunks/0zjb_server_app_api_websites_[websiteId]_session-data-pivot_route_actions_0.g669m.js")
+R.m(707996)
+module.exports=R.m(707996).exports

@@ -1,0 +1,3 @@
+module.exports=[164597,a=>{"use strict";var b=a.i(721731),c=a.i(839915),d=a.i(633346),e=a.i(627191),f=a.i(556173);a.s(["SSOPage",0,function(){let a=(0,d.useRouter)(),g=(0,d.useSearchParams)(),h=g.get("url"),i=g.get("token");return(0,e.useEffect)(()=>{if(h&&i){if(!(h.startsWith("/")&&!h.startsWith("//")&&!h.includes(":")))return void a.push("/");(0,f.setClientAuthToken)(i),a.push(h)}},[a,h,i]),(0,b.jsx)(c.Loading,{placement:"absolute"})}])}];
+
+//# sourceMappingURL=src_app_sso_SSOPage_tsx_0nee9jr._.js.map

@@ -1,0 +1,10 @@
+var R=require("../../../../../../chunks/[turbopack]_runtime.js")("server/app/api/websites/[websiteId]/event-data-pivot/property-series/route.js")
+R.c("server/chunks/[root-of-the-server]__0adjwda._.js")
+R.c("server/chunks/[root-of-the-server]__13a_u~.._.js")
+R.c("server/chunks/src_0btg564._.js")
+R.c("server/chunks/[root-of-the-server]__0qwqxaj._.js")
+R.c("server/chunks/[root-of-the-server]__0glqmxu._.js")
+R.c("server/chunks/[root-of-the-server]__0x5gcqq._.js")
+R.c("server/chunks/0ash_api_websites_[websiteId]_event-data-pivot_property-series_route_actions_0sd6.ke.js")
+R.m(631591)
+module.exports=R.m(631591).exports

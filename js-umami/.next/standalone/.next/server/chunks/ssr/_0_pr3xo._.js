@@ -1,0 +1,3 @@
+module.exports=[523816,a=>{"use strict";var b=a.i(721731),c=a.i(839915);let d={one:{columns:"1fr"},two:{columns:{base:"1fr",md:"repeat(auto-fill, minmax(560px, 1fr))"}},three:{columns:{base:"1fr",md:"repeat(auto-fill, minmax(360px, 1fr))"}},"one-two":{columns:{base:"1fr",md:"repeat(3, 1fr)"}},"two-one":{columns:{base:"1fr",md:"repeat(3, 1fr)"}}};a.s(["GridRow",0,function(a){let{layout:e="two",children:f,...g}=a;return(0,b.jsx)(c.Grid,{gap:"3",...d[e],...g,children:f})}])},827920,a=>{a.v(b=>Promise.all(["server/chunks/ssr/0f73_rrweb-player_dist_rrweb-player_0vzho_u.js"].map(b=>a.l(b))).then(()=>b(186922)))}];
+
+//# sourceMappingURL=_0_pr3xo._.js.map

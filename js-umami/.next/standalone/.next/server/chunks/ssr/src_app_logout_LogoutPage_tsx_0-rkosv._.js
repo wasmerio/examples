@@ -1,0 +1,3 @@
+module.exports=[259209,a=>{"use strict";var b=a.i(633346),c=a.i(627191);a.i(350093);var d=a.i(132609),e=a.i(556173),f=a.i(557631);a.s(["LogoutPage",0,function(){let a=(0,b.useRouter)(),{post:g}=(0,d.useApi)();return(0,c.useEffect)(()=>{async function a(){await g("/auth/logout"),window.location.href="/login"}(0,e.removeClientAuthToken)(),(0,f.setUser)(null),a()},[a,g]),null}])}];
+
+//# sourceMappingURL=src_app_logout_LogoutPage_tsx_0-rkosv._.js.map

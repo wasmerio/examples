@@ -1,0 +1,3 @@
+module.exports=[893673,a=>{"use strict";var b=a.i(721731),c=a.i(839915);a.i(350093);var d=a.i(735457);a.s(["PageBody",0,function({maxWidth:a="1320px",error:e,isLoading:f,children:g,...h}){let{t:i,messages:j}=(0,d.useMessages)();return e?(0,b.jsx)(c.AlertBanner,{title:i(j.error),variant:"error"}):f?(0,b.jsx)(c.Loading,{placement:"absolute"}):(0,b.jsx)(c.Column,{...h,width:"100%",minHeight:"100vh",paddingBottom:"6",maxWidth:a,paddingX:{base:"3",md:"6"},style:{margin:"0 auto"},children:g})}])},16576,a=>{"use strict";var b=a.i(721731),c=a.i(839915),d=a.i(893673);a.s(["SettingsLayout",0,function({children:a}){return(0,b.jsx)(c.Column,{gap:"6",margin:"2",width:"100%",children:(0,b.jsx)(d.PageBody,{children:a})})}])}];
+
+//# sourceMappingURL=src_06x6ur~._.js.map

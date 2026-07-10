@@ -20,9 +20,12 @@ tree. It contains the FINAL build artifact only:
   `pnpm run build-db && pnpm exec prisma generate && pnpm run build-app`
   against a scratch Postgres (`next build` requires a reachable database) and
   network access for the GeoIP download.
-- `geo/` — GeoLite2-City.mmdb, moved to the project root because umami
-  resolves it via `process.cwd()/geo` and the harness starts the app with the
-  project root as cwd. `/api/send` hard-fails without it (maxmind.open throws).
+- `.next/standalone/geo/` — GeoLite2-City.mmdb. Umami resolves it via
+  `process.cwd()/geo`, and the standalone `server.js` chdirs into its own
+  directory at startup, so the standalone dir is the effective cwd. GeoIP is
+  only consulted for public client IPs (localhost skips it — which is why the
+  harness routes pass either way), but `/api/send` with a public `payload.ip`
+  hard-fails without the db (maxmind.open throws).
 - `prisma/` + `prisma.config.ts` — schema and migrations, so the harness's
   `database.setup` can run `prisma migrate deploy` (host Node) against the
   provisioned Postgres. The `prisma` CLI is the only pnpm dependency.

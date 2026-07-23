@@ -38,20 +38,23 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 
 - [`js-angular-staticsite`](js-angular-staticsite/README.md) – Angular-style static build.
 - [`js-assemble-staticsite`](js-assemble-staticsite/README.md) – Assemble-generated static site.
-- [`js-astro-ssr`](js-astro-ssr/README.md) – Astro server output using the Node adapter.
+- [`js-astro-ssr`](js-astro-ssr/README.md) – Astro SSR (Node standalone adapter) on EdgeJS, with `wasmer.toml`/`app.yaml`.
 - [`js-astro-staticsite`](js-astro-staticsite/README.md) – Astro static export.
 - [`js-brunch-staticsite`](js-brunch-staticsite/README.md) – Brunch-style static build.
 - [`js-create-react-app-staticsite`](js-create-react-app-staticsite/README.md) – Create React App-style static build.
+- [`js-dashy`](js-dashy/README.md) – Dashy dashboard on EdgeJS (no database).
 - [`js-docusaurus-staticsite`](js-docusaurus-staticsite/README.md) – Docusaurus docs site.
 - [`js-eleventy-staticsite`](js-eleventy-staticsite/README.md) – Eleventy-generated static site.
 - [`js-elysia`](js-elysia/README.md) – Elysia HTTP server.
 - [`js-ember-staticsite`](js-ember-staticsite/README.md) – Ember-style static build.
+- [`js-etherpad`](js-etherpad/README.md) – Etherpad 3.3 collaborative editor on EdgeJS.
 - [`js-express`](js-express/README.md) – Express HTTP server.
 - [`js-fastify`](js-fastify/README.md) – Fastify HTTP server.
 - [`js-gatsby-staticsite`](js-gatsby-staticsite/README.md) – Gatsby static site.
 - [`js-gatsby-staticsite2`](js-gatsby-staticsite2/README.md) – Gatsby default starter static site.
 - [`js-h3`](js-h3/README.md) – H3 HTTP server.
 - [`js-harp-staticsite`](js-harp-staticsite/README.md) – Harp-generated static site.
+- [`js-hedgedoc`](js-hedgedoc/README.md) – HedgeDoc 1.11 markdown editor on EdgeJS (PostgreSQL required).
 - [`js-hexo-staticsite`](js-hexo-staticsite/README.md) – Hexo-generated static site.
 - [`js-hono`](js-hono/README.md) – Hono app served by the Node.js adapter.
 - [`js-htmlwithjs-staticsite`](js-htmlwithjs-staticsite/README.md) – Plain static HTML/CSS/JavaScript site.
@@ -63,7 +66,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-mcp`](js-mcp/README.md) – HTTP Model Context Protocol server.
 - [`js-metalsmith-staticsite`](js-metalsmith-staticsite/README.md) – Metalsmith-generated static site.
 - [`js-nestjs`](js-nestjs/README.md) – NestJS-oriented Node.js runtime example.
-- [`js-next-ssr`](js-next-ssr/README.md) – Next.js server-rendered app.
+- [`js-next-ssr`](js-next-ssr/README.md) – Next.js SSR (standalone output) on EdgeJS, with `wasmer.toml`/`app.yaml`.
 - [`js-next-staticsite`](js-next-staticsite/README.md) – Next.js `output: "export"` sample.
 - [`js-nitro`](js-nitro/README.md) – Nitro-oriented Node.js runtime example.
 - [`js-node`](js-node/README.md) – Minimal Node.js HTTP server.
@@ -76,6 +79,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-react-router`](js-react-router/README.md) – React Router-oriented Node.js runtime example.
 - [`js-remix-ssr`](js-remix-ssr/README.md) – Remix-oriented server runtime example.
 - [`js-remix-staticsite`](js-remix-staticsite/README.md) – Remix static export.
+- [`js-rssmonster`](js-rssmonster/README.md) – RSSMonster RSS aggregator on EdgeJS (MySQL required).
 - [`js-sanity-staticsite`](js-sanity-staticsite/README.md) – Sanity-style static build.
 - [`js-solidstart`](js-solidstart/README.md) – SolidStart-oriented Node.js runtime example.
 - [`js-stencil-staticsite`](js-stencil-staticsite/README.md) – Stencil-style static build.
@@ -83,9 +87,12 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-svelte`](js-svelte/README.md) – Vite-powered Svelte app.
 - [`js-sveltekit-staticsite`](js-sveltekit-staticsite/README.md) – Compact SvelteKit-style static build.
 - [`js-tanstack-start`](js-tanstack-start/README.md) – TanStack Start-oriented Node.js runtime example.
+- [`js-totaljs-cms`](js-totaljs-cms/README.md) – Total.js CMS on EdgeJS (filesystem database).
+- [`js-umami`](js-umami/README.md) – Umami web analytics on EdgeJS (PostgreSQL required).
 - [`js-umijs-staticsite`](js-umijs-staticsite/README.md) – UmiJS-style static build.
 - [`js-vite-react-staticsite`](js-vite-react-staticsite/README.md) – Vite React static build.
 - [`js-vite-staticsite`](js-vite-staticsite/README.md) – Vite-powered static site.
+- [`js-vite-standalone`](js-vite-standalone/README.md) – Vite site served by a small Node.js server on EdgeJS.
 - [`js-vitepress-staticsite`](js-vitepress-staticsite/README.md) – VitePress documentation site.
 - [`js-vue-staticsite`](js-vue-staticsite/README.md) – Vue static build.
 - [`js-vuepress-staticsite`](js-vuepress-staticsite/README.md) – VuePress documentation site.

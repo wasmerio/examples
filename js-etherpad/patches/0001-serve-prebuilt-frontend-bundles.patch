@@ -1,0 +1,246 @@
+--- a/src/node/hooks/express/specialpages.ts	2026-07-17 07:12:48.171327044 +0000
++++ b/src/node/hooks/express/specialpages.ts	2026-07-17 07:12:48.173326999 +0000
+@@ -298,6 +298,110 @@
+   })
+ }
+ 
++// A single client entrypoint bundle: the hashed filename it is served under and
++// the bundled JavaScript itself.
++type ClientBundle = { fileName: string, content: string };
++
++// Register the static client routes (the three hashed `*.min.js` bundles plus
++// the `/`, `/p/:pad` and `/p/:pad/timeslider` HTML pages that reference them).
++// Shared by the ahead-of-time (pre-built manifest) and on-startup esbuild paths
++// so both serve byte-identical routes.
++const serveClientBundles = (
++  args: ArgsExpressType,
++  bundles: { index: ClientBundle, pad: ClientBundle, timeslider: ClientBundle },
++) => {
++  const {index, pad, timeslider} = bundles
++
++  args.app.get("/"+pad.fileName, (_req, res) => {
++    res.header('Content-Type', 'application/javascript');
++    res.send(pad.content)
++  })
++
++  args.app.get("/"+index.fileName, (_req, res) => {
++    res.header('Content-Type', 'application/javascript');
++    res.send(index.content)
++  })
++
++  args.app.get("/"+timeslider.fileName, (_req, res) => {
++    res.header('Content-Type', 'application/javascript');
++    res.send(timeslider.content)
++  })
++
++  // serve index.html under /
++  args.app.get('/', (req: any, res: any) => {
++    const proxyPath = sanitizeProxyPath(req);
++    const socialMetaHtml = renderSocialMeta({
++      req, settings, availableLangs: i18n.availableLangs, locales: i18n.locales, kind: 'home',
++      proxyPath,
++    });
++    res.send(eejs.require('ep_etherpad-lite/templates/index.html', {req, settings, entrypoint: "./"+index.fileName, socialMetaHtml, proxyPath}));
++  });
++
++
++  // serve pad.html under /p
++  args.app.get('/p/:pad', (req: any, res: any, next: Function) => {
++    ensureAuthorTokenCookie(req, res, settings);
++    // The below might break for pads being rewritten
++    const isReadOnly = !webaccess.userCanModify(req.params.pad, req);
++
++    hooks.callAll('padInitToolbar', {
++      toolbar,
++      isReadOnly
++    });
++
++    const proxyPath = sanitizeProxyPath(req);
++    const socialMetaHtml = renderSocialMeta({
++      req, settings, availableLangs: i18n.availableLangs, locales: i18n.locales, kind: 'pad', padName: req.params.pad,
++      proxyPath,
++    });
++    const content = eejs.require('ep_etherpad-lite/templates/pad.html', {
++      req,
++      toolbar,
++      isReadOnly,
++      entrypoint: "../"+pad.fileName,
++      settings: settings.getPublicSettings(),
++      socialMetaHtml,
++      proxyPath,
++    })
++    res.send(content);
++  });
++
++  // serve timeslider.html under /p/$padname/timeslider
++  args.app.get('/p/:pad/timeslider', (req: any, res: any, next: Function) => {
++    // Direct visits (legacy bookmarks) get redirected back to the pad,
++    // where the in-pad PadModeController handles entering history mode.
++    // The iframe used by history mode requests this URL with ?embed=1
++    // and gets the full timeslider HTML rendered for embedded use.
++    if (req.query.embed !== '1') {
++      // Absolute path (not relative `../`) so Firefox and Chrome resolve
++      // it identically — relative redirects from /p/:pad/timeslider are
++      // technically well-defined but Firefox dropped a trailing-slash
++      // case once that flaked the legacy-URL test (#7710).
++      const proxyPath = sanitizeProxyPath(req);
++      return res.redirect(302, `${proxyPath}/p/${encodeURIComponent(req.params.pad)}`);
++    }
++    ensureAuthorTokenCookie(req, res, settings);
++    hooks.callAll('padInitToolbar', {
++      toolbar,
++    });
++
++    const proxyPath = sanitizeProxyPath(req);
++    const socialMetaHtml = renderSocialMeta({
++      req, settings, availableLangs: i18n.availableLangs, locales: i18n.locales, kind: 'timeslider', padName: req.params.pad,
++      proxyPath,
++    });
++    res.send(eejs.require('ep_etherpad-lite/templates/timeslider.html', {
++      req,
++      toolbar,
++      embed: true,
++      entrypoint: "../../"+timeslider.fileName,
++      settings: settings.getPublicSettings(),
++      socialMetaHtml,
++      proxyPath,
++    }));
++  });
++}
++
+ exports.expressCreateServer = async (_hookName: string, args: ArgsExpressType, cb: Function) => {
+   const padString =   eejs.require('ep_etherpad-lite/templates/padBootstrap.js', {
+     pluginModules: (() => {
+@@ -339,106 +443,36 @@
+     fs.mkdirSync(outdir);
+   }
+ 
+-  let fileNamePad: string
+-  let fileNameTimeSlider: string
+-  let fileNameIndex: string
+-  if(process.env.NODE_ENV === "production"){
++  // Resolve the three client bundles. Preferred source is the ahead-of-time
++  // build (build-frontend.mjs -> var/js/frontend-manifest.json): EdgeJS/QuickJS
++  // has no native modules and cannot run esbuild at runtime, so pre-built assets
++  // are the only viable source there. When no manifest is present we fall back
++  // to upstream behaviour: bundle once on startup under NODE_ENV=production, or
++  // use the watched live-reload path in development.
++  const manifestPath = path.join(outdir, 'frontend-manifest.json')
++  let bundles: { index: ClientBundle, pad: ClientBundle, timeslider: ClientBundle } | null = null
++  if (fs.existsSync(manifestPath)) {
++    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
++    const read = (fileName: string): ClientBundle =>
++      ({fileName, content: fs.readFileSync(path.join(outdir, fileName), 'utf8')})
++    bundles = {
++      index: read(manifest.index.fileName),
++      pad: read(manifest.pad.fileName),
++      timeslider: read(manifest.timeslider.fileName),
++    }
++  } else if (process.env.NODE_ENV === "production") {
+     const padSliderWrite = convertTypescript(padString)
+     const timeSliderWrite = convertTypescript(timeSliderString)
+     const indexWrite = convertTypescript(indexString)
++    bundles = {
++      index: {fileName: `indexBootstrap-${indexWrite.hash}.min.js`, content: indexWrite.output},
++      pad: {fileName: `padbootstrap-${padSliderWrite.hash}.min.js`, content: padSliderWrite.output},
++      timeslider: {fileName: `timeSliderBootstrap-${timeSliderWrite.hash}.min.js`, content: timeSliderWrite.output},
++    }
++  }
+ 
+-    fileNamePad = `padbootstrap-${padSliderWrite.hash}.min.js`
+-    fileNameTimeSlider = `timeSliderBootstrap-${timeSliderWrite.hash}.min.js`
+-    fileNameIndex = `indexBootstrap-${indexWrite.hash}.min.js`
+-
+-    args.app.get("/"+fileNamePad, (_req, res) => {
+-      res.header('Content-Type', 'application/javascript');
+-      res.send(padSliderWrite.output)
+-    })
+-
+-    args.app.get("/"+fileNameIndex, (_req, res) => {
+-      res.header('Content-Type', 'application/javascript');
+-      res.send(indexWrite.output)
+-    })
+-
+-    args.app.get("/"+fileNameTimeSlider, (_req, res) => {
+-      res.header('Content-Type', 'application/javascript');
+-      res.send(timeSliderWrite.output)
+-    })
+-
+-    // serve index.html under /
+-    args.app.get('/', (req: any, res: any) => {
+-      const proxyPath = sanitizeProxyPath(req);
+-      const socialMetaHtml = renderSocialMeta({
+-        req, settings, availableLangs: i18n.availableLangs, locales: i18n.locales, kind: 'home',
+-        proxyPath,
+-      });
+-      res.send(eejs.require('ep_etherpad-lite/templates/index.html', {req, settings, entrypoint: "./"+fileNameIndex, socialMetaHtml, proxyPath}));
+-    });
+-
+-
+-    // serve pad.html under /p
+-    args.app.get('/p/:pad', (req: any, res: any, next: Function) => {
+-      ensureAuthorTokenCookie(req, res, settings);
+-      // The below might break for pads being rewritten
+-      const isReadOnly = !webaccess.userCanModify(req.params.pad, req);
+-
+-      hooks.callAll('padInitToolbar', {
+-        toolbar,
+-        isReadOnly
+-      });
+-
+-      const proxyPath = sanitizeProxyPath(req);
+-      const socialMetaHtml = renderSocialMeta({
+-        req, settings, availableLangs: i18n.availableLangs, locales: i18n.locales, kind: 'pad', padName: req.params.pad,
+-        proxyPath,
+-      });
+-      const content = eejs.require('ep_etherpad-lite/templates/pad.html', {
+-        req,
+-        toolbar,
+-        isReadOnly,
+-        entrypoint: "../"+fileNamePad,
+-        settings: settings.getPublicSettings(),
+-        socialMetaHtml,
+-        proxyPath,
+-      })
+-      res.send(content);
+-    });
+-
+-    // serve timeslider.html under /p/$padname/timeslider
+-    args.app.get('/p/:pad/timeslider', (req: any, res: any, next: Function) => {
+-      // Direct visits (legacy bookmarks) get redirected back to the pad,
+-      // where the in-pad PadModeController handles entering history mode.
+-      // The iframe used by history mode requests this URL with ?embed=1
+-      // and gets the full timeslider HTML rendered for embedded use.
+-      if (req.query.embed !== '1') {
+-        // Absolute path (not relative `../`) so Firefox and Chrome resolve
+-        // it identically — relative redirects from /p/:pad/timeslider are
+-        // technically well-defined but Firefox dropped a trailing-slash
+-        // case once that flaked the legacy-URL test (#7710).
+-        const proxyPath = sanitizeProxyPath(req);
+-        return res.redirect(302, `${proxyPath}/p/${encodeURIComponent(req.params.pad)}`);
+-      }
+-      ensureAuthorTokenCookie(req, res, settings);
+-      hooks.callAll('padInitToolbar', {
+-        toolbar,
+-      });
+-
+-      const proxyPath = sanitizeProxyPath(req);
+-      const socialMetaHtml = renderSocialMeta({
+-        req, settings, availableLangs: i18n.availableLangs, locales: i18n.locales, kind: 'timeslider', padName: req.params.pad,
+-        proxyPath,
+-      });
+-      res.send(eejs.require('ep_etherpad-lite/templates/timeslider.html', {
+-        req,
+-        toolbar,
+-        embed: true,
+-        entrypoint: "../../"+fileNameTimeSlider,
+-        settings: settings.getPublicSettings(),
+-        socialMetaHtml,
+-        proxyPath,
+-      }));
+-    });
++  if (bundles) {
++    serveClientBundles(args, bundles)
+   } else {
+     await handleLiveReload(args, padString, timeSliderString, indexString)
+   }

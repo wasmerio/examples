@@ -1,29 +1,45 @@
-# Astro SSR + Wasmer
+# Astro SSR on Wasmer Edge
 
-This example shows how to run a server-rendered **Astro** app on **Wasmer Edge**.
+A minimal [Astro](https://astro.build/) app with server-side rendering
+(`output: "server"` with the [`@astrojs/node`](https://docs.astro.build/en/guides/integrations-guide/node/)
+adapter in `standalone` mode), deployed to
+[Wasmer Edge](https://wasmer.io/products/edge) using
+[EdgeJS](https://github.com/wasmerio/edgejs) (the `wasmer/edgejs-quickjs`
+package) as the JavaScript runtime.
 
-## Demo
+The app is **built with Node.js** (`astro build`), and only the resulting
+build artifact (`dist/`, containing the standalone server and the client
+assets) runs on EdgeJS.
 
-`https://<your-subdomain>.wasmer.app/` (deploy to get a live URL)
-
-## How it Works
-
-* `astro.config.mjs` enables Astro server output with the Node adapter.
-* `npm run build` writes the standalone server bundle into `dist/`.
-* Wasmer Edge runs the Node.js process and forwards HTTP traffic to the configured port.
-
-## Running Locally
+## Develop
 
 ```bash
-npm install
-npm run build
-npm start
+pnpm install
+pnpm dev
 ```
 
-Open `http://127.0.0.1:4321/` (or the port printed by the framework) to view the running server.
+## Build
 
-## Deploying to Wasmer (Overview)
+```bash
+pnpm build
+```
 
-1. Install dependencies and confirm the app starts locally.
-2. Deploy from this example directory with `wasmer deploy`.
-3. Visit `https://<your-subdomain>.wasmer.app/` once the deployment is live.
+This produces the standalone server in `dist/server/entry.mjs` and the static
+client assets in `dist/client/`.
+
+## Run locally with Wasmer
+
+```bash
+wasmer run . --net --env PORT=4321
+```
+
+Then open [http://localhost:4321](http://localhost:4321).
+
+## Deploy to Wasmer Edge
+
+Update the `name` fields in `wasmer.toml` and `app.yaml` to use your own
+namespace, then:
+
+```bash
+wasmer deploy
+```

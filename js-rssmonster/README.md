@@ -1,0 +1,481 @@
+# RSSMonster
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](https://opensource.org/licenses/MIT)
+[![Docker](https://img.shields.io/docker/pulls/rssmonster/rssmonster.svg)](https://hub.docker.com/r/rssmonster/rssmonster/builds)
+[![CI](https://github.com/pietheinstrengholt/rssmonster/actions/workflows/ci.yml/badge.svg)](
+  https://github.com/pietheinstrengholt/rssmonster/actions/workflows/ci.yml
+)
+
+Copyright (c) 2026 Piethein Strengholt, piethein@strengholt-online.nl
+
+## Overview
+
+RSSMonster is not just another RSS reader — it is an **intelligent reading engine** designed to help you cut through information overload and focus on what actually matters.
+
+Where traditional RSS aggregators like Feedly and Inoreader primarily deliver **chronological lists of articles**, RSSMonster takes a fundamentally different approach: it **understands, evaluates, and prioritizes content** on your behalf — transparently and under your control.
+
+![Screenshot](docs/assets/screenshot04.png)
+
+At its core, RSSMonster treats your feeds as a stream of signals rather than a pile of unread items. New articles are enriched with quality, freshness, originality, trust, attention, and semantic relationship metadata. That extra context lets the application answer better questions: *is this worth reading now?*, *is this just syndicated copy?*, *which sources are covering the same event?*, and *which broader storyline does this belong to?*
+
+RSSMonster combines advanced search expressions, semantic clustering, quality analysis, and importance-based ranking into a system where **views are declarative, not hard-coded**. Instead of fixed tabs and opaque algorithms, you define *what matters* using composable queries that power dynamic **Smart Folders** such as:
+
+- *Top Stories Today* — importance-ranked, deduplicated coverage  
+- *Worth Your Time* — high-quality, original long-form content  
+- *Quick Scan* — summary-first daily overview  
+- *Low Noise Mode* — maximum signal, minimal volume  
+
+Every ranking decision is explainable. Every view is customizable. Every signal — freshness, quality, originality, trust — is visible and adjustable. The result is a reader that can behave like a quick daily briefing, a research inbox, a low-noise monitoring tool, or a classic feed reader depending on the view you choose.
+
+## Key Features
+
+- **Lightweight & Responsive**: Built with Vue.js 3 and Express, styled with Bootstrap 5 for a fluid experience across all devices
+- **Three Reading Modes**: Choose the reading experience that fits your workflow. Use **Reader Mode** for distraction-free full articles, **List Mode** for scanning headlines quickly, or **Summary Mode** to review AI-generated bullet point summaries before deciding what to read.
+- **Advanced Search Expressions**: Composable filters using field operators (`favorite:true`, `star:true`, `unread:false`, `read:true`, `clicked:true`, `seen:false`, `hot:true`, `tag:tech`, `title:javascript`), article age filters (`firstSeen:24h`, `firstSeen:7d`), score thresholds (`quality:>0.6`, `freshness:>=0.5`), event filters (`event:true`, `event:false`, `eventCount:>=3`), sorting (`sort:asc`, `sort:desc`, `sort:recommended`, `sort:quality`, `sort:attention`), and flexible date filters (`@2025-12-14`, `@today`, `@yesterday`, `@lastweek`, `@"3 days ago"`, `@"last Monday"`). Example: `title:javascript ai @today quality:>0.6 sort:recommended`
+- **Smart Folders**: Smart Folders allow you to create declarative, dynamic views of your content using composable search expressions. Examples: `@today unread:true sort:recommended` (Top Stories Today), `unread:true quality:>0.7 sort:quality` (Worth Your Time), `event:true eventCount:>=3 sort:recommended` (low-noise events), `hot:true unread:true sort:attention` (Low Noise Mode).
+- **Article Quality Scoring**: Each article is automatically evaluated for promotional content, sentiment neutrality, and writing quality, producing a normalized quality score used for ranking
+- **Event Discovery**: Multiple articles covering the same story are automatically grouped into events. Expand an event to compare reporting from different sources instead of reading duplicate coverage.
+- **Uniqueness Scoring**: Articles are ranked higher when they provide original coverage rather than repeated or copied content
+- **Feed Trust Scoring**: Sources earn a long-term trust score (0.0 to 1.0) based on content generation (articles per day), uniqueness, reading time, clicks, and starred items, improving ranking reliability over time. Run `npm run feedtrust` to calculate scores using originality (35%), quality (25%), engagement (20%), and consistency (20%)
+- **Importance-Based Ranking**: Articles are ranked using a transparent, runtime importance score combining freshness, quality, uniqueness, and feed trust — prioritizing what actually matters
+- **RSS Feed Generation**: Create custom RSS feeds from your stored articles with flexible filtering by user, feed, category, starred status, and read/unread state. Perfect for sharing curated content or syncing with other applications (accessible via `/rss` endpoint with query parameters)
+- **Progressive Web App (PWA)**: Install on any device for native app-like experience with offline support
+- **Drag & Drop Management**: Intuitive feed organization and categorization
+- **Dark Mode**: Automatic theme switching
+- **Mobile Swipe Gestures**: Quickly bookmark or process articles using intuitive swipe gestures on touch devices.
+- **OPML Support**: Import and export feeds in OPML format for seamless migration
+- **Fever API Compatible**: Works with popular RSS clients like Reeder (iOS)
+- **Google Reader API Compatible**: Works with apps like News+, FeedMe, Reeder, and Vienna RSS
+- **Automated Actions**: Define custom rules using regular expressions to automatically delete, star, mark as read, flag as advertisement, or mark articles as low quality
+- **Multi-user Support**: Separate accounts with personalized feeds and preferences
+- **AI-Powered Assistant**: Natural language search and feed management via Model Context Protocol (MCP)
+
+## Semantic Architecture
+
+RSSMonster's newer architecture adds a semantic layer between feed crawling and the article list. Rather than storing articles as isolated feed entries, the system enriches them with vectors, scores, cluster membership, topic membership, and engagement signals. Those derived signals are then used by search expressions, Smart Folders, ranking, and the UI.
+
+The semantic pipeline works in stages:
+
+1. **Article enrichment**: crawled articles are normalized, summarized where applicable, scored for quality, and embedded into vectors that capture meaning beyond exact keyword overlap.
+2. **Event clustering**: each article is compared with recent candidate events using semantic similarity, headline overlap, named-entity overlap, and time proximity. Strong matches update an existing event; otherwise RSSMonster can create a new event cluster.
+3. **Topic grouping**: events are assigned to broader topics using ranked membership. An event can have a primary topic while still retaining secondary topic relationships, which keeps broad storylines stable without forcing every article into a single rigid category.
+4. **Signal aggregation**: event size, source diversity, topic density, freshness, quality, uniqueness, trust, and engagement are aggregated into ranking signals. This allows larger corroborated stories to surface without letting repetitive coverage drown out more original work.
+5. **Declarative retrieval**: Smart Folders and searches consume supported signals through visible query operators such as `quality:>0.7`, `freshness:>=0.5`, `event:true`, `hot:true`, `tag:security`, and `sort:recommended`.
+
+This design keeps the intelligence of the reader inspectable. RSSMonster does not only decide what to show; it exposes the dimensions behind that decision so you can build views for different reading modes. A morning scan might prefer fresh event clusters with multiple sources, while deeper research might expand the full cluster, inspect related topic groups, and compare how different feeds covered the same story.
+
+Batch reclustering is available through `npm run recluster`. It rebuilds semantic assignments over the configured content window, refreshes event and topic statistics, and helps repair cluster quality after large imports, threshold changes, or embedding updates.
+
+## How Ranking Scores Work (End User)
+
+- **Importance**: Blends freshness (recent items count more), quality, and coverage. Coverage rises when more sources report the same story. Freshness is the largest factor, so the newest high-quality, widely-covered items surface first.
+- **Attention**: Reflects how people interact with an article. A quick skim gives a small boost; reads, deep reads, and highly engaged sessions boost more. Re-opens and outbound clicks add a modest extra lift. No interaction means no attention boost.
+- **Quality**: Evaluates the article’s tone, writing, and promotional-ness. Scores for sentiment, writing quality, and advertisement detection combine into a single 0–1 quality score. Trusted feeds amplify good quality; lower-trust feeds dampen it.
+
+## Prerequisites
+
+- **Node.js**: Version 20.x or higher
+- **npm**: Comes bundled with Node.js
+- **Git**: For cloning the repository
+- **MySQL**: Or any compatible database (with configuration adjustments)
+
+## Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/pietheinstrengholt/rssmonster.git
+cd rssmonster
+```
+
+### 2. Install Dependencies
+
+```bash
+# Install server dependencies
+cd server
+npm install
+
+# Install client dependencies
+cd ../client
+npm install
+cd ..
+```
+
+### 3. Configure Environment Variables
+
+Copy the `.env.example` files to `.env` in both directories:
+
+```bash
+# Server configuration
+cp server/.env.example server/.env
+
+# Client configuration
+cp client/.env.example client/.env
+```
+
+**Edit `server/.env`:**
+```env
+DB_DATABASE=your_database_name
+DB_USERNAME=your_database_user
+DB_PASSWORD=your_database_password
+DB_HOSTNAME=localhost
+NODE_ENV=development
+```
+
+**Edit `client/.env`:**
+```env
+VITE_APP_HOSTNAME=http://localhost:3000
+VITE_NODE_ENV=development
+VITE_ENABLE_AGENT=false  # Set to 'true' to enable AI assistant
+```
+
+### 4. Initialize Database
+
+Run database migrations and seed initial data:
+
+```bash
+cd server
+./node_modules/.bin/sequelize db:migrate
+./node_modules/.bin/sequelize db:seed:all
+```
+
+### Recommended MySQL Configuration for Larger Article Volumes
+
+When processing or querying large numbers of articles, it is recommended to tune MySQL sort memory to reduce sort-related bottlenecks.
+
+Add the following to your MySQL configuration (for example in `my.cnf`):
+
+```ini
+[mysqld]
+sort_buffer_size = 4M
+```
+
+### 5. Required: Build and Seed Island Taxonomy Vectors
+
+After installation (and after each deployment to a new environment), generate taxonomy vectors and seed them into the database:
+
+```bash
+cd server
+npm run taxonomy:vectors
+npm run seed:island-taxonomy
+```
+
+**Important:** `npm run taxonomy:vectors` requires a valid OpenAI API key in `server/.env`:
+
+```env
+OPENAI_API_KEY=your-openai-api-key-here
+```
+
+### 6. Optional: Set Up Feed Crawler
+
+You can crawl feeds in two ways:
+
+**Option A: Manual crawl from command line**
+
+```bash
+cd server
+DISABLE_LISTENER=true npm run crawl
+```
+
+This runs a synchronous crawl of all active feeds and provides a summary upon completion.
+
+**Option B: Automated crawl via cron**
+
+Add a cron job to crawl feeds every 5 minutes by calling the API endpoint:
+
+```bash
+*/5 * * * * curl http://localhost:3000/api/crawl
+```
+
+Note: The API endpoint runs the crawl asynchronously in the background and returns immediately without output.
+
+### 7. Recommended: Rebuild Article Clusters
+
+If you have semantic search enabled and need to rebuild article clusters from scratch:
+
+```bash
+cd server
+npm run recluster
+```
+
+This command will:
+- Clear all existing article clusters
+- Rebuild clusters deterministically based on article embeddings
+- Process articles in chronological order (oldest first)
+
+**When to use this:**
+- After bulk importing articles
+- When cluster quality degrades over time
+- After changing clustering algorithms or parameters
+- To fix cluster assignment inconsistencies
+
+**Note:** This is a destructive operation that rebuilds all clusters. It requires articles to have embedding vectors already generated.
+
+### 8. Recommended: Calculate Feed Trust Scores
+
+Feed trust scores help identify high-quality sources based on originality, article quality, and user engagement:
+
+```bash
+cd server
+npm run feedtrust
+```
+
+This command calculates trust scores (0.0 to 1.0) for all active feeds using:
+- **Originality (35%)**: How often the feed publishes original content vs syndicated articles
+- **Quality (25%)**: Average quality score of articles from this feed
+- **Engagement (20%)**: User interaction (stars, clicks) with feed content
+- **Consistency (20%)**: Placeholder for future enhancements
+
+**When to use this:**
+- Periodically (e.g., weekly) to update feed rankings
+- After significant changes in reading patterns
+- To identify low-quality or spam feeds
+
+The trust score uses exponential moving average (EMA) to smoothly adapt over time while being resistant to short-term fluctuations.
+
+## AI Assistant (Model Context Protocol)
+
+RSSMonster includes an AI-powered assistant that enables natural language interactions with your RSS feeds. Ask questions like:
+- "Show me technology articles from the last week"
+- "What are my favorite articles?"
+- "Find unread posts about JavaScript"
+
+![Screenshot](docs/assets/screenshot02.png)
+
+### Configuration
+
+To enable the AI assistant and other agentic features, configure the following environment variables:
+
+**Server (`server/.env`):**
+```env
+OPENAI_API_KEY=your-openai-api-key-here
+OPENAI_MODEL_AGENT=gpt-5.1
+OPENAI_MODEL_CRAWL=gpt-4o-mini
+```
+
+After configuration, restart both the client and server. The assistant provides:
+- Natural language search across all articles
+- Time-based filtering (e.g., "articles from last month")
+- Article summarization, classification, and tagging
+- Favorite and trending article discovery
+- Smart recommendations based on reading habits
+
+RSSMonster automatically tracks article clicks and uses AI to classify content with three quality metrics: **advertisementScore** (ad/promotional content detection), **sentimentScore** (emotional tone analysis), and **qualityScore** (content depth and accuracy assessment). These scores provide at-a-glance insights into article quality.
+
+**Note:** All interactions are user-scoped, ensuring privacy and data isolation in multi-user environments.
+
+**Note for Developers:** You can access the MCP server directly at `/mcp` for programmatic integration. Authentication requires a valid JWT token passed via the `Authorization: Bearer <token>` header. Obtain your token by authenticating through the `/api/auth/login` endpoint.
+
+## Development
+
+### Running in Development Mode
+
+**Client (with hot reload):**
+```bash
+cd client
+npm run dev
+```
+
+**Server (with hot reload):**
+```bash
+cd server
+npm run dev
+```
+
+To attach a debugger, start the server with `npm run debug`; Node exposes its inspector on port 9229.
+
+The client will typically run on `http://localhost:5173` and the server on `http://localhost:3000`.
+
+## Production Deployment
+
+### Manual Deployment
+
+1. **Update Environment Variables**
+
+   **Client (`client/.env`):**
+   ```env
+   VITE_APP_HOSTNAME=https://your-production-domain.com
+   VITE_NODE_ENV=production
+   ```
+
+   **Server (`server/.env`):**
+   ```env
+   NODE_ENV=production
+   ```
+
+2. **Build the Client**
+   ```bash
+   cd client
+   npm run build
+   ```
+
+3. **Move Static Files**
+   ```bash
+   # Move the dist folder to the server directory
+   mv client/dist server/
+   ```
+
+4. **Generate and Seed Taxonomy Vectors (Required in New Environments)**
+
+  ```bash
+  cd server
+  npm run taxonomy:vectors
+  npm run seed:island-taxonomy
+  ```
+
+  Make sure `OPENAI_API_KEY` is set in `server/.env` before running `npm run taxonomy:vectors`.
+
+5. **Start the Server**
+   ```bash
+   cd server
+   npm run start
+   ```
+
+## Docker
+
+RSSMonster consists of a Vue.js client and an Express.js server and requires an external **MySQL** database.
+
+### Quick start
+
+If you already have a MySQL database, you can run rssmonster as a single container. Below an example for Linux / WSL:
+
+```bash
+docker run -d \
+  -p 3000:3000 \
+  --add-host=host.docker.internal:host-gateway \
+  -e NODE_ENV=production \
+  -e DB_HOSTNAME=host.docker.internal \
+  -e DB_PORT=3306 \
+  -e DB_DATABASE=rssmonster \
+  -e DB_USERNAME=rssmonster \
+  -e DB_PASSWORD=rssmonster \
+  rssmonster/rssmonster
+```
+
+## HTTPS Configuration
+
+For production environments, use Let's Encrypt with Certbot for SSL/TLS certificates:
+
+### 1. Obtain Certificate
+
+```bash
+certbot certonly --standalone -d yourdomain.com --agree-tos -q
+```
+
+### 2. Copy Certificates (automated with cron)
+
+Create a weekly cron job:
+
+```bash
+# Example cron entry (runs weekly)
+0 0 * * 0 certbot renew --quiet && cp /etc/letsencrypt/live/yourdomain.com/* /path/to/rssmonster/cert/
+```
+
+### 3. Enable HTTPS
+
+Add the following to your `server/.env` file:
+
+```env
+ENABLE_HTTPS=true
+```
+
+The server will automatically use HTTPS with certificates from the `cert/` directory. Ensure your SSL certificates are properly placed:
+- `cert/fullchain.pem`
+- `cert/privkey.pem`
+
+Restart the server to apply the changes:
+
+```bash
+cd server
+npm run start
+```
+
+## Fever API Integration
+
+RSSMonster is compatible with the Fever API, enabling integration with third-party RSS clients.
+
+### Configuration
+
+- **Fever API Endpoint:** `http://your-rssmonster-url/api/fever`
+- **Authentication:** Any valid RSSMonster username and password
+
+### Supported Clients
+
+- **Reeder (iOS)**: Configure by adding a Fever account with the endpoint above
+
+![Screenshot Fever](docs/assets/fever.png)
+
+## Google Reader API Integration
+
+RSSMonster supports the Google Reader API, providing compatibility with a wide range of RSS clients.
+
+### Configuration
+
+- **API Endpoint:** `http://your-rssmonster-url/api/greader`
+- **Authentication:** Use your RSSMonster username and password
+
+### Supported Clients
+
+| App | Platform | Notes |
+|-----|----------|-------|
+| [News+](https://github.com/noinnion/newsplus) | Android | With Google Reader extension |
+| [FeedMe](https://play.google.com/store/apps/details?id=com.seazon.feedme) | Android | Full sync support |
+| [Reeder](https://www.reederapp.com/) | iOS/macOS | Classic version |
+| [Vienna RSS](http://www.vienna-rss.com/) | macOS | Open source |
+| [ReadKit](https://readkit.app/) | macOS | Multi-service reader |
+
+### API Endpoints
+
+```bash
+# Login (returns SID and Auth tokens)
+curl 'http://localhost:3000/api/greader/accounts/ClientLogin?Email=username&Passwd=password'
+
+# Get subscriptions
+curl -H "Authorization:GoogleLogin auth=username/token" \
+  'http://localhost:3000/api/greader/reader/api/0/subscription/list?output=json'
+
+# Get unread counts
+curl -H "Authorization:GoogleLogin auth=username/token" \
+  'http://localhost:3000/api/greader/reader/api/0/unread-count?output=json'
+
+# Get articles
+curl -H "Authorization:GoogleLogin auth=username/token" \
+  'http://localhost:3000/api/greader/reader/api/0/stream/contents/reading-list'
+```
+
+### Supported Operations
+
+- **Authentication:** ClientLogin with username/password
+- **Subscriptions:** List, add, edit, remove feeds
+- **Tags/Categories:** List, rename, delete categories
+- **Articles:** Fetch by stream, feed, or category with pagination
+- **Mark as read/unread:** Individual articles or mark all as read
+- **Star/unstar:** Favorite articles
+- **Unread counts:** Per feed, category, and total
+
+## Contributing
+
+Contributions are welcome! To contribute:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Please ensure your code follows the existing style and includes appropriate tests.
+
+## Credits
+
+RSSMonster is built with the following frameworks and libraries:
+
+- **[Node.js](https://nodejs.org/)** - JavaScript runtime
+- **[Express](https://expressjs.com/)** - Web framework
+- **[Vue.js 3](https://vuejs.org/)** - Frontend framework
+- **[Bootstrap](https://getbootstrap.com/)** - UI framework
+- **[Sequelize](https://sequelize.org/)** - ORM for database management
+- **[feedsmith](https://github.com/macieklamberski/feedsmith)** - RSS/Atom feed parsing
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.

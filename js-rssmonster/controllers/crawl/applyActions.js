@@ -1,0 +1,82 @@
+/* ======================================================
+   Apply action rules
+   ------------------------------------------------------
+   Applies user-defined regex actions:
+   - delete
+   - read
+   - advertisement
+   - bad quality
+   - favorite
+   - clicked
+   - tag (assign tag)
+====================================================== */
+function applyActions(actions, contentStripped, title) {
+  const result = {
+    favoriteInd: 0,
+    clickedAmount: 0,
+    status: 'unread',
+    shouldDelete: false,
+    advertisementScore: null,
+    qualityScore: null,
+    tags: []
+  };
+
+  for (const action of actions) {
+    if (!action.regularExpression) continue;
+
+    let regex;
+    try {
+      regex = new RegExp(action.regularExpression);
+    } catch {
+      console.error(`Error testing regex for action "${action.name}"`);
+      continue;
+    }
+
+    if (!regex.test(contentStripped)) continue;
+
+    switch (action.actionType) {
+      // Delete action: takes precedence over all others
+      case 'delete':
+        console.log(`Delete action "${action.name}" matched article "${title}". Skipping article creation.`);
+        result.shouldDelete = true;
+        return result;
+
+      // Read action: marks article as read
+      case 'read':
+        result.status = 'read';
+        break;
+
+      // Advertisement action: marks article as advertisement
+      case 'advertisement':
+        result.advertisementScore = 100;
+        break;
+
+      // Bad quality action
+      case 'badquality':
+        result.qualityScore = 100;
+        break;
+
+      // Favorite action: marks article as a favorite
+      case 'favorite':
+      case 'star':
+        result.favoriteInd = 1;
+        break;
+
+      // Clicked action: read-later indicator
+      case 'clicked':
+        result.clickedAmount = 1;
+        break;
+
+      // Tag action: assign a tag to the article
+      case 'tag':
+        if (action.tagValue) {
+          result.tags.push(action.tagValue);
+        }
+        break;
+    }
+  }
+
+  return result;
+}
+
+export default applyActions;

@@ -1,13 +1,14 @@
 # FreshRSS + Wasmer
 
 Deploy [FreshRSS](https://github.com/FreshRSS/FreshRSS), a personal RSS and Atom
-reader, with SQLite storage and a feed refresh job every 20 minutes.
+reader, with SQLite storage and an included 20-minute refresh-job configuration.
 
 ## Demo
 
-Deploy your own copy, set the administrator secret described below, and open its
-URL. Your feeds and account belong to that deployment. Anonymous reading is off
-unless explicitly enabled; this recipe includes no shared administrator password.
+Open the [live FreshRSS demo](https://freshrss-template.wasmer.app/), or deploy your
+own copy and set the administrator secret described below. Your feeds and account
+belong to that deployment. Anonymous reading is off unless explicitly enabled;
+this recipe includes no shared administrator password.
 
 ## How it works
 
@@ -19,8 +20,12 @@ unless explicitly enabled; this recipe includes no shared administrator password
   stores configuration, SQLite, cache and accounts across deployments.
 - Startup copies absent defaults and calls the upstream CLI installer and account
   creator once. An existing data volume is preserved.
-- `app.yaml` runs the upstream updater through `refresh` every 20 minutes. Wasmer
-  selects a region supporting persistent volumes. This is a regional application.
+- `app.yaml` defines `refresh-feeds` (`*/20 * * * *`), which executes `refresh`.
+  Apply this configuration from the deployed repository root and confirm the job
+  appears in scheduled jobs. Anybuild 0.26.4 monorepo imports did not merge the
+  nested file in our test; configure the same job separately for that path.
+  The public demo's job was created through the SDK. This is a regional
+  application using persistent volumes.
 - WASIX PHP lacks `dns_get_record`. A small compatibility file returns IPv4 DNS
   addresses through its native resolver. FreshRSS still checks those addresses
   and pins cURL to them to block private-network access and DNS rebinding.
@@ -66,12 +71,16 @@ Set the secret and base URL above, then redeploy and sign in. For a monorepo
 import, use `php-freshrss` as the root directory; the repository-root
 `Anybuild.php-freshrss` loader preserves that configuration.
 
+For a catalog-created repository, confirm `app.yaml` is at its root and
+`refresh-feeds` is registered after deployment. The included file defines the
+schedule; registration and a successful invocation still need verification.
+
 Back up `/data` before upgrades. Review a new upstream release, update the commit
 and checksum, then test login, feed parsing, scheduled refresh and persistence.
 Optional SMTP and third-party extensions need their own configuration.
 
 ## License and source
 
-FreshRSS and this recipe use AGPL-3.0. Its full license is preserved in `LICENSE`.
+FreshRSS and this recipe use AGPL-3.0. Its full license is preserved in [LICENSE](LICENSE).
 Every build exposes the exact upstream archive and this recipe beneath `/source/`
 for corresponding-source access. Existing upstream notices are retained.

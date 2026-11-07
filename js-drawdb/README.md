@@ -6,8 +6,8 @@ The editor runs without an account, database, or API key.
 
 ## Demo
 
-Deploy this template to obtain your own live URL. No hosted demo is claimed
-by this source recipe.
+Open the [live drawDB editor](https://drawdb-template.wasmer.app/editor), or
+deploy this template to obtain your own independent app URL.
 
 ## How it Works
 
@@ -22,6 +22,14 @@ by this source recipe.
 - Diagrams are stored in the visitor's browser. This template does not
   configure the optional [sharing server](https://github.com/drawdb-io/drawdb-server).
   Export important diagrams before clearing browser storage.
+
+## Upstream layout limits
+
+Desktop is recommended for diagram editing. On tablet and phone viewports,
+the upstream sidebar takes much of the available width and the canvas may
+need panning or zooming. Hide it with **View → Sidebar**, then open the zoom
+percentage menu and choose **Fit window / Reset** to bring the graph into
+view. This template preserves the upstream layout, controls and styles.
 
 ## Running Locally
 

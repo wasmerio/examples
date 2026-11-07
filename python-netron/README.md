@@ -13,7 +13,7 @@ The included graph has four operations: **MatMul → Add → Relu → Softmax**.
 - `requirements.txt` pins Netron **9.3.5**, a Python wheel with no runtime dependencies.
 - `main.py` starts Netron on `0.0.0.0` and reads `PORT`, defaulting to `8080`.
 - `samples/tiny-classifier.onnx` opens by default. It can be regenerated with `python samples/create_sample.py`, using only Python's standard library.
-- `Anybuild` selects the Python runtime and `python main.py` start command.
+- `Anybuild` selects the Python runtime and `python main.py` start command. The repository-root `Anybuild.python-netron` provides the same configuration when Anybuild 0.26.4 builds this monorepo with `--subdir python-netron`.
 
 No database, GPU, API key or persistent volume is required. Browser-opened files are not saved to the server, so this is not a shared model-storage service.
 
@@ -45,6 +45,8 @@ anybuild . --wasmer --start
 ```
 
 The second command builds and runs locally with Wasmer; it does not publish the app. Keep the `Anybuild` file with the source so the runtime and start command remain explicit.
+
+From the repository root, inspect the monorepo configuration with `anybuild plan . --subdir python-netron --wasmer`. Folder uploads only need the self-contained `python-netron` directory.
 
 ## License and upstream
 

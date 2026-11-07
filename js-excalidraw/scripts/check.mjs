@@ -17,11 +17,17 @@ async function files(directory, prefix = '') {
   }
 }
 await files(output);
+for (const weight of ['Regular', 'Medium', 'SemiBold', 'Bold']) {
+  assert.ok(assets.includes(`/fonts/Assistant/Assistant-${weight}.woff2`), `Missing UI font: ${weight}`);
+}
 const html = await readFile(join(output, 'index.html'), 'utf8');
 assert.ok(!html.includes('simpleanalyticscdn.com'));
 assert.ok(!html.includes('https://excalidraw.nyc3.cdn.digitaloceanspaces.com/oss/'));
 for (const path of assets.filter(path => /\.(js|css|woff2?)$/.test(path) && !path.startsWith('/notices/'))) {
-  assert.deepEqual(await readFile(join(output, path)), await readFile(join(source, 'excalidraw-app/build', path)), path);
+  const upstreamPath = path.startsWith('/fonts/Assistant/')
+    ? join(source, 'packages/excalidraw', path)
+    : join(source, 'excalidraw-app/build', path);
+  assert.deepEqual(await readFile(join(output, path)), await readFile(upstreamPath), path);
   if (path.endsWith('.js')) {
     const code = await readFile(join(output, path), 'utf8');
     for (const endpoint of ['https://oss-collab.excalidraw.com', 'https://oss-ai.excalidraw.com', 'https://json.excalidraw.com/api/v2/']) {

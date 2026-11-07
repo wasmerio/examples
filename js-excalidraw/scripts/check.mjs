@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +24,17 @@ for (const weight of ['Regular', 'Medium', 'SemiBold', 'Bold']) {
 const html = await readFile(join(output, 'index.html'), 'utf8');
 assert.ok(!html.includes('simpleanalyticscdn.com'));
 assert.ok(!html.includes('https://excalidraw.nyc3.cdn.digitaloceanspaces.com/oss/'));
+const versionedFonts = [];
+for (const weight of ['Regular', 'Medium', 'SemiBold', 'Bold']) {
+  const path = `/fonts/Assistant/Assistant-${weight}.woff2`;
+  const bytes = await readFile(join(output, path));
+  const revision = createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+  versionedFonts.push(`${path}?v=${revision}`);
+}
+const stylesheet = await readFile(join(output, assets.find(path => /^\/assets\/index-.*\.css$/.test(path))), 'utf8');
+for (const path of versionedFonts) assert.ok(stylesheet.includes(path), `Missing font cache revision: ${path}`);
+assert.ok(!/url\(\.\/Assistant-/.test(stylesheet), 'Unemitted relative font fallback');
+
 for (const path of assets.filter(path => /\.(js|css|woff2?)$/.test(path) && !path.startsWith('/notices/'))) {
   const upstreamPath = path.startsWith('/fonts/Assistant/')
     ? join(source, 'packages/excalidraw', path)
@@ -43,9 +55,15 @@ if (base) {
     assert.equal(response.status, 200, path);
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), await readFile(join(output, path)), path);
   }
+  for (const path of versionedFonts) {
+    const response = await fetch(new URL(path, base));
+    assert.equal(response.status, 200, path);
+    assert.equal(response.headers.get('content-type').split(';')[0], 'font/woff2', path);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), await readFile(join(output, path.split('?')[0])), path);
+  }
   for (const path of ['/package.json', '/scripts/build.mjs', '/.cache/source.tar.gz']) {
     assert.equal((await fetch(new URL(path, base))).status, 404, path);
   }
-  console.log(`Passed: ${assets.length} HTTP assets match the built files; 3 build-only paths return 404.`);
+  console.log(`Passed: ${assets.length} HTTP assets and 4 revisioned font URLs match the built files; 3 build-only paths return 404.`);
 }
 console.log('Passed: upstream application assets and license preserved.');

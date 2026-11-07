@@ -63,9 +63,22 @@ app = replaceOnce(app, '  isRunningInIframe,\n', '');
 await writeFile(appPath, app);
 // Keep the same fonts while serving their already-bundled assets from this deployment.
 const fontPlugin = join(source, 'scripts/woff2/woff2-vite-plugins.js');
-await writeFile(fontPlugin, replaceOnce(await readFile(fontPlugin, 'utf8'),
+let fontPluginSource = replaceOnce(await readFile(fontPlugin, 'utf8'),
   'const OSS_FONTS_CDN = "https://excalidraw.nyc3.cdn.digitaloceanspaces.com/oss/";',
-  'const OSS_FONTS_CDN = "/";'));
+  'const OSS_FONTS_CDN = "/";');
+for (const weight of ['Regular', 'Medium', 'SemiBold', 'Bold']) {
+  const file = `Assistant-${weight}.woff2`;
+  const font = await readFile(join(source, 'packages/excalidraw/fonts/Assistant', file));
+  const revision = createHash('sha256').update(font).digest('hex').slice(0, 16);
+  const asset = `fonts/Assistant/${file}`;
+  assert.equal(fontPluginSource.split(asset).length, weight === 'SemiBold' ? 3 : 2);
+  // New URLs also recover browsers that cached an earlier missing font response.
+  fontPluginSource = fontPluginSource.replaceAll(asset, `${asset}?v=${revision}`);
+  // The upstream CDN plugin's relative fallback is not emitted by Vite.
+  fontPluginSource = replaceOnce(fontPluginSource,
+    `format("woff2"),\n          url(./${file}) format("woff2");`, 'format("woff2");');
+}
+await writeFile(fontPlugin, fontPluginSource);
 // The upstream page injects analytics independently of VITE_APP_ENABLE_TRACKING.
 const htmlPath = join(source, 'excalidraw-app/index.html');
 let html = await readFile(htmlPath, 'utf8');

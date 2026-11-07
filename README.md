@@ -44,6 +44,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-brunch-staticsite`](js-brunch-staticsite/README.md) – Brunch-style static build.
 - [`js-create-react-app-staticsite`](js-create-react-app-staticsite/README.md) – Create React App-style static build.
 - [`js-docusaurus-staticsite`](js-docusaurus-staticsite/README.md) – Docusaurus docs site.
+- [`js-drawdb`](js-drawdb/README.md) – drawDB database diagram editor, built from pinned upstream source.
 - [`js-eleventy-staticsite`](js-eleventy-staticsite/README.md) – Eleventy-generated static site.
 - [`js-elysia`](js-elysia/README.md) – Elysia HTTP server.
 - [`js-ember-staticsite`](js-ember-staticsite/README.md) – Ember-style static build.

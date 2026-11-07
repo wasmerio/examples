@@ -76,6 +76,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-nuxt-staticsite`](js-nuxt-staticsite/README.md) – Nuxt-generated static site.
 - [`js-parcel-staticsite`](js-parcel-staticsite/README.md) – Parcel-style static build.
 - [`js-pnpm-workspace-subdir`](js-pnpm-workspace-subdir/README.md) – pnpm workspace app in a subdirectory.
+- [`js-piskel`](js-piskel/README.md) – Piskel desktop sprite editor with an original two-frame sample.
 - [`js-polymer-staticsite`](js-polymer-staticsite/README.md) – Polymer-style static build.
 - [`js-preact-staticsite`](js-preact-staticsite/README.md) – Preact-style static build.
 - [`js-react-router`](js-react-router/README.md) – React Router-oriented Node.js runtime example.

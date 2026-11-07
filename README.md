@@ -62,6 +62,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-mastra`](js-mastra/README.md) – Mastra-oriented Node.js runtime example.
 - [`js-mcp`](js-mcp/README.md) – HTTP Model Context Protocol server.
 - [`js-metalsmith-staticsite`](js-metalsmith-staticsite/README.md) – Metalsmith-generated static site.
+- [`js-minipaint`](js-minipaint/README.md) – miniPaint browser image editor with layers, filters, and local export.
 - [`js-nestjs`](js-nestjs/README.md) – NestJS-oriented Node.js runtime example.
 - [`js-next-ssr`](js-next-ssr/README.md) – Next.js server-rendered app.
 - [`js-next-staticsite`](js-next-staticsite/README.md) – Next.js `output: "export"` sample.

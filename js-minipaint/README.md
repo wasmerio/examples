@@ -10,6 +10,7 @@ Deploy this example to get a live URL. Open `/?image=/sample.svg` to edit the in
 
 - `UPSTREAM.json` pins miniPaint 4.14.3 to commit [`a79733e`](https://github.com/viliusle/miniPaint/tree/a79733eb803fc97084ef0ee4faa96b031e69e1c0) and a SHA-256 archive checksum.
 - `npm run build` verifies and extracts that archive, installs its locked dependencies with `npm ci --include=dev --ignore-scripts`, and runs the upstream production build. Node.js 22 or newer, npm, `tar`, and network access to GitHub/npm are required at build time.
+- Upstream locks `hermite-resize` to commit [`fae5329`](https://github.com/viliusle/Hermite-resize/tree/fae53290d2b03520a6fc81d734c3028902a599c0) through Git. The recipe changes only that dependency's download URL to the same commit's HTTPS archive, updates both package and lock metadata, and checks its archive and installed entry-point hashes. This works with hosted builds that disable Git package fetches, without enabling Git or changing the dependency's code.
 - The deployable `site/` contains the original root `index.html`, `dist/`, `images/`, the GIF export worker at its original URL, the MIT license, and the sample artwork. Serving `dist/` alone does not include the editor page or icons.
 - The `Anybuild` file builds with Node.js 24 and serves `site/` as static files. No JavaScript server runs in production.
 - The upstream interface, controls, styles, and notices are preserved. The MIT license and `UPSTREAM.json` are also included in the served output.

@@ -18,6 +18,8 @@ this recipe includes no shared administrator password.
   only on 32-bit PHP. SQLite, cURL and all installer requirements are available.
 - Only `upstream/p` is public. The `freshrss-data` volume mounts at `/data` and
   stores configuration, SQLite, cache and accounts across deployments.
+- Browser sessions use temporary PHP storage, so a redeployment can require
+  signing in again. Accounts, feeds and article read state remain in `/data`.
 - Startup copies absent defaults and calls the upstream CLI installer and account
   creator once. An existing data volume is preserved.
 - `app.yaml` defines `refresh-feeds` (`*/20 * * * *`), which executes `refresh`.
@@ -71,9 +73,9 @@ Set the secret and base URL above, then redeploy and sign in. For a monorepo
 import, use `php-freshrss` as the root directory; the repository-root
 `Anybuild.php-freshrss` loader preserves that configuration.
 
-For a catalog-created repository, confirm `app.yaml` is at its root and
-`refresh-feeds` is registered after deployment. The included file defines the
-schedule; registration and a successful invocation still need verification.
+The verified catalog-created repository registered `refresh-feeds` automatically
+from its root `app.yaml`. Confirm the job and a successful invocation after your
+own deployment; the monorepo caveat above still applies.
 
 Back up `/data` before upgrades. Review a new upstream release, update the commit
 and checksum, then test login, feed parsing, scheduled refresh and persistence.

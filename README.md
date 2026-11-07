@@ -48,6 +48,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-eleventy-staticsite`](js-eleventy-staticsite/README.md) – Eleventy-generated static site.
 - [`js-elysia`](js-elysia/README.md) – Elysia HTTP server.
 - [`js-ember-staticsite`](js-ember-staticsite/README.md) – Ember-style static build.
+- [`js-excalidraw`](js-excalidraw/README.md) – Excalidraw single-user whiteboard, built from pinned upstream source.
 - [`js-express`](js-express/README.md) – Express HTTP server.
 - [`js-fastify`](js-fastify/README.md) – Fastify HTTP server.
 - [`js-gatsby-staticsite`](js-gatsby-staticsite/README.md) – Gatsby static site.

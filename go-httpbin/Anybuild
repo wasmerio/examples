@@ -1,0 +1,28 @@
+load("//anybuild:serve.bzl", "build")
+load("//anybuild/tools:go.bzl", "go_config", "go_serve")
+
+config = go_config(
+    schema = 1,
+    go_version = "1.25.5",
+    go_build_file = "main.go",
+    go_serve_binary = "httpbin",
+)
+
+temp = mount("temp")
+app = mount("app")
+compiled = build(
+    steps = [
+        use(dep("go", config.go_version)),
+        env(GOTOOLCHAIN = "local"),
+        workdir(temp.path),
+        copy(config.app_subdir or ".", ".", ignore = [".git", ".anybuild", ".cache", ".toolchain", "httpbin"]),
+        run("go mod download", group = "install"),
+        run("go build -trimpath -o httpbin .", group = "build"),
+        run('cp httpbin "{}/httpbin"'.format(app.path)),
+        run('cp LICENSE "{}/LICENSE"'.format(app.path)),
+    ],
+    mounts = [app],
+    app = app,
+    temp = temp,
+)
+go_serve(config, compiled, name = "go-httpbin")

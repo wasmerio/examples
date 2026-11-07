@@ -7,6 +7,8 @@
 - SDK build: `bd77be9e-04d8-4598-ad1b-ab9dda72a5e3`; succeeded in 56 seconds.
 - App version: `dav_R8EIJtWulwPE`.
 - Catalog: <https://wasmer.io/templates/it-tools>, ID `at_8RjPIgtMCmEK`.
+- Independent catalog app: <https://it-tools-copy-1106.wasmer.app/>, ID `da_KN4IZtyUwowv`, version `dav_nBBIbtruZb8d`.
+- Independent build: `ff82e1fc-9c2f-47c9-a058-ff68c8332633`; succeeded in 70 seconds.
 
 ## Core results
 
@@ -24,9 +26,10 @@
 - `it-tools-926e104-mobile.jpg`: 390×844; form fits the viewport with collapsed navigation.
 - `it-tools-926e104-mobile-menu-open.jpg`: 390×844; upstream mobile navigation overlay.
 - `it-tools-926e104-hash.jpg`: 1440×900; focused hash input and matching SHA-256 output.
+- `it-tools-926e104-catalog-copy.jpg`: 1440×1000; independent app's encoder and decode input; decoded output is below the captured area.
 - Canonical upstream commit: `d505845f918e946ec300af7b36efc107e2f66e9e`.
 - References: `src/ui/c-card/c-card.vue`, `src/ui/c-input-text/c-input-text.vue`, `src/ui/c-button/c-button.vue`, `src/ui/c-select/c-select.vue` and `src/layouts/tool.layout.vue`.
 - Upstream Vue/Naive UI components, controls, surfaces, colors, typography and styles remain unchanged; the template introduces no UI overrides.
 - Baseline limitation: the upstream tablet header wraps its action icons and sponsor button. This is documented rather than redesigned.
 - Not run: a full upstream accessibility/localization/disabled-state matrix or every utility.
-- Independent creation from the public catalog: pending browser verification.
+- Independent creation from the public catalog: passed; browser encode `Wasmer` → `V2FzbWVy` and decode back to `Wasmer` both verified.

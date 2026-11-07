@@ -60,6 +60,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-hydrogen`](js-hydrogen/README.md) – Hydrogen-oriented Node.js runtime example.
 - [`js-ionic-angular-staticsite`](js-ionic-angular-staticsite/README.md) – Ionic Angular-style static build.
 - [`js-ionic-react-staticsite`](js-ionic-react-staticsite/README.md) – Ionic React-style static build.
+- [`js-it-tools`](js-it-tools/README.md) – IT-Tools developer utilities, built from pinned upstream source.
 - [`js-koa`](js-koa/README.md) – Koa HTTP server.
 - [`js-mastra`](js-mastra/README.md) – Mastra-oriented Node.js runtime example.
 - [`js-mcp`](js-mcp/README.md) – HTTP Model Context Protocol server.

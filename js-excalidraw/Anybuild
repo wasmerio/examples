@@ -1,0 +1,29 @@
+load("//anybuild:serve.bzl", "build")
+load("//anybuild/tools:node_static.bzl", "nodestatic_config")
+load("//anybuild/tools:staticfile.bzl", "staticfile_serve")
+
+config = nodestatic_config(
+    schema = 1,
+    node_version = "24",
+    node_package_manager = "npm",
+    node_build_command = "npm run build",
+    static_dir = "site",
+)
+
+temp = mount("temp")
+site = mount("static_app")
+output = build(
+    steps = [
+        use(dep("node", config.node_version), dep("npm")),
+        workdir(temp.path),
+        copy(config.app_subdir or ".", ".", ignore = [".git", ".anybuild", ".cache", "site", "node_modules"]),
+        run("npm ci --ignore-scripts --no-audit --no-fund", group = "install"),
+        run("npm run build", group = "build"),
+        # Quote the static output path.
+        run('cp -R site/. "{}/"'.format(site.path)),
+    ],
+    mounts = [site],
+    static_app = site,
+    static_config = None,
+)
+staticfile_serve(config, output, name = "excalidraw")

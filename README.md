@@ -48,6 +48,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-eleventy-staticsite`](js-eleventy-staticsite/README.md) – Eleventy-generated static site.
 - [`js-elysia`](js-elysia/README.md) – Elysia HTTP server.
 - [`js-ember-staticsite`](js-ember-staticsite/README.md) – Ember-style static build.
+- [`js-excalidraw`](js-excalidraw/README.md) – Excalidraw single-user whiteboard, built from pinned upstream source.
 - [`js-express`](js-express/README.md) – Express HTTP server.
 - [`js-fastify`](js-fastify/README.md) – Fastify HTTP server.
 - [`js-gatsby-staticsite`](js-gatsby-staticsite/README.md) – Gatsby static site.
@@ -75,6 +76,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-nuxt-staticsite`](js-nuxt-staticsite/README.md) – Nuxt-generated static site.
 - [`js-parcel-staticsite`](js-parcel-staticsite/README.md) – Parcel-style static build.
 - [`js-pnpm-workspace-subdir`](js-pnpm-workspace-subdir/README.md) – pnpm workspace app in a subdirectory.
+- [`js-piskel`](js-piskel/README.md) – Piskel desktop sprite editor with an original two-frame sample.
 - [`js-polymer-staticsite`](js-polymer-staticsite/README.md) – Polymer-style static build.
 - [`js-preact-staticsite`](js-preact-staticsite/README.md) – Preact-style static build.
 - [`js-react-router`](js-react-router/README.md) – React Router-oriented Node.js runtime example.

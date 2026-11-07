@@ -41,12 +41,15 @@ const archive = await verifiedArchive(
 await rm(source, { recursive: true, force: true });
 execFileSync('tar', ['-xzf', archive, '-C', cache], { stdio: 'inherit' });
 
-// Hosted builds forbid Git package fetches. Change only this locked dependency's
-// transport: the HTTPS archive contains the exact same commit and entry code.
+// Hosted npm forbids Git and remote URL dependencies. Download and verify the
+// same pinned archive, then install it as a local tarball without changing npm policy.
 const name = 'hermite-resize';
 const hermite = upstream.dependencies[name];
 const url = `https://codeload.github.com/viliusle/Hermite-resize/tar.gz/${hermite.commit}`;
-await verifiedArchive(`${name}-${hermite.commit}`, url, hermite.archiveSha256);
+const hermiteArchive = await verifiedArchive(`${name}-${hermite.commit}`, url, hermite.archiveSha256);
+await mkdir(join(source, 'vendor'), { recursive: true });
+await cp(hermiteArchive, join(source, 'vendor/hermite-resize.tgz'));
+const localDependency = 'file:vendor/hermite-resize.tgz';
 const manifestPath = join(source, 'package.json');
 const lockPath = join(source, 'package-lock.json');
 const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
@@ -55,10 +58,10 @@ const locked = lock.packages[`node_modules/${name}`];
 assert.equal(manifest.dependencies[name], 'git+https://github.com/viliusle/Hermite-resize.git');
 assert.equal(locked.resolved,
   `git+ssh://git@github.com/viliusle/Hermite-resize.git#${hermite.commit}`);
-manifest.dependencies[name] = url;
-lock.packages[''].dependencies[name] = url;
-Object.assign(locked, { resolved: url, integrity: hermite.integrity });
-lock.dependencies[name] = { version: url, integrity: hermite.integrity };
+manifest.dependencies[name] = localDependency;
+lock.packages[''].dependencies[name] = localDependency;
+Object.assign(locked, { resolved: localDependency, integrity: hermite.integrity });
+lock.dependencies[name] = { version: localDependency, integrity: hermite.integrity };
 for (const dependency of Object.values(lock.packages)) {
   assert.ok(!dependency.resolved?.startsWith('git'), 'Unexpected Git dependency in upstream lock');
 }

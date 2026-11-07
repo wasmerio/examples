@@ -102,6 +102,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 
 ### PHP
 
+- [`php-freshrss`](php-freshrss/README.md) – FreshRSS reader with persistent SQLite data and scheduled refresh.
 - [`php-basic`](php-basic/README.md) – Minimal PHP script starter.
 - [`php-laravel`](php-laravel/README.md) – Laravel application.
 - [`php-reactphp`](php-reactphp/README.md) – ReactPHP HTTP server.

@@ -1,0 +1,57 @@
+# Anybuild recipe for building php-laravel-starter from the repository root (`--subdir php-laravel-starter`),
+# which is how the Wasmer templates catalog deploys it.
+#
+# Same build as php-laravel-starter/Anybuild. The stock PHP recipe does not handle `app_subdir` yet: it
+# bind-mounts composer.json and composer.lock from the repository root (failing with "/composer.lock: not
+# found") and copies the whole repository into /app. So this recipe turns the stock Composer step off, keeps
+# only this directory in /app, and runs Composer and npm there.
+
+load("//anybuild/tools:laravel.bzl", "laravel_commands", "laravel_config", "laravel_prepare")
+load("//anybuild/tools:node.bzl", "node_toolchain")
+load("//anybuild/tools:php.bzl", "php_build", "php_serve")
+
+app_subdir = "php-laravel-starter"
+
+config = laravel_config(
+    schema = 1,
+    node_package_manager = "npm",
+    node_version = "24",
+    npm_version = "11",
+    php_framework = "laravel",
+    composer_enable = False,
+    php_version = "8.3.29",
+    php_public_dir = "public",
+)
+
+node_tc = node_toolchain(config, serving = False)
+
+build = php_build(
+    config,
+    extra_use_deps = list(node_tc.build_deps) + [dep("composer")],
+    after_build = [
+        run("find . -mindepth 1 -maxdepth 1 ! -name {0} -exec rm -rf {{}} + && cp -a {0}/. . && rm -rf {0}".format(app_subdir), group = "build"),
+        env(COMPOSER_HOME = "/tmp", COMPOSER_FUND = "0", COMPOSER_ALLOW_SUPERUSER = "1", CI = "true"),
+        run("composer install --optimize-autoloader --ignore-platform-reqs --no-scripts --no-interaction", group = "install"),
+        run("composer run-script post-update-cmd", group = "build"),
+        run("npm install", group = "install"),
+        run("npm run build", group = "build"),
+        run("rm -rf node_modules", group = "build"),
+    ],
+    extra_ignore = ["node_modules", "vendor"],
+)
+
+commands = laravel_commands(config)
+commands["after_deploy"] = "php artisan migrate --force"
+
+php_serve(
+    config,
+    build,
+    name = "laravel-starter",
+    commands = commands,
+    prepare = [
+        workdir(build.app.serve_path),
+        run("test -f .env || cp .env.example .env"),
+        run("test -n \"$APP_KEY\" || grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force"),
+        run("test -f database/database.sqlite || touch database/database.sqlite"),
+    ] + laravel_prepare(config, build.app),
+)

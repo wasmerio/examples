@@ -1,0 +1,39 @@
+# Anybuild recipe for the Laravel starter on Wasmer Edge.
+# It is the generated Laravel recipe with three changes:
+# - create `.env` from `.env.example` when the repository has none, and generate a fresh APP_KEY
+#   for each build unless one is set (set an APP_KEY secret to keep sessions valid across deploys);
+# - create the SQLite file the default connection points at;
+# - run migrations with --force, since `php artisan migrate` asks for confirmation in production.
+
+load("//anybuild/tools:laravel.bzl", "laravel_build", "laravel_commands", "laravel_config", "laravel_prepare")
+load("//anybuild/tools:php.bzl", "php_serve")
+
+config = laravel_config(
+    schema = 1,
+    node_package_manager = "npm",
+    node_version = "24",
+    npm_version = "11",
+    php_framework = "laravel",
+    composer_enable = True,
+    composer_build_script = "post-update-cmd",
+    php_version = "8.3.29",
+    php_public_dir = "public",
+)
+
+build = laravel_build(config)
+
+commands = laravel_commands(config)
+commands["after_deploy"] = "php artisan migrate --force"
+
+php_serve(
+    config,
+    build,
+    name = "laravel-starter",
+    commands = commands,
+    prepare = [
+        workdir(build.app.serve_path),
+        run("test -f .env || cp .env.example .env"),
+        run("test -n \"$APP_KEY\" || grep -q '^APP_KEY=base64:' .env || php artisan key:generate --force"),
+        run("test -f database/database.sqlite || touch database/database.sqlite"),
+    ] + laravel_prepare(config, build.app),
+)

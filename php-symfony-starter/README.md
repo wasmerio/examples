@@ -30,4 +30,4 @@ Catalog registration follows source merge; this PR does not publish the catalog 
 
 The landing page uses the framework-neutral Wasmer starter components documented in `_shared/starter-ui/DESIGN.md`. Run `node scripts/sync-starter-ui.mjs --check php-symfony-starter/public/starter-ui.js` from the repository root to check the generated copy.
 
-Set `APP_SECRET` to a unique random secret before adding sessions, signed links or other security features. This stateless starter does not enable them. No shared development secret is committed.
+Set `APP_SECRET` to a unique random secret before adding sessions, signed links or other security features. The framework has lazy session support, but this starter’s routes do not use sessions or signed links. No shared development secret is committed.

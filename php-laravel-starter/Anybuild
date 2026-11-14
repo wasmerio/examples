@@ -1,0 +1,37 @@
+# PHP-only Laravel build. The root recipe handles catalog --subdir builds.
+load("//anybuild/tools:laravel.bzl", "laravel_commands", "laravel_config", "laravel_prepare")
+load("//anybuild/tools:php.bzl", "php_build", "php_serve")
+
+config = laravel_config(
+    schema = 1,
+    php_framework = "laravel",
+    composer_enable = False,
+    php_version = "8.3.29",
+    php_public_dir = "public",
+)
+
+build = php_build(
+    config,
+    extra_use_deps = [dep("composer")],
+    after_build = [
+        env(COMPOSER_HOME = "/tmp", COMPOSER_FUND = "0", COMPOSER_ALLOW_SUPERUSER = "1"),
+        run("composer install --no-dev --optimize-autoloader --no-interaction", group = "install"),
+    ],
+    extra_ignore = ["vendor", ".env", ".anybuild"],
+)
+
+commands = laravel_commands(config)
+commands["after_deploy"] = "php artisan migrate --force"
+
+php_serve(
+    config,
+    build,
+    name = "laravel-starter",
+    commands = commands,
+    prepare = [
+        workdir(build.app.serve_path),
+        run("test -f .env || cp .env.example .env"),
+        run("php -r 'exit(getenv(\"APP_KEY\") || preg_match(\"/^APP_KEY=base64:.+$/m\", file_get_contents(\".env\")) ? 0 : 1);' || php artisan key:generate --force"),
+        run("test -f database/database.sqlite || touch database/database.sqlite"),
+    ] + laravel_prepare(config, build.app),
+)

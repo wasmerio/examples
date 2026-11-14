@@ -38,7 +38,7 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
   class Title extends HTMLElement {
     constructor() {
       super();
-      mount(this, ":host{display:block}h1{font-size:28px;line-height:1.3;font-weight:600;margin:0;overflow-wrap:anywhere}", "<h1><slot></slot></h1>");
+      mount(this, ":host{display:block}h1{font-size:20px;line-height:1.4;font-weight:600;margin:0;overflow-wrap:anywhere}", "<h1><slot></slot></h1>");
     }
   }
   class Text extends HTMLElement {
@@ -67,12 +67,18 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
         :host([variant=success]) .notice{background:linear-gradient(180deg,#d9f6ea,#f7fdfb 150%);border-color:rgba(2,195,154,.3);color:var(--green)}
         :host([variant=error]) .notice{background:linear-gradient(180deg,#fde3e9,#fffbfc 150%);border-color:rgba(239,71,111,.3);color:var(--red)}
         :host([variant=warning]) .notice{background:linear-gradient(180deg,#fef0e0,#fffdfb 150%);border-color:rgba(243,141,44,.3);color:var(--orange)}
-        .icon{flex-shrink:0;font-size:20px;line-height:22px}.copy{min-width:0;overflow-wrap:anywhere}`, '<div class="notice" role="status"><span class="icon" aria-hidden="true">ⓘ</span><div class="copy"><slot></slot></div></div>');
+        .icon{flex-shrink:0;display:flex}.copy{min-width:0;overflow-wrap:anywhere}`, '<div class="notice" role="status"><span class="icon" aria-hidden="true"></span><div class="copy"><slot></slot></div></div>');
     }
+    connectedCallback() { this.attributeChangedCallback(); }
     attributeChangedCallback() {
       this.shadowRoot.querySelector(".notice").setAttribute("role", this.getAttribute("variant") === "error" ? "alert" : "status");
-      const symbol = this.getAttribute("variant") === "success" ? "✓" : "!";
-      this.shadowRoot.querySelector(".icon").textContent = symbol;
+      const shapes = {
+        success:'<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+        error:'<path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4m0 4h.01"/>',
+        warning:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/>',
+        default:'<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3m.08 3h.01"/>',
+      };
+      this.shadowRoot.querySelector(".icon").innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${shapes[this.getAttribute("variant")] || shapes.default}</svg>`;
     }
   }
   class Action extends HTMLElement {

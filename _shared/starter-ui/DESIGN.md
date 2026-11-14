@@ -9,6 +9,7 @@ Authoritative references, frontend-edge commit `b656a37f`:
 
 - `src/wsmr-components/molecules/AppCard/AppCard.tsx`: default surface, 12px radius,
   24px horizontal/32px vertical padding; desktop horizontal padding is 32px.
+- `src/wsmr-components/molecules/AppCard/AppCardTitle.tsx`: 20px card titles with 1.4 line height.
 - `src/ui-components/Button/index.tsx` and `molecules/ActionButton/ActionButton.tsx`:
   default/outline actions, 32px default and 44px large controls, full radius, focus and disabled states.
 - `src/wsmr-components/atoms/Input/index.tsx`: 40px inputs, 6px radius and focus states.

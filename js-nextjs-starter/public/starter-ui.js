@@ -1,4 +1,4 @@
-// Generated from _shared/starter-ui/wasmer-starter-ui.js; SHA256 1c37c61a958bd9c1b1bc4f9b4825d5cc06c7e80489208357f0da2de7faa5d90b
+// Generated from _shared/starter-ui/wasmer-starter-ui.js; SHA256 c0baa83ab7de23dd7ce1231eb43addf109ea1bf54988f7140862d7f421e38a81
 // Framework-neutral extension of the Wasmer design system. See DESIGN.md for source references.
 // Do not edit generated copies in individual starters; run scripts/sync-starter-ui.mjs.
 export const VERSION = "1.0.0";
@@ -97,7 +97,8 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
         button:disabled,a[aria-disabled=true]{background:rgba(15,5,24,.1);color:rgba(15,5,24,.7);cursor:not-allowed}
         .spinner{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin 800ms linear infinite}
         @keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none}}`, "<button type=button><slot></slot></button>");
-      this.shadowRoot.addEventListener("click", event => {
+      // Handle both native composed clicks and the custom element's public click().
+      this.addEventListener("click", event => {
         if (this.disabled || this.loading) { event.preventDefault(); event.stopImmediatePropagation(); return; }
         const form = this.closest("form");
         if (!this.hasAttribute("href") && this.getAttribute("type") === "submit" && form) {
@@ -146,8 +147,9 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
         input:invalid:not(:placeholder-shown){border-color:var(--red)}`, '<label><span></span><input></label>');
       this.control = this.shadowRoot.querySelector("input");
       this.control.addEventListener("input", () => this.syncValidity());
-      this.control.addEventListener("keydown", event => {
-        if (event.key === "Enter" && this.control.reportValidity()) {
+      this.control.addEventListener("change", () => this.syncValidity());
+      this.addEventListener("keydown", event => {
+        if (event.key === "Enter" && this.reportValidity()) {
           event.preventDefault();
           this.closest("form")?.requestSubmit();
         }
@@ -169,7 +171,8 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
       this.internals.setFormValue(this.control.value);
       this.internals.setValidity(this.control.validity, this.control.validationMessage, this.control);
     }
-    reportValidity() { return this.control.reportValidity(); }
+    // Autofill and host integrations can update a native input before an input event.
+    reportValidity() { this.syncValidity(); return this.internals.reportValidity(); }
     formResetCallback() { this.control.value = this.getAttribute("value") || ""; this.syncValidity(); }
     formDisabledCallback(disabled) { this.control.disabled = disabled; }
     get value() { return this.control.value; }

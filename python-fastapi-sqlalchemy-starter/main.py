@@ -15,7 +15,7 @@ from urllib.parse import quote_plus
 
 from fastapi import Depends, FastAPI, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import DateTime, String, create_engine, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -55,6 +55,13 @@ class Todo(Base):
 class TodoIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     done: bool = False
+
+    @field_validator("title")
+    @classmethod
+    def meaningful_title(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Title must contain text")
+        return value.strip()
 
 
 class TodoOut(TodoIn):
@@ -109,6 +116,8 @@ def index(db: Session = Depends(get_db)):
 
 @app.post("/todos")
 def add_todo_form(title: str = Form(..., min_length=1, max_length=200), db: Session = Depends(get_db)):
+    if not title.strip():
+        raise HTTPException(422, "Title must contain text")
     db.add(Todo(title=title.strip()))
     db.commit()
     return RedirectResponse("/", status_code=303)

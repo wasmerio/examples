@@ -27,3 +27,9 @@ def test_form_flow_redirects_home():
         response = client.post("/todos", data={"title": "From the form"}, follow_redirects=False)
         assert response.status_code == 303
         assert "From the form" in client.get("/").text
+
+
+def test_blank_titles_are_rejected_in_both_entry_points():
+    with TestClient(app) as client:
+        assert client.post("/api/todos", json={"title": "   "}).status_code == 422
+        assert client.post("/todos", data={"title": "   "}).status_code == 422

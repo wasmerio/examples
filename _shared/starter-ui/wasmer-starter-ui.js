@@ -145,8 +145,9 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
         input:invalid:not(:placeholder-shown){border-color:var(--red)}`, '<label><span></span><input></label>');
       this.control = this.shadowRoot.querySelector("input");
       this.control.addEventListener("input", () => this.syncValidity());
+      this.control.addEventListener("change", () => this.syncValidity());
       this.control.addEventListener("keydown", event => {
-        if (event.key === "Enter" && this.control.reportValidity()) {
+        if (event.key === "Enter" && this.reportValidity()) {
           event.preventDefault();
           this.closest("form")?.requestSubmit();
         }
@@ -168,7 +169,8 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
       this.internals.setFormValue(this.control.value);
       this.internals.setValidity(this.control.validity, this.control.validationMessage, this.control);
     }
-    reportValidity() { return this.control.reportValidity(); }
+    // Autofill and host integrations can update a native input before an input event.
+    reportValidity() { this.syncValidity(); return this.internals.reportValidity(); }
     formResetCallback() { this.control.value = this.getAttribute("value") || ""; this.syncValidity(); }
     formDisabledCallback(disabled) { this.control.disabled = disabled; }
     get value() { return this.control.value; }

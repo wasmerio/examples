@@ -96,7 +96,8 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
         button:disabled,a[aria-disabled=true]{background:rgba(15,5,24,.1);color:rgba(15,5,24,.7);cursor:not-allowed}
         .spinner{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin 800ms linear infinite}
         @keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none}}`, "<button type=button><slot></slot></button>");
-      this.shadowRoot.addEventListener("click", event => {
+      // Handle both native composed clicks and the custom element's public click().
+      this.addEventListener("click", event => {
         if (this.disabled || this.loading) { event.preventDefault(); event.stopImmediatePropagation(); return; }
         const form = this.closest("form");
         if (!this.hasAttribute("href") && this.getAttribute("type") === "submit" && form) {
@@ -146,7 +147,7 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
       this.control = this.shadowRoot.querySelector("input");
       this.control.addEventListener("input", () => this.syncValidity());
       this.control.addEventListener("change", () => this.syncValidity());
-      this.control.addEventListener("keydown", event => {
+      this.addEventListener("keydown", event => {
         if (event.key === "Enter" && this.reportValidity()) {
           event.preventDefault();
           this.closest("form")?.requestSubmit();

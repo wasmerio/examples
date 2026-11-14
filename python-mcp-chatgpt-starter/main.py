@@ -5,6 +5,7 @@ ChatGPT connectors and deep research call two tools, `search` and `fetch`. This 
 (Streamable HTTP); `/` is a short page for people who open the URL in a browser.
 """
 
+import html
 import json
 import os
 from pathlib import Path
@@ -76,7 +77,9 @@ def fetch(id: str) -> Document:
 @mcp.custom_route("/", methods=["GET"])
 async def home(request: Request) -> HTMLResponse:
     scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
-    endpoint = f"{scheme}://{request.url.netloc}/mcp"
+    if scheme not in {"http", "https"}:
+        scheme = request.url.scheme
+    endpoint = html.escape(f"{scheme}://{request.url.netloc}/mcp")
     return HTMLResponse(f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MCP server for ChatGPT on Wasmer Edge</title><script type="module" src="/starter-ui.js"></script><style>body{{margin:0}}ul{{margin:0}}</style></head>

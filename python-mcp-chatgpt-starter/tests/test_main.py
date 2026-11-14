@@ -35,3 +35,9 @@ def test_tools_answer_on_a_public_hostname(client):
     assert found["structuredContent"]["results"][0]["id"] == "1"
     order = call(client, "tools/call", {"name": "fetch", "arguments": {"id": "1"}}, id=4)
     assert order["structuredContent"]["metadata"]["customer"] == "Alice"
+
+
+def test_forwarded_scheme_cannot_inject_html(client):
+    page = client.get("/", headers={"host": "cupcakes.wasmer.app", "x-forwarded-proto": "<script>unsafe()</script>"})
+    assert "<script>unsafe()" not in page.text
+    assert "http://cupcakes.wasmer.app/mcp" in page.text

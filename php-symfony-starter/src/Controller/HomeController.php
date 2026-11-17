@@ -34,7 +34,7 @@ final class HomeController
                     <li>Attribute routing in <code>src/Controller/</code></li>
                     <li>A JSON endpoint at <code>/api/hello</code></li>
                   </ul></wasmer-text>
-                  <wasmer-stack><wasmer-action href="/api/hello">Try the API</wasmer-action><wasmer-action variant="outline" href="https://docs.wasmer.io/edge">Wasmer Edge docs</wasmer-action></wasmer-stack>
+                  <wasmer-stack><wasmer-action href="/api/hello" wrap>Try the API</wasmer-action><wasmer-action variant="outline" href="https://docs.wasmer.io/edge" wrap>Wasmer Edge docs</wasmer-action></wasmer-stack>
                   <wasmer-text slot="footer">Symfony starter for Wasmer Edge</wasmer-text>
                 </wasmer-card></wasmer-starter>
               </body>

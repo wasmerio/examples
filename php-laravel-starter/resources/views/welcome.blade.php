@@ -19,8 +19,8 @@
             <wasmer-notice variant="success">This page is rendered by Laravel Blade using PHP {{ PHP_VERSION }}.</wasmer-notice>
             <wasmer-text>Edit resources/views/welcome.blade.php to make it yours. Add routes in routes/web.php when you are ready.</wasmer-text>
             <wasmer-stack>
-                <wasmer-action href="{{ url('/api/status') }}" size="lg">Check API status</wasmer-action>
-                <wasmer-action href="https://laravel.com/docs/13.x" variant="outline" size="lg" target="_blank">Laravel docs</wasmer-action>
+                <wasmer-action href="{{ url('/api/status') }}" size="lg" wrap>Check API status</wasmer-action>
+                <wasmer-action href="https://laravel.com/docs/13.x" variant="outline" size="lg" target="_blank" wrap>Laravel docs</wasmer-action>
             </wasmer-stack>
             <wasmer-text slot="footer">A small starting point: no JavaScript build step, no database needed for this page.</wasmer-text>
         </wasmer-card>

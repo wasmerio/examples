@@ -33,3 +33,16 @@ def test_blank_titles_are_rejected_in_both_entry_points():
     with TestClient(app) as client:
         assert client.post("/api/todos", json={"title": "   "}).status_code == 422
         assert client.post("/todos", data={"title": "   "}).status_code == 422
+
+
+def test_max_length_title_keeps_the_wrapping_element_after_completion():
+    title = "W" * 200
+    with TestClient(app) as client:
+        response = client.post("/api/todos", json={"title": title})
+        assert response.status_code == 201
+        todo_id = response.json()["id"]
+        assert f'<span class="todo-title">{title}</span>' in client.get("/").text
+
+        response = client.post(f"/todos/{todo_id}/toggle", follow_redirects=False)
+        assert response.status_code == 303
+        assert f'<span class="todo-title"><s>{title}</s></span>' in client.get("/").text

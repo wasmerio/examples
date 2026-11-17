@@ -93,7 +93,8 @@ def starter_ui():
 def index(db: Session = Depends(get_db)):
     todos = db.scalars(select(Todo).order_by(Todo.id.desc())).all()
     items = "".join(
-        f'<li>{"<s>" if t.done else ""}{html.escape(t.title)}{"</s>" if t.done else ""} '
+        '<li><span class="todo-title">'
+        f'{"<s>" if t.done else ""}{html.escape(t.title)}{"</s>" if t.done else ""}</span> '
         f'<form method="post" action="/todos/{t.id}/toggle" style="display:inline">'
         f'<wasmer-action type="submit">{"Undo" if t.done else "Done"}</wasmer-action></form></li>'
         for t in todos
@@ -102,7 +103,8 @@ def index(db: Session = Depends(get_db)):
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FastAPI + SQLAlchemy on Wasmer Edge</title><script type="module" src="/starter-ui.js"></script>
-<style>body{{margin:0}}form{{display:flex;flex-wrap:wrap;align-items:end;gap:12px}}ul{{margin:0}}li{{margin-block:8px}}</style></head>
+<style>body{{margin:0}}form{{display:flex;flex-wrap:wrap;align-items:end;gap:12px}}ul{{margin:0}}li{{margin-block:8px}}
+.todo-title{{overflow-wrap:anywhere}}</style></head>
 <body><wasmer-starter><wasmer-card>
 <wasmer-stack slot="header" vertical><wasmer-badge>FastAPI + SQLAlchemy</wasmer-badge>
 <wasmer-title>Your FastAPI app is live on Wasmer Edge</wasmer-title></wasmer-stack>

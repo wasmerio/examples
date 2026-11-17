@@ -91,6 +91,10 @@ def starter_ui():
 
 @app.get("/", response_class=HTMLResponse)
 def index(db: Session = Depends(get_db)):
+    return todo_page(db)
+
+
+def todo_page(db: Session, *, title_error: str = "") -> str:
     todos = db.scalars(select(Todo).order_by(Todo.id.desc())).all()
     items = "".join(
         '<li><span class="todo-title">'
@@ -100,6 +104,7 @@ def index(db: Session = Depends(get_db)):
         for t in todos
     ) or "<li>No todos yet. Add the first one.</li>"
     engine_name = engine.dialect.name
+    feedback = f'<wasmer-notice variant="error">{html.escape(title_error)}</wasmer-notice>' if title_error else ""
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FastAPI + SQLAlchemy on Wasmer Edge</title><script type="module" src="/starter-ui.js"></script>
@@ -110,6 +115,7 @@ def index(db: Session = Depends(get_db)):
 <wasmer-title>Your FastAPI app is live on Wasmer Edge</wasmer-title></wasmer-stack>
 <wasmer-text>Todos are stored with SQLAlchemy in <code>{engine_name}</code>. Edit <code>main.py</code> and push to redeploy.</wasmer-text>
 <form method="post" action="/todos"><wasmer-input name="title" label="New todo" placeholder="What needs doing?" maxlength="200" required></wasmer-input><wasmer-action type="submit">Add</wasmer-action></form>
+{feedback}
 <ul>{items}</ul>
 <wasmer-stack><wasmer-action variant="outline" href="/api/todos">JSON API</wasmer-action><wasmer-action variant="outline" href="/docs">API docs</wasmer-action></wasmer-stack>
 <wasmer-text slot="footer">FastAPI + SQLAlchemy starter for Wasmer Edge</wasmer-text>
@@ -119,7 +125,7 @@ def index(db: Session = Depends(get_db)):
 @app.post("/todos")
 def add_todo_form(title: str = Form(..., min_length=1, max_length=200), db: Session = Depends(get_db)):
     if not title.strip():
-        raise HTTPException(422, "Title must contain text")
+        return HTMLResponse(todo_page(db, title_error="Enter a title that contains text."), status_code=422)
     db.add(Todo(title=title.strip()))
     db.commit()
     return RedirectResponse("/", status_code=303)

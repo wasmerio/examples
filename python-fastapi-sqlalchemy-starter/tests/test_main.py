@@ -45,8 +45,22 @@ def test_form_flow_redirects_home(client):
 
 
 def test_blank_titles_are_rejected_in_both_entry_points(client):
-    assert client.post("/api/todos", json={"title": "   "}).status_code == 422
-    assert client.post("/todos", data={"title": "   "}).status_code == 422
+    api_error = client.post("/api/todos", json={"title": "   "})
+    assert api_error.status_code == 422
+    assert "detail" in api_error.json()
+
+    client.post("/api/todos", json={"title": "Keep this todo"})
+    form_error = client.post("/todos", data={"title": "   "})
+    assert form_error.status_code == 422
+    assert form_error.headers["content-type"].startswith("text/html")
+    assert '<wasmer-notice variant="error">Enter a title that contains text.</wasmer-notice>' in form_error.text
+    assert "Keep this todo" in form_error.text
+    assert 'action="/todos"' in form_error.text
+
+    retry = client.post("/todos", data={"title": "Valid retry"})
+    assert retry.status_code == 200
+    assert "Valid retry" in retry.text
+    assert 'variant="error"' not in retry.text
 
 
 def test_max_length_title_keeps_the_wrapping_element_after_completion(client):

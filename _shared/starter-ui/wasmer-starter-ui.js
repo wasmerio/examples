@@ -82,24 +82,28 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
     }
   }
   class Action extends HTMLElement {
+    static formAssociated = true;
     static observedAttributes = ["href","target","disabled","loading","variant","type"];
     constructor() {
       super();
+      this.internals = this.attachInternals();
       mount(this, `:host{display:inline-flex;max-width:100%}button,a{font:inherit;font-weight:600;display:inline-flex;align-items:center;justify-content:center;
         gap:8px;height:32px;padding:6px 10px;border:0;border-radius:9999px;background:var(--primary);color:var(--on-primary);
         text-decoration:none;cursor:pointer;white-space:nowrap;transition:background-color 150ms}
         button:hover,a:hover{background:rgba(23,23,23,.9)}button:focus-visible,a:focus-visible{outline:2px solid #0a0a0a;outline-offset:2px}
-        :host([variant=outline]) button,:host([variant=outline]) a{border:1px solid var(--input);background:white;color:#171717}
-        :host([variant=outline]) button:hover,:host([variant=outline]) a:hover{background:#f5f5f5}
+        :host([variant=outline]) :is(button,a){border:1px solid var(--input)}
+        :host([variant=outline]) :is(button,a):not(:disabled,[aria-disabled=true]){background:white;color:#171717}
+        :host([variant=outline]) :is(button,a):not(:disabled,[aria-disabled=true]):hover{background:#f5f5f5}
         :host([size=lg]) button,:host([size=lg]) a{height:44px;padding:0 32px}
         :host([wrap]) button,:host([wrap]) a{height:auto;min-height:32px;white-space:normal;overflow-wrap:anywhere;max-width:100%}
+        :host([wrap][size=lg]) :is(button,a){min-height:44px}
         button:disabled,a[aria-disabled=true]{background:rgba(15,5,24,.1);color:rgba(15,5,24,.7);cursor:not-allowed}
         .spinner{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin 800ms linear infinite}
         @keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none}}`, "<button type=button><slot></slot></button>");
       // Handle both native composed clicks and the custom element's public click().
       this.addEventListener("click", event => {
-        if (this.disabled || this.loading) { event.preventDefault(); event.stopImmediatePropagation(); return; }
-        const form = this.closest("form");
+        if (this.matches(":disabled") || this.loading) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+        const form = this.internals.form;
         if (!this.hasAttribute("href") && this.getAttribute("type") === "submit" && form) {
           const invalid = [...form.elements].find(control => typeof control.reportValidity === "function" && !control.reportValidity());
           if (!invalid) form.requestSubmit();
@@ -112,23 +116,31 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
     set loading(value) { this.toggleAttribute("loading", Boolean(value)); }
     connectedCallback() { this.render(); }
     attributeChangedCallback() { this.render(); }
+    formDisabledCallback() { this.render(); }
     render() {
       const root = this.shadowRoot;
       const href = this.getAttribute("href");
+      const inactive = this.matches(":disabled") || this.loading;
       const tag = href ? "a" : "button";
       let control = root.querySelector("button,a");
       if (control.localName !== tag) { const replacement = document.createElement(tag); control.replaceWith(replacement); control = replacement; }
       control.innerHTML = this.loading ? '<span class="spinner" aria-hidden="true"></span><slot></slot>' : "<slot></slot>";
       if (href) {
-        try {
-          const url = new URL(href, document.baseURI);
-          if (!["http:","https:"].includes(url.protocol)) throw new Error("Unsupported link scheme");
-          control.href = url.href;
-        } catch { control.removeAttribute("href"); }
+        if (inactive) {
+          control.removeAttribute("href");
+          control.setAttribute("role", "link");
+        } else {
+          control.removeAttribute("role");
+          try {
+            const url = new URL(href, document.baseURI);
+            if (!["http:","https:"].includes(url.protocol)) throw new Error("Unsupported link scheme");
+            control.href = url.href;
+          } catch { control.removeAttribute("href"); }
+        }
         if (this.getAttribute("target") === "_blank") { control.target = "_blank"; control.rel = "noopener noreferrer"; }
         else { control.removeAttribute("target"); control.removeAttribute("rel"); }
-        control.setAttribute("aria-disabled", String(this.disabled || this.loading));
-      } else { control.type = "button"; control.disabled = this.disabled || this.loading; }
+        control.setAttribute("aria-disabled", String(inactive));
+      } else { control.type = "button"; control.disabled = inactive; }
       control.setAttribute("aria-busy", String(this.loading));
     }
   }
@@ -157,10 +169,11 @@ if (typeof window !== "undefined" && !customElements.get("wasmer-card")) {
     connectedCallback() { this.attributeChangedCallback(); }
     attributeChangedCallback() {
       if (!this.control) return;
-      for (const attr of ["name","placeholder","required","maxlength","type","disabled"]) {
+      for (const attr of ["name","placeholder","required","maxlength","type"]) {
         if (this.hasAttribute(attr)) this.control.setAttribute(attr, this.getAttribute(attr));
         else this.control.removeAttribute(attr);
       }
+      this.control.disabled = this.matches(":disabled");
       if (this.hasAttribute("value")) this.control.value = this.getAttribute("value");
       this.shadowRoot.querySelector("span").textContent = this.getAttribute("label") || "";
       this.control.setAttribute("aria-label", this.getAttribute("label") || this.getAttribute("name") || "Input");

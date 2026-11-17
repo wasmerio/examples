@@ -106,7 +106,7 @@ async def home(request: Request) -> HTMLResponse:
 <li><code>fetch(id)</code> returns a full order</li>
 <li>{len(RECORDS)} sample orders in <code>records.json</code></li>
 </ul>
-<wasmer-stack><wasmer-action variant="outline" href="https://docs.wasmer.io/edge" target="_blank">Wasmer Edge docs</wasmer-action></wasmer-stack>
+<wasmer-stack><wasmer-action variant="outline" wrap href="https://docs.wasmer.io/edge" target="_blank">Wasmer Edge docs</wasmer-action></wasmer-stack>
 <wasmer-text slot="footer">MCP for ChatGPT starter for Wasmer Edge</wasmer-text>
 </wasmer-card></wasmer-starter></body></html>""")
 

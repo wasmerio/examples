@@ -18,7 +18,7 @@ export default function Home() {
       </ul>
       <Stack>
         <Counter />
-        <Action variant="outline" href="/about/">
+        <Action wrap variant="outline" href="/about/">
           About this starter
         </Action>
       </Stack>

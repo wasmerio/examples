@@ -11,10 +11,10 @@ export default function About() {
         <code>app/about/page.tsx</code>.
       </Text>
       <Stack>
-        <Action variant="outline" href="/">
+        <Action wrap variant="outline" href="/">
           Back home
         </Action>
-        <Action variant="outline" href="https://docs.wasmer.io/edge" target="_blank">
+        <Action wrap variant="outline" href="https://docs.wasmer.io/edge" target="_blank">
           Wasmer Edge docs
         </Action>
       </Stack>

@@ -9,11 +9,12 @@ import html
 import json
 import os
 from pathlib import Path
+from urllib.parse import quote
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 from pydantic import BaseModel
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, Response
 
 HERE = Path(__file__).parent
 RECORDS: list[dict] = json.loads((HERE / "records.json").read_text())
@@ -23,7 +24,7 @@ LOOKUP = {record["id"]: record for record in RECORDS}
 class SearchResult(BaseModel):
     id: str
     title: str
-    text: str
+    url: str
 
 
 class SearchResults(BaseModel):
@@ -34,7 +35,7 @@ class Document(BaseModel):
     id: str
     title: str
     text: str
-    url: str | None = None
+    url: str
     metadata: dict[str, str] | None = None
 
 
@@ -45,9 +46,22 @@ mcp = MCPServer(name="Cupcake orders", instructions="Search and read cupcake ord
 HTTP_OPTIONS = {"host": "0.0.0.0", "stateless_http": True, "json_response": True}
 
 
+def app_origin(request: Request) -> str:
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    if scheme not in {"http", "https"}:
+        scheme = request.url.scheme
+    return f"{scheme}://{request.url.netloc}"
+
+
+def citation_url(request: Request, record_id: str) -> str:
+    path = request.url_for("record_citation", id=quote(record_id, safe="")).path
+    return f"{app_origin(request)}{path}"
+
+
 @mcp.tool()
-def search(query: str) -> SearchResults:
-    """Search cupcake orders by keyword. Returns matching order IDs, titles and summaries."""
+def search(query: str, ctx: Context) -> SearchResults:
+    """Search cupcake orders by keyword. Returns matching order IDs, titles and citation URLs."""
+    request = ctx.request_context.request
     tokens = query.lower().split()
     results = []
     for record in RECORDS:
@@ -55,12 +69,14 @@ def search(query: str) -> SearchResults:
             [record.get("title", ""), record.get("text", ""), " ".join(record.get("metadata", {}).values())]
         ).lower()
         if any(token in haystack for token in tokens):
-            results.append(SearchResult(id=record["id"], title=record.get("title", ""), text=record.get("text", "")))
+            results.append(
+                SearchResult(id=record["id"], title=record.get("title", ""), url=citation_url(request, record["id"]))
+            )
     return SearchResults(results=results)
 
 
 @mcp.tool()
-def fetch(id: str) -> Document:
+def fetch(id: str, ctx: Context) -> Document:
     """Fetch the full cupcake order with this ID."""
     record = LOOKUP.get(id)
     if record is None:
@@ -69,24 +85,21 @@ def fetch(id: str) -> Document:
         id=record["id"],
         title=record.get("title", ""),
         text=record.get("text", ""),
-        url=record.get("url"),
+        url=citation_url(ctx.request_context.request, id),
         metadata=record.get("metadata"),
     )
 
 
 @mcp.custom_route("/", methods=["GET"])
 async def home(request: Request) -> HTMLResponse:
-    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
-    if scheme not in {"http", "https"}:
-        scheme = request.url.scheme
-    endpoint = html.escape(f"{scheme}://{request.url.netloc}/mcp")
+    endpoint = html.escape(f"{app_origin(request)}/mcp")
     return HTMLResponse(f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MCP server for ChatGPT on Wasmer Edge</title><script type="module" src="/starter-ui.js"></script><style>body{{margin:0}}ul{{margin:0}}</style></head>
 <body><wasmer-starter><wasmer-card>
 <wasmer-stack slot="header" vertical><wasmer-badge>Python MCP</wasmer-badge>
 <wasmer-title>Your MCP server is live on Wasmer Edge</wasmer-title></wasmer-stack>
-<wasmer-text>Add this URL to ChatGPT as a connector (no authentication), then ask "How many cupcakes did Alice order?"</wasmer-text>
+<wasmer-text>Add this URL to ChatGPT as a connector (no authentication), then ask "How many cupcakes did Alice order?" This demo serves public sample data.</wasmer-text>
 <wasmer-text><code>{endpoint}</code></wasmer-text>
 <ul>
 <li><code>search(query)</code> finds orders by keyword</li>
@@ -96,6 +109,14 @@ async def home(request: Request) -> HTMLResponse:
 <wasmer-stack><wasmer-action variant="outline" href="https://docs.wasmer.io/edge" target="_blank">Wasmer Edge docs</wasmer-action></wasmer-stack>
 <wasmer-text slot="footer">MCP for ChatGPT starter for Wasmer Edge</wasmer-text>
 </wasmer-card></wasmer-starter></body></html>""")
+
+
+@mcp.custom_route("/records/{id}", methods=["GET"])
+async def record_citation(request: Request) -> JSONResponse:
+    record = LOOKUP.get(request.path_params["id"])
+    if record is None:
+        return JSONResponse({"error": "Order not found"}, status_code=404)
+    return JSONResponse(record)
 
 
 @mcp.custom_route("/starter-ui.js", methods=["GET"])

@@ -15,7 +15,7 @@ const notFound = computed(() => props.error.statusCode === 404);
       <wasmer-text>
         {{ notFound ? "Check the address or return to the homepage." : "Try again, or return to the homepage." }}
       </wasmer-text>
-      <wasmer-stack><wasmer-action href="/">Back home</wasmer-action></wasmer-stack>
+      <wasmer-stack><wasmer-action wrap href="/">Back home</wasmer-action></wasmer-stack>
       <wasmer-text slot="footer">Nuxt starter for Wasmer Edge</wasmer-text>
     </wasmer-card>
   </wasmer-starter>

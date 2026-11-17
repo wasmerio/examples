@@ -17,7 +17,7 @@ const count = ref(0);
     <li>Vue reactivity still works in the browser</li>
   </ul>
   <wasmer-stack>
-    <wasmer-action type="button" @click="count++">Clicked {{ count }} {{ count === 1 ? "time" : "times" }}</wasmer-action>
-    <wasmer-action variant="outline" href="/about/">About this starter</wasmer-action>
+    <wasmer-action wrap type="button" @click="count++">Clicked {{ count }} {{ count === 1 ? "time" : "times" }}</wasmer-action>
+    <wasmer-action wrap variant="outline" href="/about/">About this starter</wasmer-action>
   </wasmer-stack>
 </template>

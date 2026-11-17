@@ -2,7 +2,7 @@ import { createElement, type HTMLAttributes } from "react";
 
 type Props = HTMLAttributes<HTMLElement> & {
   href?: string; target?: string; type?: "button" | "submit";
-  variant?: "outline"; size?: "lg"; disabled?: boolean; loading?: boolean;
+  variant?: "outline"; size?: "lg"; disabled?: boolean; loading?: boolean; wrap?: "";
 };
 const component = (name: string) => ({ children, ...props }: Props) =>
   createElement(`wasmer-${name}`, props, children);

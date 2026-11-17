@@ -19,10 +19,10 @@ function App() {
         <li>No server to run: Wasmer serves the built files</li>
       </ul>
       <Stack>
-        <Action type="button" onClick={() => setCount((value) => value + 1)}>
+        <Action type="button" wrap="" onClick={() => setCount((value) => value + 1)}>
           Clicked {count} {count === 1 ? "time" : "times"}
         </Action>
-        <Action variant="outline" href="https://docs.wasmer.io/edge" target="_blank">
+        <Action variant="outline" wrap="" href="https://docs.wasmer.io/edge" target="_blank">
           Wasmer Edge docs
         </Action>
       </Stack>

@@ -44,13 +44,13 @@ if prompt := st.chat_input("Ask a question"):
     if not api_key:
         st.info("Add an OpenAI API key in the sidebar, or set the OPENAI_API_KEY secret on your app, to start chatting.")
         st.stop()
-    st.session_state.messages.append(HumanMessage(prompt))
+    user_message = HumanMessage(prompt)
     st.chat_message("user").write(prompt)
-    history = [SystemMessage("You are a helpful, concise assistant.")] + st.session_state.messages
+    history = [SystemMessage("You are a helpful, concise assistant."), *st.session_state.messages, user_message]
     try:
         llm = ChatOpenAI(model=model, api_key=api_key, streaming=True)
         with st.chat_message("assistant"):
             answer = st.write_stream(chunk.content for chunk in llm.stream(history))
-        st.session_state.messages.append(AIMessage(answer))
+        st.session_state.messages.extend((user_message, AIMessage(answer)))
     except Exception:
         st.error("The model request failed. Check your API key, model access and account credit, then try again.")

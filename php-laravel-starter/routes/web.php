@@ -2,13 +2,16 @@
 
 use Illuminate\Support\Facades\Route;
 
-Route::view('/', 'welcome');
+// The read-only starter routes can run before an app key or database is configured.
+Route::withoutMiddleware('web')->group(function () {
+    Route::view('/', 'welcome');
 
-Route::get('/api/status', function () {
-    return response()->json([
-        'status' => 'ok',
-        'framework' => 'Laravel',
-        'version' => app()->version(),
-        'php' => PHP_VERSION,
-    ]);
+    Route::get('/api/status', function () {
+        return response()->json([
+            'status' => 'ok',
+            'framework' => 'Laravel',
+            'version' => app()->version(),
+            'php' => PHP_VERSION,
+        ]);
+    });
 });

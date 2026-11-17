@@ -27,15 +27,24 @@ to `.env`, run `php artisan key:generate` and `php artisan serve`.
 
 ## Configure deployment
 
-Set an `APP_KEY` deployment secret before using sessions or encrypted data. Anybuild
-preserves a supplied key; without one it generates a fresh key for each build. Changing
-that key invalidates existing sessions and previously encrypted data. Keep `APP_DEBUG=false`.
-The sample uses cookie sessions, file cache and synchronous queues.
+The welcome page and `/api/status` are read-only routes that can run on Wasmer Edge
+without an `APP_KEY` or a database. Add routes that need sessions, forms or authentication
+outside the starter route group in `routes/web.php` so they use Laravel's web middleware.
+Set an `APP_KEY` deployment secret before using sessions or encrypted data. Local Anybuild
+preparation preserves a supplied key or generates one for the local build. Changing the key
+invalidates existing sessions and previously encrypted data. Keep `APP_DEBUG=false`.
+The local `.env.example` uses cookie sessions, file cache and synchronous queues.
 
 The deployment command runs `php artisan migrate --force`. SQLite is initialized for the
 sample migrations, but the bundled database file is not persistent storage. Configure a
 persistent database with Laravel's `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
 `DB_USERNAME` and `DB_PASSWORD` settings before storing application data.
+
+## Check an unconfigured deploy
+
+In a clean copy with dependencies installed, run `php tests/starter-routes.php` before
+creating a `.env` or setting `APP_KEY`. This checks the welcome page, API status and health
+route under the same keyless configuration as a new hosted deployment.
 
 ## Dependencies and shared UI
 

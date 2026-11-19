@@ -45,6 +45,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-create-react-app-staticsite`](js-create-react-app-staticsite/README.md) – Create React App-style static build.
 - [`js-docusaurus-staticsite`](js-docusaurus-staticsite/README.md) – Docusaurus docs site.
 - [`js-drawdb`](js-drawdb/README.md) – drawDB database diagram editor, built from pinned upstream source.
+- [`js-duckdb-csv-explorer`](js-duckdb-csv-explorer/README.md) – Browser SQL console for CSV and Parquet analysis.
 - [`js-eleventy-staticsite`](js-eleventy-staticsite/README.md) – Eleventy-generated static site.
 - [`js-elysia`](js-elysia/README.md) – Elysia HTTP server.
 - [`js-ember-staticsite`](js-ember-staticsite/README.md) – Ember-style static build.

@@ -77,6 +77,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-parcel-staticsite`](js-parcel-staticsite/README.md) – Parcel-style static build.
 - [`js-pnpm-workspace-subdir`](js-pnpm-workspace-subdir/README.md) – pnpm workspace app in a subdirectory.
 - [`js-piskel`](js-piskel/README.md) – Piskel desktop sprite editor with an original two-frame sample.
+- [`js-postgresql`](js-postgresql/README.md) – Managed PostgreSQL provisioned through the app's database configuration.
 - [`js-polymer-staticsite`](js-polymer-staticsite/README.md) – Polymer-style static build.
 - [`js-preact-staticsite`](js-preact-staticsite/README.md) – Preact-style static build.
 - [`js-react-router`](js-react-router/README.md) – React Router-oriented Node.js runtime example.

@@ -90,6 +90,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-sveltekit-staticsite`](js-sveltekit-staticsite/README.md) – Compact SvelteKit-style static build.
 - [`js-tanstack-start`](js-tanstack-start/README.md) – TanStack Start-oriented Node.js runtime example.
 - [`js-umijs-staticsite`](js-umijs-staticsite/README.md) – UmiJS-style static build.
+- [`js-univer-sheets`](js-univer-sheets/README.md) – Univer Sheets spreadsheet editor with a sample budget and browser-local saving.
 - [`js-vite-react-staticsite`](js-vite-react-staticsite/README.md) – Vite React static build.
 - [`js-vite-staticsite`](js-vite-staticsite/README.md) – Vite-powered static site.
 - [`js-vitepress-staticsite`](js-vitepress-staticsite/README.md) – VitePress documentation site.

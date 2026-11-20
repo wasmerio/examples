@@ -4,7 +4,7 @@ This example shows how to build a **Svelte** app with **Vite** and deploy the st
 
 ## Demo
 
-https://wasmer-edge-svelte-sample.wasmer.app/
+https://svelte-starter-template.wasmer.app/
 
 ## How it Works
 

@@ -30,9 +30,12 @@ to `.env`, run `php artisan key:generate` and `php artisan serve`.
 The welcome page and `/api/status` are read-only routes that can run on Wasmer Edge
 without an `APP_KEY` or a database. Add routes that need sessions, forms or authentication
 outside the starter route group in `routes/web.php` so they use Laravel's web middleware.
-Set an `APP_KEY` deployment secret before using sessions or encrypted data. Local Anybuild
-preparation preserves a supplied key or generates one for the local build. Changing the key
-invalidates existing sessions and previously encrypted data. Keep `APP_DEBUG=false`.
+Set an `APP_KEY` secret on your app before using sessions or encrypted data; generate one with
+`php artisan key:generate --show`. The build never generates a key and does not run
+`php artisan config:cache`, because Anybuild's prepare steps run at build time: a cached
+configuration would ship build-time values in every copy of the artifact and ignore secrets
+set later. `APP_KEY`, `DB_*` and other settings are read from the app's environment at runtime.
+Changing the key invalidates existing sessions and previously encrypted data. Keep `APP_DEBUG=false`.
 The local `.env.example` uses cookie sessions, file cache and synchronous queues.
 
 The deployment command runs `php artisan migrate --force`. SQLite is initialized for the

@@ -1,5 +1,5 @@
 # PHP-only Laravel build. The root recipe handles catalog --subdir builds.
-load("//anybuild/tools:laravel.bzl", "laravel_commands", "laravel_config", "laravel_prepare")
+load("//anybuild/tools:laravel.bzl", "laravel_commands", "laravel_config")
 load("//anybuild/tools:php.bzl", "php_build", "php_serve")
 
 config = laravel_config(
@@ -31,7 +31,13 @@ php_serve(
     prepare = [
         workdir(build.app.serve_path),
         run("test -f .env || cp .env.example .env"),
-        run("php -r 'exit(getenv(\"APP_KEY\") || preg_match(\"/^APP_KEY=base64:.+$/m\", file_get_contents(\".env\")) ? 0 : 1);' || php artisan key:generate --force"),
         run("test -f database/database.sqlite || touch database/database.sqlite"),
-    ] + laravel_prepare(config, build.app),
+        run("mkdir -p storage/framework/{sessions,views,cache,testing} storage/logs bootstrap/cache"),
+        # Prepare runs at build time, so the stock laravel_prepare() config:cache would bake build-time
+        # values into every copy of the artifact and ignore runtime secrets such as APP_KEY. Only cache
+        # what does not depend on the environment; APP_KEY and other settings are read at runtime.
+        run("php artisan event:cache"),
+        run("php artisan route:cache"),
+        run("php artisan view:cache"),
+    ],
 )

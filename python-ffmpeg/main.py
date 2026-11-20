@@ -17,15 +17,15 @@ import base64
 import html
 import subprocess
 import tempfile
-import time as clock
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit
 
 import ffmpeg
-import requests
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+
+from fetch import FetchError, fetch
 
 # Limits. Wasmer Edge instances have about 1 GB of memory and /tmp is not persistent.
 MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024  # largest video the app will download
@@ -64,31 +64,11 @@ def check_time(value: str | float) -> float:
 
 
 def download(url: str, destination: Path) -> None:
-    """Stream the URL into destination, enforcing the size and time limits."""
-    deadline = clock.monotonic() + DOWNLOAD_TIMEOUT_SECONDS
-    too_large = HTTPException(413, f"The video is larger than {MAX_DOWNLOAD_BYTES // 1024 // 1024} MB.")
+    """Fetch the URL (public addresses only, see fetch.py) into destination."""
     try:
-        with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
-            response.raise_for_status()
-            if response.headers.get("content-type", "").startswith("text/html"):
-                raise HTTPException(415, "That link opens a web page, not a video file. Use a direct link to the file.")
-            if int(response.headers.get("content-length") or 0) > MAX_DOWNLOAD_BYTES:
-                raise too_large
-            received = 0
-            with destination.open("wb") as file:
-                for chunk in response.iter_content(chunk_size=64 * 1024):
-                    received += len(chunk)
-                    if received > MAX_DOWNLOAD_BYTES:
-                        raise too_large
-                    if clock.monotonic() > deadline:
-                        raise requests.Timeout()
-                    file.write(chunk)
-    except requests.Timeout:
-        raise HTTPException(504, f"The download took longer than {DOWNLOAD_TIMEOUT_SECONDS} seconds.") from None
-    except requests.HTTPError as error:
-        raise HTTPException(400, f"The URL answered with HTTP {error.response.status_code}.") from None
-    except requests.RequestException:
-        raise HTTPException(400, "Could not download the video. Check that the URL is public.") from None
+        destination.write_bytes(fetch(url, max_bytes=MAX_DOWNLOAD_BYTES, timeout=DOWNLOAD_TIMEOUT_SECONDS))
+    except FetchError as error:
+        raise HTTPException(error.status, error.message) from None
 
 
 def probe(path: Path) -> dict:

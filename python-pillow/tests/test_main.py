@@ -1,7 +1,7 @@
 from io import BytesIO
 
 import pytest
-import requests
+import urllib3
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -16,34 +16,15 @@ def sample_png(size=(400, 200), mode="RGBA") -> bytes:
     return buffer.getvalue()
 
 
-class FakeResponse:
-    def __init__(self, body: bytes, status: int = 200):
-        self.body, self.status_code = body, status
-        self.headers = {"content-type": "image/png", "content-length": str(len(body))}
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise requests.HTTPError(response=self)
-
-    def iter_content(self, chunk_size):
-        for start in range(0, len(self.body), chunk_size):
-            yield self.body[start : start + chunk_size]
-
-
 @pytest.fixture
 def client():
     return TestClient(main.app)
 
 
 @pytest.fixture
-def remote_image(monkeypatch):
-    monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: FakeResponse(sample_png()))
+def remote_image(network):
+    network.serve(sample_png(), content_type="image/png")
+    return network
 
 
 def opened(response) -> Image.Image:
@@ -103,6 +84,20 @@ def test_invalid_options_are_422(client, data, field):
     assert response.json()["detail"][0]["loc"][-1] == field
 
 
+def test_legacy_route_pads_crop_on_small_images(client, network):
+    network.serve(sample_png(size=(120, 80)), content_type="image/png")
+    response = client.get("/process", params={"url": IMAGE_URL})
+    assert response.status_code == 200
+    assert opened(response).size == (200, 200)
+
+
+def test_rotation_canvas_is_bounded(client, monkeypatch):
+    monkeypatch.setattr(main, "MAX_OUTPUT_PIXELS", 90_000)
+    data = {"rotate": "45"}
+    response = client.post("/api/edit", data=data, files={"file": ("photo.png", sample_png(), "image/png")})
+    assert response.status_code == 413
+
+
 def test_legacy_route_rejects_bad_crop(client):
     response = client.get("/process", params={"url": IMAGE_URL, "crop": "a,b,c,d"})
     assert response.status_code == 422
@@ -132,26 +127,69 @@ def test_upload_too_large(client):
 
 
 def test_decompression_bomb(client, monkeypatch):
-    monkeypatch.setattr(main.Image, "MAX_IMAGE_PIXELS", 1000)
+    # 400x200 = 80,000 pixels: above the cap, but below the 2x where Pillow itself raises.
+    monkeypatch.setattr(main, "MAX_INPUT_PIXELS", 50_000)
     response = client.post("/api/edit", files={"file": ("photo.png", sample_png(), "image/png")})
     assert response.status_code == 413
 
 
 @pytest.mark.parametrize(
-    ("fake", "status"),
+    ("response", "status"),
     [
-        (lambda *a, **k: FakeResponse(b"", status=404), 400),
-        (lambda *a, **k: FakeResponse(b"x" * (main.MAX_INPUT_BYTES + 1)), 413),
+        ({"body": b"", "status": 404}, 400),
+        ({"body": b"<html></html>", "content_type": "text/html"}, 415),
+        ({"body": b"x" * (main.MAX_INPUT_BYTES + 1)}, 413),
     ],
 )
-def test_download_errors(client, monkeypatch, fake, status):
-    monkeypatch.setattr(main.requests, "get", fake)
-    assert client.post("/api/edit", data={"url": IMAGE_URL}).status_code == status
+def test_download_errors(client, network, response, status):
+    network.serve(**response)
+    result = client.post("/api/edit", data={"url": IMAGE_URL})
+    assert result.status_code == status
+    assert "404" not in result.json()["detail"]
 
 
-def test_download_timeout(client, monkeypatch):
-    def slow(*args, **kwargs):
-        raise requests.Timeout()
-
-    monkeypatch.setattr(main.requests, "get", slow)
+def test_download_timeout(client, network):
+    network.responses.append(urllib3.exceptions.ConnectTimeoutError())
     assert client.post("/api/edit", data={"url": IMAGE_URL}).status_code == 504
+
+
+def test_connects_to_the_checked_address(client, remote_image):
+    assert client.post("/api/edit", data={"url": IMAGE_URL}).status_code == 200
+    assert remote_image.requests == [{"ip": "93.184.215.14", "path": "/photo.png", "host": "images.example"}]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/a.png",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://10.0.0.5/a.png",
+        "http://[::1]/a.png",
+        "http://[::ffff:192.168.1.1]/a.png",
+        "http://224.0.0.1/a.png",
+    ],
+)
+def test_private_addresses_are_rejected(client, network, url):
+    response = client.post("/api/edit", data={"url": url})
+    assert response.status_code == 422
+    assert "private or local" in response.json()["detail"]
+    assert network.requests == []
+
+
+def test_redirect_to_private_address_is_rejected(client, network):
+    network.serve(status=302, headers={"location": "http://169.254.169.254/latest/meta-data/"})
+    response = client.post("/api/edit", data={"url": IMAGE_URL})
+    assert response.status_code == 422
+    assert len(network.requests) == 1
+
+
+def test_redirects_are_followed_and_capped(client, network):
+    network.serve(status=301, headers={"location": "/moved.png"})
+    network.serve(sample_png(), content_type="image/png")
+    assert client.post("/api/edit", data={"url": IMAGE_URL}).status_code == 200
+    assert [r["path"] for r in network.requests] == ["/photo.png", "/moved.png"]
+
+    for _ in range(5):
+        network.serve(status=302, headers={"location": "/again"})
+    response = client.post("/api/edit", data={"url": IMAGE_URL})
+    assert response.status_code == 400 and "redirected" in response.json()["detail"]

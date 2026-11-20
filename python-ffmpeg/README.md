@@ -12,10 +12,12 @@ The form starts with a short CC0 clip from MDN, so **Grab frame** works straight
 
 Everything is in `main.py`:
 
-1. **Download.** `requests` streams the URL into a temporary directory. Web pages (`text/html`), files over the size limit and slow downloads are rejected with a clear message.
+1. **Download.** `fetch.py` downloads the URL into a temporary directory (see below). Web pages (`text/html`), files over the size limit and slow downloads are rejected with a clear message.
 2. **Probe.** `ffmpeg.probe()` (ffprobe) reads the duration, size and codec. Files without a video track, and videos over the length limit, are rejected.
 3. **Extract.** `ffmpeg.input(path, ss=time).output("pipe:", vframes=1, format="image2", vcodec="mjpeg")` seeks to the time and writes one JPEG to stdout. ffmpeg-python builds the command and `subprocess.run` runs it with a timeout. Thumbnails use the same call with a `scale` filter.
 4. **Respond.** The HTML page embeds the frames; the API returns the JPEG or JSON. The temporary directory is removed after each request.
+
+`fetch.py` downloads URLs safely. It resolves the host, refuses any address that isn't public (private, loopback, link-local such as `169.254.169.254`, multicast, reserved, and their IPv6 forms), connects to the address it checked so DNS rebinding can't switch it, and follows at most 3 redirects, checking each one the same way. HTTPS certificates are still verified against the original hostname. Upstream errors are reported as "Could not fetch the URL." without details.
 
 The limits are one block of constants at the top of `main.py`:
 
@@ -27,7 +29,7 @@ The limits are one block of constants at the top of `main.py`:
 | `FFMPEG_TIMEOUT_SECONDS` | 30 s per ffmpeg/ffprobe run |
 | `THUMBNAIL_COUNT`, `THUMBNAIL_WIDTH` | 4, 320 px |
 
-Errors come back as JSON `{"detail": "..."}` from the API, or as a message on the page: 422 for invalid input or a time past the end, 400 when the URL can't be downloaded, 413 when the video is too large or too long, 415 when the file isn't a readable video, and 504 on timeouts.
+Errors come back as JSON `{"detail": "..."}` from the API, or as a message on the page: 422 for invalid input, a private address or a time past the end, 400 when the URL can't be downloaded, 413 when the video is too large or too long, 415 when the file isn't a readable video, and 504 on timeouts.
 
 The page uses the shared Wasmer starter components in `static/wasmer-starter-ui.js`, generated from `_shared/starter-ui/` at the repository root.
 
@@ -44,7 +46,7 @@ The page uses the shared Wasmer starter components in `static/wasmer-starter-ui.
 curl -o frame.jpg "https://ffmpeg-frame-grabber-template.wasmer.app/api/frame?url=https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4&time=2"
 ```
 
-The app downloads whatever public URL it's given. If you deploy it for others, keep the limits low or put it behind authentication.
+The app downloads any public URL it's given. If you deploy it for others, keep the limits low or put it behind authentication.
 
 ## Running locally
 
@@ -57,7 +59,7 @@ python3 -m venv .venv
 .venv/bin/uvicorn main:app --reload
 ```
 
-Open <http://localhost:8000/>. Run the tests with `.venv/bin/python -m pytest`. They generate a short test video with ffmpeg and replace the download with a fake response, so they don't use the network.
+Open <http://localhost:8000/>. Run the tests with `.venv/bin/python -m pytest`. They generate a short test video with ffmpeg and replace the download with a fake response, so they don't use the network. `tests/conftest.py` fakes DNS and HTTP, which also covers private addresses and redirects.
 
 ## Deploying to Wasmer
 

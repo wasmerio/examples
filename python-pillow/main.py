@@ -11,24 +11,27 @@ Routes:
 
 from __future__ import annotations
 
-import time as clock
+import math
 from io import BytesIO
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-import requests
-from fastapi import FastAPI, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-# Limits. Wasmer Edge instances have about 1 GB of memory.
+from fetch import FetchError, fetch
+
+# Limits. Wasmer Edge instances have about 1 GB of memory. At 4 bytes per pixel, the
+# pixel caps keep each decoded copy under ~100 MB while decoding, rotating and encoding.
 MAX_INPUT_BYTES = 10 * 1024 * 1024  # largest download or upload
 DOWNLOAD_TIMEOUT_SECONDS = 15  # total time allowed for a download
-MAX_INPUT_PIXELS = 40_000_000  # larger images are rejected before decoding
+MAX_INPUT_PIXELS = 16_000_000  # checked from the header, before decoding
+MAX_OUTPUT_PIXELS = 24_000_000  # largest canvas after rotate(expand=True)
 MAX_OUTPUT_SIDE = 4096  # largest resize width or height
 QUALITY = 85  # JPEG and WebP quality
 FORMATS = {"png": "image/png", "jpeg": "image/jpeg", "webp": "image/webp"}
@@ -41,6 +44,11 @@ app = FastAPI(
     description="Rotate, crop, resize and convert images with Pillow, running on Wasmer Edge.",
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.exception_handler(FetchError)
+def fetch_error(_: Request, error: FetchError) -> JSONResponse:
+    return JSONResponse({"detail": error.message}, status_code=error.status)
 
 
 class EditOptions(BaseModel):
@@ -79,44 +87,33 @@ class EditOptions(BaseModel):
 
 
 def download(url: str) -> bytes:
-    """Fetch the URL, enforcing the size and time limits."""
-    deadline = clock.monotonic() + DOWNLOAD_TIMEOUT_SECONDS
-    too_large = HTTPException(413, f"The image is larger than {MAX_INPUT_BYTES // 1024 // 1024} MB.")
-    try:
-        with requests.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
-            response.raise_for_status()
-            if int(response.headers.get("content-length") or 0) > MAX_INPUT_BYTES:
-                raise too_large
-            data = bytearray()
-            for chunk in response.iter_content(chunk_size=64 * 1024):
-                data += chunk
-                if len(data) > MAX_INPUT_BYTES:
-                    raise too_large
-                if clock.monotonic() > deadline:
-                    raise requests.Timeout()
-            return bytes(data)
-    except requests.Timeout:
-        raise HTTPException(504, f"The download took longer than {DOWNLOAD_TIMEOUT_SECONDS} seconds.") from None
-    except requests.HTTPError as error:
-        raise HTTPException(400, f"The URL answered with HTTP {error.response.status_code}.") from None
-    except requests.RequestException:
-        raise HTTPException(400, "Could not download the image. Check that the URL is public.") from None
+    return fetch(url, max_bytes=MAX_INPUT_BYTES, timeout=DOWNLOAD_TIMEOUT_SECONDS)
 
 
-def edit_image(data: bytes, options: EditOptions) -> Image.Image:
+def edit_image(data: bytes, options: EditOptions, pad_crop: bool = False) -> Image.Image:
+    """Rotate, crop and resize. With pad_crop, a crop box outside the image is padded (the original behaviour)."""
+    too_many_pixels = HTTPException(413, f"The image has more than {MAX_INPUT_PIXELS:,} pixels.")
     try:
-        image = Image.open(BytesIO(data))
+        image = Image.open(BytesIO(data))  # reads only the header
+        # Pillow only raises above 2 x MAX_IMAGE_PIXELS, so check the size before decoding.
+        if image.width * image.height > MAX_INPUT_PIXELS:
+            raise too_many_pixels
         image.load()
     except Image.DecompressionBombError:
-        raise HTTPException(413, f"The image has more than {MAX_INPUT_PIXELS:,} pixels.") from None
+        raise too_many_pixels from None
     except (UnidentifiedImageError, OSError):
         raise HTTPException(415, "That file is not an image Pillow can read.") from None
     image = ImageOps.exif_transpose(image)
     if options.rotate:
+        angle = math.radians(options.rotate)
+        cos, sin = abs(math.cos(angle)), abs(math.sin(angle))
+        canvas = (image.width * cos + image.height * sin) * (image.width * sin + image.height * cos)
+        if canvas > MAX_OUTPUT_PIXELS:
+            raise HTTPException(413, f"Rotating this image would need more than {MAX_OUTPUT_PIXELS:,} pixels.")
         image = image.rotate(options.rotate, resample=Image.Resampling.BICUBIC, expand=True)
     if options.crop:
         box = tuple(int(part) for part in options.crop.split(","))
-        if box[2] > image.width or box[3] > image.height:
+        if not pad_crop and (box[2] > image.width or box[3] > image.height):
             raise HTTPException(422, f"The crop box must fit inside the {image.width}×{image.height} image.")
         image = image.crop(box)
     if options.width or options.height:
@@ -158,14 +155,14 @@ def api_edit(options: Annotated[EditOptions, Form()], file: UploadFile | None = 
 
 @app.get("/process", response_class=Response, responses={200: {"content": {"image/png": {}}}})
 def process(url: str, rotate: float = Query(0), crop: str = "0,0,200,200") -> Response:
-    """Original route of this example: rotate, then crop, and return a PNG."""
+    """Original route of this example: rotate, then crop (padding outside the image), and return a PNG."""
     try:
         options = EditOptions(url=url, rotate=rotate, crop=crop)
     except ValidationError as error:
         raise RequestValidationError(error.errors(include_url=False, include_context=False)) from None
     if not options.url:
         raise HTTPException(422, "Add an image URL.")
-    return encode(edit_image(download(options.url), options), "png")
+    return encode(edit_image(download(options.url), options, pad_crop=True), "png")
 
 
 @app.get("/", include_in_schema=False)

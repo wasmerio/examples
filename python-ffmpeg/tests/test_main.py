@@ -2,33 +2,13 @@ import shutil
 import subprocess
 
 import pytest
-import requests
+import urllib3
 from fastapi.testclient import TestClient
 
 import main
 
 VIDEO_URL = "https://videos.example/clip.mp4"
 needs_ffmpeg = pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg is not installed")
-
-
-class FakeResponse:
-    def __init__(self, body: bytes, status: int = 200, content_type: str = "video/mp4"):
-        self.body, self.status_code = body, status
-        self.headers = {"content-type": content_type, "content-length": str(len(body))}
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise requests.HTTPError(response=self)
-
-    def iter_content(self, chunk_size):
-        for start in range(0, len(self.body), chunk_size):
-            yield self.body[start : start + chunk_size]
 
 
 @pytest.fixture(scope="session")
@@ -47,8 +27,10 @@ def client():
     return TestClient(main.app)
 
 
-def serve(monkeypatch, response: FakeResponse):
-    monkeypatch.setattr(main.requests, "get", lambda *args, **kwargs: response)
+@pytest.fixture
+def video(network, sample_video):
+    network.serve(sample_video, content_type="video/mp4")
+    return network
 
 
 def test_index_renders_form_with_sample(client):
@@ -60,8 +42,7 @@ def test_index_renders_form_with_sample(client):
 
 
 @needs_ffmpeg
-def test_frame_api_returns_jpeg(client, monkeypatch, sample_video):
-    serve(monkeypatch, FakeResponse(sample_video))
+def test_frame_api_returns_jpeg(client, video):
     response = client.get("/api/frame", params={"url": VIDEO_URL, "time": 2, "download": True})
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
@@ -70,16 +51,14 @@ def test_frame_api_returns_jpeg(client, monkeypatch, sample_video):
 
 
 @needs_ffmpeg
-def test_info_api_reports_video(client, monkeypatch, sample_video):
-    serve(monkeypatch, FakeResponse(sample_video))
+def test_info_api_reports_video(client, video):
     info = client.get("/api/info", params={"url": VIDEO_URL}).json()
     assert info["width"] == 160 and info["height"] == 120
     assert info["duration_seconds"] == pytest.approx(4, abs=0.2)
 
 
 @needs_ffmpeg
-def test_process_page_shows_frame_and_thumbnails(client, monkeypatch, sample_video):
-    serve(monkeypatch, FakeResponse(sample_video))
+def test_process_page_shows_frame_and_thumbnails(client, video):
     page = client.get("/process", params={"url": VIDEO_URL, "time": "1"})
     assert page.status_code == 200
     assert "Frame at 1 s" in page.text
@@ -88,16 +67,15 @@ def test_process_page_shows_frame_and_thumbnails(client, monkeypatch, sample_vid
 
 
 @needs_ffmpeg
-def test_time_past_the_end_is_rejected(client, monkeypatch, sample_video):
-    serve(monkeypatch, FakeResponse(sample_video))
+def test_time_past_the_end_is_rejected(client, video):
     response = client.get("/api/frame", params={"url": VIDEO_URL, "time": 60})
     assert response.status_code == 422
     assert "Pick a time below that" in response.json()["detail"]
 
 
 @needs_ffmpeg
-def test_non_video_file_is_rejected(client, monkeypatch):
-    serve(monkeypatch, FakeResponse(b"definitely not a video", content_type="application/octet-stream"))
+def test_non_video_file_is_rejected(client, network):
+    network.serve(b"definitely not a video")
     response = client.get("/api/frame", params={"url": VIDEO_URL})
     assert response.status_code == 415
 
@@ -119,21 +97,34 @@ def test_process_page_shows_validation_errors(client, params, status, message):
 @pytest.mark.parametrize(
     ("response", "status"),
     [
-        (FakeResponse(b"", status=404), 400),
-        (FakeResponse(b"<html></html>", content_type="text/html; charset=utf-8"), 415),
-        (FakeResponse(b"x" * (main.MAX_DOWNLOAD_BYTES + 1)), 413),
+        ({"body": b"", "status": 404}, 400),
+        ({"body": b"<html></html>", "content_type": "text/html; charset=utf-8"}, 415),
+        ({"body": b"x" * (main.MAX_DOWNLOAD_BYTES + 1)}, 413),
     ],
 )
-def test_download_errors(client, monkeypatch, response, status):
-    serve(monkeypatch, response)
-    assert client.get("/api/frame", params={"url": VIDEO_URL}).status_code == status
+def test_download_errors(client, network, response, status):
+    network.serve(**response)
+    result = client.get("/api/frame", params={"url": VIDEO_URL})
+    assert result.status_code == status
+    assert "404" not in result.json()["detail"]
 
 
-def test_download_timeout(client, monkeypatch):
-    def slow(*args, **kwargs):
-        raise requests.Timeout()
-
-    monkeypatch.setattr(main.requests, "get", slow)
+def test_download_timeout(client, network):
+    network.responses.append(urllib3.exceptions.ReadTimeoutError(None, "/", "timed out"))
     response = client.get("/api/info", params={"url": VIDEO_URL})
     assert response.status_code == 504
     assert "took longer" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("url", ["http://127.0.0.1:8080/a.mp4", "http://169.254.169.254/", "http://[fd00::1]/a.mp4"])
+def test_private_addresses_are_rejected(client, network, url):
+    page = client.get("/process", params={"url": url, "time": "1"})
+    assert page.status_code == 422 and "private or local" in page.text
+    assert network.requests == []
+
+
+def test_redirect_to_private_address_is_rejected(client, network):
+    network.serve(status=307, headers={"location": "http://10.1.2.3/internal.mp4"})
+    response = client.get("/api/info", params={"url": VIDEO_URL})
+    assert response.status_code == 422
+    assert [r["host"] for r in network.requests] == ["videos.example"]

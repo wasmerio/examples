@@ -1,0 +1,139 @@
+name: Starter builds
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      pull_requests:
+        description: Space-separated PR numbers to verify at their current heads
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    name: Find changed starters
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      targets: ${{ steps.plan.outputs.targets }}
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test starter detection
+        run: bash .github/scripts/changed-starters.test.sh
+      - name: Find starters at each PR head
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STARTER_PULL_REQUESTS: ${{ inputs.pull_requests }}
+        run: |
+          plan_pr() {
+            local pr="$1" base head number
+            read -r base head number < <(jq -r '[.base.sha, .head.sha, .number] | @tsv' <<< "$pr")
+            if ! git cat-file -e "$base^{commit}" || ! git cat-file -e "$head^{commit}"; then
+              git fetch --no-tags origin "$base" "$head"
+            fi
+            bash .github/scripts/changed-starters.sh "$base" "$head" |
+              jq -Rc --arg sha "$head" --arg pr "$number" '{folder: ., $sha, $pr}'
+          }
+
+          collect_targets() {
+            if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+              plan_pr "$(jq -c .pull_request "$GITHUB_EVENT_PATH")"
+            else
+              local number pr
+              local -a numbers
+              read -ra numbers <<< "$STARTER_PULL_REQUESTS"
+              for number in "${numbers[@]}"; do
+                if [[ ! "$number" =~ ^[1-9][0-9]*$ ]]; then
+                  echo "Invalid PR number: $number" >&2
+                  return 1
+                fi
+                pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number") || return
+                plan_pr "$pr" || return
+              done
+            fi
+          }
+
+          targets=$(collect_targets | jq -cs 'unique_by(.pr, .folder)')
+          printf 'targets=%s\n' "$targets" >> "$GITHUB_OUTPUT"
+          if [[ "$targets" == '[]' ]]; then
+            echo 'No starter folders changed.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            jq -r '.[] | "- PR #\(.pr), commit `\(.sha)`, `\(.folder)`"' <<< "$targets" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  build:
+    name: "PR #${{ matrix.pr }} · ${{ matrix.folder }}"
+    if: ${{ needs.plan.outputs.targets != '[]' }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.targets) }}
+    env:
+      STARTER: ${{ matrix.folder }}
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0 # v6.0.3
+        with:
+          ref: ${{ matrix.sha }}
+          persist-credentials: false
+      - name: Verify shared starter components
+        run: |
+          if [[ "$STARTER" == '_shared/starter-ui' ]]; then
+            node --input-type=module --check < "$STARTER/wasmer-starter-ui.js"
+            node --check scripts/sync-starter-ui.mjs
+            search_path=.
+          else
+            search_path=$STARTER
+          fi
+          mapfile -d '' -t copies < <(git grep -lz '^// Generated from _shared/starter-ui/wasmer-starter-ui.js;' -- "$search_path")
+          if (( ${#copies[@]} )); then
+            node scripts/sync-starter-ui.mjs --check "${copies[@]}"
+          fi
+      - name: Install Anybuild
+        if: matrix.folder != '_shared/starter-ui'
+        env:
+          ANYBUILD_VERSION: v0.33.3
+          ANYBUILD_SHA256: 49ccbfb1c671eb927acd4b9ee15b60fad1bd99ec0e2584fd3e1e5540f8b68bc5
+        run: |
+          mkdir -p "$RUNNER_TEMP/anybuild"
+          cd "$RUNNER_TEMP/anybuild"
+          archive=anybuild-x86_64-unknown-linux-musl.tar.gz
+          curl --fail --show-error --silent --location --retry 3 \
+            "https://github.com/wasmerio/anybuild/releases/download/$ANYBUILD_VERSION/$archive" --output "$archive"
+          printf '%s  %s\n' "$ANYBUILD_SHA256" "$archive" | sha256sum --check
+          tar -xzf "$archive"
+          printf '%s\n' "$PWD" >> "$GITHUB_PATH"
+      - name: Install Wasmer
+        if: matrix.folder != '_shared/starter-ui'
+        env:
+          WASMER_VERSION: v7.4.2
+          WASMER_SHA256: 07271f7ecf449135bbd44cfe9f38a65e54ab25f1564a9c6bd2d0d5cca5743963
+        run: |
+          mkdir -p "$RUNNER_TEMP/wasmer"
+          cd "$RUNNER_TEMP/wasmer"
+          archive=wasmer-linux-amd64.tar.gz
+          curl --fail --show-error --silent --location --retry 3 \
+            "https://github.com/wasmerio/wasmer/releases/download/$WASMER_VERSION/$archive" --output "$archive"
+          printf '%s  %s\n' "$WASMER_SHA256" "$archive" | sha256sum --check
+          tar -xzf "$archive"
+          printf '%s\n' "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Build Wasmer artifact
+        if: matrix.folder != '_shared/starter-ui'
+        # Wasmer deploy has no --dry-run flag. Anybuild prepares the artifact without uploading it.
+        run: anybuild auto . --docker --wasmer --subdir "$STARTER"

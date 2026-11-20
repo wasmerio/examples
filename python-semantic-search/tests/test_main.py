@@ -68,6 +68,8 @@ def test_search_api(index):
     try:
         with urllib.request.urlopen(f"{base}/") as response:
             assert b'src="/wasmer-starter-ui.js"' in response.read()
+        with urllib.request.urlopen(urllib.request.Request(f"{base}/", method="HEAD")) as response:
+            assert response.status == 200 and response.read() == b""
         with urllib.request.urlopen(f"{base}/wasmer-starter-ui.js") as response:
             assert response.headers["Content-Type"].startswith("text/javascript")
         with urllib.request.urlopen(f"{base}/api/search?q=undo+a+broken+release&k=2") as response:

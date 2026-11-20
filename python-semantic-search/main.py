@@ -116,6 +116,8 @@ def make_handler(index):
             took_ms = round((time.perf_counter() - started) * 1000, 1)
             self.reply_json(200, {"query": query, "results": results, "took_ms": took_ms})
 
+        do_HEAD = do_GET
+
         def reply_json(self, status, payload):
             self.reply(status, json.dumps(payload).encode(), "application/json")
 
@@ -124,7 +126,8 @@ def make_handler(index):
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            if self.command != "HEAD":
+                self.wfile.write(body)
 
     return Handler
 

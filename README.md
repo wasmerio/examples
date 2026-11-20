@@ -34,6 +34,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`python-mkdocs`](python-mkdocs/README.md) – MkDocs static documentation site.
 - [`python-netron`](python-netron/README.md) – Netron AI model viewer with a bundled ONNX sample.
 - [`python-pillow`](python-pillow/README.md) – Image transforms with Pillow.
+- [`python-qr-toolkit`](python-qr-toolkit/README.md) – QR code generator and decoder with segno and OpenCV.
 
 ### JavaScript & TypeScript
 

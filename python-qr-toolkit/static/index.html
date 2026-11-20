@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR code toolkit</title>
+  <script type="module" src="/wasmer-starter-ui.js"></script>
+  <style>
+    body { margin: 0; font-family: Gilroy, ui-sans-serif, system-ui, -apple-system, sans-serif; color: #0f0518; }
+    .cards, form { display: grid; gap: 24px; }
+    .options { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    label { display: grid; gap: 8px; font-size: 14px; font-weight: 500; }
+    select { font: inherit; font-weight: 400; height: 40px; padding: 4px 12px; border: 1px solid #e5e5e5; border-radius: 6px; background: white; color: inherit; }
+    select:focus-visible { outline: none; border-color: #3734a5; box-shadow: 0 0 0 3px rgba(96, 93, 233, .5); }
+    .preview { display: grid; place-items: center; gap: 12px; min-height: 160px; padding: 16px; border: 1px dashed rgba(15, 5, 24, .2); border-radius: 6px; background: white; text-align: center; }
+    .preview img { display: block; max-width: 100%; height: auto; }
+    .qr { image-rendering: pixelated; max-height: 280px; }
+    .stage { position: relative; max-width: 100%; }
+    .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .stage polygon { fill: rgba(2, 195, 154, .15); stroke: #02c39a; stroke-width: 4; vector-effect: non-scaling-stroke; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<wasmer-starter>
+  <div class="cards">
+    <wasmer-card>
+      <wasmer-stack slot="header" vertical>
+        <wasmer-badge>Python · segno · OpenCV</wasmer-badge>
+        <wasmer-title>QR code toolkit</wasmer-title>
+        <wasmer-text>Turn text or a link into a QR code, then download it as PNG or SVG.</wasmer-text>
+      </wasmer-stack>
+      <form id="generate">
+        <wasmer-input label="Text or URL" name="text" value="https://wasmer.io" required maxlength="2000"></wasmer-input>
+        <div class="options">
+          <label>Format
+            <select name="format"><option value="png">PNG image</option><option value="svg">SVG vector</option></select>
+          </label>
+          <label>Module size
+            <select name="scale"><option value="4">Small (4 px)</option><option value="8" selected>Medium (8 px)</option><option value="12">Large (12 px)</option><option value="16">Extra large (16 px)</option></select>
+          </label>
+          <label>Error correction
+            <select name="error"><option value="L">Low (7%)</option><option value="M" selected>Medium (15%)</option><option value="Q">Quartile (25%)</option><option value="H">High (30%)</option></select>
+          </label>
+        </div>
+        <wasmer-stack>
+          <wasmer-action type="submit" id="generate-button">Generate QR code</wasmer-action>
+          <wasmer-action variant="outline" id="download" hidden>Download</wasmer-action>
+        </wasmer-stack>
+      </form>
+      <div class="preview" id="generated"><wasmer-text>Your QR code appears here.</wasmer-text></div>
+      <wasmer-notice variant="error" id="generate-error" hidden></wasmer-notice>
+    </wasmer-card>
+
+    <wasmer-card>
+      <wasmer-stack slot="header" vertical>
+        <wasmer-title>Decode a QR code</wasmer-title>
+        <wasmer-text>Upload a photo or screenshot. OpenCV finds the code, reads it and returns its position.</wasmer-text>
+      </wasmer-stack>
+      <input type="file" id="file" accept="image/*" hidden>
+      <wasmer-stack>
+        <wasmer-action id="upload">Upload image</wasmer-action>
+        <wasmer-action variant="outline" id="sample">Try sample photo</wasmer-action>
+      </wasmer-stack>
+      <div class="preview" id="decoded"><wasmer-text>The image and the detected code appear here.</wasmer-text></div>
+      <wasmer-notice id="decode-result" hidden></wasmer-notice>
+      <wasmer-text slot="footer">Images are processed in memory and never stored. The same features are available as <code>POST /api/generate</code> and <code>POST /api/decode</code>.</wasmer-text>
+    </wasmer-card>
+  </div>
+</wasmer-starter>
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const node = (tag, props = {}, ...children) => {
+    const el = Object.assign(document.createElement(tag), props);
+    el.append(...children);
+    return el;
+  };
+  const errorMessage = async (response) => {
+    try { return (await response.json()).error; } catch { return `Request failed (${response.status}).`; }
+  };
+  const objectUrls = {};
+  const showBlob = (key, blob) => {
+    URL.revokeObjectURL(objectUrls[key]);
+    return (objectUrls[key] = URL.createObjectURL(blob));
+  };
+  let download;
+
+  $("generate").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = Object.fromEntries(new FormData(event.target));
+    const button = $("generate-button");
+    button.loading = true;
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, scale: Number(form.scale) }),
+      });
+      $("generate-error").hidden = response.ok;
+      if (!response.ok) {
+        $("generate-error").textContent = await errorMessage(response);
+        return;
+      }
+      const url = showBlob("generated", await response.blob());
+      download = { url, name: `qr-code.${form.format}` };
+      const image = node("img", { className: "qr", src: url, alt: `QR code for ${form.text}` });
+      await image.decode();
+      $("generated").replaceChildren(image, node("wasmer-text", { textContent: `${form.format.toUpperCase()} · ${image.naturalWidth} × ${image.naturalHeight} px · error correction ${form.error}` }));
+      $("download").textContent = `Download ${form.format.toUpperCase()}`;
+      $("download").hidden = false;
+    } finally {
+      button.loading = false;
+    }
+  });
+
+  $("download").addEventListener("click", () => node("a", { href: download.url, download: download.name }).click());
+
+  async function decode(blob, button) {
+    const notice = $("decode-result");
+    button.loading = true;
+    try {
+      const response = await fetch("/api/decode", { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob });
+      const image = node("img", { src: showBlob("decoded", blob), alt: "Uploaded image" });
+      const stage = node("div", { className: "stage" }, image);
+      notice.hidden = false;
+      if (!response.ok) {
+        notice.setAttribute("variant", "error");
+        notice.textContent = await errorMessage(response);
+      } else {
+        const result = await response.json();
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", `0 0 ${result.image.width} ${result.image.height}`);
+        svg.setAttribute("preserveAspectRatio", "none");
+        const polygon = document.createElementNS(svg.namespaceURI, "polygon");
+        polygon.setAttribute("points", result.corners.map((point) => point.join(",")).join(" "));
+        svg.append(polygon);
+        stage.append(svg);
+        const { x, y, width, height } = result.box;
+        notice.setAttribute("variant", "success");
+        notice.replaceChildren(
+          node("strong", { textContent: "Decoded: " }), node("code", { textContent: result.text }),
+          node("br"), `Bounding box: x ${x}, y ${y}, ${width} × ${height} px`,
+        );
+      }
+      $("decoded").replaceChildren(stage);
+    } finally {
+      button.loading = false;
+    }
+  }
+
+  $("upload").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", (event) => {
+    if (event.target.files[0]) decode(event.target.files[0], $("upload"));
+    event.target.value = "";
+  });
+  $("sample").addEventListener("click", async () => decode(await (await fetch("/qr-photo.jpg")).blob(), $("sample")));
+</script>
+</body>
+</html>

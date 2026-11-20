@@ -41,10 +41,12 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-assemble-staticsite`](js-assemble-staticsite/README.md) – Assemble-generated static site.
 - [`js-astro-ssr`](js-astro-ssr/README.md) – Astro server output using the Node adapter.
 - [`js-astro-staticsite`](js-astro-staticsite/README.md) – Astro static export.
+- [`js-bentopdf`](js-bentopdf/README.md) – Browser-based PDF tools from a verified upstream release.
 - [`js-brunch-staticsite`](js-brunch-staticsite/README.md) – Brunch-style static build.
 - [`js-create-react-app-staticsite`](js-create-react-app-staticsite/README.md) – Create React App-style static build.
 - [`js-docusaurus-staticsite`](js-docusaurus-staticsite/README.md) – Docusaurus docs site.
 - [`js-drawdb`](js-drawdb/README.md) – drawDB database diagram editor, built from pinned upstream source.
+- [`js-duckdb-csv-explorer`](js-duckdb-csv-explorer/README.md) – Browser SQL console for CSV and Parquet analysis.
 - [`js-eleventy-staticsite`](js-eleventy-staticsite/README.md) – Eleventy-generated static site.
 - [`js-elysia`](js-elysia/README.md) – Elysia HTTP server.
 - [`js-ember-staticsite`](js-ember-staticsite/README.md) – Ember-style static build.
@@ -67,6 +69,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-mcp`](js-mcp/README.md) – HTTP Model Context Protocol server.
 - [`js-metalsmith-staticsite`](js-metalsmith-staticsite/README.md) – Metalsmith-generated static site.
 - [`js-minipaint`](js-minipaint/README.md) – miniPaint browser image editor with layers, filters, and local export.
+- [`js-n8n`](js-n8n/README.md) – n8n workflow automation with managed PostgreSQL, from a prebuilt package.
 - [`js-nestjs`](js-nestjs/README.md) – NestJS-oriented Node.js runtime example.
 - [`js-next-ssr`](js-next-ssr/README.md) – Next.js server-rendered app.
 - [`js-next-staticsite`](js-next-staticsite/README.md) – Next.js `output: "export"` sample.
@@ -77,6 +80,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-parcel-staticsite`](js-parcel-staticsite/README.md) – Parcel-style static build.
 - [`js-pnpm-workspace-subdir`](js-pnpm-workspace-subdir/README.md) – pnpm workspace app in a subdirectory.
 - [`js-piskel`](js-piskel/README.md) – Piskel desktop sprite editor with an original two-frame sample.
+- [`js-postgresql`](js-postgresql/README.md) – Managed PostgreSQL provisioned through the app's database configuration.
 - [`js-polymer-staticsite`](js-polymer-staticsite/README.md) – Polymer-style static build.
 - [`js-preact-staticsite`](js-preact-staticsite/README.md) – Preact-style static build.
 - [`js-react-router`](js-react-router/README.md) – React Router-oriented Node.js runtime example.
@@ -90,6 +94,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-sveltekit-staticsite`](js-sveltekit-staticsite/README.md) – Compact SvelteKit-style static build.
 - [`js-tanstack-start`](js-tanstack-start/README.md) – TanStack Start-oriented Node.js runtime example.
 - [`js-umijs-staticsite`](js-umijs-staticsite/README.md) – UmiJS-style static build.
+- [`js-univer-sheets`](js-univer-sheets/README.md) – Univer Sheets spreadsheet editor with a sample budget and browser-local saving.
 - [`js-vite-react-staticsite`](js-vite-react-staticsite/README.md) – Vite React static build.
 - [`js-vite-staticsite`](js-vite-staticsite/README.md) – Vite-powered static site.
 - [`js-vitepress-staticsite`](js-vitepress-staticsite/README.md) – VitePress documentation site.

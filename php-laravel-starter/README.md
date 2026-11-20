@@ -6,19 +6,15 @@ or database is required to render the welcome page.
 
 ## Build and run
 
-From this directory, use Anybuild 0.33.3 with Docker available:
+From the repository root, use Anybuild 0.33.3 with Docker available. This is the build CI runs,
+and it uses the root `Anybuild.php-laravel-starter` recipe:
 
 ```sh
-anybuild --builder docker --runner wasmer --start
+anybuild auto . --docker --wasmer --subdir php-laravel-starter
 ```
 
-For the catalog's repository-root build, use:
-
-```sh
-anybuild --subdir php-laravel-starter --anybuild-path Anybuild.php-laravel-starter --builder docker --runner wasmer --start
-```
-
-Open the address printed by Anybuild. `/api/status` returns the Laravel and PHP versions;
+From this directory, `anybuild auto . --docker --wasmer` uses the local `Anybuild` recipe. Add
+`--start` to serve the result and open the address printed by Anybuild. `/api/status` returns the Laravel and PHP versions;
 `/up` is Laravel's health endpoint. The template catalog entry is added only after this
 source PR merges; this PR does not publish a catalog deployment link.
 

@@ -1,10 +1,10 @@
 # Star Wars GraphQL API with Go on Wasmer
 
-A GraphQL server written in Go with [gqlgen](https://gqlgen.com). It serves the Star Wars schema from gqlgen's own example and opens GraphiQL in the browser, so you can explore the API and run queries straight away.
+A GraphQL server written in Go with [gqlgen](https://gqlgen.com). It serves the Star Wars schema from gqlgen's own example and opens [Apollo Sandbox](https://www.apollographql.com/docs/graphos/platform/sandbox) with an example query loaded, so you can run it straight away.
 
 ## Demo
 
-Deploy your own copy and open its URL. GraphiQL loads with the Explorer panel: click fields such as `hero → name` and `friends` to build a query, then press **Run**. Or paste:
+Deploy your own copy and open its URL. The sandbox opens with a `HeroAndFriends` query; press the run button to see Luke Skywalker and his friends. Browse the schema in the Documentation panel, or paste:
 
 ```graphql
 {
@@ -20,13 +20,15 @@ Deploy your own copy and open its URL. GraphiQL loads with the Explorer panel: c
 }
 ```
 
-The schema shows connections, unions, interfaces and enums. Data is in memory, so it resets when the app restarts.
+The schema shows connections, unions, interfaces and enums. Data is in memory, so it resets when the app restarts; `createReview` keeps the latest 100 reviews per episode.
 
 ## How it works
 
 - `schema.graphql` defines the API; `gqlgen` generates `generated/` and `models/` from it (`.gqlgen.yml`).
 - `resolvers.go` answers queries from in-memory Star Wars data.
-- `server/server.go` serves GraphiQL at `/` and the API at `/query` (GET and POST), and listens on `PORT`, defaulting to `8080`.
+- `server/server.go` serves Apollo Sandbox at `/` and the API at `/query` (GET and POST), and listens on `PORT`, defaulting to `8080`.
+- The sandbox page loads from Apollo's domain, so `/query` sends CORS headers that allow any origin. That suits this public, credential-free demo; restrict the origin before serving private data.
+- On narrow phone screens the sandbox opens on its documentation panel; collapse it with the `<<` button to reach the editor.
 
 No database, API key or persistent volume is required.
 

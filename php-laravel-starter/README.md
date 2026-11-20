@@ -47,11 +47,9 @@ route under the same keyless configuration as a new hosted deployment.
 
 ## Dependencies and shared UI
 
-`laravel/framework` is pinned to 13.42.0. The build resolves transitive dependencies and
-writes its generated `composer.lock` inside the build artifact; no lockfile is committed.
-This keeps the source PR below the repository's 2,000-line limit, but rebuilding later may
-resolve different transitive versions. Commit a reviewed lockfile in your own application
-when you need reproducible dependency resolution. No development tools are preinstalled.
+`laravel/framework` is pinned to 13.42.0, and `composer.lock` locks the full dependency tree
+so every build installs the same versions. Run `composer update --no-install` after changing
+`composer.json` and commit the updated lockfile. No development tools are preinstalled.
 
 The page imports `public/wasmer-starter-ui.js`, generated from the repository's canonical
 `_shared/starter-ui/wasmer-starter-ui.js`. It uses the shared card, title, text, badge,

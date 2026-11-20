@@ -17,6 +17,12 @@ MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 TOP_K = 5
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+# Decoded RGB at this size is ~75 MB, well inside the ~1 GB Edge instance limit.
+MAX_IMAGE_PIXELS = 25_000_000
+
+# Pillow raises DecompressionBombError above twice this; classify_upload rejects anything
+# above it after reading only the header, before any pixels are decoded.
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
 session = ort.InferenceSession(str(MODEL_PATH), providers=["CPUExecutionProvider"])
 input_name = session.get_inputs()[0].name
@@ -25,15 +31,22 @@ labels = [line.split(" ", 1)[1].split(",")[0] for line in LABELS_PATH.read_text(
 
 
 def preprocess(image):
-    """Resize, center-crop and normalize as in the ONNX model zoo's imagenet_preprocess.py."""
-    image = ImageOps.exif_transpose(image).convert("RGB")
+    """Normalize as in the ONNX model zoo's imagenet_preprocess.py.
+
+    Resizing the short side to 256 and center-cropping 224 equals resizing the central
+    square of side short * 224 / 256 straight to 224x224, so no intermediate is larger
+    than the decoded image (capped by MAX_IMAGE_PIXELS), whatever the aspect ratio.
+    """
     scale = RESIZE_SHORT_SIDE / min(image.size)
+    # Let the JPEG decoder downscale by up to 8x while keeping the short side >= 256.
+    image.draft("RGB", (round(image.width * scale), round(image.height * scale)))
+    image = ImageOps.exif_transpose(image).convert("RGB")
+    side = min(image.size) * CROP_SIZE / RESIZE_SHORT_SIDE
+    left = (image.width - side) / 2
+    top = (image.height - side) / 2
     image = image.resize(
-        (round(image.width * scale), round(image.height * scale)), Image.Resampling.BILINEAR
+        (CROP_SIZE, CROP_SIZE), Image.Resampling.BILINEAR, box=(left, top, left + side, top + side)
     )
-    left = (image.width - CROP_SIZE) // 2
-    top = (image.height - CROP_SIZE) // 2
-    image = image.crop((left, top, left + CROP_SIZE, top + CROP_SIZE))
     pixels = (np.asarray(image, dtype=np.float32) / 255.0 - MEAN) / STD
     return pixels.transpose(2, 0, 1)[np.newaxis]
 
@@ -62,7 +75,11 @@ def classify_upload():
         return jsonify(error="Send an image file in the 'image' form field."), 400
     try:
         with Image.open(upload.stream) as image:
+            if image.width * image.height > MAX_IMAGE_PIXELS:
+                raise Image.DecompressionBombError
             predictions = classify(image)
+    except Image.DecompressionBombError:
+        return jsonify(error=f"Images must be at most {MAX_IMAGE_PIXELS // 1_000_000} megapixels."), 413
     except (UnidentifiedImageError, OSError):
         return jsonify(error="That file is not a readable image. Try a JPEG, PNG, GIF or WebP."), 400
     return jsonify(model=MODEL_PATH.stem, predictions=predictions)

@@ -16,14 +16,14 @@ curl -F image=@photo.jpg https://onnx-image-classifier-template.wasmer.app/api/c
 {"model": "mobilenetv2-12", "predictions": [{"label": "Egyptian cat", "confidence": 0.7103}, ...]}
 ```
 
-Uploads that are not images return HTTP 400 and uploads over 10 MB return HTTP 413, both with an `error` field.
+Uploads that are not images return HTTP 400; uploads over 10 MB or images over 25 megapixels return HTTP 413. Errors carry an `error` field.
 
 ## How it works
 
 - `main.py` is a small [Flask](https://flask.palletsprojects.com/) app. It loads the model once at startup with `onnxruntime.InferenceSession`, serves the page from `static/`, and handles `POST /api/classify` (multipart field `image`).
 - The page in `static/index.html` is built from the shared Wasmer starter components. `static/wasmer-starter-ui.js` is a generated copy of `_shared/starter-ui/wasmer-starter-ui.js`; refresh it from the repository root with `node scripts/sync-starter-ui.mjs python-onnx-image-classifier/static/wasmer-starter-ui.js` instead of editing it.
-- Preprocessing follows the ONNX model zoo's [`imagenet_preprocess.py`](https://github.com/onnx/models/blob/main/validated/vision/classification/imagenet_preprocess.py) using Pillow and numpy only: resize the short side to 256, center-crop 224×224, scale to `[0, 1]`, normalize with the ImageNet mean and standard deviation, and reorder to NCHW. A softmax over the 1,000 outputs gives the confidences.
-- `model/mobilenetv2-12.onnx` (13.3 MB) and `model/synset.txt` (ImageNet labels) are bundled, so the app starts without downloading anything. Tunable values (input size, top-k, upload limit) live in one constants block at the top of `main.py`.
+- Preprocessing follows the ONNX model zoo's [`imagenet_preprocess.py`](https://github.com/onnx/models/blob/main/validated/vision/classification/imagenet_preprocess.py) using Pillow and numpy only: resize the short side to 256, center-crop 224×224, scale to `[0, 1]`, normalize with the ImageNet mean and standard deviation, and reorder to NCHW. The resize and crop run as one `Image.resize(..., box=...)` on the central square, and JPEGs are decoded at reduced size with `Image.draft`, so very large or extremely narrow images never create a large intermediate. A softmax over the 1,000 outputs gives the confidences.
+- `model/mobilenetv2-12.onnx` (13.3 MB) and `model/synset.txt` (ImageNet labels) are bundled, so the app starts without downloading anything. Tunable values (input size, top-k, upload and pixel limits) live in one constants block at the top of `main.py`.
 - On Wasmer Edge, `requirements.txt` is installed for the `wasix_wasm32` platform, which provides WASIX builds of numpy, Pillow and onnxruntime. `onnxruntime~=1.27.0` resolves to 1.27.1 on WASIX and 1.27.0 on PyPI. ONNX Runtime prints a harmless `Unsupported platform (wasi)` warning at startup.
 - `Anybuild` selects Python 3.13 and the `python main.py` start command. The repository-root `Anybuild.python-onnx-image-classifier` provides the same configuration when building this monorepo with `--subdir python-onnx-image-classifier`.
 

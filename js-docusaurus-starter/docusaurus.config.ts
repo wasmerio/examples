@@ -2,11 +2,14 @@ import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
+// Sitemap and feed links need the real public origin, so they are only built when SITE_URL is set.
+const siteUrl = process.env.SITE_URL;
+
 const config: Config = {
   title: 'Docusaurus on Wasmer Edge',
   tagline: 'Documentation and a blog, served as static files',
   favicon: 'img/favicon.ico',
-  url: process.env.SITE_URL || 'https://example.com',
+  url: siteUrl || 'http://localhost:3000',
   baseUrl: '/',
   organizationName: 'wasmerio',
   projectName: 'examples',
@@ -14,7 +17,8 @@ const config: Config = {
   i18n: {defaultLocale: 'en', locales: ['en']},
   presets: [['classic', {
     docs: {sidebarPath: './sidebars.ts'},
-    blog: {showReadingTime: true, feedOptions: {type: ['rss', 'atom'], xslt: true}},
+    blog: {showReadingTime: true, feedOptions: {type: siteUrl ? ['rss', 'atom'] : null, xslt: true}},
+    sitemap: siteUrl ? {} : false,
     theme: {customCss: './src/css/custom.css'},
   } satisfies Preset.Options]],
   themeConfig: {

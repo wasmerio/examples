@@ -20,19 +20,19 @@ Live demo: <https://qr-toolkit-template.wasmer.app>
     -d '{"text": "https://wasmer.io", "format": "svg", "scale": 8, "error": "M"}' -o qr.svg
   ```
 
-- `POST /api/decode` takes the image file as the request body (up to 8 MB) and returns the text, the four corner points and the bounding box in image pixels:
+- `POST /api/decode` takes the image file as the request body (up to 8 MB and 25 megapixels) and returns the text, the four corner points and the bounding box in image pixels:
 
   ```bash
   curl -X POST https://qr-toolkit-template.wasmer.app/api/decode --data-binary @static/qr-photo.jpg
   # {"text":"https://wasmer.io","box":{"x":418,"y":245,"width":374,"height":414},"corners":[[453,245],...],"image":{"width":1200,"height":900}}
   ```
 
-  An image without a QR code returns `422` with `{"error": "No QR code found in the image."}`; a file that is not an image returns `400`.
+  An image without a QR code returns `422` with `{"error": "No QR code found in the image."}`; a file that is not an image returns `400`. Larger uploads return `413`: the body is read as a stream and stops at the byte limit, and the image header is checked with Pillow before OpenCV decodes any pixels. `OPENCV_IO_MAX_IMAGE_PIXELS` is set to the same pixel limit as a second guard.
 - `static/index.html` is the page. It uses the shared Wasmer starter components in `static/wasmer-starter-ui.js`, generated from `_shared/starter-ui/` at the repository root with `node scripts/sync-starter-ui.mjs python-qr-toolkit/static/wasmer-starter-ui.js`. There is no front-end build step.
 - `static/qr-photo.jpg` is a synthetic photo of a printed code at an angle. `python create_sample.py` regenerates it.
 - `Anybuild` selects the Python runtime and the `python main.py` start command. The repository-root `Anybuild.python-qr-toolkit` provides the same configuration when Anybuild builds this monorepo with `--subdir python-qr-toolkit`.
 
-On Wasmer, `numpy` and `opencv-python-headless` install as WASIX builds from `https://python-registry.wasix.org/simple`; the other packages are pure Python from PyPI. Images are processed in memory and never stored. No database, API key or volume is required.
+On Wasmer, `numpy`, `opencv-python-headless` and `pillow` install as WASIX builds from `https://python-registry.wasix.org/simple`; the other packages are pure Python from PyPI. Images are processed in memory and never stored. No database, API key or volume is required.
 
 ## Running locally
 
@@ -73,4 +73,4 @@ wasmer deploy --build-remote
 
 ## License
 
-The template code and sample image are original to this repository and released under the [MIT license](LICENSE). segno is BSD-3-Clause, OpenCV is Apache-2.0, and Starlette and uvicorn are BSD-3-Clause.
+The template code and sample image are original to this repository and released under the [MIT license](LICENSE). segno is BSD-3-Clause, OpenCV is Apache-2.0, Pillow is MIT-CMU, and Starlette and uvicorn are BSD-3-Clause.

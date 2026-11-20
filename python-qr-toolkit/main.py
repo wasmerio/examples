@@ -4,14 +4,19 @@ import io
 import os
 from pathlib import Path
 
-import cv2
-import numpy as np
-import segno
-import uvicorn
-from starlette.applications import Starlette
-from starlette.responses import JSONResponse, Response
-from starlette.routing import Mount, Route
-from starlette.staticfiles import StaticFiles
+MAX_IMAGE_PIXELS = 25_000_000
+# OpenCV reads this limit once, when cv2 is imported; its default is 2**30 pixels.
+os.environ.setdefault("OPENCV_IO_MAX_IMAGE_PIXELS", str(MAX_IMAGE_PIXELS))
+
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+import segno  # noqa: E402
+import uvicorn  # noqa: E402
+from PIL import Image  # noqa: E402
+from starlette.applications import Starlette  # noqa: E402
+from starlette.responses import JSONResponse, Response  # noqa: E402
+from starlette.routing import Mount, Route  # noqa: E402
+from starlette.staticfiles import StaticFiles  # noqa: E402
 
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_TEXT_LENGTH = 2000
@@ -60,12 +65,39 @@ async def generate(request):
     )
 
 
+async def read_limited_body(request):
+    """Return the request body, or None as soon as it exceeds MAX_UPLOAD_BYTES."""
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > MAX_UPLOAD_BYTES:
+        return None
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > MAX_UPLOAD_BYTES:
+            return None
+    return bytes(body)
+
+
+def image_pixels(data):
+    """Read the pixel count from the image header without decoding the pixels."""
+    with Image.open(io.BytesIO(data)) as header:
+        return header.width * header.height
+
+
 async def decode(request):
-    body = await request.body()
+    body = await read_limited_body(request)
+    if body is None:
+        return error(f"Image must be {MAX_UPLOAD_BYTES // 2**20} MB or smaller.", 413)
     if not body:
         return error("Upload an image as the request body.")
-    if len(body) > MAX_UPLOAD_BYTES:
-        return error(f"Image must be {MAX_UPLOAD_BYTES // 2**20} MB or smaller.", 413)
+    too_large = error(f"Image must be {MAX_IMAGE_PIXELS // 10**6} megapixels or smaller.", 413)
+    try:
+        if image_pixels(body) > MAX_IMAGE_PIXELS:
+            return too_large
+    except Image.DecompressionBombError:
+        return too_large
+    except OSError:
+        return error("The file is not a readable image.")
     image = cv2.imdecode(np.frombuffer(body, np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         return error("The file is not a readable image.")

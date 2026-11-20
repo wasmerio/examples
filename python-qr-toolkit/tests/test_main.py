@@ -1,12 +1,19 @@
+import io
 from pathlib import Path
 
-import cv2
-import numpy as np
+from PIL import Image
 from starlette.testclient import TestClient
 
+import main
 from main import app
 
 client = TestClient(app)
+
+
+def png(image):
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
 SAMPLE = Path(__file__).parents[1] / "static" / "qr-photo.jpg"
 
 
@@ -51,8 +58,7 @@ def test_decode_sample_photo():
 
 
 def test_decode_image_without_qr_code_returns_clear_error():
-    _, png = cv2.imencode(".png", np.full((200, 200, 3), 255, np.uint8))
-    response = client.post("/api/decode", content=png.tobytes())
+    response = client.post("/api/decode", content=png(Image.new("RGB", (200, 200), "white")))
     assert response.status_code == 422
     assert response.json() == {"error": "No QR code found in the image."}
 
@@ -61,3 +67,33 @@ def test_decode_rejects_non_image():
     response = client.post("/api/decode", content=b"not an image")
     assert response.status_code == 400
     assert response.json() == {"error": "The file is not a readable image."}
+
+
+def test_decode_rejects_body_over_declared_limit(monkeypatch):
+    monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 1024)
+    response = client.post("/api/decode", content=b"x" * 2048)
+    assert response.status_code == 413
+
+
+def test_decode_stops_reading_streamed_body_at_limit(monkeypatch):
+    monkeypatch.setattr(main, "MAX_UPLOAD_BYTES", 1024)
+    def chunks():
+        for _ in range(64):
+            yield b"x" * 512
+
+    # A generator body is sent chunked, without a Content-Length header.
+    response = client.post("/api/decode", content=chunks())
+    assert response.status_code == 413
+
+
+def test_decode_rejects_image_dimensions_before_decoding():
+    # A 1-bit 6000 x 6000 PNG is a few kilobytes but declares 36 million pixels.
+    bomb = png(Image.new("1", (6000, 6000)))
+    assert len(bomb) < main.MAX_UPLOAD_BYTES
+    response = client.post("/api/decode", content=bomb)
+    assert response.status_code == 413
+    assert response.json() == {"error": "Image must be 25 megapixels or smaller."}
+
+
+def test_opencv_pixel_limit_is_configured():
+    assert main.os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] == str(main.MAX_IMAGE_PIXELS)

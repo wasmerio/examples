@@ -25,19 +25,18 @@ No page-local CSS replaces card surfaces, typography or controls.
 With Docker, Wasmer and Anybuild 0.33.3 available, run from the repository root:
 
 ```sh
-anybuild --subdir js-astro-starter --builder docker --runner wasmer --serve-port 18946 --start
+anybuild auto . --docker --wasmer --subdir js-astro-starter
 ```
 
-Anybuild detects Astro, builds the selected subdirectory and serves `dist/` through
-Wasmer's static server. Catalog registration follows source merge; this source PR
+Anybuild detects Astro, builds the selected subdirectory and prepares a Wasmer artifact
+that serves `dist/` through Wasmer's static server. This is the command CI runs. Catalog registration follows source merge; this source PR
 does not publish a template entry or production deployment.
 
 ## Dependencies and shared UI
 
-The direct Astro dependency is pinned to 7.4.11. The build generates its dependency
-resolution and lockfile inside the build artifact. No lockfile is committed, so later
-builds may resolve different transitive dependency versions. Commit a reviewed lockfile
-in your own application when reproducible dependency resolution is required.
+The direct Astro dependency is pinned to 7.4.11, and `package-lock.json` locks the full
+dependency tree so every build installs the same versions. Run `npm install` after changing
+`package.json` and commit the updated lockfile.
 
 From the repository root, refresh or verify the shared component copy with:
 

@@ -23,13 +23,13 @@ Live demo: <https://qr-toolkit-template.wasmer.app>
 - `POST /api/decode` takes the image file as the request body (up to 8 MB) and returns the text, the four corner points and the bounding box in image pixels:
 
   ```bash
-  curl -X POST https://qr-toolkit-template.wasmer.app/api/decode --data-binary @samples/qr-photo.jpg
+  curl -X POST https://qr-toolkit-template.wasmer.app/api/decode --data-binary @static/qr-photo.jpg
   # {"text":"https://wasmer.io","box":{"x":418,"y":245,"width":374,"height":414},"corners":[[453,245],...],"image":{"width":1200,"height":900}}
   ```
 
   An image without a QR code returns `422` with `{"error": "No QR code found in the image."}`; a file that is not an image returns `400`.
-- `index.html` is the page, with no build step or front-end dependencies.
-- `samples/qr-photo.jpg` is a synthetic photo of a printed code at an angle. `python samples/create_sample.py` regenerates it.
+- `static/index.html` is the page. It uses the shared Wasmer starter components in `static/wasmer-starter-ui.js`, generated from `_shared/starter-ui/` at the repository root with `node scripts/sync-starter-ui.mjs python-qr-toolkit/static/wasmer-starter-ui.js`. There is no front-end build step.
+- `static/qr-photo.jpg` is a synthetic photo of a printed code at an angle. `python create_sample.py` regenerates it.
 - `Anybuild` selects the Python runtime and the `python main.py` start command. The repository-root `Anybuild.python-qr-toolkit` provides the same configuration when Anybuild builds this monorepo with `--subdir python-qr-toolkit`.
 
 On Wasmer, `numpy` and `opencv-python-headless` install as WASIX builds from `https://python-registry.wasix.org/simple`; the other packages are pure Python from PyPI. Images are processed in memory and never stored. No database, API key or volume is required.

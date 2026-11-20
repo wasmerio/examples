@@ -1,39 +1,81 @@
-# FastAPI Image Processor (Pillow) + Wasmer
+# Image editor API (FastAPI + Pillow) on Wasmer
 
-This example shows how to perform simple image manipulations with **Pillow (PIL)** behind a **FastAPI** endpoint on **Wasmer Edge**.
+Rotate, crop, resize and convert images between PNG, JPEG and WebP. Use the page for a live preview and a download, or call the documented JSON API. Images can come from a URL or an upload. Everything runs in one FastAPI app with [Pillow](https://pillow.readthedocs.io/) on Wasmer Edge.
 
 ## Demo
 
-https://python-pillow-example.wasmer.app
+<https://pillow-image-editor-template.wasmer.app/>
 
-## How it Works
+The page opens with a sample photo from Lorem Picsum. Change any field and the preview updates.
 
-`main.py` implements a `/process` route that accepts three query parameters: `url`, `rotate`, and `crop`.
+## How it works
 
-1. **Download** – `requests.get(url)` fetches the remote image and loads it with `Image.open(BytesIO(...))`.
-2. **Transform** – If `rotate` is provided, the image rotates with `expand=True`; if `crop` is provided (`left,top,right,bottom`), the image is cropped accordingly.
-3. **Return** – The image is saved to an in-memory buffer as PNG and returned as a streaming response.
+- `main.py` has the API. `EditOptions` is a Pydantic model that validates the form fields, so bad input gets a 422 with a message for each field.
+- The image is read from the upload, or downloaded by `fetch.py` with a size limit and a timeout.
+- `fetch.py` downloads URLs safely. It resolves the host, refuses any address that isn't public (private, loopback, link-local such as `169.254.169.254`, multicast, reserved, and their IPv6 forms), connects to the address it checked so DNS rebinding can't switch it, and follows at most 3 redirects, checking each one the same way. HTTPS certificates are still verified against the original hostname. Upstream errors are reported as "Could not fetch the URL." without details.
+- Pillow applies the steps in this order: EXIF orientation (`ImageOps.exif_transpose`), rotate (counter-clockwise, and the canvas grows to fit), crop (on the rotated image), resize (if you give only a width or a height, the other follows the aspect ratio), then save as PNG, JPEG or WebP. Transparent images are flattened to RGB for JPEG.
+- `static/index.html` is the editor. It posts the form to `/api/edit` 400 ms after you stop typing and shows the result.
+- The page uses the shared Wasmer starter components in `static/wasmer-starter-ui.js`, generated from `_shared/starter-ui/` at the repository root.
 
-Invalid crop strings or download failures are handled with descriptive HTTP errors.
+The limits are one block of constants at the top of `main.py`:
 
-## Running Locally
+| Constant | Default |
+| --- | --- |
+| `MAX_INPUT_BYTES` | 10 MB per download or upload |
+| `DOWNLOAD_TIMEOUT_SECONDS` | 15 s |
+| `MAX_INPUT_PIXELS` | 16 million, checked from the header before decoding (decompression bombs) |
+| `MAX_OUTPUT_PIXELS` | 24 million, the largest canvas after rotation |
+| `MAX_OUTPUT_SIDE` | 4096 px for resize width or height |
+| `QUALITY` | 85 for JPEG and WebP |
+
+Errors come back as JSON `{"detail": ...}`: 422 for invalid fields, a missing image, a private address, or a crop box outside the image; 400 when the URL can't be downloaded; 413 for files that are too large; 415 when the file isn't an image; 504 when the download times out.
+
+### API
+
+`POST /api/edit` takes a `multipart/form-data` body and returns the edited image. The `X-Image-Width` and `X-Image-Height` headers give its size.
+
+| Field | Meaning |
+| --- | --- |
+| `file` or `url` | The image. An upload wins over a URL. |
+| `rotate` | Degrees counter-clockwise, −360 to 360 |
+| `crop` | `left,top,right,bottom` in pixels |
+| `width`, `height` | Output size, 1–4096 px |
+| `format` | `png` (default), `jpeg` or `webp` |
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+curl -F url=https://picsum.photos/id/1015/1200/800 -F rotate=90 -F width=400 -F format=webp \
+  https://pillow-image-editor-template.wasmer.app/api/edit -o edited.webp
+curl -F file=@photo.jpg -F crop=0,0,500,500 -F format=png \
+  https://pillow-image-editor-template.wasmer.app/api/edit -o cropped.png
 ```
 
-Then try:
+The original route of this example still works: `GET /process?url=…&rotate=45&crop=0,0,200,200` returns a PNG. As before, a crop box larger than the image is padded rather than rejected. Interactive docs are at `/docs`.
+
+The app downloads any public URL it's given. If you deploy it for others, keep the limits low or put it behind authentication.
+
+## Running locally
+
+Use Python 3.13:
 
 ```bash
-curl "http://127.0.0.1:8000/process?url=https://picsum.photos/320&rotate=45&crop=0,0,200,200" \
-  --output rotated.png
+cd python-pillow
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/uvicorn main:app --reload
 ```
 
-## Deploying to Wasmer (Overview)
+Open <http://localhost:8000/>. Run the tests with `.venv/bin/python -m pytest`. They build images in memory and replace downloads with a fake response, so they don't use the network. `tests/conftest.py` fakes DNS and HTTP, which also covers private addresses and redirects.
 
-1. Bundle `main.py` and `requirements.txt` in your project.
-2. Configure the start command to run Uvicorn: `uvicorn main:app --host 0.0.0.0 --port $PORT`.
-3. Deploy to Wasmer Edge and call `https://<your-subdomain>.wasmer.app/process?...`.
+## Deploying to Wasmer
+
+1. Import `https://github.com/wasmerio/examples` in Wasmer and set the root directory to `python-pillow`, or upload this directory.
+2. Wasmer detects FastAPI and runs `uvicorn main:app`. Pillow installs from Wasmer's WASIX package index, so nothing else needs configuring.
+3. Deploy and open the app URL.
+
+With the CLI, from this directory:
+
+```bash
+wasmer deploy
+```
+
+No database, secrets or volumes are needed.

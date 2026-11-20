@@ -26,7 +26,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`python-fastapi`](python-fastapi/README.md) – minimal FastAPI hello world.
 - [`python-fastapi-pandoc-converter`](python-fastapi-pandoc-converter/README.md) – FastAPI + pypandoc conversion service.
 - [`python-fastapi-pystone`](python-fastapi-pystone/README.md) – Pystone benchmark exposed via FastAPI.
-- [`python-ffmpeg`](python-ffmpeg/README.md) – Frame extraction with `ffmpeg-python`.
+- [`python-ffmpeg`](python-ffmpeg/README.md) – Video frame grabber: FastAPI + `ffmpeg-python`, frame preview, thumbnails and a JPEG API.
 - [`python-flask`](python-flask/README.md) – Flask hello world.
 - [`python-langchain-starter`](python-langchain-starter/README.md) – Streamlit chat UI backed by LangChain.
 - [`python-mcp`](python-mcp/README.md) – FastMCP server exposing basic tools/resources.
@@ -34,7 +34,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`python-mkdocs`](python-mkdocs/README.md) – MkDocs static documentation site.
 - [`python-netron`](python-netron/README.md) – Netron AI model viewer with a bundled ONNX sample.
 - [`python-semantic-search`](python-semantic-search/README.md) – Semantic search with all-MiniLM-L6-v2 on ONNX Runtime.
-- [`python-pillow`](python-pillow/README.md) – Image transforms with Pillow.
+- [`python-pillow`](python-pillow/README.md) – Image editor API: FastAPI + Pillow rotate, crop, resize and PNG/JPEG/WebP conversion with live preview.
 - [`python-sklearn-classifier`](python-sklearn-classifier/README.md) – scikit-learn text classifier with a prediction page and JSON API.
 
 ### JavaScript & TypeScript

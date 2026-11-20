@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Image editor · Pillow on Wasmer Edge</title>
+<script type="module" src="/static/wasmer-starter-ui.js"></script>
+<style>
+  body { margin: 0 }
+  *, *::before, *::after { box-sizing: border-box }
+  form { display: grid; gap: 16px }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: end }
+  @media (min-width: 600px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)) } }
+  .field { display: grid; gap: 8px; font-size: 14px; font-weight: 500; min-width: 0 }
+  .field select, .field input[type=file] { font: inherit; font-weight: 400; width: 100%; min-height: 40px; padding: 4px 12px;
+    border: 1px solid #e5e5e5; border-radius: 6px; background: white; color: #0f0518 }
+  .field input[type=file] { padding: 7px 12px }
+  .field :focus-visible { outline: none; border-color: #3734a5; box-shadow: 0 0 0 3px rgba(96, 93, 233, .5) }
+  figure { margin: 0; display: grid; gap: 8px; justify-items: start }
+  figure img { display: block; max-width: 100%; max-height: 480px; height: auto; border-radius: 6px;
+    background: repeating-conic-gradient(#eff1f6 0 25%, white 0 50%) 0 0 / 16px 16px }
+  figcaption { font-size: 14px; color: rgba(15, 5, 24, .5) }
+  [hidden] { display: none !important }
+</style>
+</head>
+<body><wasmer-starter><wasmer-card>
+  <wasmer-stack slot="header" vertical><wasmer-badge>FastAPI + Pillow</wasmer-badge><wasmer-title>Image editor API</wasmer-title></wasmer-stack>
+  <wasmer-text>Rotate, crop, resize and convert an image. Pillow runs inside this app on Wasmer Edge; the preview updates as you type.</wasmer-text>
+  <form id="editor" action="/api/edit" method="post" enctype="multipart/form-data">
+    <wasmer-input name="url" type="url" label="Image URL" placeholder="https://example.com/photo.jpg" value="https://picsum.photos/id/1015/1200/800"></wasmer-input>
+    <label class="field">Or upload an image<input type="file" name="file" accept="image/*"></label>
+    <div class="grid">
+      <wasmer-input name="rotate" type="number" label="Rotate (° counter-clockwise)" placeholder="0" value="0"></wasmer-input>
+      <wasmer-input name="width" type="number" label="Width (px)" placeholder="Auto" value="600"></wasmer-input>
+      <wasmer-input name="height" type="number" label="Height (px)" placeholder="Auto"></wasmer-input>
+      <label class="field">Format<select name="format"><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webp" selected>WebP</option></select></label>
+    </div>
+    <wasmer-input name="crop" label="Crop box: left, top, right, bottom (after rotation)" placeholder="0,0,800,600"></wasmer-input>
+    <wasmer-stack>
+      <wasmer-action type="submit" id="apply">Update preview</wasmer-action>
+      <wasmer-action variant="outline" id="download" disabled>Download</wasmer-action>
+    </wasmer-stack>
+  </form>
+  <wasmer-notice variant="error" id="error" hidden></wasmer-notice>
+  <figure id="result" hidden><img id="preview" alt="Edited image"><figcaption id="meta"></figcaption></figure>
+  <wasmer-stack slot="footer">
+    <wasmer-action variant="outline" href="/docs">API docs</wasmer-action>
+    <wasmer-text>Or call <code>POST /api/edit</code> with the same form fields.</wasmer-text>
+  </wasmer-stack>
+</wasmer-card></wasmer-starter>
+<script type="module">
+const form = document.querySelector("#editor");
+const apply = document.querySelector("#apply");
+const download = document.querySelector("#download");
+const error = document.querySelector("#error");
+const result = document.querySelector("#result");
+const preview = document.querySelector("#preview");
+let objectUrl, filename, timer, pending;
+
+function message(detail) {
+  if (!Array.isArray(detail)) return detail || "Something went wrong.";
+  return detail.map(item => `${item.loc.at(-1)}: ${item.msg.replace(/^Value error, /, "")}`).join(" · ");
+}
+
+async function render() {
+  pending?.abort();
+  pending = new AbortController();
+  const data = new FormData(form);
+  if (!data.get("file")?.size) data.delete("file");
+  if (!data.has("file") && !data.get("url")) {
+    error.hidden = result.hidden = download.disabled = true;
+    return;
+  }
+  apply.loading = true;
+  try {
+    const response = await fetch(form.action, { method: "POST", body: data, signal: pending.signal });
+    if (!response.ok) throw new Error(message((await response.json().catch(() => ({}))).detail));
+    const blob = await response.blob();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(blob);
+    filename = /filename="([^"]+)"/.exec(response.headers.get("content-disposition"))?.[1] || "edited";
+    preview.src = objectUrl;
+    document.querySelector("#meta").textContent =
+      `${response.headers.get("x-image-width")}×${response.headers.get("x-image-height")} · ${blob.type} · ${(blob.size / 1024).toFixed(1)} KB`;
+    result.hidden = false;
+    error.hidden = true;
+    download.disabled = false;
+  } catch (failure) {
+    if (failure.name === "AbortError") return;
+    error.textContent = failure.message;
+    error.hidden = false;
+    result.hidden = true;
+    download.disabled = true;
+  } finally {
+    apply.loading = false;
+  }
+}
+
+form.addEventListener("submit", event => { event.preventDefault(); render(); });
+form.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(render, 400); });
+form.addEventListener("change", () => { clearTimeout(timer); timer = setTimeout(render, 100); });
+download.addEventListener("click", () => {
+  const link = Object.assign(document.createElement("a"), { href: objectUrl, download: filename });
+  link.click();
+});
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Semantic search on Wasmer Edge</title>
+  <script type="module" src="/wasmer-starter-ui.js"></script>
+  <style>
+    body { margin: 0; }
+    [hidden] { display: none !important; }
+    #submit { margin-bottom: 4px; }
+    form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 12px; }
+    ol { display: grid; gap: 20px; margin: 0; padding: 0; list-style: none; }
+    ol:empty { display: none; }
+    .result { display: grid; gap: 4px; padding-top: 20px; border-top: 1px solid rgba(15, 5, 24, .1); }
+    .result:first-child { padding-top: 0; border-top: 0; }
+    .result-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-weight: 600; }
+    code { font-size: .875em; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <wasmer-starter>
+    <wasmer-card>
+      <wasmer-stack slot="header" vertical>
+        <wasmer-badge>Python · ONNX Runtime</wasmer-badge>
+        <wasmer-title>Semantic search on Wasmer Edge</wasmer-title>
+      </wasmer-stack>
+      <wasmer-text>Search a cloud and WebAssembly glossary by meaning, not keywords. Queries are embedded on the server with all-MiniLM-L6-v2 and ranked by cosine similarity.</wasmer-text>
+      <form id="search">
+        <wasmer-input id="q" name="q" label="Search query" placeholder="Ask in your own words" maxlength="500" required></wasmer-input>
+        <wasmer-action id="submit" type="submit">Search</wasmer-action>
+      </form>
+      <wasmer-stack id="examples" aria-label="Example queries">
+        <wasmer-action variant="outline" wrap>my app is slow on the first request</wasmer-action>
+        <wasmer-action variant="outline" wrap>where do I keep my API key?</wasmer-action>
+        <wasmer-action variant="outline" wrap>undo a broken release</wasmer-action>
+      </wasmer-stack>
+      <wasmer-text id="status" role="status" hidden></wasmer-text>
+      <wasmer-notice id="notice" hidden></wasmer-notice>
+      <ol id="results"></ol>
+      <wasmer-text slot="footer">JSON API: <code>GET /api/search?q=your+query&amp;k=5</code>. Swap <code>documents.json</code> to search your own content.</wasmer-text>
+    </wasmer-card>
+  </wasmer-starter>
+  <script type="module">
+    const form = document.getElementById("search");
+    const input = document.getElementById("q");
+    const submit = document.getElementById("submit");
+    const status = document.getElementById("status");
+    const notice = document.getElementById("notice");
+    const list = document.getElementById("results");
+
+    function show({ text = "", message = "", variant = "warning", results = [] } = {}) {
+      status.hidden = !text;
+      status.textContent = text;
+      notice.hidden = !message;
+      notice.textContent = message;
+      notice.setAttribute("variant", variant);
+      list.replaceChildren(...results.map((r) => {
+        const item = document.createElement("li");
+        item.className = "result";
+        item.innerHTML = '<div class="result-head"><span></span><wasmer-badge></wasmer-badge></div><wasmer-text></wasmer-text>';
+        item.querySelector("span").textContent = r.title;
+        item.querySelector("wasmer-badge").textContent = `score ${r.score.toFixed(3)}`;
+        item.querySelector("wasmer-text").textContent = r.text;
+        return item;
+      }));
+    }
+
+    async function search(query) {
+      input.value = query;
+      history.replaceState(null, "", query ? `?q=${encodeURIComponent(query)}` : location.pathname);
+      if (!query) return show();
+      submit.loading = true;
+      try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        show(data.results.length
+          ? { text: `${data.results.length} results in ${data.took_ms} ms`, results: data.results }
+          : { message: "No related documents found. Try describing the idea in other words." });
+      } catch (error) {
+        show({ message: `Search failed: ${error.message}`, variant: "error" });
+      } finally {
+        submit.loading = false;
+      }
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      search(input.value.trim());
+    });
+    document.querySelectorAll("#examples wasmer-action").forEach((button) =>
+      button.addEventListener("click", () => search(button.textContent)));
+    search(new URLSearchParams(location.search).get("q")?.trim() || "");
+  </script>
+</body>
+</html>

@@ -21,7 +21,7 @@ Then open http://localhost:3000/.
 
 To check the production build, run `npm run build` and look in `.output/public/`.
 
-Catalog registration follows source merge; this PR does not publish the catalog entry. Direct dependencies are pinned, and build tools generate dependency resolutions; transitive dependencies can change between builds.
+Catalog registration follows source merge; this PR does not publish the catalog entry. Dependencies are locked in `package-lock.json`; run `npm install` after changing `package.json` and commit the updated lockfile.
 
 The UI uses the repository's shared Wasmer web components, loaded from `public/starter-ui.js`.
 Their design references and supported states are documented in `_shared/starter-ui/DESIGN.md`.

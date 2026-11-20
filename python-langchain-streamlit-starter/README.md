@@ -31,7 +31,7 @@ uv run streamlit run streamlit_app.py
 
 Then open http://localhost:8501/.
 
-Catalog registration follows source merge; this PR does not publish the catalog entry. Direct dependencies are pinned, and build tools generate dependency resolutions; transitive dependencies can change between builds.
+Catalog registration follows source merge; this PR does not publish the catalog entry. Dependencies are locked in `uv.lock`; run `uv lock` after changing `pyproject.toml`.
 
 ## Shared UI
 

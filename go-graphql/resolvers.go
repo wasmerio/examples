@@ -9,16 +9,22 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wasmerio/shipit/examples/go-graphql/generated"
 	"github.com/wasmerio/shipit/examples/go-graphql/models"
 )
 
+// maxReviewsPerEpisode bounds the in-memory reviews a public demo keeps.
+const maxReviewsPerEpisode = 100
+
 type Resolver struct {
 	humans    map[string]models.Human
 	droid     map[string]models.Droid
 	starships map[string]models.Starship
+
+	reviewsMu sync.RWMutex // createReview runs concurrently with queries
 	reviews   map[models.Episode][]*models.Review
 }
 
@@ -185,7 +191,13 @@ func (r *mutationResolver) CreateReview(
 ) (*models.Review, error) {
 	review.Time = time.Now()
 	time.Sleep(1 * time.Second)
-	r.reviews[episode] = append(r.reviews[episode], &review)
+	r.reviewsMu.Lock()
+	defer r.reviewsMu.Unlock()
+	list := append(r.reviews[episode], &review)
+	if len(list) > maxReviewsPerEpisode {
+		list = list[len(list)-maxReviewsPerEpisode:]
+	}
+	r.reviews[episode] = list
 	return &review, nil
 }
 
@@ -206,8 +218,10 @@ func (r *queryResolver) Reviews(
 	episode models.Episode,
 	since *time.Time,
 ) ([]*models.Review, error) {
+	r.reviewsMu.RLock()
+	defer r.reviewsMu.RUnlock()
 	if since == nil {
-		return r.reviews[episode], nil
+		return append([]*models.Review(nil), r.reviews[episode]...), nil
 	}
 
 	var filtered []*models.Review

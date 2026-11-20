@@ -13,7 +13,14 @@ After catalog registration, [deploy this template](https://wasmer.io/templates/l
 
 ## Configuration
 
-Set an `OPENAI_API_KEY` secret on your app so visitors can chat right away, or paste a key in the sidebar. The sidebar sends the key to the app server and keeps it in server-side session memory; use a deployment you trust. This app does not write the key to disk. Set usage limits on any shared server key in your OpenAI account.
+By default each visitor pastes their own OpenAI API key in the sidebar. The sidebar sends the key to the app server and keeps it only in that visitor's server-side session memory; use a deployment you trust. This app does not log the key or write it to disk.
+
+To let visitors chat without a key, set both secrets on your app:
+
+- `OPENAI_API_KEY`: the key to share.
+- `ALLOW_SHARED_OPENAI_KEY=true`: opts in to sharing it. Without this, the app ignores `OPENAI_API_KEY`.
+
+> **Warning:** with `ALLOW_SHARED_OPENAI_KEY=true`, anyone who can open your app can spend your OpenAI key. Only enable it on private deployments, and set usage limits on the key in your OpenAI account. A key typed in the sidebar always takes priority.
 
 ## Run it locally
 

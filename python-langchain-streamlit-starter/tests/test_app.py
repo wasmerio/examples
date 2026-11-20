@@ -7,11 +7,12 @@ from langchain_core.messages import AIMessageChunk
 from streamlit.testing.v1 import AppTest
 
 APP = Path(__file__).resolve().parents[1] / 'streamlit_app.py'
+SHARED_KEY = {'OPENAI_API_KEY': 'synthetic-test-key', 'ALLOW_SHARED_OPENAI_KEY': 'true'}
 
 
 class ChatTests(unittest.TestCase):
-    def test_missing_key_does_not_call_model(self):
-        with patch.dict(os.environ, {'OPENAI_API_KEY': ''}), patch('langchain_openai.ChatOpenAI') as model:
+    def assert_asks_for_key(self, env):
+        with patch.dict(os.environ, env), patch('langchain_openai.ChatOpenAI') as model:
             app = AppTest.from_file(str(APP), default_timeout=30).run()
             app.chat_input[0].set_value('Hello').run()
             self.assertEqual(len(app.info), 1)
@@ -19,8 +20,32 @@ class ChatTests(unittest.TestCase):
             model.assert_not_called()
             self.assertEqual(len(app.exception), 0)
 
-    def test_streamed_reply_and_clear(self):
-        with patch.dict(os.environ, {'OPENAI_API_KEY': 'synthetic-test-key'}), patch('langchain_openai.ChatOpenAI') as model:
+    def test_missing_key_does_not_call_model(self):
+        self.assert_asks_for_key({'OPENAI_API_KEY': '', 'ALLOW_SHARED_OPENAI_KEY': 'true'})
+
+    def test_server_key_is_not_shared_without_opt_in(self):
+        self.assert_asks_for_key({'OPENAI_API_KEY': 'synthetic-test-key', 'ALLOW_SHARED_OPENAI_KEY': ''})
+
+    def test_typed_key_wins_over_shared_key(self):
+        with patch.dict(os.environ, SHARED_KEY), patch('langchain_openai.ChatOpenAI') as model:
+            model.return_value.stream.return_value = iter([AIMessageChunk(content='Hi')])
+            app = AppTest.from_file(str(APP), default_timeout=30).run()
+            app.text_input[0].input('synthetic-visitor-key').run()
+            app.chat_input[0].set_value('Hello').run()
+            model.assert_called_once_with(model='gpt-4o-mini', api_key='synthetic-visitor-key', streaming=True)
+            self.assertEqual(len(app.exception), 0)
+
+    def test_typed_key_works_without_shared_key(self):
+        with patch.dict(os.environ, {'OPENAI_API_KEY': 'synthetic-test-key', 'ALLOW_SHARED_OPENAI_KEY': ''}), patch('langchain_openai.ChatOpenAI') as model:
+            model.return_value.stream.return_value = iter([AIMessageChunk(content='Hi')])
+            app = AppTest.from_file(str(APP), default_timeout=30).run()
+            app.text_input[0].input('synthetic-visitor-key').run()
+            app.chat_input[0].set_value('Hello').run()
+            model.assert_called_once_with(model='gpt-4o-mini', api_key='synthetic-visitor-key', streaming=True)
+            self.assertEqual(len(app.exception), 0)
+
+    def test_streamed_reply_with_opted_in_shared_key_and_clear(self):
+        with patch.dict(os.environ, SHARED_KEY), patch('langchain_openai.ChatOpenAI') as model:
             model.return_value.stream.return_value = iter([AIMessageChunk(content='Hello '), AIMessageChunk(content='world')])
             app = AppTest.from_file(str(APP), default_timeout=30).run()
             app.chat_input[0].set_value('Hi').run()
@@ -32,7 +57,7 @@ class ChatTests(unittest.TestCase):
             self.assertEqual(len(app.exception), 0)
 
     def test_provider_failure_is_safe_and_visible(self):
-        with patch.dict(os.environ, {'OPENAI_API_KEY': 'synthetic-test-key'}), patch('langchain_openai.ChatOpenAI', side_effect=RuntimeError('private-provider-detail')):
+        with patch.dict(os.environ, SHARED_KEY), patch('langchain_openai.ChatOpenAI', side_effect=RuntimeError('private-provider-detail')):
             app = AppTest.from_file(str(APP), default_timeout=30).run()
             app.chat_input[0].set_value('Hi').run()
             self.assertEqual(len(app.error), 1)
@@ -45,7 +70,7 @@ class ChatTests(unittest.TestCase):
             yield AIMessageChunk(content='Unfinished reply')
             raise RuntimeError('synthetic stream interruption')
 
-        with patch.dict(os.environ, {'OPENAI_API_KEY': 'synthetic-test-key'}), patch('langchain_openai.ChatOpenAI') as model:
+        with patch.dict(os.environ, SHARED_KEY), patch('langchain_openai.ChatOpenAI') as model:
             stream = model.return_value.stream
             stream.side_effect = [
                 iter([AIMessageChunk(content='First reply')]),

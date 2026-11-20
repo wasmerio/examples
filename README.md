@@ -117,6 +117,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 
 ### Go & Rust
 
+- [`go-graphql`](go-graphql/README.md) – Star Wars GraphQL API built with gqlgen, explored in Apollo Sandbox.
 - [`go-httpbin`](go-httpbin/README.md) – HTTP request inspection, redirects, and status-code testing with go-httpbin.
 - [`go-hugo-staticsite`](go-hugo-staticsite/README.md) – Hugo-generated static site.
 - [`skip-rust-axum`](skip-rust-axum/README.md) – Axum server compiled to WASIX.

@@ -33,6 +33,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`python-mcp-chatgpt`](python-mcp-chatgpt/README.md) – Cupcake search MCP server for ChatGPT.
 - [`python-mkdocs`](python-mkdocs/README.md) – MkDocs static documentation site.
 - [`python-netron`](python-netron/README.md) – Netron AI model viewer with a bundled ONNX sample.
+- [`python-onnx-image-classifier`](python-onnx-image-classifier/README.md) – MobileNetV2 image classifier with ONNX Runtime, web UI and JSON API.
 - [`python-semantic-search`](python-semantic-search/README.md) – Semantic search with all-MiniLM-L6-v2 on ONNX Runtime.
 - [`python-pillow`](python-pillow/README.md) – Image editor API: FastAPI + Pillow rotate, crop, resize and PNG/JPEG/WebP conversion with live preview.
 - [`python-sklearn-classifier`](python-sklearn-classifier/README.md) – scikit-learn text classifier with a prediction page and JSON API.

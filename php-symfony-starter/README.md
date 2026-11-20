@@ -24,7 +24,7 @@ php -S localhost:8000 -t public
 
 Then open http://localhost:8000/.
 
-Catalog registration follows source merge; this PR does not publish the catalog entry. Direct dependencies are pinned, and build tools generate dependency resolutions; transitive dependencies can change between builds.
+Catalog registration follows source merge; this PR does not publish the catalog entry. Dependencies are locked in `composer.lock`; run `composer update --no-install` after changing `composer.json` and commit the updated lockfile.
 
 ## Shared UI
 

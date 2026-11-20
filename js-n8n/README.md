@@ -6,12 +6,16 @@ deployments.
 
 ## How it works
 
-- `app.yaml` runs the prebuilt [`wasmer/n8n@2.48.4`](https://wasmer.io/wasmer/n8n@2.48.4)
-  package and asks Wasmer for a PostgreSQL database and 2 GiB of memory. Nothing is
-  built from this folder.
-- The package contains n8n 2.48.4 from the official release, trimmed to fit the
-  registry size limit, on Node.js-compatible `wasmer/edgejs-quickjs`. n8n's own
-  QuickJS expression engine evaluates expressions.
+- `Anybuild` builds nothing. It serves Node.js with the prebuilt
+  [`wasmer/n8n@2.48.4`](https://wasmer.io/wasmer/n8n@2.48.4) package as a
+  runtime dependency, so the deployed package is a few kilobytes and n8n's files
+  are mounted at `/n8n` when the app starts. This needs Anybuild support for
+  `namespace/name` registry dependencies.
+- `app.yaml` asks Wasmer for a PostgreSQL database and 2 GiB of memory.
+- `wasmer/n8n` contains n8n 2.48.4 from the official release, trimmed to fit
+  the registry size limit, for Node.js-compatible `wasmer/edgejs-quickjs`.
+  n8n's own QuickJS expression engine evaluates expressions. `package/` holds
+  its manifest and entrypoint.
 - `package/wasmer-start.cjs` is the package entrypoint. It maps Wasmer's database
   variables to n8n's, sets webhook and editor URLs from the app's public URL, and
   hashes the owner password before starting n8n.

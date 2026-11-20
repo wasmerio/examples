@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ONNX Image Classifier</title>
+  <style>
+    :root {
+      --bg: #f6f7f9; --card: #fff; --text: #14171f; --muted: #5d6573;
+      --line: #e1e4ea; --accent: #4f46e5; --accent-soft: #eef0ff; --error: #b42318; --error-soft: #fef3f2;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1115; --card: #171a21; --text: #eef0f4; --muted: #9aa3b2;
+        --line: #2a2f3a; --accent: #8b85ff; --accent-soft: #23234a; --error: #ff8a80; --error-soft: #3a1d1d;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 960px; margin: 0 auto; padding: 32px 16px 48px; }
+    h1 { font-size: 1.6rem; margin: 0 0 4px; }
+    .lead { color: var(--muted); margin: 0 0 24px; }
+    .grid { display: grid; gap: 16px; }
+    @media (min-width: 768px) { .grid { grid-template-columns: 1fr 1fr; } }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; min-width: 0; }
+    h2 { font-size: 1rem; margin: 0 0 12px; }
+    .drop { display: grid; place-items: center; text-align: center; min-height: 220px; border: 2px dashed var(--line);
+            border-radius: 10px; cursor: pointer; overflow: hidden; color: var(--muted); padding: 12px; }
+    .drop.over, .drop:focus-within { border-color: var(--accent); }
+    .drop img { max-width: 100%; max-height: 320px; border-radius: 6px; }
+    .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .samples { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: .9rem; }
+    button { font: inherit; font-size: .9rem; border: 1px solid var(--line); background: var(--card); color: var(--text);
+             border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+    .row { display: flex; justify-content: space-between; gap: 12px; font-size: .95rem; }
+    .row span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .bar { height: 8px; background: var(--accent-soft); border-radius: 4px; margin-top: 4px; overflow: hidden; }
+    .bar div { height: 100%; background: var(--accent); }
+    .status { color: var(--muted); margin: 0; }
+    .error { color: var(--error); background: var(--error-soft); border-radius: 8px; padding: 10px 12px; margin: 0; }
+    footer { margin-top: 24px; color: var(--muted); font-size: .85rem; }
+    code { font-size: .85em; background: var(--accent-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ONNX Image Classifier</h1>
+  <p class="lead">MobileNetV2 runs with ONNX Runtime on the server and returns the five most likely ImageNet labels.</p>
+  <div class="grid">
+    <section class="card">
+      <h2>Image</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="image/*">
+        <span id="preview">Drop an image here or click to choose one</span>
+      </label>
+      <div class="samples">Try a sample:
+        <button type="button" data-sample="samples/cat.jpg">Cat</button>
+        <button type="button" data-sample="samples/coffee.jpg">Coffee</button>
+      </div>
+    </section>
+    <section class="card" aria-live="polite">
+      <h2>Top 5 predictions</h2>
+      <div id="result"><p class="status">Choose an image to see predictions.</p></div>
+    </section>
+  </div>
+  <footer>JSON API: <code>curl -F image=@photo.jpg $URL/api/classify</code></footer>
+</main>
+<script>
+  const drop = document.getElementById("drop");
+  const fileInput = document.getElementById("file");
+  const preview = document.getElementById("preview");
+  const result = document.getElementById("result");
+
+  function message(text, className) {
+    const p = document.createElement("p");
+    p.className = className;
+    p.textContent = text;
+    result.replaceChildren(p);
+  }
+
+  async function classify(file) {
+    const img = document.createElement("img");
+    img.alt = file.name;
+    img.src = URL.createObjectURL(file);
+    img.onerror = () => preview.replaceChildren(file.name);
+    preview.replaceChildren(img);
+    message("Classifying…", "status");
+    const body = new FormData();
+    body.append("image", file);
+    try {
+      const response = await fetch("api/classify", { method: "POST", body });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `Request failed (HTTP ${response.status}).`);
+      const list = document.createElement("ol");
+      for (const { label, confidence } of data.predictions) {
+        const item = document.createElement("li");
+        const percent = (confidence * 100).toFixed(1) + "%";
+        item.innerHTML = '<div class="row"><span></span><span></span></div><div class="bar"><div></div></div>';
+        item.querySelector(".row span").textContent = label;
+        item.querySelector(".row span:last-child").textContent = percent;
+        item.querySelector(".bar div").style.width = percent;
+        list.append(item);
+      }
+      result.replaceChildren(list);
+    } catch (error) {
+      message(error.message || "Classification failed.", "error");
+    }
+  }
+
+  fileInput.addEventListener("change", () => fileInput.files[0] && classify(fileInput.files[0]));
+  drop.addEventListener("dragover", (event) => { event.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    drop.classList.remove("over");
+    if (event.dataTransfer.files[0]) classify(event.dataTransfer.files[0]);
+  });
+  document.querySelectorAll("[data-sample]").forEach((button) => button.addEventListener("click", async () => {
+    const blob = await (await fetch(button.dataset.sample)).blob();
+    classify(new File([blob], button.dataset.sample.split("/").pop(), { type: blob.type }));
+  }));
+  document.querySelector("footer code").textContent = `curl -F image=@photo.jpg ${location.origin}/api/classify`;
+</script>
+</body>
+</html>

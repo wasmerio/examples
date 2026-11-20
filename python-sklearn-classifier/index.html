@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scikit-learn text classifier on Wasmer Edge</title>
+<script type="module" src="/static/wasmer-starter-ui.js"></script>
+<style>
+  body { margin: 0 }
+  form { display: grid; gap: 12px }
+  .bar { display: grid; grid-template-columns: 3rem 1fr 3.5rem; align-items: center; gap: 12px; font-size: 14px }
+  .track { height: 8px; border-radius: 4px; background: rgba(15, 5, 24, .1); overflow: hidden }
+  .fill { height: 100%; background: #605de9 }
+  .value { text-align: right; font-variant-numeric: tabular-nums }
+  .label { margin: 0; font-size: 28px; font-weight: 600; text-transform: uppercase }
+  #result { display: grid; gap: 12px }
+</style>
+</head>
+<body>
+<wasmer-starter><wasmer-card>
+  <wasmer-stack slot="header" vertical>
+    <wasmer-badge>scikit-learn</wasmer-badge>
+    <wasmer-title>Classify text with scikit-learn on Wasmer Edge</wasmer-title>
+  </wasmer-stack>
+  <wasmer-text>A TF-IDF + logistic regression pipeline trained on the SMS Spam Collection predicts whether a message is spam or ham. The same model answers <code>POST /api/predict</code>.</wasmer-text>
+  <form id="form">
+    <wasmer-input id="text" name="text" label="Message" placeholder="Paste a text message" maxlength="2000"></wasmer-input>
+    <wasmer-stack>
+      <wasmer-action type="submit" id="submit">Classify</wasmer-action>
+      <wasmer-action variant="outline" data-example="WINNER!! You have been selected to receive a £900 prize reward. Call 09061701461 to claim now.">Try spam</wasmer-action>
+      <wasmer-action variant="outline" data-example="Hey, are we still meeting for lunch tomorrow? I can pick you up at noon.">Try ham</wasmer-action>
+    </wasmer-stack>
+  </form>
+  <div id="result" aria-live="polite">
+    <wasmer-text>Enter a message and press Classify to see the predicted label, the class probabilities and the words that drove the prediction.</wasmer-text>
+  </div>
+  <wasmer-text slot="footer">Model: scikit-learn 1.8.0 · Data: SMS Spam Collection, CC BY 4.0</wasmer-text>
+</wasmer-card></wasmer-starter>
+<script type="module">
+  const form = document.getElementById("form"), input = document.getElementById("text");
+  const submit = document.getElementById("submit"), result = document.getElementById("result");
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  document.querySelectorAll("[data-example]").forEach((b) => b.addEventListener("click", () => { input.value = b.dataset.example; form.requestSubmit(); }));
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    submit.loading = true;
+    try {
+      const res = await fetch("/api/predict", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: input.value }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      const bars = Object.entries(data.probabilities).map(([label, p]) =>
+        `<div class="bar"><span>${esc(label)}</span><div class="track"><div class="fill" style="width:${p * 100}%"></div></div><span class="value">${(p * 100).toFixed(1)}%</span></div>`).join("");
+      const words = data.top_words.map((w) => `<wasmer-badge>${esc(w.word)}</wasmer-badge>`).join("") || "<wasmer-text>None</wasmer-text>";
+      result.innerHTML = `<wasmer-text>Prediction</wasmer-text><p class="label">${esc(data.label)}</p>${bars}
+        <wasmer-text>Words that pushed the prediction to ${esc(data.label)}</wasmer-text><wasmer-stack>${words}</wasmer-stack>`;
+    } catch (error) {
+      result.innerHTML = `<wasmer-notice variant="error">${esc(error.message || "Prediction failed. Try again.")}</wasmer-notice>`;
+    } finally {
+      submit.loading = false;
+    }
+  });
+</script>
+</body>
+</html>

@@ -34,6 +34,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`python-mkdocs`](python-mkdocs/README.md) – MkDocs static documentation site.
 - [`python-netron`](python-netron/README.md) – Netron AI model viewer with a bundled ONNX sample.
 - [`python-pillow`](python-pillow/README.md) – Image transforms with Pillow.
+- [`python-sklearn-classifier`](python-sklearn-classifier/README.md) – scikit-learn text classifier with a prediction page and JSON API.
 
 ### JavaScript & TypeScript
 

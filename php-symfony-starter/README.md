@@ -8,6 +8,7 @@ After catalog registration, [deploy this template](https://wasmer.io/templates/s
 
 - `src/Controller/HomeController.php` serves `/` and `/api/hello` with attribute routes.
 - `.env` sets `APP_ENV=prod`. For local development, create `.env.local` with `APP_ENV=dev`.
+- The Wasmer build runs `composer dump-env prod --empty`, so the deployed app boots in `prod` without debug and reads only real environment variables and secrets. It does not need `.env`, which `wasmer deploy` skips when uploading a folder.
 - Wasmer installs Composer dependencies and serves `public/index.php`.
 
 ## Configuration

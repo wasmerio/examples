@@ -4,7 +4,7 @@ This example shows how to wrap **Pandoc** via **pypandoc** inside a **FastAPI** 
 
 ## Demo
 
-https://pandoc-converter-example.wasmer.app/
+https://pandoc-converter-template.wasmer.app/
 
 ## How it Works
 

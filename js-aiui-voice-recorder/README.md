@@ -1,0 +1,11 @@
+# Voice Recorder with Waveform: Free AI UI Component
+
+Served from commit `9e0b9e70b44db0cb933faefc18fe46746e32105e` of https://github.com/mmrahmanbappi/100-free-ai-ui-components.
+
+## Demo
+
+https://aiui-voice-recorder-template.wasmer.app
+
+## License and source
+
+MIT.

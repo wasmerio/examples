@@ -41,6 +41,8 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 
 ### JavaScript & TypeScript
 
+- [`js-np-wedding`](js-np-wedding/README.md) – Amelia & James — June 12, 2027 · Our Wedding, served from the pinned upstream commit.
+
 - [`js-angular-staticsite`](js-angular-staticsite/README.md) – Angular-style static build.
 - [`js-assemble-staticsite`](js-assemble-staticsite/README.md) – Assemble-generated static site.
 - [`js-astro-ssr`](js-astro-ssr/README.md) – Astro server output using the Node adapter.

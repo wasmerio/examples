@@ -41,6 +41,8 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 
 ### JavaScript & TypeScript
 
+- [`js-app-live-translator`](js-app-live-translator/README.md) – Live Translator in JavaScript with the Chrome Translator API, served from the pinned upstream commit.
+
 - [`js-angular-staticsite`](js-angular-staticsite/README.md) – Angular-style static build.
 - [`js-assemble-staticsite`](js-assemble-staticsite/README.md) – Assemble-generated static site.
 - [`js-astro-ssr`](js-astro-ssr/README.md) – Astro server output using the Node adapter.

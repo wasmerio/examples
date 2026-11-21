@@ -1,0 +1,11 @@
+# Orrery — Nine AI services, one ring
+
+Served from commit `45c69feccc148a7999e500f449bd160977d60737` of https://github.com/RayVelez27/instalanding.ai.
+
+## Demo
+
+https://land-orrery-ai-services-ring-template.wasmer.app
+
+## License and source
+
+MIT.

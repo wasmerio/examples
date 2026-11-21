@@ -41,6 +41,8 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 
 ### JavaScript & TypeScript
 
+- [`js-np-link-in-bio`](js-np-link-in-bio/README.md) – Juno Park — ceramics, studio vlogs & classes, served from the pinned upstream commit.
+
 - [`js-angular-staticsite`](js-angular-staticsite/README.md) – Angular-style static build.
 - [`js-assemble-staticsite`](js-assemble-staticsite/README.md) – Assemble-generated static site.
 - [`js-astro-ssr`](js-astro-ssr/README.md) – Astro server output using the Node adapter.

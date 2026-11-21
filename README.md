@@ -46,6 +46,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-astro-ssr`](js-astro-ssr/README.md) – Astro server output using the Node adapter.
 - [`js-astro-staticsite`](js-astro-staticsite/README.md) – Astro static export.
 - [`js-bentopdf`](js-bentopdf/README.md) – Browser-based PDF tools from a verified upstream release.
+- [`js-swagger-ui`](js-swagger-ui/README.md) – Swagger UI OpenAPI browser, served from the pinned upstream build.
 - [`js-brunch-staticsite`](js-brunch-staticsite/README.md) – Brunch-style static build.
 - [`js-create-react-app-staticsite`](js-create-react-app-staticsite/README.md) – Create React App-style static build.
 - [`js-docusaurus-staticsite`](js-docusaurus-staticsite/README.md) – Docusaurus docs site.

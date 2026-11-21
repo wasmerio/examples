@@ -36,6 +36,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`python-onnx-image-classifier`](python-onnx-image-classifier/README.md) – MobileNetV2 image classifier with ONNX Runtime, web UI and JSON API.
 - [`python-semantic-search`](python-semantic-search/README.md) – Semantic search with all-MiniLM-L6-v2 on ONNX Runtime.
 - [`python-pillow`](python-pillow/README.md) – Image editor API: FastAPI + Pillow rotate, crop, resize and PNG/JPEG/WebP conversion with live preview.
+- [`python-qr-toolkit`](python-qr-toolkit/README.md) – QR code generator and decoder with segno and OpenCV.
 - [`python-sklearn-classifier`](python-sklearn-classifier/README.md) – scikit-learn text classifier with a prediction page and JSON API.
 
 ### JavaScript & TypeScript

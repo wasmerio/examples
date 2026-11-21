@@ -41,6 +41,8 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 
 ### JavaScript & TypeScript
 
+- [`js-np-personal-blog`](js-np-personal-blog/README.md) – Iris Moreau — Essays on craft, code and calm, served from the pinned upstream commit.
+
 - [`js-angular-staticsite`](js-angular-staticsite/README.md) – Angular-style static build.
 - [`js-assemble-staticsite`](js-assemble-staticsite/README.md) – Assemble-generated static site.
 - [`js-astro-ssr`](js-astro-ssr/README.md) – Astro server output using the Node adapter.

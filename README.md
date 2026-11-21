@@ -48,6 +48,7 @@ Examples are grouped by runtime. “Skip” directories hold work-in-progress te
 - [`js-bentopdf`](js-bentopdf/README.md) – Browser-based PDF tools from a verified upstream release.
 - [`js-brunch-staticsite`](js-brunch-staticsite/README.md) – Brunch-style static build.
 - [`js-create-react-app-staticsite`](js-create-react-app-staticsite/README.md) – Create React App-style static build.
+- [`js-cyberchef`](js-cyberchef/README.md) – CyberChef browser data tools, served from the pinned upstream release.
 - [`js-docusaurus-staticsite`](js-docusaurus-staticsite/README.md) – Docusaurus docs site.
 - [`js-drawdb`](js-drawdb/README.md) – drawDB database diagram editor, built from pinned upstream source.
 - [`js-duckdb-csv-explorer`](js-duckdb-csv-explorer/README.md) – Browser SQL console for CSV and Parquet analysis.

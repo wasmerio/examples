@@ -52,6 +52,13 @@ try {
       if (skip.has(name)) continue;
       await cp(join(site, name), join(dist, name), { recursive: true, dereference: true });
     }
+    // The upstream root index is a thank-you page. The dashboard lives in html/.
+    await writeFile(join(dist, "index.html"), `<!doctype html>
+<meta http-equiv="refresh" content="0;url=html/index.html">
+<link rel="canonical" href="html/index.html">
+<title>Materio</title>
+<script>location.replace("html/index.html")</script>
+`);
   }
   if (!(await readdir(dist)).includes("index.html")) throw new Error("index.html missing");
   await writeFile(join(dist, "SOURCE.txt"), [

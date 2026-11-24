@@ -21,6 +21,8 @@ export function sharedSource(rel) {
 
 export function generatedCopy(rel, source = sharedSource(rel)) {
   const hash = createHash('sha256').update(source).digest('hex');
+  // Files that are already generated (the starter UI) keep their own header, which sync-starter-ui.mjs checks.
+  if (source.startsWith('// Generated from ')) return { hash, text: source };
   const comment = rel.endsWith('.py') ? '#' : '//';
   return {
     hash,

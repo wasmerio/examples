@@ -1,4 +1,3 @@
-// Generated from _shared/mcp-http/js/wasmer-starter-ui.js; SHA256 ab5ff8d1a0e29e1df0114a70ab82a07643aa496c14f96c11dc36c1579e22fcc3
 // Generated from _shared/starter-ui/wasmer-starter-ui.js; SHA256 31677bdc5df425dbba7c8a53021f36d1ff989a3703ab8c68ad0873b3e3c793e9
 // Framework-neutral extension of the Wasmer design system. See DESIGN.md for source references.
 // Do not edit generated copies in individual starters; run scripts/sync-starter-ui.mjs.

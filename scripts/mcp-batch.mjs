@@ -913,57 +913,6 @@ async function withBackoff(row, fn) {
   return null;
 }
 
-const REPO_URL = 'https://github.com/wasmerio/examples';
-const REGISTRY = 'https://registry.wasmer.io/graphql';
-
-export function autobuildInput({ folder, branch, appName, owner, token, perishAt }) {
-  const input = {
-    repoUrl: REPO_URL,
-    rootDir: folder,
-    branch,
-    appName,
-    owner,
-    allowExistingApp: true,
-    waitForScreenshotGeneration: false,
-    envVars: [{ name: 'MCP_AUTH_TOKEN', value: token, sensitive: true, runtime: true }],
-  };
-  if (perishAt) input.perishAt = perishAt;
-  return input;
-}
-
-function registryToken() {
-  const text = readFileSync(path.join(process.env.HOME || '', '.wasmer/wasmer.toml'), 'utf8');
-  const match = text.match(/^token\s*=\s*"([^"]+)"/m) || text.match(/^token\s*=\s*'([^']+)'/m);
-  if (!match) throw new Error('Wasmer registry token is missing');
-  return match[1];
-}
-
-async function registryGraphql(query, variables) {
-  const response = await fetch(REGISTRY, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${registryToken()}`,
-    },
-    body: JSON.stringify({ query, variables }),
-    signal: AbortSignal.timeout(60000),
-  });
-  const body = await response.json();
-  if (!response.ok || body.errors) {
-    const message = body.errors ? body.errors.map((item) => item.message).join('; ') : `registry HTTP ${response.status}`;
-    throw new Error(message);
-  }
-  return body.data;
-}
-
-async function currentBranch() {
-  const branch = (await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: ROOT })).out.trim();
-  if (!branch || branch === 'HEAD' || branch === 'main' || branch === 'master') {
-    throw new Error(`Refusing to publish from ${branch || 'detached HEAD'}`);
-  }
-  return branch;
-}
-
 async function commitPaths(paths, message) {
   if (!paths.length) return false;
   await currentBranch();
@@ -973,49 +922,6 @@ async function commitPaths(paths, message) {
   await run('git', ['commit', '-m', message], { cwd: ROOT });
   await run('git', ['push', '-u', 'origin', 'HEAD'], { cwd: ROOT });
   return true;
-}
-
-export async function deployAutobuild({ folder, appName, owner, token, perishAt, branch }) {
-  const input = autobuildInput({
-    folder,
-    branch: branch || await currentBranch(),
-    appName,
-    owner,
-    token,
-    perishAt,
-  });
-  let existed = true;
-  try {
-    const found = await registryGraphql(
-      'query($name: String!, $owner: String!) { getDeployApp(name: $name, owner: $owner) { name } }',
-      { name: appName, owner },
-    );
-    existed = Boolean(found.getDeployApp);
-  } catch {
-    existed = false;
-  }
-  const started = await registryGraphql(
-    'mutation($input: DeployViaAutobuildInput!) { deployViaAutobuild(input: $input) { success buildId } }',
-    { input },
-  );
-  const buildId = started.deployViaAutobuild && started.deployViaAutobuild.buildId;
-  if (!buildId) throw new Error('deployViaAutobuild did not return a build id');
-  const terminal = new Set(['SUCCESS', 'FAILED', 'CANCELLED', 'INTERNAL_ERROR', 'TIMEOUT']);
-  let status = 'QUEUED';
-  let appUrl = '';
-  for (let attempt = 0; attempt < 90; attempt += 1) {
-    const polled = await registryGraphql(
-      'query($id: UUID!) { autobuildDeploymentStatus(buildId: $id) { status appVersion { url app { url name } } } }',
-      { id: buildId },
-    );
-    const row = polled.autobuildDeploymentStatus;
-    status = row.status;
-    appUrl = (row.appVersion && (row.appVersion.url || (row.appVersion.app && row.appVersion.app.url))) || '';
-    if (terminal.has(status)) break;
-    await sleep(10000);
-  }
-  if (status !== 'SUCCESS') throw new Error(`autobuild ${buildId} ${status}`);
-  return { buildId, existed, appUrl: appUrl || `https://${appName}.wasmer.app` };
 }
 
 export function minimalArgs(schema) {

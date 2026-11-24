@@ -79,3 +79,10 @@ if [[ -n $shared_actual ]]; then
   exit 1
 fi
 printf 'PASS %s\n' 'Do not rebuild every starter when shared mcp http changes'
+
+git checkout --quiet --detach "$base"
+mkdir -p scripts _shared/mcp-http reports/mcp
+touch scripts/package.json _shared/mcp-http/package.json reports/mcp/run.jsonl
+git add scripts _shared reports
+git commit -qm 'repo tooling with manifests'
+assert_starters 'Skip repo tooling folders that have a manifest' ''

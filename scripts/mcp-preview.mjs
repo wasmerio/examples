@@ -9,6 +9,7 @@ function arg(name) {
 
 const url = arg('--url');
 const out = arg('--out');
+const selector = arg('--selector') || 'wasmer-title';
 if (!url || !out) {
   console.error('Pass --url and --out preview.jpg');
   process.exit(1);
@@ -24,13 +25,18 @@ const script = `
 import os, sys
 from playwright.sync_api import sync_playwright
 from PIL import Image
-url, out = sys.argv[1], sys.argv[2]
+url, out, selector = sys.argv[1], sys.argv[2], sys.argv[3]
 tmp = out + ".full.png"
 with sync_playwright() as p:
     browser = p.chromium.launch()
     page = browser.new_page(viewport={"width": 1600, "height": 1000}, device_scale_factor=1)
-    page.goto(url, wait_until="networkidle", timeout=120000)
-    page.wait_for_selector("wasmer-title", timeout=30000)
+    page.goto(url, wait_until="domcontentloaded", timeout=120000)
+    page.wait_for_selector(selector, timeout=30000)
+    try:
+        page.wait_for_load_state("networkidle", timeout=8000)
+    except Exception:
+        pass
+    page.wait_for_timeout(500)
     page.screenshot(path=tmp, full_page=False)
     browser.close()
 image = Image.open(tmp).convert("RGB")
@@ -42,7 +48,7 @@ for quality in (70, 60, 50, 40, 30):
 os.remove(tmp)
 print(out, os.path.getsize(out))
 `;
-const result = spawnSync(python, ['-c', script, url, out], { encoding: 'utf8' });
+const result = spawnSync(python, ['-c', script, url, out, selector], { encoding: 'utf8' });
 if (result.stdout) process.stdout.write(result.stdout);
 if (result.stderr) process.stderr.write(result.stderr);
 if (result.status !== 0) process.exit(result.status || 1);

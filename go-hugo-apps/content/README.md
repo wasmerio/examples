@@ -1,1 +1,0 @@
-/Users/ayush/.cache/wasmer-hugo/src/gonnux_hugo-apps-theme@327c2541c05ac41d8c4e87c22f2b5464918c7498/README.md

@@ -1,0 +1,54 @@
+---
+title: Getting started
+description: This article helps you get started with the Browse theme, including installation and minimal
+  configuration.
+lead: This article helps you get started with the Browse theme, including installation and minimal configuration.
+date: 2022-01-24T14:00:00.000Z
+tags:
+  - "Installation"
+authorbox: false
+sidebar: false
+pager: false
+weight: 1
+menu: main
+---
+
+
+Welcome to the Browse theme documentation. This quick start guide covers Browse theme installation and minimal
+configuration and is intended for intermediate to advanced users. To understand this guide, you need to be familiar
+with the [Hugo](https://gohugo.io/) static site generator.
+
+<!--more-->
+
+## Installation
+
+Before installing the **Browse** theme, make sure that you've
+[installed **Hugo** (version 0.48 or later)](https://gohugo.io/getting-started/quick-start/#step-1-install-hugo) and
+[created a new site](https://gohugo.io/getting-started/quick-start/#step-2-create-a-new-site). To learn how to install
+Hugo, visit [Hugo Documentation](https://gohugo.io/getting-started/installing/).
+
+There are a few ways to install a theme in Hugo. This can be done via git submodule, git clone, Hugo modules, or
+by downloading the archive and manually copying the files. Three installation options are described below.
+
+### Option A: `git submodule`
+
+*Additional requirements: git*
+
+If you don't plan to make significant changes to the theme but still want to track and update it, you can add it as a
+[git submodule](https://git-scm.com/docs/git-submodule) by running the following command from the root directory of
+your Hugo site:
+
+```sh
+git submodule add https://github.com/onweru/browse.git themes/browse
+```
+
+**Note:**
+[Netlify expects git submodule](https://docs.netlify.com/configure-builds/common-configurations/hugo/#hugo-themes)
+instead of git clone.
+
+### Option B: `git clone`
+
+*Additional requirements: git*
+
+Run this [git clone](https://git-scm.com/docs/git-clone) command from the root of your Hugo site:
+

@@ -154,9 +154,17 @@ function catalogName(title, pkg) {
   return `${base} MCP Server`;
 }
 
-function secretNames(row) {
-  const extra = String(row.secretEnv || '').split(/[,\s]+/).map((item) => item.trim()).filter((item) => item && item !== '0' && item !== 'MCP_AUTH_TOKEN');
-  return ['MCP_AUTH_TOKEN', ...extra];
+export function upstreamEnv(row) {
+  return String(row.envVars || '')
+    .split(/[,\s]+/)
+    .map((item) => item.trim())
+    .filter((item) => /^[A-Z][A-Z0-9_]+$/.test(item) && item !== 'MCP_AUTH_TOKEN' && item !== 'PORT');
+}
+
+function secretNames() {
+  // secretEnv in the queue is a count. The names are in envVars. Only the
+  // bearer token gates /mcp, so tools/list still works without upstream keys.
+  return ['MCP_AUTH_TOKEN'];
 }
 
 function baseReport(row) {
@@ -170,7 +178,8 @@ function baseReport(row) {
     folder: '',
     adapter: '',
     tier,
-    secrets: secretNames(row),
+    secrets: secretNames(),
+    upstreamEnv: upstreamEnv(row),
     tools: [],
     disabledTools: [],
     blocker: null,
@@ -321,6 +330,10 @@ function readme(row, report, meta) {
       : `1. Add \`${name}\` from the upstream service.`
   ));
   const numbered = steps.map((step, index) => step.replace(/^1\./, `${index + 1}.`)).join('\n');
+  const extra = (report.upstreamEnv || []).map((name) => `\`${name}\``).join(', ');
+  const extraNote = extra
+    ? `\nUpstream tools may also read ${extra}. Add those on the same Secrets screen when a tool tells you to set them. \`/mcp\` still lists tools with only \`MCP_AUTH_TOKEN\` set.\n`
+    : '';
   return `# ${row.title || row.pkg}
 
 ## What it does
@@ -339,6 +352,7 @@ ${numbered}
 ${report.secrets.length + 1}. Redeploy the app.
 
 Until ${names} ${report.secrets.length === 1 ? 'is' : 'are'} set, \`/mcp\` returns 503. There is no default token.
+${extraNote}
 
 ## Connect
 
@@ -805,6 +819,20 @@ function killGroup(child) {
   }
 }
 
+export function ensureLocalJsShared(dir) {
+  const dest = path.join(dir, 'mcp-http');
+  mkdirSync(dest, { recursive: true });
+  cpSync(path.join(ROOT, '_shared/mcp-http/js/app.mjs'), path.join(dest, 'app.mjs'));
+  cpSync(path.join(ROOT, '_shared/mcp-http/js/wasmer-starter-ui.js'), path.join(dest, 'wasmer-starter-ui.js'));
+}
+
+function localError(logs) {
+  const text = String(logs || '');
+  const match = text.match(/(?:Cannot find module|Error:)[^\n]{0,220}/);
+  if (match) return match[0].slice(0, 280);
+  return text.slice(-280);
+}
+
 export async function runLocalCheck(folder, token) {
   const dir = path.join(ROOT, folder);
   const python = existsSync(path.join(dir, 'main.py'));
@@ -815,6 +843,7 @@ export async function runLocalCheck(folder, token) {
       await run(uv, ['sync', '--locked'], { cwd: dir, timeout: 180000 });
     } else {
       await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dir, timeout: 180000 });
+      ensureLocalJsShared(dir);
     }
   } catch (error) {
     return { ok: false, tools: [], error: String(error.message || error).slice(0, 300) };
@@ -829,7 +858,7 @@ export async function runLocalCheck(folder, token) {
   if (child.stderr) child.stderr.on('data', (chunk) => { logs = (logs + chunk).slice(-2000); });
   try {
     const ready = await waitHealth(`http://127.0.0.1:${port}/healthz`, 30000);
-    if (!ready) return { ok: false, tools: [], error: `healthz did not answer: ${logs.slice(-300)}` };
+    if (!ready) return { ok: false, tools: [], error: `healthz did not answer: ${localError(logs)}` };
     return await checkMcpUrl(`http://127.0.0.1:${port}/mcp`, token);
   } finally {
     killGroup(child);

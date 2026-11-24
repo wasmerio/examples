@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  acceptLocal, applyProbe, blockedDependency, checkMcpUrl, chooseAdapter, evaluateRow, parseCsv, PROBE_SOURCE, renderTemplate,
+  acceptLocal, applyProbe, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
 } from './mcp-batch.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -149,6 +149,45 @@ test('a failed local check blocks the row and skips deploy', async () => {
   const checked = await checkMcpUrl('http://127.0.0.1:9/mcp', 'local-check-token');
   assert.equal(checked.ok, false);
   assert.match(String(checked.error), /\S/);
+});
+
+test('secretEnv counts are not required variable names', () => {
+  const ctx = { seen: new Map(), slugs: new Set(), folders: new Set(), templates: new Set() };
+  const row = {
+    ...queue[2],
+    rank: 92,
+    pkg: 'context-docs',
+    gh: 'example/context-docs',
+    description: 'Docs lookup',
+    tier: 'B-needs-secrets',
+    secretEnv: '1',
+    envVars: 'CONTEXT7_API_KEY',
+  };
+  const decision = evaluateRow(row, {
+    pkgType: 'npm',
+    repository: 'https://github.com/example/context-docs',
+    dependencies: ['@modelcontextprotocol/sdk'],
+    devDependencies: [],
+    readme: 'stdio',
+    entryExcerpt: 'const server = new McpServer();\n',
+    license: 'MIT',
+  }, ctx);
+  assert.equal(decision.status, 'build');
+  assert.deepEqual(decision.secrets, ['MCP_AUTH_TOKEN']);
+  assert.deepEqual(decision.upstreamEnv, ['CONTEXT7_API_KEY']);
+  assert.deepEqual(upstreamEnv({ envVars: 'PORT MCP_AUTH_TOKEN BRAVE_API_KEY' }), ['BRAVE_API_KEY']);
+});
+
+test('local JavaScript check can see the shared server beside node_modules', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'mcp-local-js-'));
+  try {
+    ensureLocalJsShared(dir);
+    const source = readFileSync(path.join(dir, 'mcp-http/app.mjs'), 'utf8');
+    assert.match(source, /@modelcontextprotocol\/sdk/);
+    assert.equal(readFileSync(path.join(dir, 'mcp-http/wasmer-starter-ui.js'), 'utf8').length > 0, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('dry-run CLI prints one object per fixture row', () => {

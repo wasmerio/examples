@@ -46,6 +46,8 @@ test('module import keeps the theme pinned in hugo.toml', () => {
   assert.match(plan.hugoToml, /path = "github.com\/alex-shpak\/hugo-book"/);
   const mentioned = renderHugoToml('BookRepo = "https://github.com/alex-shpak/hugo-book/"\ntheme = "hugo-book"\nenableGitInfo = true\n', 'github.com/alex-shpak/hugo-book', 'Book');
   assert.match(mentioned, /path = "github.com\/alex-shpak\/hugo-book"/);
+  const merged = renderHugoToml('[module.hugoVersion]\nextended = true\n', 'github.com/alex-shpak/hugo-book', 'Book');
+  assert.equal((merged.match(/^\[module\]$/gm) || []).length, 0);
   assert.equal(/^\s*theme\s*=/m.test(mentioned), false);
   assert.match(mentioned, /enableGitInfo = false/);
   const cleaned = renderHugoToml('# run from exampleSite with themesDir ../..\n', 'github.com/alex-shpak/hugo-book', 'Book');

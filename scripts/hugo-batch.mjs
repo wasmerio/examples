@@ -189,7 +189,8 @@ export function renderHugoToml(existing, modulePath, title) {
   if (title && !/^\s*title\s*=/m.test(text)) text = `title = ${JSON.stringify(title)}\n${text}`;
   const importPath = modulePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   if (!new RegExp(`path\\s*=\\s*"${importPath}"`).test(text)) {
-    text += `\n[module]\n[[module.imports]]\npath = "${modulePath}"\n`;
+    const header = /^\s*\[\[?module(\.|\]|\s)/m.test(text) ? '' : '[module]\n';
+    text += `\n${header}[[module.imports]]\npath = "${modulePath}"\n`;
   }
   text = redactSecrets(stripParentRefs(text));
   return `${text.replace(/\n{3,}/g, '\n\n').trim()}\n`;

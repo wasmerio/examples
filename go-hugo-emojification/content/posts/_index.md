@@ -1,0 +1,6 @@
+---
+sitemap:
+  disable: true
+---
+
+

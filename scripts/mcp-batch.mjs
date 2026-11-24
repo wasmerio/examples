@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, mkdtempSync, existsSync, readdirSync, chmodSync } from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -226,7 +227,9 @@ export function evaluateRow(row, meta, ctx) {
     report.blocker = {
       where: 'python-runtime',
       what: 'Python stdio cannot be bridged on Edge',
-      evidence: 'No in-process export or Streamable HTTP flag. asyncio pipes fail on WASIX.',
+      evidence: meta.probeError
+        ? `No in-process export or Streamable HTTP flag. asyncio pipes fail on WASIX. Probe: ${String(meta.probeError).slice(0, 180)}`
+        : 'No in-process export or Streamable HTTP flag. asyncio pipes fail on WASIX.',
     };
     report.reason = report.blocker.what;
     return report;
@@ -572,16 +575,33 @@ function run(cmd, args, opts = {}) {
     const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env || process.env });
     let out = '';
     let err = '';
-    child.stdout.on('data', (chunk) => { out += chunk; });
-    child.stderr.on('data', (chunk) => { err += chunk; });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code === 0) resolve({ out, err });
-      else {
-        const error = new Error(`${cmd} exited ${code}: ${err.slice(-400)}`);
+    let settled = false;
+    let timer = null;
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      fn(value);
+    };
+    if (opts.timeout) {
+      timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        const error = new Error(`${cmd} timed out after ${opts.timeout}ms`);
         error.out = out;
         error.err = err;
-        reject(error);
+        finish(reject, error);
+      }, opts.timeout);
+    }
+    if (child.stdout) child.stdout.on('data', (chunk) => { out += chunk; });
+    if (child.stderr) child.stderr.on('data', (chunk) => { err += chunk; });
+    child.on('error', (error) => finish(reject, error));
+    child.on('close', (code) => {
+      if (code === 0) finish(resolve, { out, err });
+      else {
+        const error = new Error(`${cmd} exited ${code}: ${(err || out).slice(-400)}`);
+        error.out = out;
+        error.err = err;
+        finish(reject, error);
       }
     });
   });
@@ -589,6 +609,274 @@ function run(cmd, args, opts = {}) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function uvBin() {
+  const local = path.join(process.env.HOME || '', '.local/bin/uv');
+  return existsSync(local) ? local : 'uv';
+}
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+    server.on('error', reject);
+  });
+}
+
+// 3.9-safe on purpose: the unit test runs this with the system python.
+export const PROBE_SOURCE = [
+  'import importlib',
+  'import importlib.metadata',
+  'import json',
+  'import os',
+  '',
+  'module_name = os.environ.get("MCP_PROBE_MODULE", "")',
+  'dist_name = os.environ.get("MCP_PROBE_DIST", "")',
+  '',
+  'def candidates():',
+  '    names = []',
+  '    if dist_name:',
+  '        try:',
+  '            dist = importlib.metadata.distribution(dist_name)',
+  '            top = dist.read_text("top_level.txt") or ""',
+  '            for line in top.splitlines():',
+  '                line = line.strip()',
+  '                if line and line not in names:',
+  '                    names.append(line)',
+  '            packages_distributions = getattr(importlib.metadata, "packages_distributions", None)',
+  '            if packages_distributions:',
+  '                try:',
+  '                    for pkg, dists in packages_distributions().items():',
+  '                        if dist_name in dists and pkg not in names:',
+  '                            names.append(pkg)',
+  '                except Exception:',
+  '                    pass',
+  '        except Exception:',
+  '            pass',
+  '    if module_name and module_name not in names:',
+  '        names.insert(0, module_name)',
+  '    return names',
+  '',
+  'def is_server(value):',
+  '    if value is None:',
+  '        return False',
+  '    name = type(value).__name__',
+  '    if name in ("FastMCP", "Server", "FastMCPServer"):',
+  '        return True',
+  '    return hasattr(value, "list_tools") or hasattr(value, "_tool_manager") or hasattr(value, "tool")',
+  '',
+  'def scan(mod):',
+  '    for attr in ("app", "mcp", "server"):',
+  '        value = getattr(mod, attr, None)',
+  '        if not is_server(value):',
+  '            continue',
+  '        register = None',
+  '        for fn in ("register_all_tools", "register_tools"):',
+  '            candidate = getattr(mod, fn, None)',
+  '            if callable(candidate):',
+  '                register = fn',
+  '                break',
+  '        return {"module": mod.__name__, "symbol": attr, "register": register, "type": type(value).__name__}',
+  '    return None',
+  '',
+  'found = None',
+  'errors = []',
+  'for base in candidates():',
+  '    suffixes = ["", ".server", ".app", ".main"]',
+  '    for suffix in suffixes:',
+  '        name = base + suffix if suffix else base',
+  '        try:',
+  '            mod = importlib.import_module(name)',
+  '        except Exception as exc:',
+  '            errors.append("%s: %s: %s" % (name, type(exc).__name__, str(exc)[:200]))',
+  '            continue',
+  '        hit = scan(mod)',
+  '        if hit:',
+  '            found = hit',
+  '            break',
+  '    if found:',
+  '        break',
+  'print(json.dumps({"ok": bool(found), "found": found, "errors": errors[:8]}))',
+].join('\n');
+
+export function applyProbe(meta, found) {
+  if (!found || !found.symbol || !found.module) return meta;
+  meta.importSymbol = found.symbol;
+  meta.importModule = found.module;
+  if (found.register) meta.register = found.register;
+  return meta;
+}
+
+export async function probeInstalled(pkg, version) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'mcp-probe-'));
+  const uv = uvBin();
+  try {
+    await run(uv, ['venv', '--python', '3.13', dir], { timeout: 120000 });
+    const python = path.join(dir, 'bin/python');
+    await run(uv, ['pip', 'install', '--python', python, `${pkg}==${version}`], { timeout: 180000 });
+    const result = await run(python, ['-c', PROBE_SOURCE], {
+      timeout: 10000,
+      env: {
+        ...process.env,
+        MCP_PROBE_MODULE: String(pkg).replaceAll('-', '_'),
+        MCP_PROBE_DIST: pkg,
+        VIRTUAL_ENV: dir,
+      },
+    });
+    const line = result.out.trim().split('\n').filter(Boolean).pop();
+    return JSON.parse(line);
+  } catch (error) {
+    return { ok: false, found: null, error: String(error.message || error).slice(0, 300) };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+export function acceptLocal(report, result) {
+  if (!result || result.ok !== true) {
+    report.status = 'blocked';
+    report.tests.local = 'failed';
+    report.reason = String((result && result.error) || 'local MCP check failed').slice(0, 300);
+    const js = String(report.folder || '').startsWith('js-') || report.adapter === 'stdio-bridge';
+    report.blocker = {
+      where: js ? 'edgejs' : 'python-runtime',
+      what: 'local MCP check failed',
+      evidence: report.reason,
+    };
+    return false;
+  }
+  report.tests.local = 'passed';
+  if (Array.isArray(result.tools)) report.tools = result.tools;
+  return true;
+}
+
+export async function checkMcpUrl(url, token) {
+  try {
+    const check = await run(process.execPath, [
+      path.join(ROOT, 'scripts/mcp-template-check.mjs'),
+      '--url', url,
+      '--token', token,
+    ], { timeout: 90000 });
+    const parsed = JSON.parse(check.out);
+    return { ok: parsed.ok === true, tools: parsed.tools || [], error: parsed.error || '' };
+  } catch (error) {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(error.out || '');
+    } catch {
+      parsed = null;
+    }
+    return {
+      ok: false,
+      tools: (parsed && parsed.tools) || [],
+      error: (parsed && parsed.error) || String(error.message || error).slice(0, 300),
+    };
+  }
+}
+
+async function waitHealth(url, ms) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
+      if (response.ok) return true;
+    } catch {
+      // The process is still starting.
+    }
+    await sleep(200);
+  }
+  return false;
+}
+
+function killGroup(child) {
+  if (!child || !child.pid) return;
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // Already exited.
+    }
+  }
+}
+
+export async function runLocalCheck(folder, token) {
+  const dir = path.join(ROOT, folder);
+  const python = existsSync(path.join(dir, 'main.py'));
+  try {
+    if (python) {
+      const uv = uvBin();
+      await run(uv, ['lock'], { cwd: dir, timeout: 180000 });
+      await run(uv, ['sync', '--locked'], { cwd: dir, timeout: 180000 });
+    } else {
+      await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dir, timeout: 180000 });
+    }
+  } catch (error) {
+    return { ok: false, tools: [], error: String(error.message || error).slice(0, 300) };
+  }
+  const port = await freePort();
+  const env = { ...process.env, PORT: String(port), MCP_AUTH_TOKEN: token };
+  const child = python
+    ? spawn(path.join(dir, '.venv/bin/python'), ['main.py'], { cwd: dir, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    : spawn(process.execPath, ['server.mjs'], { cwd: dir, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let logs = '';
+  if (child.stdout) child.stdout.on('data', (chunk) => { logs = (logs + chunk).slice(-2000); });
+  if (child.stderr) child.stderr.on('data', (chunk) => { logs = (logs + chunk).slice(-2000); });
+  try {
+    const ready = await waitHealth(`http://127.0.0.1:${port}/healthz`, 30000);
+    if (!ready) return { ok: false, tools: [], error: `healthz did not answer: ${logs.slice(-300)}` };
+    return await checkMcpUrl(`http://127.0.0.1:${port}/mcp`, token);
+  } finally {
+    killGroup(child);
+  }
+}
+
+async function deleteCreated(report) {
+  if (!report.createdApp) return;
+  try {
+    await run('wasmer', ['app', 'delete', '--non-interactive', report.createdApp]);
+    report.createdApp = '';
+  } catch {
+    report.reason = `${report.reason} (app delete failed)`.slice(0, 400);
+  }
+}
+
+function discardFolder(report) {
+  const folder = report.folder;
+  if (!folder || !/^(js|python)-mcp-[a-z0-9-]+$/.test(folder)) return;
+  rmSync(path.join(ROOT, folder), { recursive: true, force: true });
+  rmSync(path.join(ROOT, `Anybuild.${folder}`), { force: true });
+}
+
+async function mapPool(items, limit, fn) {
+  if (!items.length) return;
+  let cursor = 0;
+  const size = Math.max(1, Math.min(limit, items.length));
+  async function worker() {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      await fn(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: size }, () => worker()));
+}
+
+async function attachProbe(row, meta) {
+  try {
+    const probed = await probeInstalled(row.pkg, row.version);
+    if (probed && probed.found && probed.found.symbol && probed.found.module) applyProbe(meta, probed.found);
+    else if (probed && probed.error) meta.probeError = String(probed.error).slice(0, 300);
+    else if (probed && probed.errors && probed.errors.length) meta.probeError = String(probed.errors[0]).slice(0, 300);
+    else meta.probeError = 'no FastMCP or Server object found';
+  } catch (error) {
+    meta.probeError = String(error.message || error).slice(0, 300);
+  }
 }
 
 async function withBackoff(row, fn) {
@@ -866,13 +1154,11 @@ async function main() {
       console.error(`getAppTemplates skipped: ${error.message || error}`);
     }
   }
-  const decided = [];
+  const staged = [];
   for (const row of rows) {
     const saved = byRank.get(row.rank);
     if (saved && isTerminal(saved.status)) {
-      ctx.seen.set(`${normaliseRepo(row.gh)}|${row.pkg.toLowerCase()}`, row.rank);
-      if (saved.catalog && saved.catalog.slug) ctx.slugs.add(saved.catalog.slug.replace(/^mcp-/, ''));
-      decided.push(saved);
+      staged.push({ row, saved });
       continue;
     }
     let meta = metaByRank ? (metaByRank[String(row.rank)] || {}) : null;
@@ -887,13 +1173,34 @@ async function main() {
         failed.status = 'failed';
         failed.reason = String(error.message || error).slice(0, 300);
         failed.blocker = { where: 'upstream', what: 'metadata fetch failed', evidence: failed.reason };
-        decided.push(failed);
+        staged.push({ row, failed });
         continue;
       }
     }
-    const evaluated = evaluateRow(row, { ...meta, pkgType: row.pkgType }, ctx);
-    evaluated.waits = waits;
-    evaluated.meta = meta;
+    staged.push({ row, meta, waits });
+  }
+  if (!dryRun) {
+    const probeTargets = staged.filter((item) => item.meta
+      && item.row.pkgType === 'pypi'
+      && !item.meta.importSymbol
+      && !blockedDependency({ ...item.meta, pkgType: 'pypi' }));
+    await mapPool(probeTargets, concurrency, (item) => attachProbe(item.row, item.meta));
+  }
+  const decided = [];
+  for (const item of staged) {
+    if (item.saved) {
+      ctx.seen.set(`${normaliseRepo(item.row.gh)}|${item.row.pkg.toLowerCase()}`, item.row.rank);
+      if (item.saved.catalog && item.saved.catalog.slug) ctx.slugs.add(item.saved.catalog.slug.replace(/^mcp-/, ''));
+      decided.push(item.saved);
+      continue;
+    }
+    if (item.failed) {
+      decided.push(item.failed);
+      continue;
+    }
+    const evaluated = evaluateRow(item.row, { ...item.meta, pkgType: item.row.pkgType }, ctx);
+    evaluated.waits = item.waits;
+    evaluated.meta = item.meta;
     decided.push(evaluated);
   }
   if (dryRun) {
@@ -935,19 +1242,21 @@ async function main() {
           mkdirSync(path.dirname(dest), { recursive: true });
           writeFileSync(dest, content);
         }
-        report.tests.local = 'not run';
-        await deployBuilt(row, report, owner, token);
+        const local = await runLocalCheck(report.folder, token);
+        if (!acceptLocal(report, local)) {
+          discardFolder(report);
+        } else {
+          await deployBuilt(row, report, owner, token);
+          if (report.status !== 'shipped') {
+            await deleteCreated(report);
+            discardFolder(report);
+          }
+        }
       } catch (error) {
         report.status = 'failed';
         report.reason = String(error.message || error).slice(0, 400);
-        if (report.createdApp) {
-          try {
-            await run('wasmer', ['app', 'delete', '--non-interactive', report.createdApp]);
-            report.createdApp = '';
-          } catch {
-            report.reason += ' (app delete failed)';
-          }
-        }
+        await deleteCreated(report);
+        discardFolder(report);
       }
       await save();
     }

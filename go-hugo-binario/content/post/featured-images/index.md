@@ -1,0 +1,46 @@
+---
+title: Featured Images
+description: "In this page, we will explain what featured images are and show you some examples how to add a featured \
+image for a page."
+date: 2019-09-12
+---
+
+
+Featured image is the image that appears on summaries at the list pages and the top of content pages. Every content page
+in this theme can have a featured image.
+
+<!--more-->
+
+## How to add a featured image
+
+Content pages in Hugo can have their images or any other files stored under the same directory of the page itself.
+In Hugo's terms, it's called **page bundle** and allows us to keep all assets together with a page content file.
+
+This theme uses [page bundles](https://gohugo.io/content-management/organization/#page-bundles) for featured images.
+There are two main different ways to add a featured image.
+
+### Option 1. Put `featured.*` or `thumbnail.*` image in the page bundle
+
+This theme considers `featured` or `thumbnail` image in any popular graphic format in the root of the page bundle as
+a featured image.
+
+Directory structure of this page:
+
+```
+content
+└── post
+    └── featured-images // single page folder (page bundle)
+        ├── featured.png // featured image
+        └── index.md // page content file
+```
+
+### Option 2. Put any image in the page bundle & specify `featured` param
+
+You may put any image in the page bundle and specify `featured` param in the page's front matter:
+
+```yaml
+featured: image.jpg
+```
+
+- `featured` [`String`]: relative path of the image
+

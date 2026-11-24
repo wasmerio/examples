@@ -1,0 +1,69 @@
+<!--
+  exampleSite override: slots/postView/bottom.html — Giscus comments (GitHub
+  Discussions on 116lab/slotify), configured by [params.giscus] in hugo.toml.
+  This is the README §8 Giscus reference copied verbatim: a per-mount iframe
+  provider that re-injects client.js on each keyed PostView remount, takes its
+  initial light/dark from ctx.theme.mode and live-syncs on slotify:theme.
+  A site-root-only override — the theme directory is untouched.
+-->
+<!-- Slot-scoped i18n (§12): the heading lives WITH the slot, ctx.t resolves it. -->
+<script type="application/json" data-slotify-i18n="Slotify.slots.postView.bottom">
+{ "en": { "title": "Comments" }, "zh": { "title": "討論" } }
+</script>
+
+<script type="text/x-template" id="slot-postView-bottom-template">
+  <!-- Surface-first: wrap the thread in the theme's glass card via documented CSS
+       (glass-panel + --radius-lg), NOT the BaseSurface component (not slot-registered).
+       The <h2> gives the discussion its own section heading + outline landmark.
+       The Vue mustache is Hugo-escaped so Hugo emits it literally for Vue. -->
+  <div class="mt-12 glass-panel pa-6 pa-sm-8" style="border-radius: var(--radius-lg);">
+    <h2 class="text-h6 font-weight-bold mb-3">{{ "{{" }} ctx.t('title') {{ "}}" }}</h2>
+    <v-divider class="mb-6"></v-divider>
+    <div class="giscus"></div>
+  </div>
+</script>
+<script>
+  (() => {
+    const repo = '{{ site.Params.giscus.repo | default "" }}';
+
+    // Slotify mode -> giscus theme. `noborder_*` drops giscus's own frame so it
+    // sits cleanly inside the glass card (no double border).
+    const giscusTheme = (mode) => mode === 'dark' ? 'noborder_dark' : 'noborder_light';
+
+    // Live re-theme the loaded iframe via giscus's setConfig postMessage. The
+    // mode comes from the slotify:theme event's semantic { mode } — no DOM class
+    // or Vuetify peeking (that's gated; use the contract).
+    window.addEventListener('slotify:theme', (event) => {
+      const frame = document.querySelector('iframe.giscus-frame');
+      if (!frame || !frame.contentWindow) return;
+      frame.contentWindow.postMessage(
+        { giscus: { setConfig: { theme: giscusTheme(event.detail.mode) } } }, 'https://giscus.app'
+      );
+    });
+
+    window.addEventListener('slotify:slot', (event) => {
+      const { id, phase, ctx, el } = event.detail;
+      if (id !== 'Slotify.slots.postView.bottom') return;
+      if (phase !== 'mount') return;                       // fresh container per route (keyed remount)
+      if (!repo) return;                                   // opt-in guard, mirrors Disqus shortname
+      const mount = el && el.querySelector('.giscus');
+      if (!mount || mount.querySelector('iframe, script')) return;  // never double-inject
+
+      // No readiness gate needed: ctx is complete at mount (siteConfig is injected,
+      // not fetched), and pageIdentifier is in ctx. slotify:ready is for GLOBAL widgets.
+      const s = document.createElement('script');          // giscus renders its iframe INTO this container
+      s.src = 'https://giscus.app/client.js';
+      s.async = true;
+      s.crossOrigin = 'anonymous';
+      s.setAttribute('data-repo', repo);
+      s.setAttribute('data-repo-id', '{{ site.Params.giscus.repoId }}');
+      s.setAttribute('data-category', '{{ site.Params.giscus.category }}');
+      s.setAttribute('data-category-id', '{{ site.Params.giscus.categoryId }}');
+      s.setAttribute('data-mapping', '{{ site.Params.giscus.mapping | default "pathname" }}');
+      s.setAttribute('data-strict', '1');
+      s.setAttribute('data-reactions-enabled', '1');
+      s.setAttribute('data-theme', giscusTheme((ctx.theme && ctx.theme.mode) || 'light'));  // initial; slotify:theme keeps it synced
+      mount.appendChild(s);
+    });
+  })();
+</script>

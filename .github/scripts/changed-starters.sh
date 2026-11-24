@@ -19,7 +19,7 @@ git diff --name-only --no-renames -z "$base...$head" -- |
     esac
 
     case "$folder" in
-      fail-*|skip-*) continue ;;
+      fail-*|skip-*|scripts|_shared|reports) continue ;;
     esac
     [[ $folder =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || continue
     [[ $(git cat-file -t "$head:$folder" 2>/dev/null || true) == tree ]] || continue

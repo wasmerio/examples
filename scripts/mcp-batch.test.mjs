@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  acceptLocal, applyProbe, autobuildInput, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
+  acceptLocal, applyProbe, autobuildInput, binFile, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
 } from './mcp-batch.mjs';
 import { generatedCopy } from './sync-mcp-http.mjs';
 
@@ -213,6 +213,19 @@ test('catalog deploy input points at the template folder', () => {
   const copy = generatedCopy('js/app.mjs', 'export const marker = 1;\n');
   assert.match(copy.text, /^\/\/ Generated from _shared\/mcp-http\/js\/app\.mjs; SHA256 [a-f0-9]{64}\n/);
   assert.match(copy.text, /export const marker = 1/);
+});
+
+test('stdio bridge runs the package bin and lockfiles stay untracked', () => {
+  assert.equal(binFile({ name: 'repomix', bin: { repomix: './bin/repomix.cjs' } }), 'bin/repomix.cjs');
+  assert.equal(binFile({ name: 'chrome-devtools-mcp', bin: { 'chrome-devtools': 'a.js', 'chrome-devtools-mcp': 'b.js' } }), 'b.js');
+  assert.equal(binFile({ name: 'plain', main: 'dist/index.js' }), '');
+  const rows = decideAll();
+  const js = renderTemplate(queue[2], { ...meta['3'], pkgType: 'npm', binFile: 'bin/cli.js' }, rows[2]);
+  assert.match(js.files[`${rows[2].folder}/server.mjs`], /bin\/cli\.js/);
+  assert.match(js.files[`${rows[2].folder}/.gitignore`], /package-lock\.json/);
+  const py = renderTemplate(queue[1], { ...meta['2'], pkgType: 'pypi' }, rows[1]);
+  assert.match(py.files[`${rows[1].folder}/main.py`], /import sys/);
+  assert.match(py.files[`${rows[1].folder}/.gitignore`], /uv\.lock/);
 });
 
 test('dry-run CLI prints one object per fixture row', () => {

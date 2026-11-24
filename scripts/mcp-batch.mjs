@@ -408,8 +408,8 @@ export function renderTemplate(row, meta, report) {
   files[`${folder}/README.md`] = readme(row, report, meta);
   files[`${folder}/app.yaml`] = 'kind: wasmer.io/App.v0\npackage: .\ndebug: true\n';
   files[`${folder}/.gitignore`] = lang === 'python'
-    ? '.venv/\n__pycache__/\n.anybuild/\n*.pyc\n'
-    : 'node_modules/\n.anybuild/\n';
+    ? '.venv/\n__pycache__/\n.anybuild/\n*.pyc\nuv.lock\n'
+    : 'node_modules/\n.anybuild/\npackage-lock.json\n';
   const build = anybuild(folder, lang);
   files[`${folder}/Anybuild`] = build;
   files[`Anybuild.${folder}`] = `app_subdir = ${JSON.stringify(folder)}\n\n${build}`;
@@ -461,7 +461,8 @@ if __name__ == "__main__":
 `;
     } else {
       const args = ['-m', meta.httpModule || row.pkg.replaceAll('-', '_'), ...(meta.httpArgs || [])];
-      body = `${pythonBoot()}
+      body = `import sys
+${pythonBoot()}
 from mcp_http import serve
 
 if __name__ == "__main__":
@@ -515,7 +516,7 @@ const { startMcpHttp } = await import(pathToFileURL(path.join(here, 'mcp-http', 
     };
     if (report.adapter === 'stdio-bridge') {
       files[`${folder}/server.mjs`] = `${boot}
-const entry = path.join(here, 'node_modules', ${JSON.stringify(row.pkg)}, ${JSON.stringify(meta.entryFile || 'dist/index.js')});
+const entry = path.join(here, 'node_modules', ${JSON.stringify(row.pkg)}, ${JSON.stringify(meta.binFile || meta.entryFile || 'dist/index.js')});
 startMcpHttp({
   ...${JSON.stringify(fields, null, 2)},
   command: process.execPath,
@@ -1076,6 +1077,17 @@ async function fetchJson(url) {
   return response.json();
 }
 
+export function binFile(body) {
+  const bin = body && body.bin;
+  if (!bin) return '';
+  const list = typeof bin === 'string' ? [['', bin]] : Object.entries(bin).filter((pair) => typeof pair[1] === 'string');
+  const name = String((body && body.name) || '');
+  const short = name.split('/').pop();
+  const match = list.find((pair) => pair[0] === name || pair[0] === short);
+  const mcp = list.find((pair) => /mcp/i.test(pair[0]) || /mcp/i.test(pair[1]));
+  return String((match || mcp || list[0] || [])[1] || '').replace(/^\.\//, '');
+}
+
 function entryFromPackage(body) {
   const exp = body.exports && (body.exports['.'] || body.exports);
   const value = typeof exp === 'string' ? exp : exp && (exp.import || exp.default || exp.require);
@@ -1097,6 +1109,7 @@ export async function fetchMetadata(row) {
       description: body.description || '',
       readme: body.readme || '',
       entryFile: entryFromPackage(body),
+      binFile: binFile(body),
       entryExcerpt: '',
     };
     try {

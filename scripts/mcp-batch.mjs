@@ -694,6 +694,109 @@ export async function templateSlugs() {
   return found;
 }
 
+const REPO_URL = 'https://github.com/wasmerio/examples';
+const REGISTRY = 'https://registry.wasmer.io/graphql';
+
+export function autobuildInput({ folder, branch, appName, owner, token, perishAt, envVars, repoUrl }) {
+  const input = {
+    repoUrl: repoUrl || REPO_URL,
+    rootDir: folder,
+    branch,
+    appName,
+    owner,
+    allowExistingApp: true,
+    waitForScreenshotGeneration: false,
+  };
+  if (Array.isArray(envVars)) input.envVars = envVars;
+  else if (token) input.envVars = [{ name: 'MCP_AUTH_TOKEN', value: token, sensitive: true, runtime: true }];
+  if (perishAt) input.perishAt = perishAt;
+  return input;
+}
+
+function registryToken() {
+  const text = readFileSync(path.join(process.env.HOME || '', '.wasmer/wasmer.toml'), 'utf8');
+  const match = text.match(/^token\s*=\s*"([^"]+)"/m) || text.match(/^token\s*=\s*'([^']+)'/m);
+  if (!match) throw new Error('Wasmer registry token is missing');
+  return match[1];
+}
+
+async function registryGraphql(query, variables) {
+  const response = await fetch(REGISTRY, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${registryToken()}`,
+    },
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(60000),
+  });
+  const body = await response.json();
+  if (!response.ok || body.errors) {
+    const message = body.errors ? body.errors.map((item) => item.message).join('; ') : `registry HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return body.data;
+}
+
+async function currentBranch() {
+  const branch = (await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: ROOT })).out.trim();
+  if (!branch || branch === 'HEAD' || branch === 'main' || branch === 'master') {
+    throw new Error(`Refusing to publish from ${branch || 'detached HEAD'}`);
+  }
+  return branch;
+}
+
+export async function deployAutobuild({ folder, appName, owner, token, perishAt, branch, envVars, attempts }) {
+  const input = autobuildInput({
+    folder,
+    branch: branch || await currentBranch(),
+    appName,
+    owner,
+    token,
+    perishAt,
+    envVars,
+  });
+  let existed = true;
+  try {
+    const found = await registryGraphql(
+      'query($name: String!, $owner: String!) { getDeployApp(name: $name, owner: $owner) { name } }',
+      { name: appName, owner },
+    );
+    existed = Boolean(found.getDeployApp);
+  } catch (error) {
+    const text = String(error && error.message ? error.message : error);
+    existed = !/not found|does not exist|no such/i.test(text);
+  }
+  const started = await registryGraphql(
+    'mutation($input: DeployViaAutobuildInput!) { deployViaAutobuild(input: $input) { success buildId } }',
+    { input },
+  );
+  const buildId = started.deployViaAutobuild && started.deployViaAutobuild.buildId;
+  if (!buildId) throw new Error('deployViaAutobuild did not return a build id');
+  const terminal = new Set(['SUCCESS', 'FAILED', 'CANCELLED', 'INTERNAL_ERROR', 'TIMEOUT']);
+  const limit = attempts || 120;
+  let status = 'QUEUED';
+  let appUrl = '';
+  for (let attempt = 0; attempt < limit; attempt += 1) {
+    const polled = await registryGraphql(
+      'query($id: UUID!) { autobuildDeploymentStatus(buildId: $id) { status appVersion { url app { url name } } } }',
+      { id: buildId },
+    );
+    const row = polled.autobuildDeploymentStatus;
+    status = row.status;
+    appUrl = (row.appVersion && (row.appVersion.url || (row.appVersion.app && row.appVersion.app.url))) || '';
+    if (terminal.has(status)) break;
+    await sleep(10000);
+  }
+  if (status !== 'SUCCESS') {
+    const error = new Error(`autobuild ${buildId} ${status}`);
+    error.existed = existed;
+    error.buildId = buildId;
+    throw error;
+  }
+  return { buildId, existed, appUrl: appUrl || `https://${appName}.wasmer.app` };
+}
+
 async function fetchJson(url) {
   const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
   if (response.status === 429) throw new Error(`429 ${url}`);

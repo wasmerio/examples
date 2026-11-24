@@ -16,7 +16,7 @@ cd "$root"
 
 folders=$(
   git diff --name-only --no-renames "$base...$head" |
-    awk -F/ '$1 ~ /-mcp-/ { print $1 }' |
+    awk -F/ 'NF > 1 && $1 ~ /-mcp-/ { print $1 }' |
     sort -u
 )
 if [[ -z "$folders" ]]; then

@@ -1167,6 +1167,7 @@ async function main() {
       const bucket = { waits };
       try {
         meta = await withBackoff(bucket, () => fetchMetadata(row));
+        console.error(`metadata ${row.rank} ${row.pkg} ok`);
       } catch (error) {
         const failed = baseReport(row);
         failed.waits = waits;
@@ -1184,7 +1185,13 @@ async function main() {
       && item.row.pkgType === 'pypi'
       && !item.meta.importSymbol
       && !blockedDependency({ ...item.meta, pkgType: 'pypi' }));
-    await mapPool(probeTargets, concurrency, (item) => attachProbe(item.row, item.meta));
+    console.error(`probing ${probeTargets.length} python packages`);
+    await mapPool(probeTargets, concurrency, async (item) => {
+      console.error(`probe ${item.row.rank} ${item.row.pkg} start`);
+      await attachProbe(item.row, item.meta);
+      const hit = item.meta.importSymbol ? `${item.meta.importModule}.${item.meta.importSymbol}` : (item.meta.probeError || 'no-hit');
+      console.error(`probe ${item.row.rank} ${item.row.pkg} ${hit}`);
+    });
   }
   const decided = [];
   for (const item of staged) {
@@ -1242,6 +1249,7 @@ async function main() {
           mkdirSync(path.dirname(dest), { recursive: true });
           writeFileSync(dest, content);
         }
+        console.error(`local ${report.rank} ${report.folder} ${report.adapter}`);
         const local = await runLocalCheck(report.folder, token);
         if (!acceptLocal(report, local)) {
           discardFolder(report);
@@ -1258,6 +1266,7 @@ async function main() {
         await deleteCreated(report);
         discardFolder(report);
       }
+      console.error(`done ${report.rank} ${report.status} ${report.folder}`);
       await save();
     }
   }

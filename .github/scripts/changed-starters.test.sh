@@ -58,3 +58,24 @@ touch scripts/sync-starter-ui.mjs
 git add .
 git commit -qm 'root build config and unused shared script'
 assert_starters 'Map a standalone root Anybuild file to its starter' 'js-existing'
+
+git checkout --quiet --detach "$base"
+mkdir -p js-mcp-time-mcp python-hello _shared/mcp-http/js
+printf '%s\n' '{}' > js-mcp-time-mcp/package.json
+printf '%s\n' 'print(1)' > python-hello/main.py
+printf '%s\n' 'kind: wasmer.io/App.v0' > python-hello/app.yaml
+printf '%s\n' shared > _shared/mcp-http/js/app.mjs
+git add js-mcp-time-mcp/package.json
+git commit -qm 'one mcp template'
+assert_starters 'Build only the changed mcp template' 'js-mcp-time-mcp'
+
+mcp_base=$(git rev-parse HEAD)
+printf '%s\n' shared2 > _shared/mcp-http/js/app.mjs
+git add _shared/mcp-http/js/app.mjs
+git commit -qm 'shared mcp http only'
+shared_actual=$(bash "$script" "$mcp_base" HEAD)
+if [[ -n $shared_actual ]]; then
+  printf 'FAIL shared mcp http change selected:\n%s\n' "$shared_actual" >&2
+  exit 1
+fi
+printf 'PASS %s\n' 'Do not rebuild every starter when shared mcp http changes'

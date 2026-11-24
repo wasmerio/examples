@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, mkdtempSync, existsSync, readdirSync, chmodSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, rmSync, cpSync, mkdtempSync, existsSync, readdirSync } from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
+import { writeSharedCopies } from './sync-mcp-http.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const JS_SDK = '1.32.2';
@@ -297,7 +298,6 @@ python_serve(
     config,
     build,
     name = ${JSON.stringify(folder)},
-    build_post = [run('sh -c "if [ ! -f mcp_http/__init__.py ] && [ -d ../_shared/mcp-http/python/mcp_http ]; then cp -R ../_shared/mcp-http/python/mcp_http mcp_http; fi"')],
 )
 `;
   }
@@ -317,7 +317,6 @@ node_serve(
     config,
     build,
     name = ${JSON.stringify(folder)},
-    build_post = [run('sh -c "if [ ! -f mcp-http/app.mjs ] && [ -d ../_shared/mcp-http/js ]; then mkdir -p mcp-http && cp -R ../_shared/mcp-http/js/. mcp-http/; fi"')],
 )
 `;
 }
@@ -386,14 +385,7 @@ Upstream: ${meta.repository} version ${row.version}, ${meta.license || row.licen
 }
 
 function pythonBoot() {
-  return `import sys
-from pathlib import Path
-
-here = Path(__file__).resolve().parent
-shared = here.parent / "_shared" / "mcp-http" / "python"
-if not (here / "mcp_http" / "__init__.py").exists() and (shared / "mcp_http").is_dir():
-    sys.path.insert(0, str(shared))
-`;
+  return '';
 }
 
 export function renderTemplate(row, meta, report) {
@@ -416,8 +408,8 @@ export function renderTemplate(row, meta, report) {
   files[`${folder}/README.md`] = readme(row, report, meta);
   files[`${folder}/app.yaml`] = 'kind: wasmer.io/App.v0\npackage: .\ndebug: true\n';
   files[`${folder}/.gitignore`] = lang === 'python'
-    ? '.venv/\n__pycache__/\n.anybuild/\n*.pyc\nmcp_http/\n'
-    : 'node_modules/\n.anybuild/\nmcp-http/\n';
+    ? '.venv/\n__pycache__/\n.anybuild/\n*.pyc\n'
+    : 'node_modules/\n.anybuild/\n';
   const build = anybuild(folder, lang);
   files[`${folder}/Anybuild`] = build;
   files[`Anybuild.${folder}`] = `app_subdir = ${JSON.stringify(folder)}\n\n${build}`;
@@ -503,14 +495,11 @@ if __name__ == "__main__":
         [row.pkg]: row.version,
       },
     }, null, 2)}\n`;
-    const boot = `import { existsSync } from 'node:fs';
-import { pathToFileURL, fileURLToPath } from 'node:url';
+    const boot = `import { pathToFileURL, fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const local = path.join(here, 'mcp-http', 'app.mjs');
-const shared = path.join(here, '..', '_shared', 'mcp-http', 'js', 'app.mjs');
-const { startMcpHttp } = await import(pathToFileURL(existsSync(local) ? local : shared).href);
+const { startMcpHttp } = await import(pathToFileURL(path.join(here, 'mcp-http', 'app.mjs')).href);
 `;
     const fields = {
       title: row.title || row.pkg,
@@ -843,7 +832,6 @@ export async function runLocalCheck(folder, token) {
       await run(uv, ['sync', '--locked'], { cwd: dir, timeout: 180000 });
     } else {
       await run('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: dir, timeout: 180000 });
-      ensureLocalJsShared(dir);
     }
   } catch (error) {
     return { ok: false, tools: [], error: String(error.message || error).slice(0, 300) };
@@ -924,39 +912,109 @@ async function withBackoff(row, fn) {
   return null;
 }
 
-function stageFolder(folder) {
-  const dest = mkdtempSync(path.join(tmpdir(), 'mcp-stage-'));
-  cpSync(path.join(ROOT, folder), dest, {
-    recursive: true,
-    filter: (src) => !['node_modules', '.venv', '__pycache__', '.anybuild', 'mcp-http', 'mcp_http'].includes(path.basename(src)),
-  });
-  const python = existsSync(path.join(dest, 'main.py'));
-  if (python) cpSync(path.join(ROOT, '_shared/mcp-http/python/mcp_http'), path.join(dest, 'mcp_http'), { recursive: true });
-  else {
-    mkdirSync(path.join(dest, 'mcp-http'), { recursive: true });
-    cpSync(path.join(ROOT, '_shared/mcp-http/js/app.mjs'), path.join(dest, 'mcp-http/app.mjs'));
-    cpSync(path.join(ROOT, '_shared/mcp-http/js/wasmer-starter-ui.js'), path.join(dest, 'mcp-http/wasmer-starter-ui.js'));
-  }
-  return dest;
+const REPO_URL = 'https://github.com/wasmerio/examples';
+const REGISTRY = 'https://registry.wasmer.io/graphql';
+
+export function autobuildInput({ folder, branch, appName, owner, token, perishAt }) {
+  const input = {
+    repoUrl: REPO_URL,
+    rootDir: folder,
+    branch,
+    appName,
+    owner,
+    allowExistingApp: true,
+    waitForScreenshotGeneration: false,
+    envVars: [{ name: 'MCP_AUTH_TOKEN', value: token, sensitive: true, runtime: true }],
+  };
+  if (perishAt) input.perishAt = perishAt;
+  return input;
 }
 
-async function publishToken(owner, appName, pkgHash, token) {
-  const file = path.join(tmpdir(), `mcp-env-${appName}.yaml`);
-  const yaml = `kind: wasmer.io/App.v0
-name: ${appName}
-owner: ${owner}
-package: ${pkgHash}
-debug: true
-env:
-  MCP_AUTH_TOKEN: ${JSON.stringify(token)}
-`;
-  writeFileSync(file, yaml, { mode: 0o600 });
-  chmodSync(file, 0o600);
-  try {
-    await run('wasmer', ['deploy', '--path', file, '--non-interactive', '--no-persist-id', '--owner', owner, '--app-name', appName]);
-  } finally {
-    rmSync(file, { force: true });
+function registryToken() {
+  const text = readFileSync(path.join(process.env.HOME || '', '.wasmer/wasmer.toml'), 'utf8');
+  const match = text.match(/^token\s*=\s*"([^"]+)"/m) || text.match(/^token\s*=\s*'([^']+)'/m);
+  if (!match) throw new Error('Wasmer registry token is missing');
+  return match[1];
+}
+
+async function registryGraphql(query, variables) {
+  const response = await fetch(REGISTRY, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${registryToken()}`,
+    },
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(60000),
+  });
+  const body = await response.json();
+  if (!response.ok || body.errors) {
+    const message = body.errors ? body.errors.map((item) => item.message).join('; ') : `registry HTTP ${response.status}`;
+    throw new Error(message);
   }
+  return body.data;
+}
+
+async function currentBranch() {
+  const branch = (await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: ROOT })).out.trim();
+  if (!branch || branch === 'HEAD' || branch === 'main' || branch === 'master') {
+    throw new Error(`Refusing to publish from ${branch || 'detached HEAD'}`);
+  }
+  return branch;
+}
+
+async function commitPaths(paths, message) {
+  if (!paths.length) return false;
+  await currentBranch();
+  await run('git', ['add', '-A', '--', ...paths], { cwd: ROOT });
+  const staged = await run('git', ['diff', '--cached', '--name-only'], { cwd: ROOT });
+  if (!staged.out.trim()) return false;
+  await run('git', ['commit', '-m', message], { cwd: ROOT });
+  await run('git', ['push', '-u', 'origin', 'HEAD'], { cwd: ROOT });
+  return true;
+}
+
+export async function deployAutobuild({ folder, appName, owner, token, perishAt, branch }) {
+  const input = autobuildInput({
+    folder,
+    branch: branch || await currentBranch(),
+    appName,
+    owner,
+    token,
+    perishAt,
+  });
+  let existed = true;
+  try {
+    const found = await registryGraphql(
+      'query($name: String!, $owner: String!) { getDeployApp(name: $name, owner: $owner) { name } }',
+      { name: appName, owner },
+    );
+    existed = Boolean(found.getDeployApp);
+  } catch {
+    existed = false;
+  }
+  const started = await registryGraphql(
+    'mutation($input: DeployViaAutobuildInput!) { deployViaAutobuild(input: $input) { success buildId } }',
+    { input },
+  );
+  const buildId = started.deployViaAutobuild && started.deployViaAutobuild.buildId;
+  if (!buildId) throw new Error('deployViaAutobuild did not return a build id');
+  const terminal = new Set(['SUCCESS', 'FAILED', 'CANCELLED', 'INTERNAL_ERROR', 'TIMEOUT']);
+  let status = 'QUEUED';
+  let appUrl = '';
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    const polled = await registryGraphql(
+      'query($id: UUID!) { autobuildDeploymentStatus(buildId: $id) { status appVersion { url app { url name } } } }',
+      { id: buildId },
+    );
+    const row = polled.autobuildDeploymentStatus;
+    status = row.status;
+    appUrl = (row.appVersion && (row.appVersion.url || (row.appVersion.app && row.appVersion.app.url))) || '';
+    if (terminal.has(status)) break;
+    await sleep(10000);
+  }
+  if (status !== 'SUCCESS') throw new Error(`autobuild ${buildId} ${status}`);
+  return { buildId, existed, appUrl: appUrl || `https://${appName}.wasmer.app` };
 }
 
 export function minimalArgs(schema) {
@@ -1094,28 +1152,15 @@ async function probeHttp(url, options = {}) {
 
 async function deployBuilt(row, report, owner, token) {
   const appName = report.catalog.slug;
-  const stage = stageFolder(report.folder);
-  try {
-    let existed = true;
-    try {
-      await run('wasmer', ['app', 'get', `${owner}/${appName}`, '-f', 'json']);
-    } catch {
-      existed = false;
-    }
-    const env = { ...process.env };
-    delete env.MCP_AUTH_TOKEN;
-    await withBackoff(report, () => run('wasmer', [
-      'deploy', '--build-remote', '--dir', stage, '--non-interactive', '--no-persist-id', '--owner', owner, '--app-name', appName,
-    ], { env }));
-    if (!existed) report.createdApp = `${owner}/${appName}`;
-    const bare = await probeHttp(`https://${appName}.wasmer.app/mcp`, {
-      method: 'POST',
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'batch', version: '0' } } }),
-    });
-    report.tests.setup503 = bare.status === 503 ? 'passed' : `failed:${bare.status}`;
-    if (!bare.pkg) throw new Error('deploy did not return a package hash');
-    await publishToken(owner, appName, bare.pkg, token);
-    report.demo = `https://${appName}.wasmer.app`;
+  const built = await withBackoff(report, () => deployAutobuild({
+    folder: report.folder,
+    appName,
+    owner,
+    token,
+  }));
+  if (!built.existed) report.createdApp = `${owner}/${appName}`;
+  report.tests.setup503 = 'not run';
+  report.demo = built.appUrl.replace(/\/$/, '');
     const denied = await probeHttp(`${report.demo}/mcp`, {
       method: 'POST',
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'batch', version: '0' } } }),
@@ -1152,10 +1197,9 @@ async function deployBuilt(row, report, owner, token) {
       '--url', `${report.demo}/`,
       '--out', path.join(ROOT, report.folder, 'preview.jpg'),
     ]);
-    report.status = report.tests.edge === 'passed' && report.tests.auth401 === 'passed' ? 'shipped' : 'failed';
-  } finally {
-    rmSync(stage, { recursive: true, force: true });
-  }
+    const health = await probeHttp(`${report.demo}/healthz`);
+    report.tests.healthz = health.status === 200 ? 'passed' : `failed:${health.status}`;
+    report.status = report.tests.edge === 'passed' && report.tests.auth401 === 'passed' && report.tests.healthz === 'passed' ? 'shipped' : 'failed';
 }
 
 async function main() {
@@ -1278,17 +1322,10 @@ async function main() {
           mkdirSync(path.dirname(dest), { recursive: true });
           writeFileSync(dest, content);
         }
+        writeSharedCopies(report.folder);
         console.error(`local ${report.rank} ${report.folder} ${report.adapter}`);
         const local = await runLocalCheck(report.folder, token);
-        if (!acceptLocal(report, local)) {
-          discardFolder(report);
-        } else {
-          await deployBuilt(row, report, owner, token);
-          if (report.status !== 'shipped') {
-            await deleteCreated(report);
-            discardFolder(report);
-          }
-        }
+        if (!acceptLocal(report, local)) discardFolder(report);
       } catch (error) {
         report.status = 'failed';
         report.reason = String(error.message || error).slice(0, 400);
@@ -1300,6 +1337,35 @@ async function main() {
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, pending.length || 1) }, () => worker()));
+  const ready = pending.filter((row) => row.tests.local === 'passed' && row.status === 'build');
+  if (ready.length) {
+    const sourcePaths = ready.flatMap((row) => [row.folder, `Anybuild.${row.folder}`]);
+    await commitPaths(sourcePaths, `Add ${ready.length} MCP template${ready.length === 1 ? '' : 's'}.`);
+    await mapPool(ready, concurrency, async (report) => {
+      try {
+        await deployBuilt(null, report, owner, token);
+        if (report.status !== 'shipped') await deleteCreated(report);
+      } catch (error) {
+        report.status = 'failed';
+        report.reason = String(error.message || error).slice(0, 400);
+        await deleteCreated(report);
+      }
+      console.error(`done ${report.rank} ${report.status} ${report.folder}`);
+      await save();
+    });
+    const failed = ready.filter((row) => row.status !== 'shipped');
+    for (const report of failed) discardFolder(report);
+    const shippedNow = ready.filter((row) => row.status === 'shipped');
+    const follow = [
+      ...failed.flatMap((row) => [row.folder, `Anybuild.${row.folder}`]),
+      ...shippedNow.map((row) => `${row.folder}/preview.jpg`),
+    ];
+    if (follow.length) {
+      await commitPaths(follow, failed.length
+        ? `Keep ${shippedNow.length} shipped MCP templates and drop ${failed.length} that failed on Edge.`
+        : `Add previews for ${shippedNow.length} MCP templates.`);
+    }
+  }
   const shipped = decided.filter((row) => row.status === 'shipped' && row.tests.coldStartMs == null);
   if (shipped.length) {
     await sleep(6 * 60 * 1000);

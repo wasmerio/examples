@@ -86,3 +86,11 @@ touch scripts/package.json _shared/mcp-http/package.json reports/mcp/run.jsonl
 git add scripts _shared reports
 git commit -qm 'repo tooling with manifests'
 assert_starters 'Skip repo tooling folders that have a manifest' ''
+
+git checkout --quiet --detach "$base"
+mkdir -p go-hugo-book scripts
+printf '%s\n' 'load("x")' > go-hugo-book/Anybuild
+touch scripts/hugo-batch.mjs
+git add go-hugo-book scripts
+git commit -qm 'hugo theme and runner'
+assert_starters 'Select a go-hugo starter and skip the runner script' 'go-hugo-book'

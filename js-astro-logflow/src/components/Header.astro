@@ -1,0 +1,110 @@
+---
+import { NAV_LINKS, SEARCH, SITE_TITLE } from "../consts";
+import { isRouteActive, withBase } from "../utils/withBase";
+import HeaderLink from "./HeaderLink.astro";
+import ThemeToggle from "./ThemeToggle.astro";
+import SearchDialog from "./SearchDialog.astro";
+
+const currentSection = NAV_LINKS.find((link) => isRouteActive(Astro.url.pathname, link.href))?.label ?? "首页";
+
+const navLinkClass = "group flex items-center gap-1.5 rounded-box px-2.5 py-1.5 text-nav text-content transition-colors hover:bg-surface-alt aria-[current=page]:text-accent";
+const navIndexClass = "text-label tabular-nums text-subtle";
+const navDotClass = "size-1 scale-[.45] rounded-full bg-current opacity-0 transition group-aria-[current=page]:scale-100 group-aria-[current=page]:opacity-100";
+---
+
+<header data-site-header transition:name="site-header" transition:animate="none" class="group sticky top-0 z-50 border-b border-border bg-surface-alt">
+  <div class="bar-inner h-bar items-center gap-3">
+    <p class="flex min-w-0 flex-1 items-baseline gap-2 truncate">
+      <a class="text-section text-heading no-underline transition-colors hover:text-accent" href={withBase("/")}>{SITE_TITLE}</a>
+      <span aria-hidden="true" class="text-subtle">/</span>
+      <span class="current-section truncate text-label text-subtle">{currentSection}</span>
+    </p>
+
+    <nav class="hidden md:block" aria-label="主导航">
+      <ul class="flex items-center">
+        {NAV_LINKS.map((link, index) => (
+          <li>
+            <HeaderLink class={navLinkClass} href={link.href}>
+              <span class={navIndexClass} aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+              <span>{link.label}</span>
+              <span class={navDotClass} aria-hidden="true"></span>
+            </HeaderLink>
+          </li>
+        ))}
+      </ul>
+    </nav>
+
+    <div class="flex items-center">
+      {SEARCH.enabled && <SearchDialog />}
+      <ThemeToggle />
+      <button id="menu-toggle" class="icon-button md:hidden" type="button" aria-label="展开导航" aria-controls="mobile-nav" aria-expanded="false">
+        <svg class="size-4.5 fill-none stroke-current stroke-2 group-data-open:hidden" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"></path></svg>
+        <svg class="hidden size-4.5 fill-none stroke-current stroke-2 group-data-open:block" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+      </button>
+    </div>
+  </div>
+
+  <nav
+    id="mobile-nav"
+    class="pointer-events-none invisible h-0 overflow-hidden border-border opacity-0 group-data-animate:transition-all group-data-animate:duration-150 group-data-open:pointer-events-auto group-data-open:visible group-data-open:h-20 group-data-open:border-t group-data-open:opacity-100 md:hidden"
+    aria-label="移动端导航"
+    aria-hidden="true"
+  >
+    <div class="bar-inner h-full">
+      <ul class="grid h-full w-full grid-cols-2 items-center gap-x-3 gap-y-1">
+        {NAV_LINKS.map((link, index) => (
+          <li>
+            <HeaderLink class={navLinkClass} href={link.href} tabindex="-1">
+              <span class={navIndexClass} aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+              <span>{link.label}</span>
+              <span class={navDotClass} aria-hidden="true"></span>
+            </HeaderLink>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </nav>
+</header>
+
+<script is:inline data-astro-rerun>
+  try {
+    if (window.matchMedia("(width < 48rem)").matches && sessionStorage.getItem("mobile-nav-open") === "true") {
+      document.querySelector("[data-site-header]")?.setAttribute("data-open", "");
+    }
+  } catch {}
+</script>
+
+<script>
+  // 换页后重新绑定页头监听，并清理上一页的监听。
+  let menuCleanup: (() => void) | null = null;
+  document.addEventListener("astro:page-load", () => {
+    menuCleanup?.();
+    const header = document.querySelector<HTMLElement>("[data-site-header]");
+    const menuToggle = document.getElementById("menu-toggle");
+    const mobileNav = document.getElementById("mobile-nav");
+    const menuStorageKey = "mobile-nav-open";
+    const mobileViewport = window.matchMedia("(width < 48rem)");
+    const readMenuOpen = () => { try { return sessionStorage.getItem(menuStorageKey) === "true"; } catch { return false; } };
+    const writeMenuOpen = (open: boolean) => { try { sessionStorage.setItem(menuStorageKey, String(open)); } catch {} };
+
+    const setMenuOpen = (open: boolean, persist = true) => {
+      header?.toggleAttribute("data-open", open);
+      menuToggle?.setAttribute("aria-expanded", String(open));
+      menuToggle?.setAttribute("aria-label", open ? "收起导航" : "展开导航");
+      mobileNav?.setAttribute("aria-hidden", String(!open));
+      mobileNav?.querySelectorAll("a").forEach((link) => { link.tabIndex = open ? 0 : -1; });
+      if (persist) writeMenuOpen(open);
+    };
+    const syncMenuToViewport = () => setMenuOpen(mobileViewport.matches && readMenuOpen(), false);
+
+    menuToggle?.addEventListener("click", () => {
+      header?.setAttribute("data-animate", "");
+      setMenuOpen(menuToggle.getAttribute("aria-expanded") !== "true");
+    });
+    const onKeydown = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("keydown", onKeydown);
+    mobileViewport.addEventListener("change", syncMenuToViewport);
+    menuCleanup = () => { document.removeEventListener("keydown", onKeydown); mobileViewport.removeEventListener("change", syncMenuToViewport); };
+    syncMenuToViewport();
+  });
+</script>

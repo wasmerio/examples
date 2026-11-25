@@ -1,0 +1,279 @@
+---
+import { SEARCH } from "../consts";
+import { withBase } from "../utils/withBase";
+
+const indexUrl = withBase("/search-index.json");
+const kbdClass = "chip min-w-5 justify-center bg-surface font-mono";
+const shortcuts = [
+  { keys: ["↑", "↓"], label: "选择" },
+  { keys: ["Enter"], label: "打开" },
+  { keys: ["Esc"], label: "关闭" },
+];
+---
+
+<div class="flex" data-search data-index-url={indexUrl} data-max-results={SEARCH.maxResults}>
+  <button
+    data-search-trigger
+    class="icon-button"
+    type="button"
+    aria-label="搜索文章"
+    aria-haspopup="dialog"
+    aria-controls="search-dialog"
+    aria-keyshortcuts="Control+K Meta+K /"
+  >
+    <svg class="size-4.5 fill-none stroke-current stroke-2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+  </button>
+
+  <dialog
+    id="search-dialog"
+    data-search-dialog
+    class="fixed inset-x-0 top-2 mx-auto max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-[38rem] overflow-hidden rounded-box border border-border glass text-content shadow-xl backdrop:bg-black/50 sm:top-16 sm:max-h-[calc(100dvh-5rem)] sm:w-[calc(100%-2rem)]"
+    aria-labelledby="search-title"
+  >
+    <div class="grid max-h-[calc(100dvh-1rem)] grid-rows-[auto_minmax(8rem,1fr)_auto] divide-y divide-border sm:max-h-[calc(100dvh-5rem)]">
+      <header class="flex items-center gap-1 bg-surface-alt p-1">
+        <span class="grid size-9 shrink-0 place-items-center text-content" aria-hidden="true"><svg class="size-4.5 fill-none stroke-current stroke-2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg></span>
+        <label id="search-title" class="sr-only" for="site-search-input">搜索文章</label>
+        <input
+          id="site-search-input"
+          data-search-input
+          class="h-9 min-w-0 flex-1 bg-transparent text-card font-normal text-heading outline-none placeholder:text-subtle [&::-webkit-search-cancel-button]:hidden"
+          type="search"
+          placeholder="搜索标题、描述或标签"
+          autocomplete="off"
+          spellcheck="false"
+          role="combobox"
+          aria-controls="search-results"
+          aria-autocomplete="list"
+          aria-expanded="false"
+        />
+        <button data-search-close class="icon-button" type="button" aria-label="关闭搜索">
+          <svg class="size-4.5 fill-none stroke-current stroke-2" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"></path></svg>
+        </button>
+      </header>
+      <div class="max-h-[min(26rem,calc(100dvh-8rem))] min-h-32 overflow-y-auto overscroll-contain">
+        <p data-search-status class="px-cell-x py-10 text-center text-body text-subtle" role="status" aria-live="polite">输入关键词搜索文章</p>
+        <ol id="search-results" data-search-results class="divide-y divide-border [&_mark]:bg-transparent [&_mark]:text-accent" role="listbox" hidden></ol>
+      </div>
+      <footer class="flex items-center justify-center gap-3 bg-surface-alt px-cell-x py-2 text-label text-subtle sm:justify-end" aria-hidden="true">
+        {shortcuts.map(({ keys, label }) => (
+          <p class="inline-flex items-center gap-1 whitespace-nowrap">
+            {keys.map((key) => <kbd class={kbdClass}>{key}</kbd>)}
+            {label}
+          </p>
+        ))}
+      </footer>
+    </div>
+  </dialog>
+</div>
+
+<script>
+  import {
+    getSearchTerms,
+    prepareSearchIndex,
+    rankSearchResults,
+    type PreparedSearchIndexItem,
+    type SearchIndexItem,
+  } from "../utils/search";
+
+  const appendHighlightedText = (target: HTMLElement, text: string, terms: string[]) => {
+    if (terms.length === 0) {
+      target.textContent = text;
+      return;
+    }
+
+    const escaped = terms
+      .sort((a, b) => b.length - a.length)
+      .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const matcher = new RegExp(`(${escaped.join("|")})`, "giu");
+    const exactMatch = new RegExp(`^(?:${escaped.join("|")})$`, "iu");
+
+    for (const part of text.split(matcher)) {
+      if (!part) continue;
+      const node = exactMatch.test(part) ? document.createElement("mark") : document.createTextNode(part);
+      node.textContent = part;
+      target.append(node);
+    }
+  };
+
+  // 搜索索引在模块级缓存，换页复用；页面监听由 AbortController 清理。
+  let items: PreparedSearchIndexItem[] | null = null;
+  let loadPromise: Promise<PreparedSearchIndexItem[]> | null = null;
+  let searchAbort: AbortController | null = null;
+
+  const loadIndex = (indexUrl: string) => {
+    if (items) return Promise.resolve(items);
+    if (!loadPromise) {
+      loadPromise = fetch(indexUrl)
+        .then((response) => {
+          if (!response.ok) throw new Error(`Search index request failed: ${response.status}`);
+          return response.json() as Promise<SearchIndexItem[]>;
+        })
+        .then((documents) => {
+          items = prepareSearchIndex(documents);
+          return items;
+        });
+    }
+    return loadPromise;
+  };
+
+  const initSearch = () => {
+    searchAbort?.abort();
+    searchAbort = new AbortController();
+    const signal = searchAbort.signal;
+
+    const root = document.querySelector<HTMLElement>("[data-search]");
+    if (!root) return;
+    const trigger = root.querySelector<HTMLButtonElement>("[data-search-trigger]");
+    const dialog = root.querySelector<HTMLDialogElement>("[data-search-dialog]");
+    const closeButton = root.querySelector<HTMLButtonElement>("[data-search-close]");
+    const input = root.querySelector<HTMLInputElement>("[data-search-input]");
+    const status = root.querySelector<HTMLElement>("[data-search-status]");
+    const results = root.querySelector<HTMLOListElement>("[data-search-results]");
+    const indexUrl = root.dataset.indexUrl;
+    const maxResults = Number(root.dataset.maxResults) || 8;
+    if (!trigger || !dialog || !closeButton || !input || !status || !results || !indexUrl) return;
+
+    let resizeAnimation: Animation | null = null;
+    let activeIndex = -1;
+
+    const animateDialogResize = (previousHeight: number) => {
+      if (!dialog.open || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const nextHeight = dialog.getBoundingClientRect().height;
+      if (Math.abs(nextHeight - previousHeight) < 1) return;
+      resizeAnimation?.cancel();
+      resizeAnimation = dialog.animate(
+        [{ height: `${previousHeight}px` }, { height: `${nextHeight}px` }],
+        { duration: 160, easing: "ease-out" },
+      );
+    };
+
+    const setActiveResult = (index: number) => {
+      const links = Array.from(results.querySelectorAll<HTMLAnchorElement>("a"));
+      activeIndex = links.length === 0 ? -1 : index < 0 ? links.length - 1 : index % links.length;
+      links.forEach((link, linkIndex) => {
+        const active = linkIndex === activeIndex;
+        link.setAttribute("aria-selected", String(active));
+      });
+      input.setAttribute("aria-activedescendant", activeIndex >= 0 ? links[activeIndex].id : "");
+      links[activeIndex]?.scrollIntoView({ block: "nearest" });
+    };
+
+    const renderResults = (query: string) => {
+      const previousHeight = dialog.getBoundingClientRect().height;
+      const terms = getSearchTerms(query);
+      results.replaceChildren();
+      activeIndex = -1;
+
+      if (terms.length === 0) {
+        results.hidden = true;
+        status.hidden = false;
+        status.textContent = "输入关键词搜索文章";
+        input.removeAttribute("aria-activedescendant");
+        animateDialogResize(previousHeight);
+        return;
+      }
+      if (!items) {
+        animateDialogResize(previousHeight);
+        return;
+      }
+
+      const matches = rankSearchResults(items, terms, maxResults);
+
+      if (matches.length === 0) {
+        results.hidden = true;
+        status.hidden = false;
+        status.textContent = `没有找到与“${query.trim()}”相关的文章`;
+        animateDialogResize(previousHeight);
+        return;
+      }
+
+      for (const [index, item] of matches.entries()) {
+        const listItem = document.createElement("li");
+        const link = document.createElement("a");
+        const title = document.createElement("strong");
+        const description = document.createElement("span");
+        link.id = `search-result-${index}`;
+        link.className = "group grid gap-1 px-cell-x py-cell-y text-content no-underline transition-colors aria-selected:bg-surface-hover";
+        link.href = item.url;
+        link.setAttribute("role", "option");
+        link.setAttribute("aria-selected", "false");
+        title.className = "text-card text-heading";
+        description.className = "line-clamp-2 text-body text-content";
+        appendHighlightedText(title, item.title, [...terms]);
+        appendHighlightedText(description, item.description, [...terms]);
+        link.append(title, description);
+        link.addEventListener("pointerenter", () => setActiveResult(index));
+        listItem.append(link);
+        results.append(listItem);
+      }
+
+      status.hidden = true;
+      results.hidden = false;
+      input.removeAttribute("aria-activedescendant");
+      animateDialogResize(previousHeight);
+    };
+
+    const openSearch = () => {
+      if (!dialog.open) dialog.showModal();
+      input.setAttribute("aria-expanded", "true");
+      status.hidden = false;
+      status.textContent = items ? "输入关键词搜索文章" : "正在加载搜索索引…";
+      requestAnimationFrame(() => input.focus());
+      loadIndex(indexUrl)
+        .then(() => renderResults(input.value))
+        .catch(() => {
+          loadPromise = null;
+          status.hidden = false;
+          results.hidden = true;
+          status.textContent = "搜索索引加载失败，请稍后重试";
+        });
+    };
+
+    trigger.addEventListener("click", openSearch, { signal });
+    closeButton.addEventListener("click", () => dialog.close(), { signal });
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) dialog.close();
+    }, { signal });
+    dialog.addEventListener("close", () => {
+      input.setAttribute("aria-expanded", "false");
+      trigger.focus({ focusVisible: false } as FocusOptions);
+      activeIndex = -1;
+    }, { signal });
+    input.addEventListener("input", () => renderResults(input.value), { signal });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveResult(activeIndex + 1);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveResult(activeIndex - 1);
+      } else if (event.key === "Enter" && activeIndex >= 0) {
+        const activeLink = results.querySelectorAll<HTMLAnchorElement>("a")[activeIndex];
+        if (activeLink) {
+          event.preventDefault();
+          activeLink.click();
+        }
+      }
+    }, { signal });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && dialog.open) {
+        event.preventDefault();
+        dialog.close();
+        return;
+      }
+      const target = event.target;
+      const isEditable = target instanceof HTMLElement &&
+        (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+      const commandShortcut = (event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "k";
+      const slashShortcut = event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey && !isEditable;
+      if (commandShortcut || slashShortcut) {
+        event.preventDefault();
+        openSearch();
+      }
+    }, { signal });
+  };
+
+  document.addEventListener("astro:page-load", initSearch);
+</script>

@@ -1,0 +1,75 @@
+---
+interface Props {
+  contributions: Array<{ date: string; count: number; level: number }>;
+  totalCount: number;
+}
+
+const { contributions, totalCount } = Astro.props;
+
+const days = [...contributions].sort((a, b) => a.date.localeCompare(b.date));
+const firstDate = new Date(`${days[0].date}T00:00:00Z`);
+const leadingDays = (firstDate.getUTCDay() + 6) % 7;
+const levelClasses = ["bg-contrib-0", "bg-contrib-1", "bg-contrib-2", "bg-contrib-3", "bg-contrib-4"];
+const dayLabel = (date: string, count: number) => `${Number(date.slice(5, 7))}月${Number(date.slice(8, 10))}日 · ${count} 次贡献`;
+
+// 点阵主体尺寸：格 10px、列缝 4px、行缝 2px；居中以点阵自身为基准。
+const CELL = 10;
+const COL_GAP = 4;
+const ROW_GAP = 2;
+
+const cells = days.map((day, index) => {
+  const position = leadingDays + index;
+  return { ...day, column: Math.floor(position / 7) + 1, row: (position % 7) + 2 };
+});
+
+const lastColumn = cells.at(-1)?.column ?? 1;
+const monthLabels: { label: string; column: number }[] = [];
+for (const cell of cells) {
+  if (cell.date.slice(8, 10) !== "01" && cell !== cells[0]) continue;
+  if (lastColumn - cell.column < 2) continue;
+  const previous = monthLabels.at(-1);
+  if (previous && cell.column - previous.column < 3) continue;
+  monthLabels.push({ label: `${Number(cell.date.slice(5, 7))}月`, column: cell.column });
+}
+const weekdayLabels = [{ label: "一", row: 2 }, { label: "三", row: 4 }, { label: "五", row: 6 }];
+const weeks = cells.at(-1)?.column ?? 1;
+// 行结构：第 1 行为月份标尺，第 2~8 行为一周七天；星期标尺与点阵共用同一行结构。
+const rowTemplate = `1rem repeat(7, ${CELL}px)`;
+const fieldStyle = { gridTemplateColumns: `repeat(${weeks}, ${CELL}px)`, gridTemplateRows: rowTemplate, columnGap: `${COL_GAP}px`, rowGap: `${ROW_GAP}px` };
+const rulerStyle = { gridTemplateRows: rowTemplate, rowGap: `${ROW_GAP}px` };
+---
+
+<figure class="grid min-w-0 justify-items-center gap-2" aria-label={`共 ${totalCount} 次贡献`}>
+  <div class="flex w-full items-start gap-2">
+    {/* 星期标尺：固定在点阵左侧，不参与点阵宽度与居中计算 */}
+    <ol class="grid shrink-0 justify-items-end text-label leading-none text-subtle" style={{ ...rulerStyle, width: "1.25rem" }} aria-hidden="true">
+      {weekdayLabels.map(({ label, row }) => (
+        <li class="flex items-center" style={{ gridRow: row }}>{label}</li>
+      ))}
+    </ol>
+    {/* 点阵主体：窄屏整体横向滚动，宽屏以自身宽度居中 */}
+    <div class="min-w-0 flex-1 overflow-x-auto [scrollbar-width:thin]">
+      <div class="mx-auto grid w-max gap-2">
+        <ol class="grid" style={fieldStyle}>
+          {monthLabels.map(({ label, column }) => (
+            <li class="flex items-center whitespace-nowrap text-label leading-none text-subtle" style={{ gridColumn: column, gridRow: 1 }} aria-hidden="true">{label}</li>
+          ))}
+          {cells.map((cell) => (
+            <li
+              class:list={["rounded-tile", levelClasses[cell.level]]}
+              style={{ gridColumn: cell.column, gridRow: cell.row }}
+              title={dayLabel(cell.date, cell.count)}
+            >
+              <span class="sr-only">{dayLabel(cell.date, cell.count)}</span>
+            </li>
+          ))}
+        </ol>
+        <figcaption class="flex items-center justify-end gap-1 text-label text-subtle" aria-label="贡献强度：少到多">
+          少
+          {levelClasses.map((levelClass) => <i class:list={["size-2 rounded-tile", levelClass]} aria-hidden="true" />)}
+          多
+        </figcaption>
+      </div>
+    </div>
+  </div>
+</figure>

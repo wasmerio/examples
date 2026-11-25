@@ -1,0 +1,380 @@
+<canvas id="pixel-hero-canvas" class="pointer-events-none fixed inset-0 -z-10 h-screen w-screen bg-page opacity-50" aria-hidden="true" transition:persist="pixel-hero"></canvas>
+
+<script>
+  const canvas = document.getElementById("pixel-hero-canvas") as HTMLCanvasElement | null;
+
+  // 动画参数，长度单位为逻辑像素，位置参数使用 UV 坐标。
+  const CELL_SIZE = 5;
+  const CELL_GAP = 2;
+  const DOT_RADIUS = 2.5;     // 圆点半径（逻辑像素），CELL 内居中，边缘为完全硬边。
+  const THRESHOLD = 0.72;      // 亮块亮度阈值。
+  const THRESHOLD_JITTER = 0.08;
+  const GREEN_RATIO = 0.49;    // 主色块占比。
+  const DENSITY = 1.5;         // 流体噪声密度。
+  const FREQUENCY = 2.5;       // 域扭曲强度。
+  const FLOW_GAIN = 35;        // 漂移位移增益，单位为像素。
+  const MOUSE_RADIUS = 100;    // 鼠标影响半径，单位为逻辑像素。
+  const MOUSE_STRENGTH = 1.3;
+  const TIME_SCALE = 0.85;     // 时间流速
+
+  function hexToRgb(hex: string): [number, number, number] {
+    let v = hex.trim().replace("#", "");
+    if (v.length === 3) v = v.split("").map((c) => c + c).join("");
+    return [
+      parseInt(v.slice(0, 2), 16) / 255,
+      parseInt(v.slice(2, 4), 16) / 255,
+      parseInt(v.slice(4, 6), 16) / 255,
+    ];
+  }
+
+  const VERTEX_SRC = `
+attribute vec2 aPos;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
+`;
+
+  // 第一阶段计算每个网格单元的颜色和亮度。
+  const FIELD_FRAG_SRC = `
+precision highp float;
+uniform vec2 uRes;        // 画布逻辑尺寸。
+uniform float uTime;
+uniform vec2 uMouse;      // 鼠标 UV 坐标，Y 轴与 gl_FragCoord 对齐。
+uniform vec3 uAccent;
+uniform vec3 uGray;
+uniform vec3 uBg;
+uniform float uDpr;       // 渲染缩放，等于设备像素与逻辑像素之比。
+uniform float uCellDev;   // 网格边长，单位为设备像素。
+
+float random(vec2 st) {
+  return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+vec2 hash(vec2 p) {
+  p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+  return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+float noise(vec2 p) {
+  const float K1 = 0.366025404;
+  const float K2 = 0.211324865;
+  vec2 i = floor(p + (p.x + p.y) * K1);
+  vec2 a = p - i + (i.x + i.y) * K2;
+  vec2 o = (a.x > a.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec2 b = a - o + K2;
+  vec2 c = a - 1.0 + 2.0 * K2;
+  vec3 h = max(0.5 - vec3(dot(a, a), dot(b, b), dot(c, c)), 0.0);
+  vec3 n = h * h * h * h * vec3(dot(a, hash(i + 0.0)), dot(b, hash(i + o)), dot(c, hash(i + 1.0)));
+  return dot(n, vec3(70.0));
+}
+float fbm(vec2 p) {
+  float value = 0.0;
+  float amplitude = 0.5;
+  float frequency = 1.0;
+  for (int i = 0; i < 3; i++) {
+    value += amplitude * noise(p * frequency);
+    frequency *= 2.0;
+    amplitude *= 0.5;
+  }
+  return value * 0.5 + 0.5;
+}
+vec2 fluidQ(vec2 uv) {
+  return vec2(
+    fbm(uv * ${DENSITY} + vec2(0.0, 0.03 * uTime)),
+    fbm(uv * ${DENSITY} + vec2(1.2, -0.045 * uTime))
+  );
+}
+float fluidNoise(vec2 uv) {
+  return fbm(uv * ${DENSITY} + fluidQ(uv) * ${FREQUENCY});
+}
+
+void main() {
+  // 场纹理的每个纹素对应一个网格单元。
+  vec2 cellId = floor(gl_FragCoord.xy);
+  vec2 cellCenter = (cellId + 0.5) * uCellDev / uDpr;  // 格中心（逻辑像素）
+  vec2 cellCenterUV = cellCenter / uRes;
+
+  float rand = random(cellId);
+
+  // 根据流体场计算采样偏移，并增加纵向流动。
+  vec2 q = fluidQ(cellCenterUV);
+  vec2 flowPx = vec2(q.x * 0.15, q.y * 2.1) * ${FLOW_GAIN.toFixed(1)};
+  vec2 sampledUv = cellCenterUV - flowPx / uRes;
+
+  float brightness = fluidNoise(sampledUv);
+
+  float dist = distance(cellCenterUV * uRes, uMouse * uRes);
+  float mouseFactor = clamp((1.0 - smoothstep(0.0, ${MOUSE_RADIUS.toFixed(1)}, dist)) * ${MOUSE_STRENGTH}, 0.0, 1.0);
+
+  if (brightness > ${THRESHOLD} - ${THRESHOLD_JITTER} * rand) {
+    bool accentDot = rand < ${GREEN_RATIO};
+    vec3 color = accentDot ? uAccent : uGray;
+    vec3 other = accentDot ? uGray : uAccent;
+    gl_FragColor = vec4(mix(color, other, mouseFactor), 1.0);
+  } else {
+    gl_FragColor = vec4(uBg, 0.0);
+  }
+}
+`;
+
+  const RASTER_FRAG_SRC = `
+precision highp float;
+uniform sampler2D uField;
+uniform vec2 uFieldSize;  // 场纹理尺寸，单位为网格数。
+uniform float uCellDev;   // 网格边长，单位为设备像素。
+uniform float uDotRadius; // 圆点半径，单位为设备像素。
+uniform vec3 uBg;
+
+void main() {
+  vec2 cellId = floor(gl_FragCoord.xy / uCellDev);
+  vec2 posInCell = gl_FragCoord.xy - cellId * uCellDev;
+  float dCenter = length(posInCell - uCellDev * 0.5);
+  float dotMask = step(dCenter, uDotRadius);
+
+  vec4 field = texture2D(uField, (cellId + 0.5) / uFieldSize);
+
+  if (field.a > 0.5 && dotMask > 0.5) {
+    gl_FragColor = vec4(field.rgb, 1.0);
+  } else {
+    gl_FragColor = vec4(uBg, 1.0);
+  }
+}
+`;
+
+  // 将动画时间保存在当前标签页的 sessionStorage 中，使跨页面导航保持连续。
+  const TIME_STORAGE_KEY = "pixel-hero-time";
+  const readStoredTime = () => {
+    try {
+      const value = Number(sessionStorage.getItem(TIME_STORAGE_KEY));
+      return Number.isFinite(value) && value >= 0 ? value : 0;
+    } catch {
+      return 0;
+    }
+  };
+  const persistTime = (value: number) => {
+    try {
+      sessionStorage.setItem(TIME_STORAGE_KEY, String(Math.round(value * 100) / 100));
+    } catch {}
+  };
+
+  function initHero() {
+    try {
+    if (!canvas) return;
+    const gl = canvas.getContext("webgl", {
+      antialias: false,
+      alpha: false,
+      depth: false,
+      stencil: false,
+      powerPreference: "high-performance",
+    });
+    if (!gl) {
+      console.warn("[pixel-hero] WebGL 不可用");
+      return;
+    }
+
+    const compile = (type: number, src: string) => {
+      const shader = gl.createShader(type)!;
+      gl.shaderSource(shader, src);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error("pixel-hero shader:", gl.getShaderInfoLog(shader));
+      }
+      return shader;
+    };
+
+    const createProgram = (fragSrc: string) => {
+      const program = gl.createProgram()!;
+      gl.attachShader(program, compile(gl.VERTEX_SHADER, VERTEX_SRC));
+      gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragSrc));
+      gl.bindAttribLocation(program, 0, "aPos");
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error("pixel-hero program:", gl.getProgramInfoLog(program));
+        return null;
+      }
+      return program;
+    };
+
+    const fieldProgram = createProgram(FIELD_FRAG_SRC);
+    const rasterProgram = createProgram(RASTER_FRAG_SRC);
+    if (!fieldProgram || !rasterProgram) return;
+
+    // 两个渲染阶段共用同一个全屏三角形。
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+    // 场纹理使用 RGBA8、最近邻采样和边缘夹紧，支持非二次幂尺寸。
+    const fieldTex = gl.createTexture()!;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, fieldTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const fbo = gl.createFramebuffer()!;
+
+    const fu = {
+      uRes: gl.getUniformLocation(fieldProgram, "uRes"),
+      uTime: gl.getUniformLocation(fieldProgram, "uTime"),
+      uMouse: gl.getUniformLocation(fieldProgram, "uMouse"),
+      uAccent: gl.getUniformLocation(fieldProgram, "uAccent"),
+      uGray: gl.getUniformLocation(fieldProgram, "uGray"),
+      uBg: gl.getUniformLocation(fieldProgram, "uBg"),
+      uDpr: gl.getUniformLocation(fieldProgram, "uDpr"),
+      uCellDev: gl.getUniformLocation(fieldProgram, "uCellDev"),
+    };
+    const ru = {
+      uField: gl.getUniformLocation(rasterProgram, "uField"),
+      uFieldSize: gl.getUniformLocation(rasterProgram, "uFieldSize"),
+      uCellDev: gl.getUniformLocation(rasterProgram, "uCellDev"),
+      uBg: gl.getUniformLocation(rasterProgram, "uBg"),
+      uDotRadius: gl.getUniformLocation(rasterProgram, "uDotRadius"),
+    };
+
+    let dpr = 1;
+    let cellDev = 7;
+    let cols = 1;
+    let rows = 1;
+    const resize = () => {
+      dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, Math.floor(window.innerWidth));
+      const h = Math.max(1, Math.floor(window.innerHeight));
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+
+      cellDev = Math.max(2, Math.round((CELL_SIZE + CELL_GAP) * dpr));
+      cols = Math.ceil(canvas.width / cellDev);
+      rows = Math.ceil(canvas.height / cellDev);
+
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, fieldTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fieldTex, 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        console.error("pixel-hero framebuffer 不完整");
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+      gl.useProgram(fieldProgram);
+      gl.uniform2f(fu.uRes, w, h);
+      gl.uniform1f(fu.uDpr, dpr);
+      gl.uniform1f(fu.uCellDev, cellDev);
+
+      gl.useProgram(rasterProgram);
+      gl.uniform1i(ru.uField, 0);
+      gl.uniform2f(ru.uFieldSize, cols, rows);
+      gl.uniform1f(ru.uCellDev, cellDev);
+      gl.uniform1f(ru.uDotRadius, cellDev * (DOT_RADIUS / (CELL_SIZE + CELL_GAP)));
+    };
+    resize();
+
+    const applyThemeColors = () => {
+      const rootStyle = getComputedStyle(document.documentElement);
+      const readVar = (name: string, fallback: string) => rootStyle.getPropertyValue(name).trim() || fallback;
+      const accent = hexToRgb(readVar("--color-accent", "#0969da"));
+      const gray = hexToRgb(readVar("--color-subtle", "#6e7781"));
+      const bg = hexToRgb(readVar("--color-page", "#ffffff"));
+      gl.useProgram(fieldProgram);
+      gl.uniform3fv(fu.uAccent, accent);
+      gl.uniform3fv(fu.uGray, gray);
+      gl.uniform3fv(fu.uBg, bg);
+      gl.useProgram(rasterProgram);
+      gl.uniform3fv(ru.uBg, bg);
+    };
+    applyThemeColors();
+    void document.fonts?.ready.then(applyThemeColors);
+
+    let mouseUv: [number, number] = [0.5, 0.5];
+    window.addEventListener(
+      "mousemove",
+      (event) => {
+        mouseUv = [event.clientX / window.innerWidth, 1 - event.clientY / window.innerHeight];
+      },
+      { passive: true },
+    );
+
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let timeAcc = reducedMotion ? 40 : readStoredTime();
+    let lastFrame = performance.now();
+    let rafId = 0;
+
+    const renderFrame = () => {
+      // 第一阶段将流体场写入场纹理。
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.viewport(0, 0, cols, rows);
+      gl.useProgram(fieldProgram);
+      gl.uniform1f(fu.uTime, timeAcc);
+      gl.uniform2f(fu.uMouse, mouseUv[0], mouseUv[1]);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.useProgram(rasterProgram);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    };
+
+    const runningState = { pageVisible: !document.hidden, contextLost: false };
+    const updateLoop = () => {
+      const shouldRun = runningState.pageVisible && !runningState.contextLost && !reducedMotion;
+      if (shouldRun && !rafId) {
+        lastFrame = performance.now();
+        rafId = requestAnimationFrame(tick);
+      } else if (!shouldRun && rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+    };
+
+    const tick = (now: number) => {
+      const dt = Math.min(now - lastFrame, 50);
+      lastFrame = now;
+      timeAcc += (dt / 1000) * TIME_SCALE;
+      renderFrame();
+      rafId = requestAnimationFrame(tick);
+    };
+
+    if (reducedMotion) renderFrame();
+
+    // 监听主题类切换，只更新渲染颜色。
+    const syncTheme = () => {
+      applyThemeColors();
+      if (reducedMotion) renderFrame();
+    };
+    new MutationObserver(syncTheme).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) persistTime(timeAcc);
+      runningState.pageVisible = !document.hidden;
+      updateLoop();
+    });
+    window.addEventListener("pagehide", () => persistTime(timeAcc));
+
+    // WebGL 上下文丢失时停止渲染，保留 CSS 背景作为降级显示。
+    canvas.addEventListener("webglcontextlost", (event) => {
+      event.preventDefault();
+      runningState.contextLost = true;
+      updateLoop();
+    });
+
+    let resizeTimer = 0;
+    window.addEventListener("resize", () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        resize();
+        if (!rafId) renderFrame();
+      }, 120);
+    });
+
+    syncTheme();
+    updateLoop();
+    } catch (err) {
+      console.warn("[pixel-hero] 初始化失败:", err);
+    }
+  }
+
+  initHero();
+</script>

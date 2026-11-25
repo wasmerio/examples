@@ -1,0 +1,121 @@
+---
+import { COMMENTS } from '../consts';
+import Box from './layout/Box.astro';
+import Cell from './layout/Cell.astro';
+const shouldRender = COMMENTS.enabled;
+const isConfigured =
+	shouldRender &&
+	COMMENTS.provider === 'giscus' &&
+	COMMENTS.repo.trim().length > 0 &&
+	COMMENTS.repoId.trim().length > 0 &&
+	COMMENTS.categoryId.trim().length > 0;
+const themeLight = COMMENTS.themeLight ?? 'light';
+const themeDark = COMMENTS.themeDark ?? 'dark';
+---
+
+{
+	shouldRender && (
+		<Box
+			as="section"
+			data-giscus={isConfigured ? 'true' : 'false'}
+			data-repo={COMMENTS.repo}
+			data-repo-id={COMMENTS.repoId}
+			data-category={COMMENTS.category}
+			data-category-id={COMMENTS.categoryId}
+			data-mapping={COMMENTS.mapping}
+			data-lang={COMMENTS.lang}
+			data-theme-light={themeLight}
+			data-theme-dark={themeDark}
+		>
+			<Cell as="h2" variant="header" class="text-section text-heading">评论</Cell>
+			<Cell class="[&_.giscus]:w-full [&_iframe]:block [&_iframe]:w-full" data-comments-body>
+			{
+				isConfigured ? (
+					<script is:inline data-astro-rerun>
+						// 文档节点跨页保留；每次 page-load 挂载 Giscus，并保持监听只注册一次。
+						const initGiscus = () => {
+							const commentsContainer = document.querySelector('[data-giscus="true"]');
+							if (window.__giscusContainer !== commentsContainer) window.__giscusCleanup?.();
+							if (!commentsContainer || commentsContainer.dataset.giscusLoaded === 'true') return;
+							commentsContainer.dataset.giscusLoaded = 'true';
+							const repo = commentsContainer.getAttribute('data-repo') || '';
+							const repoId = commentsContainer.getAttribute('data-repo-id') || '';
+							const category = commentsContainer.getAttribute('data-category') || '';
+							const categoryId = commentsContainer.getAttribute('data-category-id') || '';
+							const mapping = commentsContainer.getAttribute('data-mapping') || 'pathname';
+							const lang = commentsContainer.getAttribute('data-lang') || 'zh-CN';
+							const lightTheme = commentsContainer?.getAttribute('data-theme-light') || 'light';
+							const darkTheme = commentsContainer?.getAttribute('data-theme-dark') || 'dark';
+
+							const getTheme = () =>
+								document.documentElement.classList.contains('dark') ? darkTheme : lightTheme;
+
+							const script = document.createElement('script');
+							script.src = 'https://giscus.app/client.js';
+							script.async = true;
+							script.crossOrigin = 'anonymous';
+							script.setAttribute('data-repo', repo);
+							script.setAttribute('data-repo-id', repoId);
+							script.setAttribute('data-category', category);
+							script.setAttribute('data-category-id', categoryId);
+							script.setAttribute('data-mapping', mapping);
+							script.setAttribute('data-strict', '0');
+							script.setAttribute('data-reactions-enabled', '1');
+							script.setAttribute('data-emit-metadata', '0');
+							script.setAttribute('data-input-position', 'top');
+							script.setAttribute('data-theme', getTheme());
+							script.setAttribute('data-lang', lang);
+							script.setAttribute('data-loading', 'lazy');
+							const commentsBody = commentsContainer.querySelector('[data-comments-body]') || commentsContainer;
+							commentsBody.appendChild(script);
+
+							const setGiscusTheme = () => {
+								const iframe = document.querySelector('iframe.giscus-frame');
+								if (!iframe) {
+									return false;
+								}
+								iframe.contentWindow?.postMessage(
+									{ giscus: { setConfig: { theme: getTheme() } } },
+									'https://giscus.app',
+								);
+								return true;
+							};
+
+							setGiscusTheme();
+							let attempts = 0;
+							const timer = setInterval(() => {
+								const ok = setGiscusTheme();
+								attempts += 1;
+								if (ok || attempts > 20) {
+									clearInterval(timer);
+								}
+							}, 300);
+
+							const observer = new MutationObserver(() => {
+								setGiscusTheme();
+							});
+							observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+							window.__giscusContainer = commentsContainer;
+							window.__giscusCleanup = () => {
+								clearInterval(timer);
+								observer.disconnect();
+								window.__giscusContainer = undefined;
+								window.__giscusCleanup = undefined;
+							};
+						};
+						if (!window.__giscusPageLoadBound) {
+							document.addEventListener('astro:page-load', initGiscus);
+							window.__giscusPageLoadBound = true;
+						}
+						initGiscus();
+					</script>
+				) : (
+					<p class="text-body text-subtle">
+						评论系统尚未配置，请检查 src/consts.ts 中的 COMMENTS 设置。
+					</p>
+				)
+			}
+			</Cell>
+		</Box>
+	)
+}

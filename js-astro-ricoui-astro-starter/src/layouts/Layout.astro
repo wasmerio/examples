@@ -1,0 +1,84 @@
+---
+import Meta from './Meta.astro';
+import TopBg from "@/components/ui/TopBg.astro";
+import Footer from "@/components/sections/Footer.astro";
+import Header from "@/components/sections/Header.astro";
+import TrackGa from "@/components/widgets/TrackGa.astro";
+import { themes, themeSettings } from "@/config/themes";
+interface Props {
+	title?: string | undefined;
+	description?: string | undefined;
+	keywords?: string | undefined;
+}
+
+const {
+	title,
+	description,
+	keywords
+} = Astro.props;
+
+const themeIds = themes.map((theme) => theme.id);
+const themeTokenMap = Object.fromEntries(themes.map((theme) => [theme.id, theme.tokens]));
+const defaultThemeId = themeSettings.defaultThemeId;
+const persistUserSelection = themeSettings.persistUserSelection;
+const storageKey = themeSettings.storageKey;
+const cookieName = themeSettings.cookieName;
+
+
+import "../styles/global.css";
+import "../styles/themes.css";
+import '../styles/article.css';
+import '../styles/article-enhancements.css';
+---
+
+<html lang="en" data-theme={defaultThemeId}>
+  <head>
+    <meta charset="UTF-8" />
+    <Meta
+      title = {title}
+      description = {description}
+      keywords = {keywords}
+    />
+    <TrackGa />
+    <!-- Apply saved theme and dark mode before paint to prevent flicker. -->
+    <script is:inline define:vars={{ themeIds, themeTokenMap, defaultThemeId, persistUserSelection, storageKey, cookieName }}>
+      try {
+        const root = document.documentElement;
+        const themeCookie = document.cookie
+          .split('; ')
+          .find((row) => row.startsWith(`${cookieName}=`))
+          ?.split('=')[1];
+        const savedTheme = persistUserSelection
+          ? window.localStorage.getItem(storageKey) || themeCookie || defaultThemeId
+          : defaultThemeId;
+        const activeTheme = themeIds.includes(savedTheme) ? savedTheme : defaultThemeId;
+        const isDark = window.localStorage.getItem('dark_mode') === 'true';
+        if (isDark) {
+          root.classList.add('dark');
+        }
+        root.dataset.theme = activeTheme;
+        const tokens = themeTokenMap[activeTheme]?.[isDark ? 'dark' : 'light'];
+        if (tokens) {
+          Object.entries(tokens).forEach(([name, value]) => {
+            root.style.setProperty(name, value);
+          });
+        }
+        if (persistUserSelection) {
+          window.localStorage.setItem(storageKey, activeTheme);
+          document.cookie = `${cookieName}=${activeTheme}; path=/; max-age=31536000; SameSite=Lax`;
+        }
+      } catch {
+        document.documentElement.dataset.theme = defaultThemeId;
+      }
+    </script>
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body class="antialiased bg-bg-primary dark:bg-bg-primary-dark max-w-full overflow-x-hidden">
+    <TopBg />
+    <Header />
+    <slot />
+    <Footer />
+    <script src="../assets/js/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,127 @@
+---
+import { getCollection } from "astro:content";
+import Pagination from "@/components/widgets/Pagination.astro";
+import BlogCard from "@/components/cards/BlogCard.astro";
+import SectionHeader from "@/components/elements/SectionHeader.astro";
+import Button from "@/components/ui/Button.astro";
+// 定义组件接收的属性
+const {
+  title = "Latest Articles",
+  description = "",
+  limit = 3,
+  listPage = false,
+  showViewAllButton = true,
+  pagination = {
+    enable: false,
+    currentPage: 1
+  },
+  postsPerPage = 3
+} = Astro.props;
+
+// 获取博客文章集合
+const allPosts = await getCollection("post");
+
+// 按发布日期排序文章
+let posts = allPosts.sort(
+  (a, b) => b.data.publishDate.valueOf() - a.data.publishDate.valueOf()
+);
+
+// 查找特色文章
+const featuredPost = posts.find((post) => post.data.featured);
+
+// 如果存在特色文章，从主列表中移除
+if (featuredPost && listPage) {
+  posts = posts.filter((post) => post.data.featured !== true);
+}
+
+// 计算总页数
+const totalPages = Math.ceil(posts.length / postsPerPage);
+
+// 如果启用了分页，则只显示当前页的文章
+if (pagination.enable) {
+  const indexOfLastPost = pagination.currentPage * postsPerPage;
+  const indexOfFirstPost = indexOfLastPost - postsPerPage;
+  posts = posts.slice(indexOfFirstPost, indexOfLastPost);
+} else if (!listPage) {
+  // 如果不是列表页，限制显示的文章数量
+  posts = posts.slice(0, limit);
+}
+
+// 为每篇文章添加链接属性 - 创建新对象而不是修改原对象
+const postsWithLinks = posts.map(post => {
+  // Content Layer 的 entry.id 是条目的唯一标识符
+  // 直接使用 entry.id 生成 URL，对于 [...slug] 路由，id 已经是正确的路径
+  const link = `/blog/${post.id}`;
+  return {
+    ...post,
+    data: {
+      ...post.data,
+      link
+    }
+  };
+});
+
+// 为特色文章创建带链接的版本
+const featuredPostWithLink = featuredPost ? {
+  ...featuredPost,
+  data: {
+    ...featuredPost.data,
+    link: `/blog/${featuredPost.id}`
+  }
+} : null;
+---
+
+{/* 特色文章部分 - 仅在列表页第一页显示 */}
+{listPage && featuredPostWithLink && pagination.currentPage === 1 && (
+  <section class="mb-16">
+    <div class="site-container">
+      <h2 class="text-3xl font-brand mb-6 text-neutral-800 dark:text-white">
+            Featured
+      </h2>
+      <div class=" dark:from-neutral-900 dark:to-neutral-800 p-1 rounded-2xl ">
+        <BlogCard
+          layout="horizontal"
+          content={{ ...featuredPostWithLink.data, ...featuredPostWithLink }}
+        />
+      </div>
+    </div>
+  </section>
+)}
+
+<section>
+  <div class="site-container space-y-10 md:space-y-16">
+    {!listPage && title && (
+      <SectionHeader title={title}  description={description}/>
+    )}
+
+    {/* 列表页标题 */}
+    {listPage && title && (
+      <div class="mx-auto">
+        <h2 class="text-3xl font-brand text-neutral-800 dark:text-white">{title}</h2>
+      </div>
+    )}
+
+    <div class="grid gap-x-6 gap-y-10 md:grid-cols-2 xl:grid-cols-3">
+      {postsWithLinks && postsWithLinks.map((post) => (
+        <BlogCard
+          content={{ ...post.data, ...post }}
+        />
+      ))}
+    </div>
+
+    {listPage && totalPages > 1 && (
+      <Pagination
+        collection="blog"
+        currentPage={pagination.currentPage || 1}
+        totalPages={totalPages}
+      />
+    )}
+  </div>
+
+  {/* "View All Articles" 按钮 - 仅在非列表页且启用时显示 */}
+  {!listPage && showViewAllButton && (
+    <div class="flex justify-center mt-12 mb-12">
+      <Button url="/blog" className="w-full max-w-60">View All Articles</Button>
+    </div>
+  )}
+</section>

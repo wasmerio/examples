@@ -1,0 +1,129 @@
+---
+import { getCollection, render } from "astro:content";
+import PostLayout from "@/layouts/PostLayout.astro";
+import Toc from '@/components/widgets/Toc.astro';
+
+// SSG 模式下的动态路由需要使用 getStaticPaths()
+// 来告诉 Astro 在构建时生成哪些页面
+export async function getStaticPaths() {
+	const postEntries = await getCollection("post");
+	return postEntries.map((entry) => {
+		// Content Layer 的 entry.id 是条目的唯一标识符
+		// 对于 [...slug] 路由，需要将 entry.id 转换为 slug 数组
+		// entry.id 已经是相对于集合根目录的路径，例如 "dir/index" 或 "dir"
+		// 注意：对于 [...slug] 路由，params.slug 应该是字符串，Astro 会自动处理
+		const slugString = entry.id;
+		return {
+			params: { slug: slugString },
+			props: { entry },
+		};
+	});
+}
+
+// 使用 [...slug] 路由来处理包含斜杠的路径（官方推荐）
+// entry 由 getStaticPaths 通过 props 传入，无需再从 params 推导 slug
+
+// 从 props 获取 entry（在 SSG 模式下通过 getStaticPaths 传递）
+const { entry } = Astro.props;
+
+// 如果找不到文章，返回 404
+if (!entry) {
+	return Astro.redirect("/404");
+}
+
+const { Content, headings } = await render(entry);
+const filtered = headings.filter(h => h.depth <= 2);
+---
+
+<PostLayout title={entry.data.title} description={entry.data.description}>
+	<!-- Reading progress bar -->
+	<div id="reading-progress" class="reading-progress" style="transform: scaleX(0);"></div>
+
+	<div class="post article">
+		<main class="relative site-container mx-auto my-8 md:my-12">
+			<!-- Article header -->
+			<header class="article-header">
+				<!-- Tags -->
+				<div class="article-tags">
+					{entry.data.tags && entry.data.tags.length > 0 ? (
+						entry.data.tags.map(tag => (
+							<span class="article-tag letter-spacing-wide text-xs">{tag}</span>
+						))
+					) : (
+						<span class="article-tag text-xs">Article</span>
+					)}
+				</div>
+
+				<!-- Title -->
+				<h1 class="article-title font-brand">
+					{entry.data.title}
+				</h1>
+
+				<!-- Metadata -->
+				<div class="article-meta text-sm text-neutral-500 dark:text-neutral-400">
+					<time datetime={entry.data.publishDate.toISOString()}>
+						{entry.data.publishDate.toLocaleDateString('en-US', {
+							year: 'numeric',
+							month: 'long',
+							day: 'numeric'
+						})}
+					</time>
+					{entry.data.read && (
+						<>
+							<span class="article-meta-divider"></span>
+							<span>{entry.data.read} min read</span>
+						</>
+					)}
+				</div>
+			</header>
+
+			<!-- Content area -->
+			<div class="relative flex flex-col lg:flex-row gap-8 lg:gap-12 xl:gap-16">
+				<!-- Left TOC - Fixed on desktop -->
+				<aside class="relative hidden lg:block lg:w-40 xl:w-50 flex-shrink-0">
+					<div class="toc-sticky-wrapper">
+						<Toc headings={filtered} />
+					</div>
+				</aside>
+
+				<!-- Article content -->
+				<div class="relative flex-1 min-w-0 w-full lg:max-w-none">
+					<article class="article-wrapper">
+						<div class="article-content">
+							<Content />
+						</div>
+					</article>
+				</div>
+			</div>
+		</main>
+	</div>
+</PostLayout>
+
+<style>
+.toc-sticky-wrapper {
+  position: sticky;
+  top: 8rem;
+}
+</style>
+
+<script>
+// Reading progress bar
+function updateReadingProgress() {
+  const progressBar = document.getElementById('reading-progress');
+  if (!progressBar) return;
+
+  const windowHeight = window.innerHeight;
+  const documentHeight = document.documentElement.scrollHeight;
+  const scrollTop = window.scrollY;
+  const scrollPercentage = (scrollTop / (documentHeight - windowHeight)) * 100;
+
+  progressBar.style.transform = `scaleX(${Math.min(scrollPercentage / 100, 1)})`;
+}
+
+// Event listener
+window.addEventListener('scroll', updateReadingProgress, { passive: true });
+
+// Initialize
+document.addEventListener('DOMContentLoaded', updateReadingProgress);
+updateReadingProgress();
+</script>

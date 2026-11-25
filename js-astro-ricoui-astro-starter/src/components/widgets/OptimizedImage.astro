@@ -1,0 +1,121 @@
+---
+/**
+ * OptimizedImage component is a modified version of Astro's built-in Image component.
+ * It allows to optimize images inside public, src/assets and content folders.
+ * To optimize remote images, follow: https://docs.astro.build/en/guides/images/#authorizing-remote-images
+ */
+import { Image } from "astro:assets";
+
+interface InlineSvgProps {
+  src: string;
+  inlineSvg: true;
+  alt?: string;
+  width?: string;
+  height?: string;
+  class?: string;
+  style?: any;
+  [key: string]: any;
+}
+
+interface ImageProps {
+  src: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  loading?: "eager" | "lazy" | null | undefined;
+  decoding?: "async" | "auto" | "sync" | null | undefined;
+  formats?: string[] | "auto" | "avif" | "jpeg" | "png" | "svg" | "webp";
+  class?: string;
+  style?: any;
+  [key: string]: any;
+}
+
+type Props = InlineSvgProps | ImageProps;
+
+// Destructuring Astro.props to get the component's props
+let {
+  src,
+  alt,
+  inlineSvg,
+  width,
+  height,
+  loading,
+  decoding,
+  formats,
+  style,
+  ...rest
+} = Astro.props;
+
+const isRemoteImage = src.startsWith("http://") || src.startsWith("https://");
+let image = src as any;
+let SVG = "" as any;
+
+if (!isRemoteImage) {
+  // Regular Images
+  const images = import.meta.glob([
+    "/src/assets/**/*.{jpeg,jpg,png,avif,tiff,gif,webp,svg,gif}",
+    "/public/**/*.{jpeg,jpg,png,avif,tiff,gif,webp,svg,gif}",
+    "/src/content/**/*.{jpeg,jpg,png,avif,tiff,gif,webp,svg,gif}",
+  ]);
+
+  // Get Raw Image For Inline SVG
+  const imagesRaw = import.meta.glob(
+    [
+      "/src/assets/**/*.svg",
+      "/src/content/**/*.svg",
+      "/public/**/*.svg",
+    ],
+    {
+      query: "raw",
+      import: "default",
+    },
+  );
+
+  if (inlineSvg && src.includes(".svg")) {
+    const key = Object.keys(images).find((k) => k.includes(src));
+    SVG = key ? await imagesRaw[key]() : null;
+
+    if (SVG.length > 1) {
+      SVG = SVG.split("<svg"); // Split at the opening <svg> tag
+
+      if (SVG.length > 1) {
+        // Convert rest object to a string of attributes
+        const attributes = Object.entries(rest)
+          .map(([key, value]) => `${key}="${value}"`)
+          .join(" ");
+
+        // Add the attributes to the <svg> tag
+        SVG[1] = ` data-icon="true" ${attributes} ${SVG[1]}`;
+      }
+
+      // Join the array back into a string
+      SVG = SVG.join("<svg");
+    }
+  }
+
+  const key = Object.keys(images).find((k) => k.includes(src));
+  image = key ? await images[key]() : null;
+
+  image = image && image.default ? image.default : null;
+}
+---
+
+{
+  inlineSvg && SVG && src.includes(".svg") ? (
+    <Fragment set:html={SVG} />
+  ) : image ? (
+    // @ts-expect-error
+    <Image
+      style={style}
+      alt={alt || ""}
+      width={width}
+      height={height}
+      formats={formats}
+      loading={loading}
+      decoding={decoding}
+      src={image}
+      {...{ class: Astro.props.class }}
+      {...rest}
+    />
+  ) : null
+}

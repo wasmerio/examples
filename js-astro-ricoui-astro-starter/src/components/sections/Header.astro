@@ -1,0 +1,761 @@
+---
+import { Moon, SunMedium, ChevronDown, ChevronRight, Menu, X, Palette, Check } from "@lucide/astro";
+import { siteConfig } from "@/config/site";
+import { themes, themeSettings } from "@/config/themes";
+import menus from "@/collections/menu.json";
+import Button from "@/components/ui/Button.astro";
+import Logo from "@/components/ui/Logo.astro";
+
+type MenuItem = {
+  name: string;
+  url?: string;
+  children?: Array<{ name: string; url: string }>;
+};
+
+const menuItems = menus as MenuItem[];
+const themeIds = themes.map((theme) => theme.id);
+const themeTokenMap = Object.fromEntries(themes.map((theme) => [theme.id, theme.tokens]));
+const defaultThemeId = themeSettings.defaultThemeId;
+const showThemeSwitcher = themeSettings.showThemeSwitcher;
+const persistUserSelection = themeSettings.persistUserSelection;
+const storageKey = themeSettings.storageKey;
+const cookieName = themeSettings.cookieName;
+const activeThemeName = themes.find((theme) => theme.id === defaultThemeId)?.name ?? themes[0]?.name ?? "Theme";
+---
+
+<!-- This is an invisible div with relative position so that it takes up the height of the menu (because menu is absolute/fixed) -->
+<div class="relative w-full h-16 sm:h-20 opacity-0 pointer-events-none"></div>
+<header id="header" class="fixed top-2 sm:top-4 z-50 w-full px-3 sm:px-4 lg:px-6">
+  <div id="site-container"
+    class="flex items-center justify-between h-14 sm:h-15 site-container mx-auto px-4 sm:px-6 py-2.5 border-transparent border-[0.5px] transition-all duration-300"
+  >
+    <!-- Logo -->
+    <div class="flex-shrink-0 z-50">
+      <Logo />
+    </div>
+
+    <!-- Mobile Menu Background Overlay -->
+    <div
+      id="mobileMenuBackground"
+      class="fixed inset-0 z-20 hidden w-screen h-screen duration-300 ease-out bg-white/90 backdrop-blur-sm dark:bg-neutral-950/90"
+    >
+    </div>
+
+    <!-- Navigation -->
+    <nav
+      class="relative z-30 flex flex-row-reverse justify-start w-full text-sm sm:justify-end text-neutral-500 dark:text-neutral-400 sm:flex-row sm:items-center"
+    >
+      <!-- Mobile Menu Toggle Buttons -->
+      <div class="flex items-center gap-2 sm:hidden">
+        <!-- Dark Mode Toggle (Mobile) -->
+        <div
+          id="darkToggleMobile"
+          class="flex items-center justify-center w-10 h-10 cursor-pointer rounded-full bg-gradient-to-b from-white to-bg-primary-light border-[0.5px] border-primary/10 dark:from-neutral-800 dark:to-bg-secondary-dark dark:border-neutral-600 transition-transform duration-200 active:scale-95"
+        >
+          <div
+            class="flex justify-center items-center w-6 h-6 relative overflow-hidden rounded-full bg-primary border-[0.5px] border-primary-light"
+            style="box-shadow: 0px 2px 3px 0 rgba(var(--color-primary-rgb),0.21);"
+          >
+            <SunMedium
+              class="absolute hidden text-btn-primary-text w-4 h-4 transition duration-200 transform ease mobile-sun" />
+            <Moon
+              class="absolute hidden text-btn-primary-text w-4 h-4 transition duration-200 transform ease mobile-moon" />
+          </div>
+        </div>
+
+        <!-- Hamburger Menu Button -->
+        <button
+          type="button"
+          id="openMenu"
+          aria-label="Open menu"
+          class="flex items-center justify-center w-10 h-10 cursor-pointer rounded-full bg-gradient-to-b from-white to-bg-primary-light border-[0.5px] border-primary/10 dark:from-neutral-800 dark:to-bg-secondary-dark dark:border-neutral-600 transition-all duration-200 hover:shadow-md active:scale-90"
+        >
+          <Menu class="w-5 h-5 text-neutral-700 dark:text-neutral-200" stroke-width={2} />
+        </button>
+
+        <!-- Close Menu Button -->
+        <button
+          type="button"
+          id="closeMenu"
+          aria-label="Close menu"
+          class="hidden items-center justify-center w-10 h-10 cursor-pointer rounded-full bg-gradient-to-b from-white to-bg-primary-light border-[0.5px] border-primary/10 dark:from-neutral-800 dark:to-bg-secondary-dark dark:border-neutral-600 transition-all duration-200 hover:shadow-md active:scale-90"
+        >
+          <X class="w-5 h-5 text-neutral-700 dark:text-neutral-200" stroke-width={2} />
+        </button>
+      </div>
+
+      <!-- Menu Items -->
+      <div
+        id="menu"
+        class="fixed top-[68px] sm:top-0 left-3 right-3 sm:left-0 sm:right-0 ease-out duration-300 z-40 flex-col items-center justify-start hidden w-auto max-h-[calc(100dvh-84px)] overflow-y-auto text-sm pt-4 pb-4 sm:max-h-none sm:overflow-visible sm:py-0 sm:relative sm:flex-row sm:flex"
+      >
+        <!-- Mobile Menu Background -->
+        <div
+          class="absolute inset-0 top-0 right-0 block w-full h-full sm:hidden"
+        >
+          <div
+            class="relative w-full h-full bg-white/95 dark:bg-bg-primary-dark/95 border border-dashed border-neutral-300 dark:border-neutral-700 backdrop-blur-md rounded-2xl shadow-lg"
+          >
+          </div>
+        </div>
+
+        <!-- Menu Links -->
+        <div class="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center w-full sm:w-auto px-2 sm:px-0 gap-0.5 sm:gap-0">
+          <!-- Mobile menu label -->
+          <div class="block sm:hidden px-3 pt-1 pb-2">
+            <span class="text-[10px] font-medium uppercase tracking-[0.14em] text-neutral-400 dark:text-neutral-500">Navigation</span>
+          </div>
+          {
+            menuItems.map((menu) => {
+              if (menu.children && menu.children.length > 0) {
+                return (
+                  <div class="dropdown-wrapper relative w-full sm:w-auto" data-open="false">
+                    <button
+                      type="button"
+                      class="dropdown-toggle group relative flex items-center justify-between sm:justify-center w-full sm:w-auto px-3 py-3 sm:py-2 sm:px-3 md:px-4 font-medium tracking-wide duration-200 ease-out rounded-lg sm:rounded-none text-neutral-700 dark:text-neutral-200 hover:text-primary hover:bg-primary/5 sm:hover:bg-transparent dark:hover:text-white dark:hover:bg-primary/10 sm:dark:hover:bg-transparent active:scale-[0.98] sm:active:scale-100 transition-all gap-1 text-left sm:text-center"
+                      aria-expanded="false"
+                      aria-haspopup="true"
+                    >
+                      <span class="flex-1 sm:flex-initial">{menu.name}</span>
+                      <ChevronDown class="dropdown-chevron w-4 h-4 transition-transform duration-200 text-neutral-400 group-hover:text-primary dark:text-neutral-500" />
+                    </button>
+                    <div class="dropdown-panel sm:absolute sm:top-full sm:left-1/2 sm:mt-2 sm:min-w-[200px] sm:rounded-xl sm:border sm:border-dashed sm:border-primary/20 dark:sm:border-neutral-700 sm:bg-white/95 dark:sm:bg-bg-secondary-dark sm:p-2 hidden sm:invisible sm:opacity-0 sm:flex sm:flex-col sm:transition-all sm:duration-200">
+                      {menu.children.map((child) => (
+                        <a
+                          href={child.url}
+                          class="dropdown-link group/link flex items-center justify-between sm:justify-start w-full px-3 sm:px-4 py-2.5 sm:py-2 rounded-md text-sm font-medium text-neutral-600 dark:text-neutral-300 hover:text-primary dark:hover:text-primary-light hover:bg-primary/5 dark:hover:bg-primary/10 transition-colors duration-150 text-left"
+                        >
+                          <span>{child.name}</span>
+                          <ChevronRight class="w-3.5 h-3.5 sm:hidden text-neutral-300 dark:text-neutral-600 group-hover/link:text-primary transition-colors" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <a
+                  href={menu.url}
+                  class="group relative flex items-center justify-between sm:justify-center w-full sm:w-auto px-3 py-3 sm:py-2 sm:px-3 md:px-4 font-medium tracking-wide duration-200 ease-out rounded-lg sm:rounded-none text-neutral-700 dark:text-neutral-200 hover:text-primary hover:bg-primary/5 sm:hover:bg-transparent dark:hover:text-white dark:hover:bg-primary/10 sm:dark:hover:bg-transparent active:scale-[0.98] sm:active:scale-100 transition-all text-left sm:text-center"
+                >
+                  <span>{menu.name}</span>
+                  <ChevronRight class="w-4 h-4 sm:hidden text-neutral-300 dark:text-neutral-600 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
+                </a>
+              );
+            })
+          }
+        </div>
+
+        <!-- Divider before CTA on mobile -->
+        <div class="relative z-10 w-full px-5 sm:hidden mt-3">
+          <div class="w-full border-t border-dashed border-neutral-200 dark:border-neutral-700"></div>
+        </div>
+
+        <!-- Theme Switcher (Mobile) -->
+        {showThemeSwitcher && (
+        <div class="relative z-10 w-full px-5 mt-3 sm:hidden">
+          <div class="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-neutral-400 dark:text-neutral-500">
+            <Palette class="h-3.5 w-3.5" />
+            Theme
+          </div>
+          <div class="grid gap-2">
+            {themes.map((theme) => (
+              <button
+                type="button"
+                class="theme-option flex w-full items-center justify-between gap-3 rounded-lg border border-dashed border-primary/15 bg-bg-primary/60 px-3 py-2.5 text-left transition-all duration-200 hover:border-primary/35 hover:bg-primary/5 active:scale-[0.98] dark:border-neutral-700 dark:bg-bg-primary-dark/50 dark:hover:border-primary/40 dark:hover:bg-primary/10"
+                data-theme-option={theme.id}
+                aria-pressed={theme.id === defaultThemeId ? "true" : "false"}
+              >
+                <span class="flex min-w-0 items-center gap-2">
+                  <span class="flex h-5 w-8 overflow-hidden rounded-md border border-white/70 shadow-sm dark:border-white/10">
+                    {theme.swatches.slice(0, 3).map((color) => (
+                      <span class="h-full flex-1" style={`background:${color}`}></span>
+                    ))}
+                  </span>
+                  <span class="truncate text-sm font-medium text-neutral-700 dark:text-neutral-200">{theme.name}</span>
+                </span>
+                <Check class="theme-check hidden h-4 w-4 flex-none text-primary" />
+              </button>
+            ))}
+          </div>
+        </div>
+        )}
+
+        <!-- CTA Button (Mobile) -->
+        <div class="relative z-10 w-full px-5 mt-3 sm:hidden">
+          <Button url={siteConfig.social.github || "javascript:void(0);"} type="fill" target="_blank" className="m-auto w-full justify-center ">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-astro-cid-gfykqide="true" class="lucide lucide-github"> <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"></path><path d="M9 18c-4.51 2-5-2-7-2"></path>  </svg>  Star on GitHub
+          </Button>
+        </div>
+      </div>
+
+      <!-- Desktop Actions -->
+      <div class="relative hidden sm:flex items-center gap-2 ml-4 lg:ml-6">
+        <!-- CTA Button (Desktop) -->
+        <Button url={siteConfig.social.github || "javascript:void(0);"} target="_blank"  type="fill" className="md:flex mx-1">
+                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-astro-cid-gfykqide="true" class="lucide lucide-github"> <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"></path><path d="M9 18c-4.51 2-5-2-7-2"></path>  </svg> GitHub
+        </Button>
+
+        {showThemeSwitcher && (
+          <span class="separator-line hidden sm:inline-block bg-primary/25 mt-[20px] -translate-y-1/2 w-px h-[20px]"></span>
+        )}
+
+        <!-- Theme Switcher (Desktop) -->
+        {showThemeSwitcher && (
+        <div class="theme-switcher relative mx-1">
+          <button
+            type="button"
+            id="themeToggle"
+            class="theme-trigger relative flex h-9 items-center gap-2 rounded-full border-[0.5px] border-primary/20 bg-gradient-to-b from-white to-bg-primary-light px-2.5 text-sm font-medium text-neutral-700 transition-all duration-200 hover:shadow-md hover:scale-105 active:scale-95 dark:border-neutral-600 dark:from-neutral-800 dark:to-bg-secondary-dark dark:text-neutral-300"
+            aria-haspopup="true"
+            aria-expanded="false"
+          >
+            <Palette class="h-4 w-4 text-primary" />
+            <span id="activeThemeLabel" class="hidden whitespace-nowrap lg:inline">{activeThemeName}</span>
+            <ChevronDown class="h-3.5 w-3.5 text-neutral-400 transition-transform duration-200" />
+          </button>
+          <div
+            id="themePanel"
+            class="theme-panel invisible absolute right-0 top-full mt-2 max-h-[min(70vh,520px)] min-w-[260px] translate-y-[-4px] overflow-y-auto rounded-xl border border-dashed border-primary/20 bg-white/95 p-2 opacity-0 shadow-lg backdrop-blur-xl transition-all duration-200 dark:border-neutral-700 dark:bg-bg-secondary-dark/95"
+          >
+            {themes.map((theme) => (
+              <button
+                type="button"
+                class="theme-option flex w-full items-start justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors duration-150 hover:bg-primary/5 dark:hover:bg-primary/10"
+                data-theme-option={theme.id}
+                aria-pressed={theme.id === defaultThemeId ? "true" : "false"}
+              >
+                <span class="min-w-0">
+                  <span class="mb-1 flex items-center gap-2">
+                    <span class="flex h-5 w-9 overflow-hidden rounded-md border border-white/70 shadow-sm dark:border-white/10">
+                      {theme.swatches.slice(0, 3).map((color) => (
+                        <span class="h-full flex-1" style={`background:${color}`}></span>
+                      ))}
+                    </span>
+                    <span class="text-sm font-semibold text-neutral-800 dark:text-neutral-100">{theme.name}</span>
+                  </span>
+                  <span class="block text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">{theme.source}</span>
+                </span>
+                <Check class="theme-check mt-0.5 hidden h-4 w-4 flex-none text-primary" />
+              </button>
+            ))}
+          </div>
+        </div>
+        )}
+
+        <!-- Dark Mode Toggle (Desktop) -->
+        <div
+          id="darkToggle"
+          class="relative flex items-center h-9 px-2 gap-1.5 font-medium cursor-pointer rounded-full bg-gradient-to-b from-white to-bg-primary-light border-[0.5px] border-primary/10 dark:from-neutral-800 dark:to-bg-secondary-dark dark:border-neutral-600 transition-all duration-200 hover:shadow-md hover:scale-105 active:scale-95 mx-1"
+        >
+          <div
+            class="flex justify-center items-center flex-shrink-0 w-6 h-6 relative overflow-hidden rounded-full bg-primary border-[0.5px] border-primary-light"
+            style="box-shadow: 0px 2px 3px 0 rgba(var(--color-primary-rgb),0.21);"
+          >
+            <SunMedium id="sun"
+               class="absolute hidden text-btn-primary-text w-4 h-4 transition duration-200 transform ease" />
+            <Moon class="absolute hidden text-btn-primary-text w-4 h-4 transition duration-200 transform ease"
+              id="moon" />
+          </div>
+          <span class="hidden sm:inline-block whitespace-nowrap">
+            <span id="dayText" class="flex-shrink-0 text-sm text-left text-neutral-600 dark:text-neutral-400">Light</span>
+            <span id="nightText" class="hidden flex-shrink-0 text-sm text-left text-neutral-600 dark:text-neutral-400">Dark</span>
+          </span>
+        </div>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<style>
+  /* Header container spacing optimization */
+  #header {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Ensure mobile menu doesn't stick to edges */
+  @media (max-width: 639px) {
+    #menu {
+      max-width: calc(100vw - 24px); /* 12px margin on each side */
+    }
+  }
+
+  /* Mobile menu animation */
+  @media (max-width: 639px) {
+    #menu {
+      transform: translateY(-10px);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    #menu:not(.hidden) {
+      transform: translateY(0);
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Staggered entrance for menu items */
+    #menu:not(.hidden) > div > a,
+    #menu:not(.hidden) > div > .dropdown-wrapper {
+      animation: menuItemIn 0.4s cubic-bezier(0.4, 0, 0.2, 1) both;
+    }
+    #menu:not(.hidden) > div > a:nth-child(2),
+    #menu:not(.hidden) > div > .dropdown-wrapper:nth-child(2) { animation-delay: 0.05s; }
+    #menu:not(.hidden) > div > a:nth-child(3),
+    #menu:not(.hidden) > div > .dropdown-wrapper:nth-child(3) { animation-delay: 0.1s; }
+    #menu:not(.hidden) > div > a:nth-child(4),
+    #menu:not(.hidden) > div > .dropdown-wrapper:nth-child(4) { animation-delay: 0.15s; }
+    #menu:not(.hidden) > div > a:nth-child(5),
+    #menu:not(.hidden) > div > .dropdown-wrapper:nth-child(5) { animation-delay: 0.2s; }
+    #menu:not(.hidden) > div > a:nth-child(6),
+    #menu:not(.hidden) > div > .dropdown-wrapper:nth-child(6) { animation-delay: 0.25s; }
+  }
+
+  @keyframes menuItemIn {
+    from {
+      opacity: 0;
+      transform: translateX(-8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #menu:not(.hidden) > div > a,
+    #menu:not(.hidden) > div > .dropdown-wrapper {
+      animation: none;
+    }
+  }
+
+  /* Menu item hover effect optimization */
+  nav a {
+    position: relative;
+  }
+
+  /* Desktop underline animation */
+  @media (min-width: 640px) {
+    nav a::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%) scaleX(0);
+      width: 70%;
+      height: 2px;
+      background: var(--color-primary);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-radius: 2px;
+    }
+
+    nav a:hover::after {
+      transform: translateX(-50%) scaleX(1);
+    }
+
+    /* Dropdown links inside the panel — no underline, panel has its own hover style */
+    .dropdown-panel a::after {
+      display: none;
+    }
+  }
+
+  /* Dropdown — desktop hover behavior */
+  @media (min-width: 640px) {
+    .dropdown-panel {
+      /* Horizontal centering + entry offset.
+         Using `translate` (the CSS property) avoids stacking with `transform`
+         and gives us a single source of truth for the panel position. */
+      translate: -50% -4px;
+    }
+    .dropdown-wrapper:hover .dropdown-panel,
+    .dropdown-wrapper:focus-within .dropdown-panel,
+    .dropdown-wrapper[data-open="true"] .dropdown-panel {
+      opacity: 1 !important;
+      visibility: visible !important;
+      translate: -50% 0;
+    }
+    .dropdown-wrapper:hover .dropdown-chevron,
+    .dropdown-wrapper:focus-within .dropdown-chevron,
+    .dropdown-wrapper[data-open="true"] .dropdown-chevron {
+      transform: rotate(180deg);
+    }
+    /* Hover bridge — avoids gap between trigger and panel breaking the hover state */
+    .dropdown-wrapper::after {
+      content: "";
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      height: 10px;
+    }
+  }
+
+  /* Dropdown — mobile click-to-expand */
+  @media (max-width: 639px) {
+    .dropdown-panel {
+      display: none;
+      width: calc(100% - 0.75rem);
+      margin-left: 0.75rem;
+      padding-left: 0.75rem;
+      margin-top: 0.25rem;
+      margin-bottom: 0.25rem;
+      border-left: 1px dashed rgba(var(--color-primary-rgb), 0.3);
+    }
+    .dark .dropdown-panel {
+      border-left-color: rgba(var(--color-primary-rgb), 0.25);
+    }
+    .dropdown-wrapper[data-open="true"] .dropdown-panel {
+      display: flex;
+      flex-direction: column;
+      animation: dropdownIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) both;
+    }
+    .dropdown-wrapper[data-open="true"] .dropdown-chevron {
+      transform: rotate(180deg);
+    }
+  }
+
+  @keyframes dropdownIn {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Mobile menu item click feedback */
+  @media (max-width: 639px) {
+    nav a:active {
+      background-color: var(--color-neutral-100);
+    }
+
+    .dark nav a:active {
+      background-color: rgba(255, 255, 255, 0.05);
+    }
+  }
+
+
+  /* Dark mode toggle button optimization */
+  #darkToggle,
+  #darkToggleMobile,
+  #themeToggle,
+  .theme-option {
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .theme-switcher[data-open="true"] .theme-panel {
+    opacity: 1;
+    visibility: visible;
+    translate: 0 0;
+    transform: translateY(0);
+  }
+
+  .theme-switcher[data-open="true"] #themeToggle svg:last-child {
+    transform: rotate(180deg);
+  }
+
+  .theme-option[data-active="true"] {
+    border-color: rgba(var(--color-primary-rgb), 0.35);
+    background: rgba(var(--color-primary-rgb), 0.08);
+  }
+
+  .theme-option[data-active="true"] .theme-check {
+    display: block;
+  }
+
+  /* Mobile menu background blur effect enhancement */
+  @supports (backdrop-filter: blur(12px)) {
+    #mobileMenuBackground {
+      backdrop-filter: blur(12px);
+    }
+
+    @media (max-width: 639px) {
+      #menu > div > div {
+        backdrop-filter: blur(16px);
+      }
+    }
+  }
+
+  /* Ensure Logo doesn't shrink on mobile */
+  .flex-shrink-0 {
+    min-width: fit-content;
+  }
+
+  /* Tablet compact layout */
+  @media (min-width: 640px) and (max-width: 767px) {
+    nav a {
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+      font-size: 0.8125rem;
+    }
+  }
+
+  /* Prevent horizontal scrolling on mobile */
+  @media (max-width: 639px) {
+    body {
+      overflow-x: hidden;
+    }
+  }
+
+  /* Optimize mobile touch feedback */
+  @media (max-width: 639px) {
+    button, a, [role="button"] {
+      -webkit-tap-highlight-color: transparent;
+    }
+  }
+
+  /* Menu background on small screens */
+  @media (max-width: 639px) {
+    #mobileMenuBackground {
+      opacity: 0;
+      transition: opacity 0.3s ease-out;
+    }
+
+    #mobileMenuBackground:not(.hidden) {
+      opacity: 1;
+    }
+  }
+
+
+</style>
+
+<script is:inline define:vars={{ allowedThemes: themeIds, themeTokenMap, defaultThemeId, persistUserSelection, storageKey, cookieName, themeNames: Object.fromEntries(themes.map((theme) => [theme.id, theme.name])) }}>
+  function getSavedTheme() {
+    const themeCookie = document.cookie
+      .split('; ')
+      .find((row) => row.startsWith(`${cookieName}=`))
+      ?.split('=')[1];
+    const saved = persistUserSelection
+      ? localStorage.getItem(storageKey) || themeCookie || defaultThemeId
+      : defaultThemeId;
+    return allowedThemes.includes(saved) ? saved : defaultThemeId;
+  }
+
+  let activeThemeId = getSavedTheme();
+
+  function applyTheme(themeId) {
+    const nextTheme = allowedThemes.includes(themeId) ? themeId : defaultThemeId;
+    const root = document.documentElement;
+    const mode = root.classList.contains('dark') ? 'dark' : 'light';
+    const tokens = themeTokenMap[nextTheme]?.[mode];
+    activeThemeId = nextTheme;
+    root.dataset.theme = nextTheme;
+    if (tokens) {
+      Object.entries(tokens).forEach(([name, value]) => {
+        root.style.setProperty(name, value);
+      });
+    }
+    if (persistUserSelection) {
+      localStorage.setItem(storageKey, nextTheme);
+      document.cookie = `${cookieName}=${nextTheme}; path=/; max-age=31536000; SameSite=Lax`;
+    }
+    document.querySelectorAll('[data-theme-option]').forEach((button) => {
+      const active = button.dataset.themeOption === nextTheme;
+      button.dataset.active = active ? 'true' : 'false';
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    const activeThemeLabel = document.getElementById('activeThemeLabel');
+    if (activeThemeLabel) {
+      activeThemeLabel.textContent = themeNames[nextTheme] || themeNames[defaultThemeId];
+    }
+    window.dispatchEvent(new CustomEvent('themechange', { detail: { theme: nextTheme } }));
+  }
+
+  applyTheme(activeThemeId);
+
+  const syncThemeTokensForMode = () => {
+    applyTheme(activeThemeId);
+  };
+
+  const themeSwitcher = document.querySelector('.theme-switcher');
+  const themeToggle = document.getElementById('themeToggle');
+  themeToggle?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const isOpen = themeSwitcher?.dataset.open === 'true';
+    themeSwitcher?.setAttribute('data-open', isOpen ? 'false' : 'true');
+    themeToggle.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+  });
+
+  document.querySelectorAll('[data-theme-option]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const themeId = button.dataset.themeOption;
+      if (!themeId) return;
+      applyTheme(themeId);
+      themeSwitcher?.setAttribute('data-open', 'false');
+      themeToggle?.setAttribute('aria-expanded', 'false');
+      if (window.innerWidth < 640) {
+        closeMobileMenu();
+      }
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (themeSwitcher && !themeSwitcher.contains(target)) {
+      themeSwitcher.setAttribute('data-open', 'false');
+      themeToggle?.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      themeSwitcher?.setAttribute('data-open', 'false');
+      themeToggle?.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  // Sync dark mode toggle between mobile and desktop
+  const darkToggle = document.getElementById('darkToggle');
+  const darkToggleMobile = document.getElementById('darkToggleMobile');
+
+  function syncDarkModeIcons() {
+    const isDark = document.documentElement.classList.contains('dark');
+    const sunIcons = document.querySelectorAll('#sun, .mobile-sun');
+    const moonIcons = document.querySelectorAll('#moon, .mobile-moon');
+
+    if (isDark) {
+      moonIcons.forEach(icon => icon.classList.remove('hidden'));
+      sunIcons.forEach(icon => icon.classList.add('hidden'));
+      document.getElementById('dayText')?.classList.add('hidden');
+      document.getElementById('nightText')?.classList.remove('hidden');
+    } else {
+      sunIcons.forEach(icon => icon.classList.remove('hidden'));
+      moonIcons.forEach(icon => icon.classList.add('hidden'));
+      document.getElementById('dayText')?.classList.remove('hidden');
+      document.getElementById('nightText')?.classList.add('hidden');
+    }
+  }
+
+  // Sync on initialization
+  document.addEventListener('DOMContentLoaded', syncDarkModeIcons);
+
+  // Listen for dark mode changes
+  const observer = new MutationObserver(syncDarkModeIcons);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class']
+  });
+
+  const themeModeObserver = new MutationObserver(syncThemeTokensForMode);
+  themeModeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['class']
+  });
+
+  // Mobile dark mode toggle
+  darkToggleMobile?.addEventListener('click', () => {
+    darkToggle?.click();
+  });
+
+  // Optimize mobile menu open/close
+  const openMenu = document.getElementById('openMenu');
+  const closeMenu = document.getElementById('closeMenu');
+  const menu = document.getElementById('menu');
+  const mobileMenuBackground = document.getElementById('mobileMenuBackground');
+
+  // Mobile menu open function
+  function openMobileMenu() {
+    menu?.classList.remove('hidden');
+    mobileMenuBackground?.classList.remove('hidden');
+    openMenu?.classList.add('hidden');
+    closeMenu?.classList.remove('hidden');
+    closeMenu?.classList.add('flex');
+    document.body.style.overflow = 'hidden'; // Prevent background scrolling
+  }
+
+  // Mobile menu close function
+  function closeMobileMenu() {
+    menu?.classList.add('hidden');
+    mobileMenuBackground?.classList.add('hidden');
+    closeMenu?.classList.add('hidden');
+    closeMenu?.classList.remove('flex');
+    openMenu?.classList.remove('hidden');
+    document.body.style.overflow = ''; // Restore scrolling
+  }
+
+  // Click hamburger button to open menu
+  openMenu?.addEventListener('click', openMobileMenu);
+
+  // Click close button to close menu
+  closeMenu?.addEventListener('click', closeMobileMenu);
+
+  // Click background to close menu
+  mobileMenuBackground?.addEventListener('click', closeMobileMenu);
+
+  // Add click-to-close functionality for mobile menu items
+  const menuLinks = menu?.querySelectorAll('a');
+  menuLinks?.forEach(link => {
+    link.addEventListener('click', () => {
+      // Check if in mobile view
+      if (window.innerWidth < 640) {
+        closeMobileMenu();
+      }
+    });
+  });
+
+  // Handle window resize
+  window.addEventListener('resize', () => {
+    if (window.innerWidth >= 640) {
+      // If resizing from mobile to desktop, ensure menu state is correct
+      document.body.style.overflow = '';
+      if (menu?.classList.contains('hidden')) {
+        menu.classList.remove('hidden');
+      }
+    }
+  });
+
+  // Add to global scope so inline events can call it
+  window.closeMobileMenu = closeMobileMenu;
+
+  // ─── Dropdown menu (mobile click-to-expand) ────────────────────────────
+  const dropdownToggles = document.querySelectorAll('.dropdown-toggle');
+
+  function closeAllDropdowns(except) {
+    document.querySelectorAll('.dropdown-wrapper').forEach((w) => {
+      if (w !== except) {
+        w.setAttribute('data-open', 'false');
+        const t = w.querySelector('.dropdown-toggle');
+        t?.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  dropdownToggles.forEach((toggle) => {
+    toggle.addEventListener('click', (e) => {
+      // Desktop uses CSS :hover — no JS toggle needed there
+      if (window.innerWidth >= 640) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const wrapper = toggle.closest('.dropdown-wrapper');
+      if (!wrapper) return;
+      const isOpen = wrapper.getAttribute('data-open') === 'true';
+      closeAllDropdowns(wrapper);
+      wrapper.setAttribute('data-open', isOpen ? 'false' : 'true');
+      toggle.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+    });
+  });
+
+  // Close dropdowns when navigating via mobile dropdown link — defer so the link still fires
+  document.querySelectorAll('.dropdown-panel a').forEach((link) => {
+    link.addEventListener('click', () => {
+      if (window.innerWidth < 640) {
+        // Let the navigation happen; close menu state for next visit
+        setTimeout(() => {
+          closeAllDropdowns();
+          closeMobileMenu();
+        }, 0);
+      }
+    });
+  });
+
+  // Reset dropdown state when resizing across the sm breakpoint
+  window.addEventListener('resize', () => {
+    if (window.innerWidth >= 640) {
+      closeAllDropdowns();
+    }
+  });
+</script>

@@ -1,0 +1,65 @@
+---
+import { POSTS_PER_PAGE } from "../../../config.ts";
+
+import { getBlogPosts } from "src/utils";
+import PostList from "$layouts/PostList.astro";
+
+export async function getStaticPaths() {
+  const posts = await getBlogPosts();
+  const tags = new Map<string, number>();
+
+  // get number of posts for each tag
+  posts.forEach((post: any) => {
+    post.data.tags?.forEach((tag: string) =>
+      tags.set(tag, (tags.get(tag) || 0) + 1)
+    );
+  });
+
+  const paths: {
+    params: { tag: string; index?: string };
+    props: { tag: string; index: number };
+  }[] = [];
+
+  Array.from(tags).forEach(([tag, count]) => {
+    const sanitizedTag = tag.split(" ").join("-");
+    const totalPages = Math.ceil(count / POSTS_PER_PAGE);
+
+    paths.push({
+      params: { tag: sanitizedTag },
+      props: { tag, index: 1 },
+    });
+
+    for (let i = 1; i <= totalPages; i++) {
+      paths.push({
+        params: { tag: sanitizedTag, index: i.toString() },
+        props: { tag, index: i },
+      });
+    }
+  });
+
+  return paths;
+}
+
+const { tag, index } = Astro.props;
+
+const posts = (await getBlogPosts())
+  .filter((post: any) => post.data.tags?.includes(tag))
+  .splice((index - 1) * POSTS_PER_PAGE, POSTS_PER_PAGE);
+
+const total = Math.ceil(
+  (await getBlogPosts()).filter((post: any) => post.data.tags?.includes(tag))
+    .length / POSTS_PER_PAGE
+);
+---
+
+<PostList {posts} totalPages={total} currentPage={index ?? 1} {tag}>
+  <h1 class="inline-flex gap-4 flex-col sm:flex-row sm:items-center">
+    Posts tagged with <div>
+      <p
+        class="not-prose bold text-xl rounded-full inline-block bg-base-200 px-4 py-1.5 text-base-800 dark:bg-base-800 dark:text-base-300 border border-base-300 dark:border-base-700"
+      >
+        {tag}
+      </p>
+    </div>
+  </h1>
+</PostList>

@@ -1,0 +1,142 @@
+---
+import { pageLocale, routeLocales } from '../../lib/i18n';
+import { render, type CollectionEntry } from 'astro:content';
+import config from '../../lib/config';
+import {
+  textEntriesFor,
+  isReservedPage,
+  isIntroOnly,
+  encodedSlug,
+} from '../../lib/content';
+import Layout from '../../layouts/Layout.astro';
+import ArticleMeta from '../../components/ArticleMeta.astro';
+import ArticleUpdated from '../../components/ArticleUpdated.astro';
+import ArticleToc from '../../components/ArticleToc.astro';
+import ShareMenu from '../../components/ShareMenu.astro';
+import { contentImage } from '../../lib/content-image';
+import { href, t } from '../../lib/i18n';
+import type { Locale } from '../../types/config';
+import { articleFeatures, articleDisplay } from '../../lib/article-options';
+import { isRealTranslation } from '../../lib/locale-routing';
+export async function getStaticPaths({
+  routePattern,
+}: import('astro').GetStaticPathsOptions) {
+  const paths = [];
+  for (const lang of routeLocales(routePattern))
+    for (const page of await textEntriesFor('pages', lang)) {
+      if (isIntroOnly(page.data.slug)) continue;
+      if (isReservedPage(page.data.slug))
+        throw new Error(
+          `Reserved page slug: ${page.data.slug}. Choose another slug for this standalone page (${page.id}).`,
+        );
+      if (config.site.locales.includes(page.data.slug.split('/')[0]))
+        throw new Error(
+          `Page slug uses a reserved language prefix: ${page.data.slug}`,
+        );
+      paths.push({ params: { page: page.data.slug }, props: { page } });
+    }
+  return paths;
+}
+interface Props {
+  page: CollectionEntry<'pages'>;
+}
+const { page } = Astro.props;
+const lang = pageLocale(Astro.routePattern);
+const display = articleDisplay(page.data, config.article.display);
+const features = articleFeatures(page.data, config.article);
+const { Content, headings } = await render(page);
+const ui = t(lang);
+const cover = contentImage(
+  page.data.image,
+  href(lang, `${encodedSlug(page.data.slug)}/`),
+);
+const shareImage = features.shareCover
+  ? href(lang, `page-og/${encodedSlug(page.data.slug)}.png`)
+  : cover;
+const item = config.sidebar.items.find(
+  (item) => item.type === 'page' && item.page === page.data.slug,
+);
+const alternatePaths: Partial<Record<Locale, string>> = {};
+const translationPaths: Partial<Record<Locale, string>> = {};
+for (const locale of config.site.locales) {
+  const other = (await textEntriesFor('pages', locale)).find(
+    (other) => other.data._key === page.data._key,
+  );
+  if (other) {
+    alternatePaths[locale] = href(locale, `${encodedSlug(other.data.slug)}/`);
+    if (isRealTranslation(other, locale))
+      translationPaths[locale] = alternatePaths[locale];
+  }
+}
+---
+
+<Layout
+  lang={lang}
+  title={page.data.title}
+  description={page.data.description}
+  active={item?.id}
+  alternatePaths={alternatePaths}
+  translationPaths={translationPaths}
+  noindex={page.data.hidden || page.data.draft}
+  article
+  shareImage={shareImage}
+  features={features}
+>
+  {features.toc && <ArticleToc headings={headings} lang={lang} />}
+  <article
+    class="article-column"
+    data-search-record={
+      !page.data.hidden && !page.data.draft ? 'pages' : undefined
+    }
+    data-search-title={page.data.title}
+    data-search-description={page.data.description}
+  >
+    {cover && (
+      <img
+        class="article-cover"
+        src={cover}
+        alt={page.data.title}
+        width="1000"
+        height="560"
+      />
+    )}
+    <header class="article-header">
+      {display.title && (
+        <div class="article-title-block">
+          <h1>{page.data.title}</h1>
+          {page.data.description && <p>{page.data.description}</p>}
+        </div>
+      )}
+      <ArticleMeta lang={lang} entry={page} display={display} />
+    </header>
+    {page.data._locale && page.data._locale !== lang && (
+      <p class="article-note">{ui.fallback}</p>
+    )}
+
+    <div class="article-content prose" data-search-content>
+      <Content />
+    </div>
+    {(display.share ||
+      (display.updated &&
+        page.data.updated &&
+        page.data.updated.getTime() !== page.data.date?.getTime())) && (
+      <div class="article-end" data-pagefind-ignore>
+        {display.updated && (
+          <ArticleUpdated
+            lang={lang}
+            date={page.data.date}
+            updated={page.data.updated}
+          />
+        )}
+        {display.share && (
+          <ShareMenu
+            lang={lang}
+            title={page.data.title}
+            description={page.data.description}
+            image={shareImage}
+          />
+        )}
+      </div>
+    )}
+  </article>
+</Layout>

@@ -1,0 +1,117 @@
+---
+import { pageLocale, routeLocales } from '../../../lib/i18n';
+import config from '../../../lib/config';
+import Layout from '../../../layouts/Layout.astro';
+import PostList from '../../../components/PostList.astro';
+import ThemeIcon from '../../../components/ThemeIcon.astro';
+import { contentImage } from '../../../lib/content-image';
+import ContentIntro from '../../../components/ContentIntro.astro';
+import {
+  taxonomy,
+  textEntriesFor,
+  encodedSlug,
+  type Post,
+  type TextEntry,
+} from '../../../lib/content';
+import { t, href } from '../../../lib/i18n';
+import type { Locale } from '../../../types/config';
+import { isRealTranslation } from '../../../lib/locale-routing';
+export async function getStaticPaths({
+  routePattern,
+}: import('astro').GetStaticPathsOptions) {
+  const paths = [];
+  for (const lang of routeLocales(routePattern))
+    for (const kind of ['categories', 'tags'] as const)
+      for (const group of await taxonomy(kind, lang, true))
+        paths.push({
+          params: { taxonomy: kind, term: group.slug },
+          props: {
+            posts: group.posts,
+            entry: group.entry,
+            hidden: group.hidden,
+          },
+        });
+  return paths;
+}
+interface Props {
+  posts: Post[];
+  entry?: TextEntry;
+  hidden: boolean;
+}
+const lang = pageLocale(Astro.routePattern);
+const kind = Astro.params.taxonomy as 'categories' | 'tags';
+const term = Astro.params.term!;
+const ui = t(lang);
+const { posts, entry, hidden } = Astro.props;
+const label = entry?.data.title ?? term;
+const alternatePaths: Partial<Record<Locale, string>> = {};
+const translationPaths: Partial<Record<Locale, string>> = {};
+for (const locale of config.site.locales) {
+  const other = entry
+    ? (await textEntriesFor(kind, locale)).find(
+        (other) => other.data._key === entry.data._key,
+      )
+    : undefined;
+  const target = href(
+    locale,
+    `${kind}/${encodedSlug(other?.data.slug ?? term)}/`,
+  );
+  if (
+    (await taxonomy(kind, locale, true)).some(
+      (group) => group.slug === (other?.data.slug ?? term),
+    )
+  ) {
+    alternatePaths[locale] = target;
+    if (!entry || (other && isRealTranslation(other, locale)))
+      translationPaths[locale] = target;
+  }
+}
+---
+
+<Layout
+  lang={lang}
+  title={label}
+  description={entry?.data.description}
+  active={kind}
+  alternatePaths={alternatePaths}
+  translationPaths={translationPaths}
+  noindex={hidden || entry?.data.hidden || entry?.data.draft}
+>
+  <div class="content-column">
+    <section
+      data-search-record={
+        entry && !hidden && !entry.data.hidden && !entry.data.draft
+          ? kind
+          : undefined
+      }
+      data-search-title={label}
+      data-search-description={entry?.data.description}
+    >
+      <a class="eyebrow taxonomy-back" href={href(lang, `${kind}/`)}>
+        <ThemeIcon name="arrow-left" size={16} />
+        {ui[kind]}
+      </a>
+      {entry?.data.image && (
+        <img
+          class="article-cover taxonomy-detail-cover"
+          src={contentImage(
+            entry.data.image,
+            href(lang, `${kind}/${encodedSlug(term)}/`),
+          )}
+          alt=""
+          width="1000"
+          height="560"
+        />
+      )}
+      <header class="page-heading taxonomy-heading">
+        <h1>{label}</h1>
+        {entry?.data.description && <p>{entry.data.description}</p>}
+        <p class="taxonomy-count">
+          {posts.length} {ui.articleCount}
+        </p>
+      </header>
+      <ContentIntro entry={entry} showCover={false} indexContent={false} />
+    </section>
+    <PostList posts={posts} lang={lang} />
+  </div>
+</Layout>

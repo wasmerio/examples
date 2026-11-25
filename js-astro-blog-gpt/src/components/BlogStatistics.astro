@@ -1,0 +1,238 @@
+---
+import config from '../lib/config';
+import { statisticsOptions, blogStatistics } from '../lib/statistics';
+import { footerPeriod } from '../lib/footer';
+import { postHref, type Post } from '../lib/content';
+import { t, dateLabel } from '../lib/i18n';
+import type { Locale } from '../types/config';
+import ThemeIcon from './ThemeIcon.astro';
+import StatisticsEntries from './StatisticsEntries.astro';
+interface Props {
+  lang: Locale;
+  posts: Post[];
+}
+const { lang, posts } = Astro.props;
+const ui = t(lang);
+const options = statisticsOptions(config.statistics);
+const stats = options.enabled
+  ? blogStatistics(posts, config.site.timezone)
+  : undefined;
+const recent = stats?.entries.slice(0, options.recentLimit).reverse() ?? [];
+const maxWords = Math.max(1, ...recent.map((entry) => entry.words));
+// Leave room to the left and below the plot for the rotated article names.
+const chart = { left: 48, width: 688, baseline: 148, labelY: 168 };
+const metrics = stats
+  ? [
+      [options.articleCount, ui.posts, String(posts.length)],
+      [options.wordCount, ui.characterCount, stats.words.toLocaleString(lang)],
+      [
+        options.days,
+        ui.daysOnline,
+        String(
+          footerPeriod(config.footer.since, new Date(), config.site.timezone)
+            .days,
+        ),
+      ],
+      [options.languages, ui.language, config.site.locales.join(' / ')],
+      [
+        options.firstPublication,
+        ui.firstPublication,
+        stats.firstPublication ? dateLabel(stats.firstPublication, lang) : '—',
+      ],
+      [
+        options.lastUpdate,
+        ui.latestUpdate,
+        stats.lastUpdate ? dateLabel(stats.lastUpdate, lang) : '—',
+      ],
+      [
+        options.averageWords,
+        ui.averageLength,
+        stats.averageWords.toLocaleString(lang),
+      ],
+      [
+        options.updateFrequency,
+        ui.averageInterval,
+        stats.intervalDays === undefined
+          ? '—'
+          : `${Number(stats.intervalDays.toFixed(1))} ${ui.intervalUnit}`,
+      ],
+    ]
+  : [];
+---
+
+{options.enabled && stats && (
+  <dialog
+    id="blog-status"
+    class="shortcut-dialog blog-status"
+    aria-labelledby="blog-status-title"
+  >
+    <div class="shortcut-header">
+      <h2 id="blog-status-title">{ui.blogStatistics}</h2>
+      <button
+        type="button"
+        class="icon-button"
+        data-close-status
+        aria-label={ui.close}
+      >
+        <ThemeIcon name="x" />
+      </button>
+    </div>
+    <dl class="statistics-metrics">
+      {metrics
+        .filter(([enabled]) => enabled)
+        .map(([, label, value]) => (
+          <div>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+    </dl>
+    {options.heatmap && (
+      <section class="statistics-chart">
+        <h3>{ui.publishingYear}</h3>
+        <div class="chart-scroll">
+          <svg
+            class="publication-heatmap"
+            viewBox="0 0 680 112"
+            role="group"
+            aria-label={ui.heatmapLabel}
+          >
+            {[1, 3, 5].map((day) => (
+              <text x="0" y={30 + day * 12} class="chart-axis">
+                {new Intl.DateTimeFormat(lang, {
+                  weekday: 'narrow',
+                  timeZone: 'UTC',
+                }).format(new Date(Date.UTC(2026, 0, 4 + day)))}
+              </text>
+            ))}
+            {stats.heatmap
+              .filter(
+                (day, index) =>
+                  (index === 0 && Number(day.date.slice(8)) < 15) ||
+                  day.date.endsWith('-01'),
+              )
+              .map((day) => (
+                <text x={26 + day.column * 12} y="12" class="chart-axis">
+                  {new Intl.DateTimeFormat(lang, {
+                    month: 'short',
+                    timeZone: 'UTC',
+                  }).format(new Date(day.date))}
+                </text>
+              ))}
+            {stats.heatmap.map((day) => (
+              <rect
+                x={26 + day.column * 12}
+                y={22 + day.row * 12}
+                width="9"
+                height="9"
+                rx="2"
+                data-level={Math.min(4, day.count)}
+                data-statistics-template={
+                  day.count ? `statistics-day-${day.date}` : undefined
+                }
+                data-statistics-label={
+                  day.count
+                    ? `${day.date} · ${day.count} ${ui.articleCount}`
+                    : undefined
+                }
+                tabindex={day.count ? '0' : undefined}
+                role={day.count ? 'button' : undefined}
+                aria-label={`${day.date} · ${day.count} ${ui.articleCount}`}
+                aria-hidden={day.count ? undefined : 'true'}
+                aria-controls={day.count ? 'statistics-detail' : undefined}
+              />
+            ))}
+          </svg>
+        </div>
+        <p class="statistics-note">{ui.heatmapNote}</p>
+      </section>
+    )}
+    {options.recentWords && (
+      <section class="statistics-chart">
+        <h3>{ui.recentLengths}</h3>
+        {recent.length ? (
+          <div class="chart-scroll">
+            <svg
+              class="recent-words-chart"
+              viewBox="0 0 760 260"
+              role="group"
+              aria-label={ui.lengthsLabel}
+            >
+              <path
+                d={`M${chart.left} ${chart.baseline}h${chart.width}`}
+                class="chart-baseline"
+              />
+              {recent.map((entry, index) => {
+                const width = chart.width / recent.length,
+                  height = (entry.words / maxWords) * 108,
+                  x = chart.left + index * width + 6,
+                  center = x + Math.max(6, width - 12) / 2;
+                return (
+                  <a
+                    href={postHref(entry.post, lang)}
+                    aria-label={`${entry.post.data.title} · ${entry.words}`}
+                    data-statistics-template={`statistics-post-${index}`}
+                  >
+                    <rect
+                      x={x}
+                      y={chart.baseline - height}
+                      width={Math.max(6, width - 12)}
+                      height={Math.max(1, height)}
+                      rx="3"
+                    />
+                    <text
+                      x={center}
+                      y={Math.max(16, chart.baseline - 7 - height)}
+                      text-anchor="middle"
+                      class="chart-axis"
+                    >
+                      {entry.words}
+                    </text>
+                    <text
+                      x={center}
+                      y={chart.labelY}
+                      text-anchor="end"
+                      transform={`rotate(-35 ${center} ${chart.labelY})`}
+                      class="chart-axis chart-article-name"
+                    >
+                      {Array.from(entry.post.data.title).slice(0, 12).join('')}
+                      {entry.post.data.title.length > 12 ? '…' : ''}
+                    </text>
+                  </a>
+                );
+              })}
+            </svg>
+          </div>
+        ) : (
+          <p class="statistics-note">{ui.noPosts}</p>
+        )}
+      </section>
+    )}
+    {options.heatmap &&
+      stats.heatmap
+        .filter((day) => day.entries.length)
+        .map((day) => (
+          <template id={`statistics-day-${day.date}`}>
+            <StatisticsEntries lang={lang} entries={day.entries} />
+          </template>
+        ))}
+    {options.recentWords &&
+      recent.map((entry, index) => (
+        <template id={`statistics-post-${index}`}>
+          <StatisticsEntries lang={lang} entries={[entry]} />
+        </template>
+      ))}
+    <section
+      id="statistics-detail"
+      class="statistics-detail"
+      popover="manual"
+      aria-label={ui.articleDetails}
+    >
+      <strong data-statistics-detail-title></strong>
+      <div data-statistics-detail-content></div>
+    </section>
+  </dialog>
+)}
+<script>
+  import '../scripts/statistics';
+</script>

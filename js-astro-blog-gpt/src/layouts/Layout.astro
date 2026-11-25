@@ -1,0 +1,443 @@
+---
+import { localeInfo } from '../lib/translations';
+import { ClientRouter } from 'astro:transitions';
+import config from '../lib/config';
+import Sidebar from '../components/Sidebar.astro';
+import ComposerSuggestions from '../components/ComposerSuggestions.astro';
+import SearchScope from '../components/SearchScope.astro';
+import BlogStatistics from '../components/BlogStatistics.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import { articleFeatures, type ArticleFeatures } from '../lib/article-options';
+import ThemeIcon from '../components/ThemeIcon.astro';
+import { t, href, localize, withBase } from '../lib/i18n';
+import type { Locale } from '../types/config';
+import '../styles/global.css';
+import '../../custom/styles.css';
+import customHead from '../../custom/head.html?raw';
+import customBodyStart from '../../custom/body-start.html?raw';
+import customBodyEnd from '../../custom/body-end.html?raw';
+import katexStyles from 'katex/dist/katex.min.css?url';
+import { discoverablePosts, postHref, introFor } from '../lib/content';
+import { htmlRoutes } from '../lib/html-routes';
+import { isRealTranslation } from '../lib/locale-routing';
+interface Props {
+  lang: Locale;
+  title?: string;
+  description?: string;
+  active?: string;
+  noindex?: boolean;
+  article?: boolean;
+  shareImage?: string;
+  alternatePaths?: Partial<Record<Locale, string>>;
+  translationPaths?: Partial<Record<Locale, string>>;
+  features?: ArticleFeatures;
+}
+const {
+  lang,
+  title,
+  description,
+  active,
+  noindex = false,
+  article = false,
+} = Astro.props;
+const ui = t(lang);
+const features = Astro.props.features ?? articleFeatures({}, config.article);
+const publicPosts = await discoverablePosts(lang);
+const searchRecent = publicPosts
+  .sort((a, b) => b.data.date.getTime() - a.data.date.getTime())
+  .slice(0, 6);
+const prefix = href(lang);
+const isHome =
+  Astro.url.pathname.replace(/\/+$/, '') === href(lang).replace(/\/+$/, '');
+const showViewSwitcher = isHome || active === 'posts';
+const path = Astro.url.pathname.startsWith(prefix)
+  ? Astro.url.pathname.slice(prefix.length)
+  : '';
+const alternatePaths: Partial<Record<Locale, string>> =
+  Astro.props.alternatePaths ??
+  Object.fromEntries(
+    (
+      await Promise.all(
+        config.site.locales.map(async (locale) => {
+          const target = href(locale, path);
+          return (await htmlRoutes(locale)).includes(target)
+            ? [[locale, target] as [Locale, string]]
+            : [];
+        }),
+      )
+    ).flat(),
+  );
+const pageTitle = title
+  ? `${title} · ${localize(config.site.title, lang)}`
+  : `${localize(config.site.title, lang)} · ${localize(config.text.siteDescription, lang)}`;
+const canonical = new URL(Astro.url.pathname, config.site.url).href;
+const introRoute = [
+  'posts',
+  'archives',
+  'links',
+  'categories',
+  'tags',
+].includes(active ?? '')
+  ? active
+  : undefined;
+const translationPaths: Partial<Record<Locale, string>> =
+  Astro.props.translationPaths ??
+  Object.fromEntries(
+    (
+      await Promise.all(
+        Object.entries(alternatePaths).map(async ([locale, target]) => {
+          const intro = introRoute
+            ? await introFor(introRoute, locale)
+            : undefined;
+          return !intro || isRealTranslation(intro, locale)
+            ? [[locale, target!] as [Locale, string]]
+            : [];
+        }),
+      )
+    ).flat(),
+  );
+const shareImage = Astro.props.shareImage
+  ? new URL(Astro.props.shareImage, config.site.url).href
+  : undefined;
+const customHtml = (html: string) =>
+  html.replaceAll('%BASE_URL%', withBase(''));
+const contentFade = {
+  old: {
+    name: 'blog-content-out',
+    duration: '100ms',
+    easing: 'ease-out',
+    fillMode: 'both' as const,
+  },
+  new: {
+    name: 'blog-content-in',
+    duration: '120ms',
+    easing: 'ease-out',
+    fillMode: 'both' as const,
+  },
+};
+const pageAnimation =
+  config.appearance.pageTransition === 'fade'
+    ? { forwards: contentFade, backwards: contentFade }
+    : 'none';
+---
+
+<!doctype html>
+<html
+  lang={localeInfo(lang).lang}
+  dir={localeInfo(lang).dir}
+  data-default-theme={config.appearance.defaultTheme}
+  data-theme="light"
+  data-sidebar-default-width={config.sidebar.width.default}
+  data-sidebar-min-width={config.sidebar.width.min}
+  data-sidebar-max-width={config.sidebar.width.max}
+  style={`--sidebar-width: ${config.sidebar.width.default}px`}
+  transition:animate="none"
+>
+  <head>
+    {features.math && <link rel="stylesheet" href={katexStyles} />}
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta
+      name="description"
+      content={description ?? localize(config.text.siteDescription, lang)}
+    />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="color-scheme" content="light dark" />
+    <meta property="og:title" content={pageTitle} />
+    <meta
+      property="og:description"
+      content={description ?? localize(config.text.siteDescription, lang)}
+    />
+    <meta property="og:type" content={article ? 'article' : 'website'} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content={localize(config.site.title, lang)} />
+    <meta
+      name="twitter:card"
+      content={shareImage ? 'summary_large_image' : 'summary'}
+    />
+    {shareImage && (
+      <>
+        <meta property="og:image" content={shareImage} />
+        <meta name="twitter:image" content={shareImage} />
+      </>
+    )}
+    {noindex && <meta name="robots" content="noindex,nofollow" />}
+    <link rel="canonical" href={canonical} />
+    {Object.entries(translationPaths).map(([locale, target]) => (
+      <link
+        rel="alternate"
+        hreflang={localeInfo(locale).lang}
+        href={new URL(target!, config.site.url).href}
+      />
+    ))}
+    <link rel="icon" type="image/svg+xml" href={withBase('favicon.svg')} />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={`${localize(config.site.title, lang)} RSS`}
+      href={href(lang, 'rss.xml')}
+    />
+    <script is:inline>
+      (() => {
+        let theme = document.documentElement.dataset.defaultTheme || 'system';
+        try {
+          theme = localStorage.getItem('bloggpt-theme') || theme;
+        } catch {
+          /* Storage is optional. */
+        }
+        if (!['light', 'dark', 'system'].includes(theme)) theme = 'system';
+        document.documentElement.dataset.theme =
+          theme === 'system'
+            ? matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light'
+            : theme;
+        try {
+          const root = document.documentElement;
+          const savedWidth = Number(
+            localStorage.getItem('bloggpt-sidebar-width'),
+          );
+          const width = savedWidth || Number(root.dataset.sidebarDefaultWidth);
+          root.style.setProperty(
+            '--sidebar-width',
+            `${Math.min(
+              Number(root.dataset.sidebarMaxWidth),
+              innerWidth > 760
+                ? innerWidth - 320
+                : Number(root.dataset.sidebarMaxWidth),
+              Math.max(
+                Number(root.dataset.sidebarMinWidth),
+                Number.isFinite(width)
+                  ? width
+                  : Number(root.dataset.sidebarDefaultWidth),
+              ),
+            )}px`,
+          );
+          if (
+            localStorage.getItem('bloggpt-sidebar') === 'collapsed' &&
+            innerWidth > 760
+          )
+            document.documentElement.dataset.sidebar = 'collapsed';
+        } catch {
+          /* Storage is optional. */
+        }
+      })();
+    </script>
+    <Fragment set:html={customHtml(customHead)} />
+    <ClientRouter fallback="swap" />
+  </head>
+  <body
+    data-base={withBase('')}
+    data-locale-root={href(lang)}
+    data-language-urls={JSON.stringify(
+      Object.fromEntries(
+        config.site.locales.map((locale) => [
+          locale,
+          alternatePaths[locale] ?? href(locale),
+        ]),
+      ),
+    )}
+    data-locale={lang}
+    data-post-titles={JSON.stringify(
+      publicPosts.map((post) => ({
+        title: post.data.title,
+        url: postHref(post, lang),
+      })),
+    )}
+    data-completion-locales={JSON.stringify(config.site.locales)}
+    data-recent-urls={JSON.stringify(
+      [...publicPosts]
+        .sort((a, b) => b.data.date.getTime() - a.data.date.getTime())
+        .slice(0, config.posts.randomLimit)
+        .map((post) => postHref(post, lang)),
+    )}
+    data-search-dev={import.meta.env.DEV ? 'true' : 'false'}
+    data-search-help={localize(config.text.searchHeading, lang)}
+    data-mermaid={String(features.mermaid)}
+    data-lightbox={String(features.lightbox)}
+  >
+    <Fragment set:html={customHtml(customBodyStart)} />
+    <a class="skip-link" href="#main">
+      {ui.skip}
+    </a>
+    <Sidebar lang={lang} active={active} alternatePaths={alternatePaths} />
+    <div class="main-shell">
+      <header class="topbar" data-pagefind-ignore>
+        <div class="topbar-left">
+          <button
+            class="icon-button reopen-sidebar"
+            data-sidebar-toggle
+            aria-label={ui.sidebar}
+            aria-controls="sidebar"
+            aria-expanded="false"
+            data-tooltip={ui.showSidebar}
+            data-tooltip-shortcut="Ctrl+Shift+S"
+          >
+            <ThemeIcon name="panel-left" />
+          </button>
+        </div>
+        {showViewSwitcher && (
+          <nav class="view-switcher" aria-label={ui.browse}>
+            <a
+              href={href(lang)}
+              aria-current={active === 'home' ? 'page' : undefined}
+            >
+              {localize(config.text.tabs.search, lang)}
+            </a>
+            <a
+              href={href(lang, 'posts/')}
+              aria-current={active !== 'home' ? 'page' : undefined}
+            >
+              {localize(config.text.tabs.posts, lang)}
+            </a>
+          </nav>
+        )}
+        <div class="topbar-actions">
+          <button
+            type="button"
+            class="icon-button"
+            data-toc-toggle
+            aria-label={ui.articleToc}
+            aria-controls="article-toc-panel"
+            aria-expanded="false"
+            data-tooltip={ui.articleToc}
+            hidden
+          >
+            <ThemeIcon name="list-tree" />
+          </button>
+          <a
+            class="icon-button"
+            href={href(lang, 'rss.xml')}
+            aria-label={ui.rss}
+            data-tooltip={ui.rss}
+          >
+            <ThemeIcon name="rss" />
+          </a>
+        </div>
+      </header>
+      <main
+        id="main"
+        class:list={[{ 'article-main': article }]}
+        transition:name="blog-content"
+        transition:animate={pageAnimation}
+      >
+        <slot />
+      </main>
+      <SiteFooter lang={lang} />
+    </div>
+    <dialog
+      id="search-dialog"
+      class="search-dialog"
+      aria-labelledby="search-dialog-title"
+    >
+      <div class="search-dialog-header">
+        <h2 id="search-dialog-title" class="sr-only">
+          {ui.search}
+        </h2>
+        <form role="search" action={href(lang, 'search/')} data-search-form>
+          <input
+            type="search"
+            name="q"
+            aria-label={ui.search}
+            placeholder={`${ui.searchTooltip}…`}
+            autocomplete="off"
+          />
+          <SearchScope lang={lang} id="scope-dialog" />
+          <ComposerSuggestions lang={lang} id="suggestions-dialog" />
+        </form>
+        <button
+          class="icon-button"
+          data-close-search
+          aria-label={ui.close}
+          data-tooltip={ui.close}
+        >
+          <ThemeIcon name="x" />
+        </button>
+      </div>
+      <div
+        class="search-output"
+        data-search-output
+        aria-live="polite"
+        aria-atomic="false"
+      >
+        <p class="search-recent-heading">{ui.recent}</p>
+        {searchRecent.map((post) => (
+          <a class="search-recent-item" href={postHref(post, lang)}>
+            <ThemeIcon name="message-circle" size={18} />
+            <span>{post.data.title}</span>
+          </a>
+        ))}
+      </div>
+    </dialog>
+    <template data-search-recent>
+      <p class="search-recent-heading">{ui.recent}</p>
+      {searchRecent.map((post) => (
+        <a class="search-recent-item" href={postHref(post, lang)}>
+          <ThemeIcon name="message-circle" size={18} />
+          <span>{post.data.title}</span>
+        </a>
+      ))}
+    </template>
+    <dialog
+      id="shortcut-dialog"
+      class="shortcut-dialog"
+      aria-labelledby="shortcut-title"
+    >
+      <div class="shortcut-header">
+        <h2 id="shortcut-title">{ui.shortcuts}</h2>
+        <button
+          type="button"
+          class="icon-button"
+          data-close-shortcuts
+          aria-label={ui.close}
+        >
+          <ThemeIcon name="x" />
+        </button>
+      </div>
+      <dl>
+        <div>
+          <dt>{ui.search}</dt>
+          <dd>
+            <kbd>Ctrl+K</kbd>
+          </dd>
+        </div>
+        <div>
+          <dt>{ui.sidebar}</dt>
+          <dd>
+            <kbd>Ctrl+Shift+S</kbd>
+          </dd>
+        </div>
+        <div>
+          <dt>{ui.home}</dt>
+          <dd>
+            <kbd>Ctrl+Shift+O</kbd>
+          </dd>
+        </div>
+        <div>
+          <dt>{ui.focusSearch}</dt>
+          <dd>
+            <kbd>Shift+Esc</kbd>
+          </dd>
+        </div>
+        <div>
+          <dt>{ui.shortcuts}</dt>
+          <dd>
+            <kbd>Ctrl+/</kbd>
+          </dd>
+        </div>
+      </dl>
+    </dialog>
+    <div id="ui-tooltip" class="ui-tooltip" popover="manual" role="tooltip">
+      <span data-tooltip-label></span>
+      <kbd data-tooltip-key hidden></kbd>
+    </div>
+    <BlogStatistics lang={lang} posts={publicPosts} />
+    <script>
+      import '../scripts/ui';
+      import '../scripts/article-features';
+      import '../scripts/custom';
+    </script>
+    <Fragment set:html={customHtml(customBodyEnd)} />
+  </body>
+</html>

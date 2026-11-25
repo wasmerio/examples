@@ -1,0 +1,119 @@
+---
+import { localize, t } from '../lib/i18n';
+import { shareTemplate, shareHref, type ShareValues } from '../lib/sharing';
+import config from '../lib/config';
+import ThemeIcon from './ThemeIcon.astro';
+import SocialIcon from './SocialIcon.astro';
+import type { Locale } from '../types/config';
+interface Props {
+  lang: Locale;
+  title: string;
+  image?: string;
+  description?: string;
+}
+const { lang, title, image, description = '' } = Astro.props;
+const ui = t(lang);
+const url = new URL(Astro.url.pathname, config.site.url).href;
+const label = ui.share;
+const copy = ui.copyLink;
+const values: ShareValues = {
+  title,
+  description,
+  author: localize(config.author.name, lang),
+  blog: localize(config.site.title, lang),
+  url,
+  image: image ? new URL(image, config.site.url).href : '',
+  text: '',
+};
+values.text = shareTemplate(
+  localize(
+    config.sharing?.copyFormat ??
+      '{title}\n{description}\n{author} · {blog}\n{url}',
+    lang,
+  ),
+  values,
+);
+const destinations = (config.sharing?.platforms ?? [])
+  .filter(
+    (item) =>
+      item.icon?.replace(/^simple-icons:/, '') !== 'pinterest' || values.image,
+  )
+  .map((item) => ({
+    ...item,
+    name: localize(item.name, lang),
+    href: shareHref(item.href, values),
+  }));
+---
+
+<div
+  class="share-root"
+  data-share-root
+  data-share-text={values.text}
+  data-share-label={label}
+  data-share-copied={ui.copied}
+>
+  <button
+    type="button"
+    class="share-button"
+    aria-expanded="false"
+    aria-controls="article-share"
+    data-share-trigger
+  >
+    <ThemeIcon name="share" size={16} />
+    <span class="share-label" data-share-label-text aria-live="polite">
+      {label}
+    </span>
+  </button>
+  <section
+    id="article-share"
+    popover="manual"
+    class="share-panel"
+    aria-label={label}
+    data-share-panel
+  >
+    {image && (
+      <img
+        class="share-preview"
+        src={image}
+        alt={`${ui.shareCover}: ${title}`}
+        width="1200"
+        height="630"
+        loading="lazy"
+      />
+    )}
+    <div class="share-link-row">
+      <input aria-label={ui.pageLink} readonly value={url} />
+      <button
+        type="button"
+        class="icon-button"
+        data-share-copy
+        aria-label={copy}
+        data-tooltip={copy}
+      >
+        <ThemeIcon name="copy" size={18} />
+      </button>
+    </div>
+    <div class="share-destinations">
+      {destinations.map((item) => (
+        <a
+          href={item.href}
+          target={item.href.startsWith('mailto:') ? undefined : '_blank'}
+          rel="noopener noreferrer"
+          data-astro-reload
+        >
+          {item.icon && <SocialIcon name={item.icon} size={15} />}
+          {item.name}
+        </a>
+      ))}
+    </div>
+    <p
+      class="share-message"
+      role="status"
+      aria-live="polite"
+      data-share-message
+    ></p>
+  </section>
+</div>
+<script>
+  import '../scripts/share';
+</script>

@@ -1,0 +1,95 @@
+---
+import { pageLocale } from '../../../lib/i18n';
+import config from '../../../lib/config';
+import Layout from '../../../layouts/Layout.astro';
+import ThemeIcon from '../../../components/ThemeIcon.astro';
+import ContentIntro from '../../../components/ContentIntro.astro';
+import BuiltinHeading from '../../../components/BuiltinHeading.astro';
+import { taxonomy, introFor, encodedSlug } from '../../../lib/content';
+import { contentImage } from '../../../lib/content-image';
+import { t, href } from '../../../lib/i18n';
+export const getStaticPaths = () =>
+  ['categories', 'tags'].map((kind) => ({ params: { taxonomy: kind } }));
+const lang = pageLocale(Astro.routePattern);
+const kind = Astro.params.taxonomy as 'categories' | 'tags';
+const ui = t(lang);
+const groups = await taxonomy(kind, lang);
+const intro = await introFor(kind, lang);
+const title =
+  intro?.data.title ??
+  (kind === 'categories' ? ui.categoryTitle : ui.tagsTitle);
+const cloud = kind === 'categories' ? await taxonomy('tags', lang) : [];
+const maxCount = Math.max(1, ...cloud.map((tag) => tag.posts.length));
+---
+
+<Layout
+  lang={lang}
+  title={title}
+  description={intro?.data.description}
+  active={kind}
+>
+  <div class="content-column">
+    <BuiltinHeading
+      title={title}
+      description={intro?.data.description ?? `${groups.length} ${ui[kind]}`}
+      eyebrow={ui[kind]}
+      icon={kind === 'categories' ? 'shapes' : 'tags'}
+    />
+    <ContentIntro entry={intro} />
+    <div class="taxonomy-grid">
+      {groups.map(({ slug, posts, entry }) => (
+        <a
+          class="taxonomy-card"
+          data-cover-style={
+            entry?.data.image
+              ? kind === 'categories'
+                ? (entry.data.coverStyle ??
+                  config.appearance.categoryCoverStyle)
+                : 'thumbnail'
+              : undefined
+          }
+          href={href(lang, `${kind}/${encodedSlug(slug)}/`)}
+        >
+          {entry?.data.image && (
+            <img
+              class="taxonomy-cover"
+              src={contentImage(
+                entry.data.image,
+                href(lang, `${kind}/${encodedSlug(slug)}/`),
+              )}
+              alt=""
+              width="64"
+              height="64"
+              loading="lazy"
+            />
+          )}
+          <div>
+            <h2>{entry?.data.title ?? slug}</h2>
+            {entry?.data.description && <p>{entry.data.description}</p>}
+            <p class="taxonomy-count">
+              {posts.length} {ui.articleCount}
+            </p>
+          </div>
+          <ThemeIcon name="arrow-up-right" size={20} />
+        </a>
+      ))}
+    </div>
+    {cloud.length > 0 && (
+      <section class="tag-cloud-section" aria-labelledby="tag-cloud-title">
+        <h2 id="tag-cloud-title">{ui.tags}</h2>
+        <div class="tag-cloud">
+          {cloud.map(({ slug, entry, posts }) => (
+            <a
+              href={href(lang, `tags/${encodedSlug(slug)}/`)}
+              style={`--tag-size:${12 + (posts.length / maxCount) * 6}px`}
+              aria-label={`${entry?.data.title ?? slug} · ${posts.length} ${ui.articleCount}`}
+            >
+              {entry?.data.title ?? slug}
+              <small>{posts.length}</small>
+            </a>
+          ))}
+        </div>
+      </section>
+    )}
+  </div>
+</Layout>

@@ -1,0 +1,126 @@
+---
+import config from '../lib/config';
+import Layout from '../layouts/Layout.astro';
+import PostList from './PostList.astro';
+import ThemeIcon from './ThemeIcon.astro';
+import ContentIntro from './ContentIntro.astro';
+import BuiltinHeading from './BuiltinHeading.astro';
+import { postsFor, introFor } from '../lib/content';
+import { t, href } from '../lib/i18n';
+import type { Locale } from '../types/config';
+interface Props {
+  lang: Locale;
+  page?: number;
+}
+const { lang, page = 1 } = Astro.props;
+const posts = await postsFor(lang);
+const pageSize = Math.max(1, config.posts.perPage);
+const pages = Math.max(1, Math.ceil(posts.length / pageSize));
+const current = posts.slice((page - 1) * pageSize, page * pageSize);
+const ui = t(lang);
+const intro = await introFor('posts', lang);
+const title = intro?.data.title ?? ui.postsTitle;
+const pageHref = (number: number) =>
+  href(lang, number === 1 ? 'posts/' : `posts/page/${number}/`);
+const alternatePaths = Object.fromEntries(
+  (
+    await Promise.all(
+      config.site.locales.map(async (locale) => {
+        const count = Math.max(
+          1,
+          Math.ceil((await postsFor(locale)).length / pageSize),
+        );
+        return page <= count
+          ? [
+              [
+                locale,
+                href(locale, page === 1 ? 'posts/' : `posts/page/${page}/`),
+              ] as [Locale, string],
+            ]
+          : [];
+      }),
+    )
+  ).flat(),
+);
+---
+
+<Layout
+  lang={lang}
+  title={title}
+  description={intro?.data.description}
+  active="posts"
+  alternatePaths={alternatePaths}
+>
+  <div class="content-column">
+    <BuiltinHeading
+      title={title}
+      description={
+        intro?.data.description ?? `${posts.length} ${ui.articleCount}`
+      }
+      eyebrow={ui.allPosts}
+      icon="files"
+    />
+    {page === 1 && <ContentIntro entry={intro} />}
+    <PostList posts={current} lang={lang} />
+    {pages > 1 && (
+      <nav class="pagination" aria-label={ui.articlePagination}>
+        {page > 1 ? (
+          <a href={pageHref(page - 1)}>
+            <ThemeIcon name="chevron-left" size={16} />
+            {ui.previous}
+          </a>
+        ) : (
+          <span />
+        )}
+        <form
+          class="page-jump"
+          data-page-jump
+          data-current-page={page}
+          data-total-pages={pages}
+          data-first-page={pageHref(1)}
+          data-page-prefix={href(lang, 'posts/page/')}
+          data-range-message={ui.pageRange}
+        >
+          <button
+            type="button"
+            data-page-edit
+            aria-label={ui.editPage}
+            data-tooltip={ui.editPage}
+          >
+            {page}
+          </button>
+          <input
+            data-page-input
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]+"
+            required
+            autocomplete="off"
+            aria-label={ui.jumpToPage}
+            data-tooltip={ui.jumpToPage}
+            value={page}
+            hidden
+          />
+          <span aria-hidden="true">/</span>
+          <a
+            class="page-last"
+            href={pageHref(pages)}
+            aria-label={ui.lastPage}
+            aria-current={page === pages ? 'page' : undefined}
+            data-tooltip={ui.lastPage}
+          >
+            {pages}
+          </a>
+        </form>
+        {page < pages ? (
+          <a href={pageHref(page + 1)}>
+            {ui.next}
+            <ThemeIcon name="chevron-right" size={16} />
+          </a>
+        ) : (
+          <span />
+        )}
+      </nav>
+    )}
+  </div>
+</Layout>

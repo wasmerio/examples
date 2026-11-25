@@ -1,0 +1,273 @@
+---
+import config from '../../../../blog.config';
+import { sinePath } from './sine-wave';
+interface Props {
+  lang?: string;
+}
+const { lang = config.site.defaultLocale } = Astro.props;
+const labels = {
+  en: {
+    sineTitle: 'Sine wave explorer',
+    sineChart: 'Sine curve; adjust parameters using the sliders below',
+    sineAmplitude: 'Amplitude A',
+    sinePeriod: 'Period T',
+    sinePhase: 'Initial phase φ (radians)',
+    sineReset: 'Reset',
+  },
+  zh: {
+    sineTitle: '正弦函数实验室',
+    sineChart: '正弦函数图像，可通过下方滑块调整参数',
+    sineAmplitude: '振幅 A',
+    sinePeriod: '周期 T',
+    sinePhase: '初始相位 φ（弧度）',
+    sineReset: '重置',
+  },
+};
+const language = new Intl.Locale(lang).language;
+const ui = labels[language as keyof typeof labels] ?? labels.en;
+const parameters = { amplitude: 1, period: 6.28, phase: 0 };
+---
+
+<bloggpt-sine-wave class="sine-wave not-prose">
+  <div class="sine-wave-heading">
+    <strong>{ui.sineTitle}</strong>
+    <button type="button" data-sine-reset>
+      {ui.sineReset}
+    </button>
+  </div>
+  <p
+    class="sine-formula"
+    aria-live="polite"
+    aria-atomic="true"
+    data-sine-formula
+  >
+    y = 1.0 sin(2πx / 6.28 + 0.00)
+  </p>
+  <svg viewBox="0 0 640 280" role="img" aria-label={ui.sineChart}>
+    <title>{ui.sineChart}</title>
+    {[-3, -2, -1, 1, 2, 3].map((y) => (
+      <g class="sine-grid">
+        <line
+          x1="36"
+          x2="604"
+          y1={140 - (y * 108) / 3.5}
+          y2={140 - (y * 108) / 3.5}
+        />
+        <text x="28" y={144 - (y * 108) / 3.5} text-anchor="end">
+          {y}
+        </text>
+      </g>
+    ))}
+    {[0, 1, 2, 3, 4].map((i) => (
+      <g class="sine-grid">
+        <line x1={36 + i * 142} x2={36 + i * 142} y1="24" y2="248" />
+        <text x={36 + i * 142} y="270" text-anchor="middle">
+          {['−2π', '−π', '0', 'π', '2π'][i]}
+        </text>
+      </g>
+    ))}
+    <g class="sine-axis">
+      <line x1="36" x2="612" y1="140" y2="140" />
+      <line x1="320" x2="320" y1="20" y2="248" />
+    </g>
+    <path
+      data-sine-path
+      d={sinePath(parameters)}
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      vector-effect="non-scaling-stroke"
+    />
+  </svg>
+  <div class="sine-controls">
+    <label>
+      <span>
+        {ui.sineAmplitude}
+        <output data-sine-value="amplitude">1.0</output>
+      </span>
+      <input
+        type="range"
+        name="amplitude"
+        aria-label={ui.sineAmplitude}
+        min="0"
+        max="3"
+        step="0.1"
+        value="1"
+      />
+    </label>
+    <label>
+      <span>
+        {ui.sinePeriod}
+        <output data-sine-value="period">6.28</output>
+      </span>
+      <input
+        type="range"
+        name="period"
+        aria-label={ui.sinePeriod}
+        min="1"
+        max="12"
+        step="0.01"
+        value="6.28"
+      />
+    </label>
+    <label>
+      <span>
+        {ui.sinePhase}
+        <output data-sine-value="phase">0.00</output>
+      </span>
+      <input
+        type="range"
+        name="phase"
+        aria-label={ui.sinePhase}
+        min="-3.14"
+        max="3.14"
+        step="0.01"
+        value="0"
+      />
+    </label>
+  </div>
+</bloggpt-sine-wave>
+
+<script>
+  import { sinePath, type SineParameters } from './sine-wave';
+  class SineWave extends HTMLElement {
+    private controller?: AbortController;
+    connectedCallback() {
+      this.controller?.abort();
+      this.controller = new AbortController();
+      const { signal } = this.controller;
+      const inputs = [
+        ...this.querySelectorAll<HTMLInputElement>('input[type="range"]'),
+      ];
+      const update = () => {
+        const parameters = Object.fromEntries(
+          inputs.map((input) => [input.name, Number(input.value)]),
+        ) as SineParameters;
+        for (const input of inputs) {
+          const output = this.querySelector<HTMLOutputElement>(
+            `[data-sine-value="${input.name}"]`,
+          );
+          if (output)
+            output.value = Number(input.value).toFixed(
+              input.name === 'amplitude' ? 1 : 2,
+            );
+        }
+        this.querySelector('[data-sine-path]')?.setAttribute(
+          'd',
+          sinePath(parameters),
+        );
+        const formula = this.querySelector('[data-sine-formula]');
+        if (formula)
+          formula.textContent = `y = ${parameters.amplitude.toFixed(1)} sin(2πx / ${parameters.period.toFixed(2)} ${parameters.phase < 0 ? '−' : '+'} ${Math.abs(parameters.phase).toFixed(2)})`;
+      };
+      for (const input of inputs)
+        input.addEventListener('input', update, { signal });
+      this.querySelector('[data-sine-reset]')?.addEventListener(
+        'click',
+        () => {
+          for (const input of inputs) input.value = input.defaultValue;
+          update();
+        },
+        { signal },
+      );
+      update();
+    }
+    disconnectedCallback() {
+      this.controller?.abort();
+    }
+  }
+  if (!customElements.get('bloggpt-sine-wave'))
+    customElements.define('bloggpt-sine-wave', SineWave);
+</script>
+
+<style>
+  .sine-wave {
+    display: block;
+    container-type: inline-size;
+    margin-block: 28px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+  }
+  .sine-wave-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .sine-wave-heading button {
+    font-size: 13px;
+    padding: 5px 10px;
+    border-radius: 8px;
+    background: var(--hover);
+  }
+  .sine-formula {
+    color: var(--muted);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    color: var(--accent);
+  }
+  .sine-grid {
+    stroke: var(--border);
+    stroke-width: 1;
+  }
+  .sine-grid text {
+    stroke: none;
+    fill: var(--muted);
+    font:
+      12px system-ui,
+      sans-serif;
+  }
+  .sine-axis {
+    stroke: var(--faint);
+    stroke-width: 1;
+  }
+  .sine-controls {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+    margin-top: 18px;
+  }
+  label {
+    min-width: 0;
+    font-size: 13px;
+  }
+  label span {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  output {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  input {
+    display: block;
+    width: 100%;
+    margin-top: 12px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  @container (max-width: 480px) {
+    .sine-controls {
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+  }
+  @media (max-width: 600px) {
+    .sine-controls {
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    .sine-wave {
+      padding: 16px;
+    }
+  }
+</style>

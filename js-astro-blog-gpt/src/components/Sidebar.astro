@@ -1,0 +1,319 @@
+---
+import { localeInfo } from '../lib/translations';
+import OverflowTitle from './OverflowTitle.astro';
+import config from '../lib/config';
+import ThemeIcon from './ThemeIcon.astro';
+import SocialIcon from './SocialIcon.astro';
+import BrandWordmark from './BrandWordmark.astro';
+import Popover from './Popover.astro';
+import SidebarLink from './SidebarLink.astro';
+import { postsFor, postHref } from '../lib/content';
+import { t, href, withBase, localize } from '../lib/i18n';
+import { navigationHref } from '../lib/navigation';
+import type { Locale } from '../types/config';
+interface Props {
+  lang: Locale;
+  active?: string;
+  alternatePaths: Partial<Record<Locale, string>>;
+}
+const { lang, active, alternatePaths } = Astro.props;
+const ui = t(lang);
+const posts = await postsFor(lang);
+const pinned = posts.filter((post) => post.data.featured);
+const recent = posts
+  .filter((post) => !post.data.featured)
+  .sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
+const currentPath = Astro.url.pathname;
+const [startItem, ...navItems] = config.sidebar.items;
+const avatar = /^(https?:|data:)/.test(config.author.avatar)
+  ? config.author.avatar
+  : withBase(config.author.avatar);
+---
+
+<aside id="sidebar" class="sidebar" aria-label={ui.blogNavigation}>
+  <div class="sidebar-top">
+    <Popover
+      id="site-menu"
+      label={localize(config.site.title, lang)}
+      class="brand-switcher"
+      triggerClass="brand"
+      panelClass="site-menu"
+      width={240}
+    >
+      <Fragment slot="trigger">
+        <BrandWordmark title={localize(config.site.title, lang)} />
+        <ThemeIcon name="chevron-down" size={14} />
+      </Fragment>
+      {config.sidebar.menu.map(async (item) => (
+        <a
+          href={await navigationHref(item, lang)}
+          role="menuitem"
+          aria-current={active === item.id ? 'page' : undefined}
+          target={
+            item.type === 'external' && item.newTab ? '_blank' : undefined
+          }
+          rel={item.type === 'external' ? 'noopener noreferrer' : undefined}
+        >
+          <span class="site-menu-label">
+            <span>{localize(item.label, lang)}</span>
+            {item.description && (
+              <small>{localize(item.description, lang)}</small>
+            )}
+          </span>
+          {active === item.id && <ThemeIcon name="check" size={16} />}
+          {item.type === 'external' && (
+            <ThemeIcon name="arrow-up-right" size={14} />
+          )}
+        </a>
+      ))}
+    </Popover>
+    <div class="sidebar-tools">
+      <a
+        class="icon-button"
+        href={href(lang, 'search/')}
+        data-open-search
+        aria-label={ui.search}
+        data-tooltip={ui.searchTooltip}
+        data-tooltip-shortcut="Ctrl+K"
+      >
+        <ThemeIcon name="search" size={18} />
+      </a>
+      <button
+        class="icon-button"
+        data-sidebar-toggle
+        aria-label={ui.sidebar}
+        aria-controls="sidebar"
+        aria-expanded="true"
+        data-tooltip={ui.hideSidebar}
+        data-tooltip-shortcut="Ctrl+Shift+S"
+      >
+        <ThemeIcon name="panel-left" size={18} />
+      </button>
+    </div>
+  </div>
+  {startItem && (
+    <nav class="sidebar-start">
+      <SidebarLink item={startItem} lang={lang} active={active} />
+    </nav>
+  )}
+  <div class="sidebar-scroll">
+    <nav class="main-nav">
+      {navItems.map((item) => (
+        <SidebarLink item={item} lang={lang} active={active} />
+      ))}
+      {config.sidebar.items.length < 2 && (
+        <a class="nav-item" href={href(lang, 'search/')} data-open-search>
+          <span class="sidebar-icon-slot">
+            <ThemeIcon name="search" size={18} />
+          </span>
+          <span class="nav-label">{ui.search}</span>
+        </a>
+      )}
+    </nav>
+    {pinned.length > 0 && (
+      <section class="sidebar-recent sidebar-pinned" aria-label={ui.featured}>
+        <h2>
+          <button
+            class="section-toggle"
+            data-section-toggle="pinned"
+            aria-expanded="true"
+            aria-controls="sidebar-pinned-list"
+          >
+            {ui.featured}
+            <ThemeIcon name="chevron-down" size={12} />
+          </button>
+        </h2>
+        <div class="sidebar-section-list" id="sidebar-pinned-list">
+          {pinned.map((post) => (
+            <a
+              class:list={[
+                'recent-link',
+                { active: currentPath === postHref(post, lang) },
+              ]}
+              href={postHref(post, lang)}
+              aria-current={
+                currentPath === postHref(post, lang) ? 'page' : undefined
+              }
+            >
+              <OverflowTitle title={post.data.title} />
+            </a>
+          ))}
+        </div>
+      </section>
+    )}
+    <section class="sidebar-recent" aria-label={ui.sidebarRecent}>
+      <h2>
+        <button
+          class="section-toggle"
+          data-section-toggle="recent"
+          aria-expanded="true"
+          aria-controls="sidebar-recent-list"
+        >
+          {ui.sidebarRecent}
+          <ThemeIcon name="chevron-down" size={12} />
+        </button>
+      </h2>
+      <div class="sidebar-section-list" id="sidebar-recent-list">
+        {recent.map((post) => (
+          <a
+            class:list={[
+              'recent-link',
+              { active: currentPath === postHref(post, lang) },
+            ]}
+            href={postHref(post, lang)}
+            aria-current={
+              currentPath === postHref(post, lang) ? 'page' : undefined
+            }
+          >
+            <OverflowTitle title={post.data.title} />
+          </a>
+        ))}
+      </div>
+    </section>
+  </div>
+  <div class="profile-wrap" data-profile-wrap>
+    <div class="profile-menu" id="profile-menu" data-profile-menu hidden>
+      <div class="profile-menu-heading">
+        <img class="avatar" src={avatar} alt="" width="20" height="20" />
+        <div class="profile-menu-identity">
+          <strong>{localize(config.author.name, lang)}</strong>
+          <p>{localize(config.author.bio, lang)}</p>
+        </div>
+      </div>
+      <div class="menu-separator" aria-hidden="true"></div>
+      <div class="social-menu">
+        {config.author.socials.map((social) => (
+          <a
+            href={social.href}
+            target={social.href.startsWith('http') ? '_blank' : undefined}
+            rel="noopener noreferrer"
+          >
+            <SocialIcon name={social.icon} size={18} />
+            <span>{localize(social.label, lang)}</span>
+            <ThemeIcon name="arrow-up-right" size={14} />
+          </a>
+        ))}
+      </div>
+      <div class="menu-separator" aria-hidden="true"></div>
+      <button type="button" class="statistics-menu" data-open-shortcuts>
+        <ThemeIcon name="keyboard" size={18} />
+        <span>{ui.shortcuts}</span>
+      </button>
+      {config.statistics?.enabled !== false && (
+        <button type="button" class="statistics-menu" data-open-status>
+          <ThemeIcon name="chart-no-axes-column" size={18} />
+          <span>{ui.blogStatistics}</span>
+        </button>
+      )}
+      <div class="preferences">
+        <span class="preference-label">
+          <ThemeIcon name="palette" size={18} />
+          {ui.appearance}
+        </span>
+        <Popover
+          id="theme-preference"
+          label={ui.appearance}
+          triggerClass="preference-button"
+          align="end"
+          width={192}
+          side="right"
+        >
+          <Fragment slot="trigger">
+            <span data-theme-label>{ui.system}</span>
+            <ThemeIcon name="chevron-right" size={16} />
+          </Fragment>
+          {(['system', 'light', 'dark'] as const).map((theme) => (
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={theme === config.appearance.defaultTheme}
+              data-theme-option={theme}
+            >
+              <ThemeIcon
+                name={
+                  theme === 'system'
+                    ? 'monitor'
+                    : theme === 'light'
+                      ? 'sun'
+                      : 'moon'
+                }
+              />
+              <span>{ui[theme]}</span>
+              <ThemeIcon name="check" size={16} class="menu-check" />
+            </button>
+          ))}
+        </Popover>
+        {config.site.locales.length > 1 && (
+          <>
+            <div class="language-label">
+              <ThemeIcon name="languages" size={18} />
+              {ui.language}
+            </div>
+            <Popover
+              id="language-preference"
+              label={ui.language}
+              triggerClass="preference-button"
+              align="end"
+              width={192}
+              side="right"
+            >
+              <Fragment slot="trigger">
+                <span>{localeInfo(lang).label}</span>
+                <ThemeIcon name="chevron-right" size={16} />
+              </Fragment>
+              {config.site.locales.map((locale) => (
+                <a
+                  href={alternatePaths[locale] ?? href(locale)}
+                  data-language-option={locale}
+                  lang={localeInfo(locale).lang}
+                  aria-current={locale === lang ? 'true' : undefined}
+                  role="menuitemradio"
+                  aria-checked={locale === lang}
+                >
+                  <span>{localeInfo(locale).label}</span>
+                  <ThemeIcon name="check" size={16} class="menu-check" />
+                </a>
+              ))}
+            </Popover>
+          </>
+        )}
+      </div>
+      <div class="menu-separator" aria-hidden="true"></div>
+      <a class="rss-menu" href={href(lang, 'rss.xml')}>
+        <ThemeIcon name="rss" size={18} />
+        {ui.rss}
+      </a>
+    </div>
+    <button
+      class="profile-button"
+      data-profile-toggle
+      aria-label={ui.author}
+      aria-expanded="false"
+      aria-controls="profile-menu"
+    >
+      <img class="avatar" src={avatar} alt="" width="24" height="24" />
+      <span class="profile-info">
+        <strong>{localize(config.author.name, lang)}</strong>
+        <small>{localize(config.author.bio, lang)}</small>
+      </span>
+    </button>
+  </div>
+  <button
+    class="sidebar-resize-handle"
+    data-sidebar-resize
+    type="button"
+    role="separator"
+    aria-label={ui.resizeSidebar}
+    aria-orientation="vertical"
+    aria-controls="sidebar"
+    aria-valuemin={config.sidebar.width.min}
+    aria-valuemax={config.sidebar.width.max}
+    aria-valuenow={config.sidebar.width.default}
+  ></button>
+</aside>
+<button
+  class="sidebar-scrim"
+  data-sidebar-close
+  aria-label={ui.close}
+  tabindex="-1"
+></button>

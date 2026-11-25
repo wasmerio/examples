@@ -1,0 +1,200 @@
+---
+import { pageLocale, routeLocales } from '../../../lib/i18n';
+import { localeInfo } from '../../../lib/translations';
+import { postPath } from '../../../lib/post-path';
+import { render } from 'astro:content';
+import config from '../../../lib/config';
+import Layout from '../../../layouts/Layout.astro';
+import ArticleMeta from '../../../components/ArticleMeta.astro';
+import ArticleUpdated from '../../../components/ArticleUpdated.astro';
+import ShareMenu from '../../../components/ShareMenu.astro';
+import ArticleToc from '../../../components/ArticleToc.astro';
+import { articleFeatures, articleDisplay } from '../../../lib/article-options';
+import {
+  postsFor,
+  postHref,
+  taxonomyLabels,
+  encodedSlug,
+  type Post,
+} from '../../../lib/content';
+import { canDiscover } from '../../../lib/policy';
+import { isRealTranslation } from '../../../lib/locale-routing';
+import { t, href } from '../../../lib/i18n';
+import { contentImage } from '../../../lib/content-image';
+import type { Locale } from '../../../types/config';
+export async function getStaticPaths({
+  routePattern,
+}: import('astro').GetStaticPathsOptions) {
+  const paths = [];
+  for (const lang of routeLocales(routePattern))
+    for (const post of await postsFor(lang, true)) {
+      if (/^page\//.test(post.data.slug))
+        throw new Error(
+          'Article slugs beginning with page/ are reserved for pagination.',
+        );
+      paths.push({
+        params: {
+          slug: postPath(
+            post.data,
+            config.posts.pathPrefix,
+            config.site.timezone,
+          ),
+        },
+        props: { post },
+      });
+    }
+  return paths;
+}
+interface Props {
+  post: Post;
+}
+const { post } = Astro.props;
+const lang = pageLocale(Astro.routePattern);
+const ui = t(lang);
+const display = articleDisplay(post.data, config.article.display);
+const features = articleFeatures(post.data, config.article);
+const labels = await taxonomyLabels(lang);
+const { Content, headings } = await render(post);
+const discoverable = canDiscover(post.data);
+const otherPosts = (await postsFor(lang))
+  .filter((entry) => canDiscover(entry.data))
+  .sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
+const index = otherPosts.findIndex((entry) => entry.id === post.id);
+const newer = index > 0 ? otherPosts[index - 1] : undefined;
+const older = index >= 0 ? otherPosts[index + 1] : undefined;
+const alternatePaths: Partial<Record<Locale, string>> = {};
+const translationPaths: Partial<Record<Locale, string>> = {};
+for (const locale of config.site.locales) {
+  const translated = (await postsFor(locale, true)).find(
+    (entry) => entry.data._key === post.data._key,
+  );
+  if (translated) {
+    alternatePaths[locale] = postHref(translated, locale);
+    if (isRealTranslation(translated, locale))
+      translationPaths[locale] = postHref(translated, locale);
+  }
+}
+const cover = contentImage(post.data.image, postHref(post, lang));
+const shareImage = features.shareCover
+  ? href(lang, `og/${encodedSlug(post.data.slug)}.png`)
+  : cover
+    ? new URL(cover, new URL(postHref(post, lang), config.site.url)).href
+    : undefined;
+---
+
+<Layout
+  lang={lang}
+  title={post.data.title}
+  description={post.data.description}
+  article
+  noindex={!discoverable}
+  alternatePaths={alternatePaths}
+  translationPaths={translationPaths}
+  shareImage={shareImage}
+  features={features}
+>
+  {features.toc && <ArticleToc headings={headings} lang={lang} />}
+  <article
+    class="article-column"
+    data-search-record={discoverable ? 'posts' : undefined}
+    data-search-title={post.data.title}
+    data-search-description={post.data.description}
+    data-pagefind-body={discoverable ? '' : undefined}
+    lang={localeInfo(post.data.lang).lang}
+  >
+    {cover && (
+      <img
+        class="article-cover"
+        src={cover}
+        alt={post.data.title}
+        width="1000"
+        height="560"
+      />
+    )}
+    <header class="article-header">
+      {display.title && (
+        <div class="article-title-block">
+          <div class="eyebrow" data-pagefind-ignore>
+            {post.data.categories.map((category) => (
+              <a href={href(lang, `categories/${encodedSlug(category)}/`)}>
+                {labels.categories[category] ?? category}
+              </a>
+            ))}
+            {post.data.draft && <span class="status-label">{ui.draft}</span>}
+            {post.data.hidden && <span class="status-label">{ui.hidden}</span>}
+          </div>
+          <h1 data-pagefind-meta="title">{post.data.title}</h1>
+          {post.data.description && <p>{post.data.description}</p>}
+        </div>
+      )}
+      <ArticleMeta lang={lang} entry={post} display={display} />
+    </header>
+    {post.data._locale && post.data._locale !== lang && (
+      <p class="article-note" data-pagefind-ignore>
+        {ui.fallback}
+      </p>
+    )}
+    {post.data.draft && (
+      <p class="article-note" data-pagefind-ignore>
+        {ui.draftNotice}
+      </p>
+    )}
+
+    <div class="article-content prose" data-search-content>
+      <Content />
+    </div>
+    {(display.share ||
+      (display.updated &&
+        post.data.updated &&
+        post.data.updated.getTime() !== post.data.date.getTime()) ||
+      (display.tags && post.data.tags.length > 0)) && (
+      <div class="article-end" data-pagefind-ignore>
+        {display.tags &&
+          post.data.tags.map((tag) => (
+            <a class="tag" href={href(lang, `tags/${encodedSlug(tag)}/`)}>
+              {labels.tags[tag] ?? tag}
+            </a>
+          ))}
+        {display.updated && (
+          <ArticleUpdated
+            lang={lang}
+            date={post.data.date}
+            updated={post.data.updated}
+          />
+        )}
+        {display.share && (
+          <ShareMenu
+            lang={lang}
+            title={post.data.title}
+            description={post.data.description}
+            image={shareImage}
+          />
+        )}
+      </div>
+    )}
+    {display.navigation && (
+      <nav
+        class="article-neighbors"
+        data-pagefind-ignore
+        aria-label={ui.adjacentArticles}
+      >
+        {older ? (
+          <a href={postHref(older, lang)}>
+            <small>← {ui.older}</small>
+            <span>{older.data.title}</span>
+          </a>
+        ) : (
+          <span />
+        )}
+        {newer ? (
+          <a href={postHref(newer, lang)}>
+            <small>{ui.newer} →</small>
+            <span>{newer.data.title}</span>
+          </a>
+        ) : (
+          <span />
+        )}
+      </nav>
+    )}
+  </article>
+</Layout>

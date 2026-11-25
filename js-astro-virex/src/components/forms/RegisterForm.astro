@@ -1,0 +1,381 @@
+---
+/**
+ * RegisterForm - Registration form with validation and multiple backend support
+ *
+ * @description
+ * A fully-featured registration form with client-side validation, loading states,
+ * and success/error feedback. Supports Netlify Identity, custom endpoints,
+ * and runs in demo mode (simulates success) when no action URL is provided.
+ *
+ * @example Demo mode (no backend)
+ * ```astro
+ * <RegisterForm />
+ * ```
+ *
+ * @example Netlify Identity
+ * ```astro
+ * <RegisterForm netlify />
+ * ```
+ *
+ * @example Custom endpoint
+ * ```astro
+ * <RegisterForm action="https://api.example.com/register" method="POST" />
+ * ```
+ */
+
+interface Props {
+  /** Form action URL - leave empty for demo mode */
+  action?: string;
+  /** HTTP method for form submission */
+  method?: 'POST' | 'GET';
+  /** Enable Netlify Identity integration */
+  netlify?: boolean;
+  /** Redirect URL after successful registration */
+  redirectUrl?: string;
+}
+
+const { action = '', method = 'POST', netlify = false, redirectUrl = '/dashboard' } = Astro.props;
+---
+
+<form
+  id="register-form"
+  action={action}
+  method={method}
+  class="space-y-6"
+  data-netlify={netlify ? 'true' : undefined}
+  data-redirect={redirectUrl}
+  novalidate
+>
+  <!-- Honeypot field for spam protection -->
+  <div class="hidden" aria-hidden="true">
+    <label>
+      Don't fill this out if you're human:
+      <input type="text" name="_gotcha" tabindex="-1" autocomplete="off" />
+    </label>
+  </div>
+
+  <!-- Full name field -->
+  <div>
+    <label for="fullName" class="block text-sm font-medium text-text mb-2"> Full name </label>
+    <input
+      type="text"
+      id="fullName"
+      name="fullName"
+      required
+      minlength="2"
+      autocomplete="name"
+      class="w-full px-4 py-3 rounded-md border border-border bg-background text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
+      placeholder="John Doe"
+    />
+    <p class="mt-1 text-sm text-red-500 hidden" data-error="fullName"></p>
+  </div>
+
+  <!-- Email field -->
+  <div>
+    <label for="registerEmail" class="block text-sm font-medium text-text mb-2">
+      Email address
+    </label>
+    <input
+      type="email"
+      id="registerEmail"
+      name="email"
+      required
+      autocomplete="email"
+      class="w-full px-4 py-3 rounded-md border border-border bg-background text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
+      placeholder="you@example.com"
+    />
+    <p class="mt-1 text-sm text-red-500 hidden" data-error="registerEmail"></p>
+  </div>
+
+  <!-- Password field -->
+  <div>
+    <label for="registerPassword" class="block text-sm font-medium text-text mb-2">
+      Password
+    </label>
+    <input
+      type="password"
+      id="registerPassword"
+      name="password"
+      required
+      minlength="8"
+      autocomplete="new-password"
+      class="w-full px-4 py-3 rounded-md border border-border bg-background text-text placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
+      placeholder="••••••••"
+    />
+    <p class="mt-1 text-sm text-text-muted">Must be at least 8 characters</p>
+    <p class="mt-1 text-sm text-red-500 hidden" data-error="registerPassword"></p>
+  </div>
+
+  <!-- Terms agreement checkbox -->
+  <div>
+    <div class="flex items-start">
+      <input
+        type="checkbox"
+        id="agreeTerms"
+        name="agreeTerms"
+        required
+        class="h-4 w-4 mt-0.5 rounded border-border text-primary focus:ring-primary focus:ring-offset-background"
+      />
+      <label for="agreeTerms" class="ml-2 text-sm text-text-muted">
+        I agree to the{' '}
+        <a href="/terms" class="text-primary hover:text-primary-dark transition-colors underline">
+          Terms of Service
+        </a>{' '}
+        and{' '}
+        <a href="/privacy" class="text-primary hover:text-primary-dark transition-colors underline">
+          Privacy Policy
+        </a>
+      </label>
+    </div>
+    <p class="mt-1 text-sm text-red-500 hidden" data-error="agreeTerms"></p>
+  </div>
+
+  <!-- Form status messages -->
+  <div id="register-form-status" class="hidden">
+    <div
+      id="register-form-success"
+      class="hidden p-4 rounded-md bg-green-100 dark:bg-green-950 border border-green-300 dark:border-green-800"
+    >
+      <p class="text-green-900 dark:text-green-100 font-medium">Account created successfully!</p>
+      <p class="text-green-800 dark:text-green-300 text-sm mt-1">Redirecting you now...</p>
+    </div>
+    <div
+      id="register-form-error"
+      class="hidden p-4 rounded-md bg-red-100 dark:bg-red-950 border border-red-300 dark:border-red-800"
+    >
+      <p class="text-red-900 dark:text-red-100 font-medium">Registration failed</p>
+      <p class="text-red-800 dark:text-red-300 text-sm mt-1">
+        Please check your information and try again.
+      </p>
+    </div>
+  </div>
+
+  <!-- Submit button -->
+  <button
+    type="submit"
+    id="register-submit-button"
+    class="w-full cursor-pointer px-6 py-3 rounded-md bg-primary text-white font-medium hover:bg-primary-dark transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:cursor-not-allowed"
+  >
+    <span id="register-button-text">Create account</span>
+    <span id="register-button-loading" class="hidden">
+      <svg
+        class="animate-spin inline-block w-5 h-5 mr-2"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
+        ></circle>
+        <path
+          class="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        ></path>
+      </svg>
+      Creating account...
+    </span>
+  </button>
+</form>
+
+<script>
+  const form = document.getElementById('register-form') as HTMLFormElement;
+  const submitButton = document.getElementById('register-submit-button') as HTMLButtonElement;
+  const buttonText = document.getElementById('register-button-text');
+  const buttonLoading = document.getElementById('register-button-loading');
+  const formStatus = document.getElementById('register-form-status');
+  const formSuccess = document.getElementById('register-form-success');
+  const formError = document.getElementById('register-form-error');
+
+  // Validation rules
+  const validationRules: Record<string, (value: string) => string | null> = {
+    fullName: (value) => {
+      if (!value.trim()) return 'Full name is required';
+      if (value.trim().length < 2) return 'Full name must be at least 2 characters';
+      return null;
+    },
+    registerEmail: (value) => {
+      if (!value.trim()) return 'Email is required';
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(value)) return 'Please enter a valid email address';
+      return null;
+    },
+    registerPassword: (value) => {
+      if (!value) return 'Password is required';
+      if (value.length < 8) return 'Password must be at least 8 characters';
+      return null;
+    },
+  };
+
+  // Checkbox validation (separate because it's a boolean)
+  function validateCheckbox(): string | null {
+    const checkbox = document.getElementById('agreeTerms') as HTMLInputElement;
+    if (!checkbox.checked) {
+      return 'You must agree to the Terms of Service and Privacy Policy';
+    }
+    return null;
+  }
+
+  // Show/hide error message
+  function showError(fieldName: string, message: string | null) {
+    const errorEl = document.querySelector(`#register-form [data-error="${fieldName}"]`);
+    const inputEl = document.getElementById(fieldName);
+
+    if (errorEl) {
+      if (message) {
+        errorEl.textContent = message;
+        errorEl.classList.remove('hidden');
+        if (inputEl) {
+          inputEl.classList.add('border-red-500');
+          inputEl.classList.remove('border-border');
+        }
+      } else {
+        errorEl.classList.add('hidden');
+        if (inputEl) {
+          inputEl.classList.remove('border-red-500');
+          inputEl.classList.add('border-border');
+        }
+      }
+    }
+  }
+
+  // Validate single field
+  function validateField(fieldName: string): boolean {
+    if (fieldName === 'agreeTerms') {
+      const error = validateCheckbox();
+      showError('agreeTerms', error);
+      return !error;
+    }
+
+    const input = form.elements.namedItem(
+      fieldName === 'registerEmail'
+        ? 'email'
+        : fieldName === 'registerPassword'
+          ? 'password'
+          : fieldName
+    ) as HTMLInputElement;
+    if (!input || !validationRules[fieldName]) return true;
+
+    const error = validationRules[fieldName](input.value);
+    showError(fieldName, error);
+    return !error;
+  }
+
+  // Validate all fields
+  function validateForm(): boolean {
+    let isValid = true;
+    for (const fieldName of Object.keys(validationRules)) {
+      if (!validateField(fieldName)) {
+        isValid = false;
+      }
+    }
+    // Validate checkbox
+    if (!validateField('agreeTerms')) {
+      isValid = false;
+    }
+    return isValid;
+  }
+
+  // Real-time validation on blur
+  for (const fieldName of Object.keys(validationRules)) {
+    const inputId = fieldName;
+    const input = document.getElementById(inputId) as HTMLInputElement | null;
+    if (input && 'addEventListener' in input) {
+      input.addEventListener('blur', () => validateField(fieldName));
+      input.addEventListener('input', () => {
+        // Clear error on input if field was previously invalid
+        const errorEl = document.querySelector(`#register-form [data-error="${fieldName}"]`);
+        if (errorEl && !errorEl.classList.contains('hidden')) {
+          validateField(fieldName);
+        }
+      });
+    }
+  }
+
+  // Checkbox validation on change
+  const agreeTermsCheckbox = document.getElementById('agreeTerms') as HTMLInputElement;
+  agreeTermsCheckbox?.addEventListener('change', () => validateField('agreeTerms'));
+
+  // Form submission
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // Hide previous status messages
+    formStatus?.classList.add('hidden');
+    formSuccess?.classList.add('hidden');
+    formError?.classList.add('hidden');
+
+    // Validate form
+    if (!validateForm()) {
+      // Focus first invalid field
+      const firstError = form.querySelector('.border-red-500') as HTMLElement;
+      if (firstError) {
+        firstError.focus();
+      } else {
+        // If no input has error border, focus the checkbox error
+        const checkboxError = document.querySelector('#register-form [data-error="agreeTerms"]');
+        if (checkboxError && !checkboxError.classList.contains('hidden')) {
+          agreeTermsCheckbox?.focus();
+        }
+      }
+      return;
+    }
+
+    // Show loading state
+    submitButton.disabled = true;
+    buttonText?.classList.add('hidden');
+    buttonLoading?.classList.remove('hidden');
+
+    const formData = new FormData(form);
+    const action = form.action;
+
+    try {
+      // If no action URL, simulate success (demo mode)
+      if (!action || action === window.location.href) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        showSuccess();
+        return;
+      }
+
+      // Submit to actual endpoint
+      const response = await fetch(action, {
+        method: form.method || 'POST',
+        body: formData,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        showSuccess();
+      } else {
+        showErrorState();
+      }
+    } catch {
+      showErrorState();
+    }
+  });
+
+  function showSuccess() {
+    formStatus?.classList.remove('hidden');
+    formSuccess?.classList.remove('hidden');
+    resetButtonState();
+
+    // Redirect after showing success message
+    const redirectUrl = form.dataset.redirect || '/';
+    setTimeout(() => {
+      window.location.href = redirectUrl;
+    }, 1500);
+  }
+
+  function showErrorState() {
+    formStatus?.classList.remove('hidden');
+    formError?.classList.remove('hidden');
+    resetButtonState();
+  }
+
+  function resetButtonState() {
+    submitButton.disabled = false;
+    buttonText?.classList.remove('hidden');
+    buttonLoading?.classList.add('hidden');
+  }
+</script>

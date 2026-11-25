@@ -1,0 +1,73 @@
+---
+import { cn } from '@/utils/cn';
+import type { HTMLAttributes } from 'astro/types';
+
+export interface Props extends HTMLAttributes<'div'> {}
+
+const { class: className, ...props } = Astro.props;
+
+const classes = cn(
+  'flex items-center justify-center gap-2 mt-4',
+  className
+);
+---
+
+<div class={classes} data-carousel-thumbnails {...props}>
+  <slot />
+</div>
+
+<script>
+  function initCarouselThumbnails() {
+    document.querySelectorAll('[data-carousel-thumbnails]').forEach((container) => {
+      if (container.hasAttribute('data-thumbnails-initialized')) return;
+      container.setAttribute('data-thumbnails-initialized', 'true');
+
+      const carousel = container.closest('[data-carousel]');
+      if (!carousel) return;
+
+      const thumbnails = container.querySelectorAll('[data-carousel-thumbnail]');
+      
+      thumbnails.forEach((thumb, index) => {
+        thumb.addEventListener('click', () => {
+          const slider = (carousel as any).__keenSlider;
+          if (slider) {
+            slider.moveToIdx(index);
+          }
+        });
+      });
+
+      // Update active thumbnail on slide change
+      const content = carousel.querySelector('[data-carousel-content]');
+      if (content) {
+        const observer = new MutationObserver(() => {
+          const slider = (carousel as any).__keenSlider;
+          if (slider) {
+            const currentSlide = slider.track.details.rel;
+            thumbnails.forEach((thumb, index) => {
+              if (index === currentSlide) {
+                thumb.setAttribute('data-active', 'true');
+              } else {
+                thumb.removeAttribute('data-active');
+              }
+            });
+          }
+        });
+        observer.observe(content, { attributes: true, subtree: true });
+        (container as any).__thumbnailsObserver = observer;
+      }
+    });
+  }
+
+  initCarouselThumbnails();
+  document.addEventListener('astro:page-load', initCarouselThumbnails);
+
+  // Disconnect observers before view-transition swaps so old carousel
+  // subtrees can be garbage collected.
+  document.addEventListener('astro:before-swap', () => {
+    document
+      .querySelectorAll('[data-thumbnails-initialized]')
+      .forEach((container) => {
+        (container as any).__thumbnailsObserver?.disconnect();
+      });
+  });
+</script>

@@ -1,0 +1,287 @@
+---
+import { cn } from "@/utils/cn";
+import type { HTMLAttributes } from "astro/types";
+
+export interface Props extends HTMLAttributes<"div"> {
+  defaultValue?: number[];
+  min?: number;
+  max?: number;
+  step?: number;
+  disabled?: boolean;
+  orientation?: "horizontal" | "vertical";
+  name?: string;
+}
+
+const {
+  defaultValue = [0],
+  min = 0,
+  max = 100,
+  step = 1,
+  disabled = false,
+  orientation = "horizontal",
+  name,
+  class: className,
+  ...props
+} = Astro.props;
+
+const isVertical = orientation === "vertical";
+const isRange = defaultValue.length > 1;
+
+const containerClasses = cn(
+  "relative flex touch-none select-none justify-center",
+  isVertical ? "h-full min-h-32 w-5" : "w-full h-5 items-center",
+  disabled && "opacity-50 pointer-events-none",
+  className
+);
+
+const trackClasses = cn(
+  "relative overflow-hidden rounded-full bg-secondary",
+  isVertical ? "w-1 h-full" : "h-1 w-full"
+);
+---
+
+<div
+  data-slider
+  data-orientation={orientation}
+  data-disabled={disabled ? "true" : undefined}
+  data-default-value={JSON.stringify(defaultValue)}
+  data-min={min}
+  data-max={max}
+  data-step={step}
+  data-name={name}
+  class={containerClasses}
+  role="group"
+  aria-disabled={disabled}
+  {...props}
+>
+  <div class={trackClasses} data-slider-track>
+    <div
+      data-slider-range
+      class={cn(
+        "absolute bg-primary",
+        isVertical ? "w-full" : "h-full"
+      )}
+    ></div>
+  </div>
+  {defaultValue.map((value, index) => (
+    <div
+      data-slider-thumb
+      data-index={index}
+      class={cn(
+        "absolute block size-3.5 rounded-full border-2 border-primary bg-background",
+        "ring-offset-background transition-colors",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "disabled:pointer-events-none disabled:opacity-50",
+        "cursor-grab active:cursor-grabbing"
+      )}
+      role="slider"
+      aria-valuemin={min}
+      aria-valuemax={max}
+      aria-valuenow={value}
+      aria-orientation={orientation}
+      aria-label={isRange ? `Value ${index + 1}` : "Value"}
+      tabindex={disabled ? -1 : 0}
+    />
+  ))}
+</div>
+
+<style>
+  [data-slider-thumb] {
+    z-index: 1;
+  }
+  
+  [data-slider][data-orientation="horizontal"] [data-slider-thumb] {
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+  
+  [data-slider][data-orientation="vertical"] [data-slider-thumb] {
+    left: 50%;
+    transform: translate(-50%, 0);
+  }
+</style>
+
+<script>
+  function initSliders() {
+    document.querySelectorAll('[data-slider]').forEach((slider) => {
+      if (slider.hasAttribute('data-initialized')) return;
+      slider.setAttribute('data-initialized', 'true');
+      
+      const track = slider.querySelector('[data-slider-track]') as HTMLElement;
+      const range = slider.querySelector('[data-slider-range]') as HTMLElement;
+      const thumbs = slider.querySelectorAll('[data-slider-thumb]') as NodeListOf<HTMLElement>;
+      
+      const min = parseFloat(slider.getAttribute('data-min') || '0');
+      const max = parseFloat(slider.getAttribute('data-max') || '100');
+      const step = parseFloat(slider.getAttribute('data-step') || '1');
+      const isVertical = slider.getAttribute('data-orientation') === 'vertical';
+      const isDisabled = slider.getAttribute('data-disabled') === 'true';
+      const name = slider.getAttribute('data-name');
+      
+      let values: number[];
+      try {
+        values = JSON.parse(slider.getAttribute('data-default-value') || '[0]');
+      } catch {
+        values = [0];
+      }
+      
+      if (isDisabled) return;
+      
+      function getPercent(value: number): number {
+        return ((value - min) / (max - min)) * 100;
+      }
+      
+      function getValueFromPercent(percent: number): number {
+        const rawValue = (percent / 100) * (max - min) + min;
+        const steppedValue = Math.round(rawValue / step) * step;
+        return Math.min(max, Math.max(min, steppedValue));
+      }
+      
+      function updateUI() {
+        const sortedValues = [...values].sort((a, b) => a - b);
+        
+        thumbs.forEach((thumb, i) => {
+          const percent = getPercent(values[i]);
+          if (isVertical) {
+            thumb.style.bottom = `${percent}%`;
+          } else {
+            thumb.style.left = `${percent}%`;
+          }
+          thumb.setAttribute('aria-valuenow', String(values[i]));
+        });
+        
+        // Update range
+        if (values.length === 1) {
+          const percent = getPercent(values[0]);
+          if (isVertical) {
+            range.style.bottom = '0';
+            range.style.height = `${percent}%`;
+          } else {
+            range.style.left = '0';
+            range.style.width = `${percent}%`;
+          }
+        } else {
+          const minPercent = getPercent(sortedValues[0]);
+          const maxPercent = getPercent(sortedValues[sortedValues.length - 1]);
+          if (isVertical) {
+            range.style.bottom = `${minPercent}%`;
+            range.style.height = `${maxPercent - minPercent}%`;
+          } else {
+            range.style.left = `${minPercent}%`;
+            range.style.width = `${maxPercent - minPercent}%`;
+          }
+        }
+        
+        // Dispatch change event
+        slider.dispatchEvent(new CustomEvent('change', { detail: { values } }));
+      }
+      
+      function getPercentFromEvent(e: MouseEvent | TouchEvent): number {
+        const rect = track.getBoundingClientRect();
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        
+        if (isVertical) {
+          const percent = ((rect.bottom - clientY) / rect.height) * 100;
+          return Math.min(100, Math.max(0, percent));
+        } else {
+          const percent = ((clientX - rect.left) / rect.width) * 100;
+          return Math.min(100, Math.max(0, percent));
+        }
+      }
+      
+      // Thumb dragging
+      thumbs.forEach((thumb, index) => {
+        let isDragging = false;
+        
+        function startDrag(e: MouseEvent | TouchEvent) {
+          e.preventDefault();
+          isDragging = true;
+          thumb.focus();
+          document.addEventListener('mousemove', onDrag);
+          document.addEventListener('mouseup', stopDrag);
+          // passive: false so the drag can stop the page from panning
+          document.addEventListener('touchmove', onDrag, { passive: false });
+          document.addEventListener('touchend', stopDrag);
+        }
+        
+        function onDrag(e: MouseEvent | TouchEvent) {
+          if (!isDragging) return;
+          if (e.cancelable) e.preventDefault();
+          const percent = getPercentFromEvent(e);
+          values[index] = getValueFromPercent(percent);
+          updateUI();
+        }
+        
+        function stopDrag() {
+          isDragging = false;
+          document.removeEventListener('mousemove', onDrag);
+          document.removeEventListener('mouseup', stopDrag);
+          document.removeEventListener('touchmove', onDrag);
+          document.removeEventListener('touchend', stopDrag);
+        }
+        
+        thumb.addEventListener('mousedown', startDrag);
+        thumb.addEventListener('touchstart', startDrag);
+        
+        // Keyboard navigation
+        thumb.addEventListener('keydown', (e) => {
+          let newValue = values[index];
+          
+          switch (e.key) {
+            case 'ArrowRight':
+            case 'ArrowUp':
+              e.preventDefault();
+              newValue = Math.min(max, values[index] + step);
+              break;
+            case 'ArrowLeft':
+            case 'ArrowDown':
+              e.preventDefault();
+              newValue = Math.max(min, values[index] - step);
+              break;
+            case 'Home':
+              e.preventDefault();
+              newValue = min;
+              break;
+            case 'End':
+              e.preventDefault();
+              newValue = max;
+              break;
+            default:
+              return;
+          }
+          
+          values[index] = newValue;
+          updateUI();
+        });
+      });
+      
+      // Click on track
+      track.addEventListener('click', (e) => {
+        const percent = getPercentFromEvent(e);
+        const newValue = getValueFromPercent(percent);
+        
+        // Find closest thumb
+        let closestIndex = 0;
+        let closestDistance = Infinity;
+        values.forEach((v, i) => {
+          const distance = Math.abs(v - newValue);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestIndex = i;
+          }
+        });
+        
+        values[closestIndex] = newValue;
+        updateUI();
+        thumbs[closestIndex].focus();
+      });
+      
+      // Initial UI update
+      updateUI();
+    });
+  }
+  
+  initSliders();
+  document.addEventListener('astro:page-load', initSliders);
+</script>

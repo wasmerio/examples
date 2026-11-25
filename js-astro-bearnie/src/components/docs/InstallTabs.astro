@@ -1,0 +1,176 @@
+---
+import { cn } from "@/utils/cn";
+
+
+
+import CodeBlock from "@/components/docs/CodeBlock.astro";
+import Tooltip from "@/components/ui/tooltip/Tooltip.astro";
+import TooltipTrigger from "@/components/ui/tooltip/TooltipTrigger.astro";
+import TooltipContent from "@/components/ui/tooltip/TooltipContent.astro";
+import HugeIcon from "@/components/ui/icon/HugeIcon.astro";
+import { Tick02Icon, Copy01Icon, TerminalIcon } from "@/components/ui/icon/icons";
+
+export interface Props {
+  /** The bearnie CLI subcommand (e.g., "init", "add button", "list") */
+  command: string;
+  /** Command style: "run" for npx/bunx/dlx, "create" for npm create/bun create */
+  type?: "run" | "create";
+  class?: string;
+}
+
+const { command, type = "run", class: className } = Astro.props;
+
+// Generate a unique ID for this component
+const id = `install-${Math.random().toString(36).substring(2, 9)}`;
+
+// Package manager commands based on type
+const packageManagers = type === "create" 
+  ? [
+      { id: "npm", label: "npm", line: `npm create bearnie ${command}` },
+      { id: "bun", label: "bun", line: `bun create bearnie ${command}` },
+      { id: "pnpm", label: "pnpm", line: `pnpm create bearnie ${command}` },
+      { id: "yarn", label: "yarn", line: `yarn create bearnie ${command}` },
+    ]
+  : [
+      { id: "npx", label: "npx", line: `npx bearnie ${command}` },
+      { id: "bun", label: "bun", line: `bunx bearnie ${command}` },
+      { id: "pnpm", label: "pnpm", line: `pnpm dlx bearnie ${command}` },
+      { id: "yarn", label: "yarn", line: `yarn dlx bearnie ${command}` },
+    ];
+---
+
+<div class={cn("not-prose w-full", className)} data-install-tabs={id}>
+  <div class="border rounded-lg overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-2 border-b bg-background">
+      <div class="flex items-center gap-2">
+        <HugeIcon icon={TerminalIcon} class="size-4 text-muted-foreground" />
+        {packageManagers.map((pm, index) => (
+          <button
+            type="button"
+            class="px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground data-active:text-foreground data-active:bg-muted rounded-md transition-colors"
+            data-pm-tab={pm.id}
+            data-active={index === 0 ? "" : undefined}
+          >
+            {pm.label}
+          </button>
+        ))}
+      </div>
+      <Tooltip>
+        <TooltipTrigger>
+          <button
+            type="button"
+            class="flex items-center justify-center p-1.5 text-muted-foreground hover:text-foreground rounded-md transition-colors"
+            data-copy-button
+          >
+            <HugeIcon icon={Copy01Icon} size={14} data-copy-icon />
+            <HugeIcon icon={Tick02Icon} size={14} class="hidden" data-check-icon />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent class="dark text-xs px-2 py-1 shadow-none">
+          Copy to clipboard
+        </TooltipContent>
+      </Tooltip>
+    </div>
+
+    {packageManagers.map((pm, index) => (
+      <div class={index === 0 ? "" : "hidden"} data-pm-panel={pm.id}>
+        <span class="sr-only" data-code-content>
+          {pm.line}
+        </span>
+        <CodeBlock
+          code={pm.line}
+          lang="bash"
+          class="rounded-none border-0 bg-transparent"
+          showCopy={false}
+        />
+      </div>
+    ))}
+  </div>
+</div>
+
+<script>
+  const PM_STORAGE_KEY = "bearnie-pm";
+
+  function initInstallTabs() {
+    document.querySelectorAll("[data-install-tabs]").forEach((container) => {
+      if (container.hasAttribute("data-initialized")) return;
+      container.setAttribute("data-initialized", "true");
+
+      const pmTabs = container.querySelectorAll("[data-pm-tab]");
+      const pmPanels = container.querySelectorAll("[data-pm-panel]");
+      const copyButton = container.querySelector("[data-copy-button]");
+      const copyIcon = copyButton?.querySelector("[data-copy-icon]");
+      const checkIcon = copyButton?.querySelector("[data-check-icon]");
+
+      // Package manager tab switching
+      function setActivePmTab(activeValue: string) {
+        pmTabs.forEach((tab) => {
+          if (tab.getAttribute("data-pm-tab") === activeValue) {
+            tab.setAttribute("data-active", "");
+          } else {
+            tab.removeAttribute("data-active");
+          }
+        });
+
+        pmPanels.forEach((panel) => {
+          if (panel.getAttribute("data-pm-panel") === activeValue) {
+            panel.classList.remove("hidden");
+          } else {
+            panel.classList.add("hidden");
+          }
+        });
+      }
+
+      // Apply stored preference on init (so all blocks show same PM)
+      try {
+        const stored = sessionStorage.getItem(PM_STORAGE_KEY);
+        if (stored && Array.from(pmTabs).some((t) => t.getAttribute("data-pm-tab") === stored)) {
+          setActivePmTab(stored);
+        }
+      } catch (_) {}
+
+      pmTabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const value = tab.getAttribute("data-pm-tab");
+          if (value) {
+            setActivePmTab(value);
+            try {
+              sessionStorage.setItem(PM_STORAGE_KEY, value);
+              document.dispatchEvent(new CustomEvent("bearnie-pm-change", { detail: value }));
+            } catch (_) {}
+          }
+        });
+      });
+
+      // Sync when user selects a PM in another block on the page
+      document.addEventListener("bearnie-pm-change", (e: Event) => {
+        const value = (e as CustomEvent<string>).detail;
+        if (Array.from(pmTabs).some((t) => t.getAttribute("data-pm-tab") === value)) {
+          setActivePmTab(value);
+        }
+      });
+
+      // Copy functionality
+      copyButton?.addEventListener("click", async () => {
+        const visiblePanel = container.querySelector("[data-pm-panel]:not(.hidden)");
+        const codeContent = visiblePanel?.querySelector("[data-code-content]");
+        const code = codeContent?.textContent || "";
+
+        try {
+          await navigator.clipboard.writeText(code);
+          copyIcon?.classList.add("hidden");
+          checkIcon?.classList.remove("hidden");
+          setTimeout(() => {
+            copyIcon?.classList.remove("hidden");
+            checkIcon?.classList.add("hidden");
+          }, 2000);
+        } catch (err) {
+          console.error("Failed to copy:", err);
+        }
+      });
+    });
+  }
+
+  initInstallTabs();
+  document.addEventListener("astro:page-load", initInstallTabs);
+</script>

@@ -1,0 +1,176 @@
+---
+import { cn } from "@/utils/cn";
+import type { HTMLAttributes } from "astro/types";
+
+export interface Props extends HTMLAttributes<"div"> {
+  type?: "single" | "multiple";
+  variant?: "default" | "outline";
+  size?: "sm" | "default" | "lg";
+  orientation?: "horizontal" | "vertical";
+  disabled?: boolean;
+  defaultValue?: string | string[];
+}
+
+const {
+  type = "single",
+  variant = "default",
+  size = "default",
+  orientation = "horizontal",
+  disabled = false,
+  defaultValue,
+  class: className,
+  ...props
+} = Astro.props;
+
+const classes = cn(
+  "inline-flex",
+  orientation === "vertical" ? "flex-col items-stretch" : "flex-row items-center",
+  className
+);
+---
+
+<div
+  role="group"
+  data-toggle-group
+  data-type={type}
+  data-variant={variant}
+  data-size={size}
+  data-orientation={orientation}
+  data-disabled={disabled ? "true" : undefined}
+  data-default-value={Array.isArray(defaultValue) ? defaultValue.join(",") : defaultValue}
+  class={classes}
+  {...props}
+>
+  <slot />
+</div>
+
+<style>
+  /* Horizontal orientation - connected buttons */
+  [role="group"][data-toggle-group][data-orientation="horizontal"]
+    > :global(*:not(:first-child):not(:last-child)) {
+    border-radius: 0;
+  }
+  [role="group"][data-toggle-group][data-orientation="horizontal"]
+    > :global(*:first-child:not(:last-child)) {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  [role="group"][data-toggle-group][data-orientation="horizontal"]
+    > :global(*:last-child:not(:first-child)) {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
+  [role="group"][data-toggle-group][data-orientation="horizontal"]
+    > :global(*:not(:first-child)) {
+    margin-left: -1px;
+  }
+
+  /* Vertical orientation - connected buttons */
+  [role="group"][data-toggle-group][data-orientation="vertical"]
+    > :global(*:not(:first-child):not(:last-child)) {
+    border-radius: 0;
+  }
+  [role="group"][data-toggle-group][data-orientation="vertical"]
+    > :global(*:first-child:not(:last-child)) {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  [role="group"][data-toggle-group][data-orientation="vertical"]
+    > :global(*:last-child:not(:first-child)) {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+  [role="group"][data-toggle-group][data-orientation="vertical"]
+    > :global(*:not(:first-child)) {
+    margin-top: -1px;
+  }
+</style>
+
+<script>
+  function initToggleGroups() {
+    document.querySelectorAll('[data-toggle-group]').forEach(group => {
+      if (group.hasAttribute('data-initialized')) return;
+      group.setAttribute('data-initialized', 'true');
+      
+      const type = group.getAttribute('data-type') || 'single';
+      const variant = group.getAttribute('data-variant') || 'default';
+      const size = group.getAttribute('data-size') || 'default';
+      const isDisabled = group.getAttribute('data-disabled') === 'true';
+      const defaultValue = group.getAttribute('data-default-value');
+      
+      const items = group.querySelectorAll('[data-toggle-group-item]');
+      
+      // Apply variant and size to all items
+      items.forEach(item => {
+        item.setAttribute('data-variant', variant);
+        item.setAttribute('data-size', size);
+        
+        if (isDisabled) {
+          item.setAttribute('disabled', 'true');
+          item.setAttribute('data-disabled', 'true');
+        }
+      });
+      
+      // Set default values
+      if (defaultValue) {
+        const values = defaultValue.split(',');
+        items.forEach(item => {
+          const itemValue = item.getAttribute('data-value');
+          if (itemValue && values.includes(itemValue)) {
+            item.setAttribute('aria-pressed', 'true');
+            item.setAttribute('data-state', 'on');
+          }
+        });
+      }
+      
+      // Handle item clicks
+      items.forEach(item => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          
+          if (item.hasAttribute('disabled')) return;
+          
+          const isPressed = item.getAttribute('aria-pressed') === 'true';
+          
+          if (type === 'single') {
+            // Deselect all items
+            items.forEach(i => {
+              i.setAttribute('aria-pressed', 'false');
+              i.setAttribute('data-state', 'off');
+            });
+            
+            // Select clicked item (unless it was already selected)
+            if (!isPressed) {
+              item.setAttribute('aria-pressed', 'true');
+              item.setAttribute('data-state', 'on');
+            }
+          } else {
+            // Multiple selection - toggle the clicked item
+            const newState = !isPressed;
+            item.setAttribute('aria-pressed', String(newState));
+            item.setAttribute('data-state', newState ? 'on' : 'off');
+          }
+          
+          // Dispatch custom event with current values
+          const selectedValues: string[] = [];
+          items.forEach(i => {
+            if (i.getAttribute('aria-pressed') === 'true') {
+              const val = i.getAttribute('data-value');
+              if (val) selectedValues.push(val);
+            }
+          });
+          
+          group.dispatchEvent(new CustomEvent('toggle-group-change', {
+            bubbles: true,
+            detail: { 
+              value: type === 'single' ? (selectedValues[0] || null) : selectedValues 
+            }
+          }));
+        });
+      });
+    });
+  }
+  
+  initToggleGroups();
+  document.addEventListener('astro:page-load', initToggleGroups);
+</script>

@@ -604,10 +604,13 @@ function canonicalHost(html) {
 export function linkProblems(html, demoHost) {
   const anchors = [...String(html || '').matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["']/gi)].map((match) => match[1]);
   const assets = htmlRefs(html).filter((ref) => /\.(css|js|woff2?|ttf|png|jpe?g|webp|svg)(?:$|\?)/i.test(ref));
-  const placeholder = [...anchors, ...assets].filter((ref) => BAD_HOST.test(ref));
+  // Assets on a placeholder host, or anchors to a dev server, break the page. Demo-content anchors to
+  // example.com (placeholder social or partner links) leave navigation intact, so they are only noted.
+  const placeholder = [...anchors.filter((ref) => BAD_HOST.test(ref) && !/example\.(com|org|net)/i.test(ref)), ...assets.filter((ref) => BAD_HOST.test(ref))];
+  const examples = anchors.filter((ref) => BAD_HOST.test(ref) && /example\.(com|org|net)/i.test(ref));
   const site = canonicalHost(html);
   const oldHost = site && site !== demoHost ? anchors.filter((ref) => { try { return new URL(ref).host === site; } catch { return false; } }) : [];
-  return { placeholder, oldHost, site };
+  return { placeholder, oldHost, site, examples };
 }
 
 function patchSite(configText, url) {
@@ -791,6 +794,7 @@ async function liveChecksOnce(demo, local) {
   checks.links = links.placeholder.length ? 'failed' : 'passed';
   if (links.placeholder.length) detail.push(`placeholder links: ${links.placeholder.slice(0, 3).join(', ')}`);
   if (links.oldHost.length) detail.push(`${links.oldHost.length} links go to the theme's own site ${links.site}`);
+  if (links.examples.length) detail.push(`${links.examples.length} demo-content links point at example.com`);
   if (local.output === 'server') checks.ssrRoute = home.status === 200 ? 'passed' : 'failed';
   if (local.title && htmlTitle(home.body) !== local.title) {
     checks.home = 'failed';

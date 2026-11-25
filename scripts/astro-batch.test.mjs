@@ -249,3 +249,9 @@ test('a GitHub Pages base equal to the repo name is removed, other bases stay', 
 test('CC BY 3.0 grants redistribution', () => {
   assert.equal(classifyLicense('Creative Commons Attribution 3.0 Unported').decision, 'ok');
 });
+
+test('example.com anchors are noted, example.com assets fail', () => {
+  const found = linkProblems('<a href="https://example.com/">Twitter</a><img src="https://example.com/logo.png">', 'astro-x.wasmer.app');
+  assert.deepEqual(found.placeholder, ['https://example.com/logo.png']);
+  assert.deepEqual(found.examples, ['https://example.com/']);
+});

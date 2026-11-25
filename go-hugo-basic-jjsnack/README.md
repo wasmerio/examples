@@ -2,7 +2,7 @@
 
 ## Demo
 
-https://hugo-basic.wasmer.app
+https://hugo-basic-jjsnack.wasmer.app
 
 ## About the theme
 

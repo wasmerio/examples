@@ -1,0 +1,195 @@
+---
+import { Icon } from 'astro-icon/components';
+const { project } = Astro.props;
+import { Image } from 'astro:assets';
+import { resolveAssetImage } from '../utils/images';
+
+// Map through the array of image strings from project JSON
+const optimizedImages = await Promise.all(
+  project.images.map(async (imgName: string) => {
+    return await resolveAssetImage(imgName);
+  })
+);
+
+const validImages = optimizedImages.filter(Boolean);
+const isSlider = validImages.length > 1;
+
+const categoryColors: Record<string, string> = {
+  'Professional Project': 'text-sky-400 bg-sky-400/10 border-sky-400/20',
+  'Published App':        'text-emerald-400 bg-emerald-400/10 border-emerald-400/20',
+  'Game Dev / Hobby':     'text-violet-400 bg-violet-400/10 border-violet-400/20',
+};
+const categoryClass = categoryColors[project.category] ?? 'text-accent bg-accent/10 border-accent/20';
+
+const platformLabels: Record<string, string> = {
+  android:   'Android',
+  'apple-ios': 'iOS',
+  windows:   'Windows',
+  web:       'Web',
+  linux:     'Linux',
+  macos:     'macOS',
+};
+
+const platformIconMap: Record<string, string> = {
+  android:   'mdi:android',
+  'apple-ios': 'mdi:apple-ios',
+  windows:   'mdi:microsoft-windows',
+  web:       'mdi:web',
+  linux:     'mdi:linux',
+  macos:     'mdi:apple',
+};
+---
+
+<div class="project-card group relative bg-accent/5 border border-accent/10 rounded-2xl overflow-hidden hover:border-accent/40 transition-all duration-500 flex flex-col">
+
+  <!-- Image area -->
+  <div class="aspect-video overflow-hidden relative bg-background/50 shrink-0">
+    <div class={`w-full h-full relative ${isSlider ? 'image-slider' : ''}`}>
+      {
+        validImages.length > 0 ? (
+          validImages.map((imgMetadata, index) => (
+            <Image
+              src={imgMetadata}
+              alt={`${project.title}`}
+              class={`absolute inset-0 w-full h-full object-cover transition-all duration-1000 group-hover:scale-110 ${index === 0 ? 'opacity-100 z-0' : 'opacity-0 z-[-1]'}`}
+            />
+          ))
+        ) : (
+          <img
+            src="/placeholder.jpeg"
+            alt={`${project.title} placeholder`}
+            class="absolute inset-0 w-full h-full object-cover transition-all duration-1000 group-hover:scale-110"
+          />
+        )
+      }
+    </div>
+
+    <!-- Platform icons -->
+    <div class="absolute top-3 right-3 flex gap-2 z-20">
+      {project.platforms.map((p: string) => (
+        <div
+          class="p-1.5 bg-background/80 backdrop-blur-md rounded-lg border border-accent/10 text-maintext"
+          title={platformLabels[p] ?? p}
+        >
+          <Icon name={platformIconMap[p] ?? `mdi:${p}`} class="w-4 h-4" />
+        </div>
+      ))}
+    </div>
+
+    <!-- Slider dot indicators -->
+    {isSlider && (
+      <div class="slider-dots absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-30">
+        {validImages.map((_: unknown, i: number) => (
+          <span
+            class={`slider-dot block rounded-full transition-all duration-400 ${i === 0 ? 'w-4 h-1.5 bg-white' : 'w-1.5 h-1.5 bg-white/40'}`}
+          />
+        ))}
+      </div>
+    )}
+  </div>
+
+  <!-- Card body -->
+  <div class="p-6 flex flex-col gap-3 flex-1">
+    <div>
+      <span class={`inline-block text-[10px] uppercase tracking-widest font-bold px-2 py-0.5 rounded-full border ${categoryClass}`}>
+        {project.category}
+      </span>
+      <h3 class="text-xl font-heading font-bold text-maintext mt-2">{project.title}</h3>
+    </div>
+
+    <p class="text-subtext text-sm font-body line-clamp-3 flex-1">
+      {project.description}
+    </p>
+
+    <!-- Tags -->
+    <div class="flex flex-wrap gap-2">
+      {project.tech.map((t: string) => (
+        <span class="rounded-md text-[10px] px-2 md:px-3 py-1 bg-accent/5 border border-accent/10 text-accent/80 group-hover:border-accent/40 group-hover:text-accent transition-colors duration-300">
+          {t}
+        </span>
+      ))}
+    </div>
+
+    <!-- View Project Button -->
+    <a
+      href={project.link}
+      target="_blank"
+      class="mt-1 flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-accent/20 text-accent/70 hover:text-accent hover:border-accent/60 hover:bg-accent/5 transition-all duration-300 text-xs font-body font-semibold tracking-wide"
+    >
+      View Project
+      <Icon name="mdi:arrow-right" class="w-3.5 h-3.5" />
+    </a>
+  </div>
+</div>
+
+<script>
+  const activeSliderIntervals: ReturnType<typeof setInterval>[] = [];
+
+  function initSliders() {
+    activeSliderIntervals.forEach(clearInterval);
+    activeSliderIntervals.length = 0;
+
+    const sliders = document.querySelectorAll('.image-slider');
+
+    sliders.forEach(slider => {
+      const images = slider.querySelectorAll('img');
+      if (images.length <= 1) return;
+
+      const card = slider.closest('.project-card');
+      const dots = card ? card.querySelectorAll('.slider-dot') : [];
+
+      let currentIndex = 0;
+
+      function goTo(next: number) {
+        images[currentIndex].classList.remove('opacity-100', 'z-0');
+        images[currentIndex].classList.add('opacity-0', 'z-[-1]');
+        if (dots[currentIndex]) {
+          dots[currentIndex].classList.remove('w-4', 'bg-white');
+          dots[currentIndex].classList.add('w-1.5', 'bg-white/40');
+        }
+
+        currentIndex = next;
+
+        images[currentIndex].classList.remove('opacity-0', 'z-[-1]');
+        images[currentIndex].classList.add('opacity-100', 'z-0');
+        if (dots[currentIndex]) {
+          dots[currentIndex].classList.remove('w-1.5', 'bg-white/40');
+          dots[currentIndex].classList.add('w-4', 'bg-white');
+        }
+      }
+
+      const id = setInterval(() => {
+        goTo((currentIndex + 1) % images.length);
+      }, 3500);
+
+      activeSliderIntervals.push(id);
+    });
+  }
+
+  initSliders();
+  document.addEventListener('astro:after-swap', () => { initSliders(); });
+</script>
+
+<style is:global>
+  .project-card {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(40px);
+    transition:
+      opacity 0.8s ease-out,
+      transform 0.8s cubic-bezier(0.16, 1, 0.3, 1),
+      visibility 0.8s;
+    will-change: transform, opacity;
+  }
+
+  .project-card.reveal {
+    opacity: 1 !important;
+    visibility: visible !important;
+    transform: translateY(0) !important;
+  }
+
+  /* Slider dot pill transition */
+  .slider-dot {
+    transition: width 0.4s ease, background-color 0.4s ease;
+  }
+</style>

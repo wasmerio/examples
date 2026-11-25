@@ -1,0 +1,549 @@
+<!-- Theme Scripts -->
+<script async defer>
+	document.addEventListener('astro:page-load', () => {
+		// Menu Dropdown
+		const menuItems = document.querySelectorAll('.header__menu-item')
+		menuItems.forEach((menuItem) => {
+			const submenu = menuItem.querySelector('.header__submenu')
+			const link = menuItem.querySelector('.header__menu-link')
+
+			if (submenu && link) {
+				link.addEventListener('click', function (event) {
+					event.preventDefault()
+					menuItem.classList.toggle('open')
+				})
+			}
+		})
+		document.addEventListener('click', function (event) {
+			const target = event.target
+
+			menuItems.forEach((menuItem) => {
+				const submenu = menuItem.querySelector('.header__submenu')
+				if (submenu && !menuItem.contains(target)) {
+					menuItem.classList.remove('open')
+				}
+			})
+		})
+
+		// Menu toggle
+		const headerToggle = document.querySelector('.header__toggle')
+		const headerMenu = document.querySelector('.header__menu')
+		if (headerToggle && headerMenu) {
+			headerToggle.addEventListener('click', () => {
+				headerToggle.classList.toggle('toggle--open')
+				const isExpanded = headerToggle.getAttribute('aria-expanded') === 'true'
+				const newExpandedValue = isExpanded ? 'false' : 'true'
+				headerToggle.setAttribute('aria-expanded', newExpandedValue)
+				headerMenu.classList.toggle('menu--open')
+			})
+		}
+
+		// Modals
+		function openModal(modal) {
+			if (modal && modal.classList.contains('modal')) {
+				modal.classList.add('open')
+			}
+		}
+		function closeModal(modal) {
+			if (modal && modal.classList.contains('modal')) {
+				modal.classList.remove('open')
+			}
+		}
+		const modalButtons = document.querySelectorAll('[data-modal]')
+
+		modalButtons.forEach(function (button) {
+			button.addEventListener('click', function (event) {
+				event.preventDefault()
+				const modalId = button.getAttribute('data-modal')
+				const modal = document.getElementById(modalId)
+				openModal(modal)
+			})
+		})
+		document.querySelectorAll('.modal').forEach(function (modal) {
+			modal.addEventListener('click', function (event) {
+				if (event.target === modal) {
+					closeModal(modal)
+				}
+			})
+			const close = modal.querySelector('.modal__close')
+			close.addEventListener('click', function (event) {
+				event.stopPropagation()
+				closeModal(modal)
+			})
+		})
+	})
+</script>
+
+<!-- Light/Dark mode  -->
+<script>
+	const applyTheme = () => {
+		// Temporarily disable transitions
+		document.documentElement.classList.add('disable-transitions')
+
+		const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+		const storedTheme = localStorage.getItem('theme')
+
+		if (storedTheme === 'dark') {
+			document.documentElement.classList.add('dark')
+		} else if (storedTheme === 'light') {
+			document.documentElement.classList.remove('dark')
+		} else {
+			if (systemPrefersDark) {
+				document.documentElement.classList.add('dark')
+			} else {
+				document.documentElement.classList.remove('dark')
+			}
+		}
+
+		// Allow transitions again shortly after
+		window.requestAnimationFrame(() => {
+			setTimeout(() => {
+				document.documentElement.classList.remove('disable-transitions')
+			}, 0)
+		})
+	}
+
+	const setupAutoThemeListener = () => {
+		const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+		const storedTheme = localStorage.getItem('theme')
+		if (!storedTheme || storedTheme === 'auto') {
+			mediaQuery.addEventListener('change', applyTheme)
+		}
+	}
+
+	const setupThemeSwitcher = () => {
+		const themeSwitcher = document.getElementById('theme-selector')
+
+		if (themeSwitcher) {
+			themeSwitcher.addEventListener('click', () => {
+				const currentEffectiveTheme = document.documentElement.classList.contains('dark')
+					? 'dark'
+					: 'light'
+				const stored = localStorage.getItem('theme') || 'auto'
+
+				let next = 'auto' // default fallback
+
+				if (stored === 'auto') {
+					next = currentEffectiveTheme === 'dark' ? 'light' : 'dark'
+				} else if (stored === 'dark') {
+					next = 'light'
+				} else if (stored === 'light') {
+					next = 'auto'
+				}
+
+				if (typeof next === 'string') {
+					localStorage.setItem('theme', next)
+					applyTheme()
+				}
+			})
+		}
+	}
+
+	const initTheme = () => {
+		// Forced modes via fallback classes
+		if (document.documentElement.classList.contains('mode-dark')) {
+			document.documentElement.classList.add('dark')
+			return
+		}
+		if (document.documentElement.classList.contains('mode-light')) {
+			document.documentElement.classList.remove('dark')
+			return
+		}
+
+		// Auto or stored theme
+		applyTheme()
+		setupAutoThemeListener()
+		setupThemeSwitcher()
+	}
+
+	// Run once
+	initTheme()
+	// Re-run on Astro transitions
+	document.addEventListener('astro:page-loaded', initTheme)
+	document.addEventListener('astro:after-swap', initTheme)
+</script>
+
+<!-- Scroll animations -->
+<script>
+	const initializeScrollAnimationsAndCounters = () => {
+		const observer = new IntersectionObserver(
+			(entries) => {
+				entries.forEach((entry) => {
+					if (!entry.isIntersecting) return
+					const el = entry.target
+					if (
+						el.classList.contains('scroll-animate') ||
+						(el.classList.contains('col') && el.closest('.scroll-animation'))
+					) {
+						el.classList.add('scroll-animated')
+						observer.unobserve(el) // animate once
+					}
+
+					// Counter animation
+					if (el.classList.contains('counter') && el instanceof HTMLElement) {
+						const target = parseInt(el.dataset.target || '0', 10)
+						const suffix = el.dataset.suffix || ''
+						const duration = parseInt(el.dataset.duration || '1000', 10) // optional override
+						let current = 0
+						const increment = target / (duration / 16)
+
+						const updateCounter = () => {
+							current += increment
+							if (current >= target) {
+								el.textContent = target + suffix
+							} else {
+								el.textContent = Math.floor(current) + suffix
+								requestAnimationFrame(updateCounter)
+							}
+						}
+
+						updateCounter()
+						observer.unobserve(el) // count once
+					}
+				})
+			},
+			{ threshold: 0.2 }
+		)
+		document
+			.querySelectorAll(
+				'.scroll-animation .col:not(.no-scroll-animation), .scroll-animate:not(.no-scroll-animation), .counter'
+			)
+			.forEach((el) => observer.observe(el))
+	}
+
+	const initializeParallax = () => {
+		const parallaxElements = document.querySelectorAll('.media--parallax > *, .parallax > *')
+		let ticking = false
+
+		const updateParallax = () => {
+			const scrollTop = window.pageYOffset
+			const windowHeight = window.innerHeight
+
+			parallaxElements.forEach((el) => {
+				if (!(el instanceof HTMLElement)) return
+
+				const rect = el.getBoundingClientRect()
+				const offset = rect.top + window.pageYOffset
+				const height = el.offsetHeight
+
+				if (offset + height > scrollTop && offset < scrollTop + windowHeight) {
+					const percent = (scrollTop + windowHeight - offset) / (windowHeight + height)
+
+					// Read the custom offset from data attribute, default to 50
+					const maxOffset = Number(el.dataset.parallaxOffset ?? '50')
+
+					const translateY = Math.min(
+						Math.max(percent * maxOffset * 2 - maxOffset, -maxOffset),
+						maxOffset
+					)
+					el.style.transform = `translateY(${translateY}px)`
+				}
+			})
+
+			ticking = false
+		}
+
+		const onScroll = () => {
+			if (!ticking) {
+				requestAnimationFrame(updateParallax)
+				ticking = true
+			}
+		}
+
+		window.addEventListener('scroll', onScroll)
+		window.addEventListener('resize', onScroll)
+		onScroll()
+	}
+
+	const init = () => {
+		initializeScrollAnimationsAndCounters()
+		initializeParallax()
+	}
+
+	document.addEventListener('DOMContentLoaded', init)
+	document.addEventListener('astro:page-loaded', init)
+	document.addEventListener('astro:after-swap', init)
+</script>
+
+<!-- Video -->
+<script>
+	function fixFirefoxVideoResume() {
+		const videos = document.querySelectorAll('.video-in-viewport')
+
+		videos.forEach((video) => {
+			if (!(video instanceof HTMLVideoElement)) return
+
+			// Re-assign source to force reload (fixes some Firefox bugs)
+			const source = video.querySelector('source')
+			if (source) {
+				video.load() // re-load the video element
+			}
+
+			// Play if autoplay is true
+			if (video.autoplay && video.paused) {
+				video.play().catch(() => {})
+			}
+		})
+	}
+
+	document.addEventListener('astro:after-swap', fixFirefoxVideoResume)
+	document.addEventListener('astro:page-loaded', fixFirefoxVideoResume)
+</script>
+
+<!-- Scrollspy -->
+<script type="module">
+	;(() => {
+		const ACTIVE_CLASS = 'active'
+		const HEADER_OFFSET_PX = 212
+
+		/** @type {HTMLElement | null} */
+		let ROOT = null
+		/** @type {IntersectionObserver | null} */
+		let observer = null
+		/** @type {HTMLElement[]} */
+		let sections = []
+		/** @type {Map<string, HTMLAnchorElement>} */
+		let linkMap = new Map()
+		let ticking = false
+
+		const getRoot = () => document.querySelector('.stepper')
+
+		const buildLinkMap = () => {
+			linkMap = new Map()
+			ROOT?.querySelectorAll('.stepper__nav a[href^="#"]').forEach((a) => {
+				const href = (a.getAttribute('href') || '').trim()
+				if (href.startsWith('#') && href.length > 1) {
+					try {
+						linkMap.set(decodeURIComponent(href.slice(1)), a)
+					} catch {}
+				}
+			})
+		}
+
+		const setActiveLink = (id) => {
+			// clear current state
+			ROOT?.querySelectorAll('.stepper__nav-item').forEach((li) =>
+				li.classList.remove(ACTIVE_CLASS)
+			)
+			linkMap.forEach((a) => {
+				a.classList.remove(ACTIVE_CLASS)
+				a.removeAttribute('aria-current')
+			})
+
+			// apply to the matching link (if any)
+			const a = linkMap.get(id)
+			if (!a) return
+			a.classList.add(ACTIVE_CLASS)
+			a.setAttribute('aria-current', 'true')
+			a.closest('.stepper__nav-item')?.classList.add(ACTIVE_CLASS)
+		}
+
+		const ioCallback = (entries) => {
+			let candidate = null
+			for (const entry of entries) {
+				if (!entry.isIntersecting) continue
+				if (!candidate || entry.intersectionRatio > candidate.intersectionRatio) candidate = entry
+			}
+			const id = candidate?.target.getAttribute('id')
+			if (id) setActiveLink(id)
+		}
+
+		const initIO = () => {
+			cleanupIO()
+			observer = new IntersectionObserver(ioCallback, {
+				root: null,
+				rootMargin: `-${HEADER_OFFSET_PX}px 0px -60% 0px`,
+				threshold: [0, 0.25, 0.5, 0.75, 1]
+			})
+			sections.forEach((el) => observer?.observe(el))
+		}
+
+		const cleanupIO = () => {
+			observer?.disconnect()
+			observer = null
+		}
+
+		const onScrollFallback = () => {
+			if (observer || ticking) return
+			ticking = true
+			requestAnimationFrame(() => {
+				const y = window.scrollY + HEADER_OFFSET_PX + 1
+				let currentId = null
+				for (const sec of sections) {
+					const top = sec.getBoundingClientRect().top + window.scrollY
+					const bottom = top + sec.offsetHeight
+					if (y >= top && y < bottom) {
+						currentId = sec.id
+						break
+					}
+				}
+				if (currentId) setActiveLink(currentId)
+				ticking = false
+			})
+		}
+
+		const syncFromHash = () => {
+			const id = (location.hash || '').slice(1)
+			if (id && linkMap.has(id)) setActiveLink(id)
+		}
+
+		const init = () => {
+			ROOT = getRoot()
+			if (!ROOT) {
+				destroy()
+				return
+			}
+
+			sections = Array.from(ROOT.querySelectorAll('.stepper__step[id]'))
+			buildLinkMap()
+
+			if ('IntersectionObserver' in window) {
+				initIO()
+			} else {
+				cleanupIO()
+				window.removeEventListener('scroll', onScrollFallback)
+				window.addEventListener('scroll', onScrollFallback, { passive: true })
+				onScrollFallback()
+			}
+			syncFromHash()
+		}
+
+		const destroy = () => {
+			cleanupIO()
+			window.removeEventListener('scroll', onScrollFallback)
+		}
+
+		// First load
+		document.addEventListener('DOMContentLoaded', init)
+
+		// Astro view-transition lifecycle
+		document.addEventListener('astro:before-swap', destroy)
+		document.addEventListener('astro:after-swap', init)
+		document.addEventListener('astro:page-load', () => {
+			destroy()
+			init()
+		})
+
+		// Hash changes (e.g., clicking nav links)
+		window.addEventListener('hashchange', syncFromHash)
+	})()
+</script>
+
+<!-- Pricing toggle script -->
+<script>
+	document.addEventListener('astro:page-load', () => {
+		// Query all billing switchers
+		const switches = document.querySelectorAll<HTMLUListElement>('ul:has([data-billing])')
+
+		switches.forEach((switchEl) => {
+			const saved = (localStorage.getItem('billingCycle') as 'annually' | 'monthly') || 'annually'
+			applyBilling(switchEl, saved)
+
+			switchEl.addEventListener('click', (e: MouseEvent) => {
+				const target = e.target as HTMLElement | null
+				if (!target) return
+
+				const li = target.closest<HTMLLIElement>('li[data-billing]')
+				if (!li || !li.dataset.billing) return
+
+				const billing = li.dataset.billing === 'monthly' ? 'monthly' : 'annually'
+				applyBilling(switchEl, billing)
+				localStorage.setItem('billingCycle', billing)
+			})
+		})
+
+		function applyBilling(switchEl: HTMLUListElement, billing: 'annually' | 'monthly') {
+			// Update active UI state
+			switchEl.querySelectorAll<HTMLLIElement>('li[data-billing]').forEach((item) => {
+				const isActive = item.dataset.billing === billing
+				item.classList.toggle('active', isActive)
+				item.setAttribute('aria-pressed', String(isActive))
+				item.setAttribute('role', 'button')
+				item.tabIndex = 0
+			})
+
+			const amountEls = document.querySelectorAll<HTMLElement>('.card--pricing-price__amount')
+			const noteEls = document.querySelectorAll<HTMLElement>('.card--pricing-price__note')
+
+			// Update amount
+			amountEls.forEach((el) => {
+				const monthly = el.dataset.priceMonthly
+				const annually = el.dataset.priceAnnually
+				const targetStr = billing === 'monthly' ? monthly : annually
+				if (!targetStr) return
+
+				const target = parseFloat(targetStr)
+				if (Number.isNaN(target)) return
+
+				const decimals = countDecimals(targetStr)
+
+				if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+					el.textContent = formatMoney(target, decimals)
+				} else {
+					animateCount(el, target, { duration: 400, decimals })
+				}
+			})
+
+			// Update notes
+			noteEls.forEach((el) => {
+				const monthlyNote = el.dataset.priceMonthlyNote
+				const annuallyNote = el.dataset.priceAnnuallyNote
+				const text = billing === 'monthly' ? monthlyNote : annuallyNote
+				if (text) el.textContent = text
+			})
+		}
+
+		// ---------- Helpers ----------
+		function countDecimals(numStr: string): number {
+			const idx = numStr.indexOf('.')
+			return idx === -1 ? 0 : numStr.length - idx - 1
+		}
+
+		function formatMoney(value: number, decimals: number): string {
+			const prefix = '$ '
+			const fmt = new Intl.NumberFormat(undefined, {
+				minimumFractionDigits: decimals,
+				maximumFractionDigits: decimals
+			})
+			return prefix + fmt.format(value)
+		}
+
+		function animateCount(
+			el: HTMLElement,
+			to: number,
+			{ duration = 800, decimals = 0 }: { duration?: number; decimals?: number } = {}
+		) {
+			const currentText = el.textContent || ''
+			const current = parseFloat(currentText.replace(/[^\d.]/g, '')) || 0
+			const start = performance.now()
+			const from = current
+			const delta = to - from
+
+			// @ts-ignore – custom property on element to store animation ID
+			if (el._animRAF) cancelAnimationFrame(el._animRAF)
+
+			const tick = (now: number) => {
+				const t = Math.min(1, (now - start) / duration)
+				const eased = easeOutCubic(t)
+				const value = from + delta * eased
+				el.textContent = formatMoney(value, decimals)
+
+				if (t < 1) {
+					// @ts-ignore
+					el._animRAF = requestAnimationFrame(tick)
+				} else {
+					el.textContent = formatMoney(to, decimals)
+					// @ts-ignore
+					el._animRAF = null
+				}
+			}
+
+			// @ts-ignore
+			el._animRAF = requestAnimationFrame(tick)
+		}
+
+		function easeOutCubic(t: number): number {
+			return 1 - Math.pow(1 - t, 3)
+		}
+	})
+</script>

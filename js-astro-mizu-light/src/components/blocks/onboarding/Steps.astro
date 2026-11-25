@@ -1,0 +1,193 @@
+---
+// ScrollSpy Steps (Stepper)
+// -------------------------
+// Uses JSON data with { subtitle, title, nav[{ id, index, label, color }], steps[{ id, index, title, subtitle, color, body[], cta, media{back,front} }] }
+// Renders: header, a <ul> with  nav links, then step blocks
+
+// Components
+// - Layout
+import Section from '../../ui/Section.astro'
+import Row from '../../ui/Row.astro'
+import Col from '../../ui/Col.astro'
+// - UI
+import Header from '../../ui/Header.astro'
+import Link from '../../ui/Link.astro'
+import { Image } from 'astro:assets'
+import DecorationBorder from '../../ui/DecorationBorder.astro'
+
+// - Types
+interface MediaImage {
+	src: string
+	alt: string
+}
+interface Step {
+	id: string
+	index: string
+	title: string
+	subtitle?: string
+	color?: string
+	body: string[]
+	cta?: { label: string; href: string }
+	media?: { back?: MediaImage; front?: MediaImage }
+}
+interface NavItem {
+	id: string
+	index?: string
+	label: string
+	color?: string
+}
+interface StepperData {
+	subtitle?: string
+	title: string
+	nav: NavItem[]
+	steps: Step[]
+}
+
+export interface Props {
+	data?: StepperData
+}
+const { data: passed } = Astro.props
+const data: StepperData =
+	passed ?? (await import('../../../data/json-files/onboardingData.json')).default
+
+// - Image resolution
+const imageMap = import.meta.glob('/src/assets/**/*.{png,jpg,jpeg,webp,avif,gif,svg}', {
+	eager: true,
+	import: 'default'
+}) as Record<string, ImageMetadata>
+
+const resolveAsset = (jsonPath?: string): ImageMetadata | null => {
+	if (!jsonPath) return null
+	const key = '/src/assets' + jsonPath
+	return imageMap[key] ?? null
+}
+
+const steps = data.steps.map((s) => ({
+	...s,
+	_frontAsset: resolveAsset(s.media?.front?.src),
+	_backAsset: resolveAsset(s.media?.back?.src)
+}))
+---
+
+<Section classes="stepper overflow-visible!">
+	<Row style="transparent">
+		<Col span="12" classes="pt-16 lg:pt-24 ">
+			<Header
+				title={data.title}
+				headingLevel="h2"
+				subtitle={data.subtitle}
+				titleWidth="max-w-2xl"
+			/>
+		</Col>
+
+		<Col span="12" classes="no-scroll-animation " style="transparent">
+			<div class="stepper__steps">
+				{
+					steps.map((step) => (
+						<div class="stepper__item scroll-animate group">
+							<div class="stepper__step scroll-animate" id={step.id}>
+								<Header
+									title={step.title}
+									headingLevel="h3"
+									titleClasses="lg:text-5xl! leading-tight!"
+									subtitle={step.subtitle}
+								/>
+								<div class="stepper__step-body">
+									{step.body?.map((paragraph) => (
+										<p class="stepper__step-text">{paragraph}</p>
+									))}
+									<Link
+										link={step.cta?.href}
+										icon="arrow-turn-down-right"
+										classes="stepper__step-cta"
+									>
+										{step.cta?.label}
+									</Link>
+								</div>
+								<DecorationBorder type="all" style="solid" />
+							</div>
+
+							{step.media && (
+								<figure class="stepper__media scroll-animate">
+									{/* Back image */}
+									{step.media.back &&
+										(step._backAsset ? (
+											<Image
+												class="stepper__media-back"
+												src={step._backAsset}
+												alt={step.media.back.alt}
+												loading="lazy"
+												decoding="async"
+												layout="constrained"
+											/>
+										) : (
+											<img
+												class="stepper__media-back"
+												src={step.media.back.src}
+												alt={step.media.back.alt}
+												loading="lazy"
+												decoding="async"
+											/>
+										))}
+
+									{/* Front image */}
+									{step.media.front &&
+										(step._frontAsset ? (
+											<div class="parallax">
+												<Image
+													class="stepper__media-front"
+													src={step._frontAsset}
+													alt={step.media.front.alt}
+													loading="lazy"
+													decoding="async"
+													layout="constrained"
+												/>
+											</div>
+										) : (
+											<div class="parallax">
+												<img
+													class="stepper__media-front"
+													src={step.media.front.src}
+													alt={step.media.front.alt}
+													loading="lazy"
+													decoding="async"
+												/>
+											</div>
+										))}
+									<DecorationBorder type="left right" style="solid" />
+								</figure>
+							)}
+							<DecorationBorder type="all" style="solid" />
+						</div>
+					))
+				}
+			</div>
+		</Col>
+	</Row>
+</Section>
+
+<style>
+	@reference '../../../styles/global.css';
+
+	.stepper__step {
+		@apply h-full bg-white py-16 lg:py-24 lg:group-even:order-2 lg:group-even:col-start-2 lg:group-even:row-start-1 dark:bg-neutral-950;
+	}
+	.stepper__steps {
+		@apply relative flex flex-col gap-6 lg:gap-8;
+	}
+	.stepper__item {
+		@apply relative m-0 grid items-center bg-white/80 lg:grid-cols-2 lg:gap-x-8 dark:bg-neutral-950/80;
+	}
+	.stepper__step-body {
+		@apply p-6 pb-0 lg:px-8 lg:py-12 lg:text-xl lg:leading-9;
+	}
+	.stepper__media {
+		@apply relative h-full bg-neutral-50 bg-[url('/bgs/dot-gray-light.svg')] bg-size-[18px] bg-fixed lg:group-even:col-start-1 dark:bg-neutral-900 dark:bg-[url('/bgs/dot-gray-dark.svg')];
+	}
+	.stepper__media-front {
+		@apply absolute inset-0 z-10 h-full object-cover;
+	}
+	.stepper__media-back {
+		@apply h-full object-cover;
+	}
+</style>

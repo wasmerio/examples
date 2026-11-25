@@ -1,0 +1,83 @@
+---
+title: "Ink in the Browser"
+description: "How a fluid simulation ends up on the front page of a blog theme without wrecking the performance budget — half-float buffers, a capped pixel ratio, and knowing when to stop drawing."
+pubDate: 2026-07-14
+tags: ["webgl", "astro", "performance"]
+---
+
+import { INK } from "../../config";
+
+The hero on the front page is a real fluid simulation. Not a video, not a shader that fakes turbulence with noise — an actual solve of the incompressible Navier–Stokes equations, running every frame, reacting to the cursor.
+
+That sounds irresponsible for a blog theme. It mostly isn't, and the reasons why are more interesting than the simulation itself.
+
+## What the solver actually does
+
+Each frame runs the same short sequence on a pair of textures:
+
+1. **Splat** new velocity and dye wherever the pointer moved.
+2. **Curl and vorticity confinement** — measure the local rotation and push it back in, because a coarse grid bleeds angular momentum badly.
+3. **Divergence and pressure** — a Jacobi solve that finds the pressure field which makes the velocity divergence-free.
+4. **Gradient subtraction** — remove that pressure gradient, leaving an incompressible field.
+5. **Advection** — carry velocity and dye along the field, with a dissipation factor so the picture eventually settles.
+
+The pressure step is the expensive one. It is an iterative solve, and the iteration count is a straight quality-for-time trade:
+
+```js
+P.press.use();
+gl.uniform2f(P.press.u("uTexel"), vel.texel[0], vel.texel[1]);
+gl.uniform1i(P.press.u("uDiv"), div.attach(1));
+
+for (let i = 0; i < 22; i++) {
+  gl.uniform1i(P.press.u("uPre"), pre.r.attach(0));
+  blit(pre.w);
+  pre.swap();
+}
+```
+
+Twenty-two iterations is enough that ink behaves like ink. At eight it looks gaseous. At forty nobody can tell the difference, and you have spent the frame budget.
+
+## The budget is the design
+
+Three constraints keep this honest, and all three are boring:
+
+**The simulation grid is not the screen.** Velocity is solved at 160 rows and dye at 560, regardless of how large the canvas is. A 4K display does not get a 4K solve — it gets the same solve, sampled with linear filtering. Fluid is low-frequency; nobody can see the grid.
+
+**The pixel ratio is capped.**
+
+```js
+const dpr = Math.min(1.5, window.devicePixelRatio || 1);
+```
+
+On a 3× phone screen this is the difference between four million fragments and one million. The visual difference is close to nothing, because the thing being drawn is a soft gradient.
+
+**Buffers are half-float.** `RGBA16F` everywhere. Full float doubles the bandwidth to store precision that a dye field does not need.
+
+## Knowing when to stop
+
+The most effective optimisation is not drawing at all. An `IntersectionObserver` watches the canvas, and the frame loop returns early the moment it scrolls out of view:
+
+```js
+new IntersectionObserver((entries) => {
+  visible = entries[0].isIntersecting;
+}).observe(this);
+```
+
+Scroll past the hero and the GPU work goes to zero. Read an article and the simulation never loads in the first place — it only ships on the front page, and only when the theme's config asks for it:
+
+<p class="label">
+  ink.hero = {String(INK.hero)} · strength = {INK.strength} · autoFlow ={" "}
+  {String(INK.autoFlow)}
+</p>
+
+That fragment is read from `src/config.ts` at build time. Turn the flags off and the page emits no simulation code at all.
+
+## The parts that are not negotiable
+
+Two behaviours matter more than the frame rate.
+
+If the visitor has asked for reduced motion, the simulation does not start. There is a static gradient in its place that carries the same composition. This is not a graceful degradation story — for someone with a vestibular disorder, a drifting full-screen fluid is genuinely unpleasant.
+
+If the browser cannot give us a WebGL2 context, the same static fallback appears. No error, no blank rectangle, no layout shift. The page was designed so that the ink is the best version of the hero rather than the only version.
+
+A decorative simulation that breaks the page it decorates is not a feature. It is a liability with good marketing.

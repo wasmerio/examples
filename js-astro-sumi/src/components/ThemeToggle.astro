@@ -1,0 +1,120 @@
+---
+/**
+ * Light / dark switch.
+ *
+ * Until it is pressed the page has no `data-theme` at all, so `color-scheme:
+ * light dark` in tokens.css keeps following the operating system. Pressing it
+ * pins an explicit theme and remembers it.
+ *
+ * The script is inlined on purpose: it is a few hundred bytes, it has to run
+ * before paint, and it keeps the number of external JS requests at zero.
+ */
+---
+
+<button
+  class="theme-toggle"
+  type="button"
+  data-theme-toggle
+  aria-label="Switch to dark theme"
+>
+  <span class="theme-toggle__icon" aria-hidden="true"></span>
+</button>
+
+<script is:inline>
+  (() => {
+    const root = document.documentElement;
+    const button = document.querySelector("[data-theme-toggle]");
+    if (!button) return;
+
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const resolve = () =>
+      root.dataset.theme || (media.matches ? "dark" : "light");
+
+    const syncLabel = () => {
+      const next = resolve() === "dark" ? "light" : "dark";
+      button.setAttribute("aria-label", `Switch to ${next} theme`);
+    };
+
+    /**
+     * The two `theme-color` metas in BaseHead are keyed on
+     * `prefers-color-scheme`, which only ever tracks the operating system. Once
+     * a theme is pinned they would leave the browser chrome on the other
+     * palette, so replace them with a single unconditional meta.
+     *
+     * The colour is read back off the body rather than hard-coded, so it stays
+     * correct when the palette in tokens.css changes.
+     */
+    const syncThemeColor = () => {
+      if (!root.dataset.theme) return;
+
+      let pinned = document.querySelector('meta[name="theme-color"]:not([media])');
+      if (!pinned) {
+        for (const meta of document.querySelectorAll(
+          'meta[name="theme-color"][media]',
+        )) {
+          meta.remove();
+        }
+        pinned = document.createElement("meta");
+        pinned.setAttribute("name", "theme-color");
+        document.head.appendChild(pinned);
+      }
+
+      pinned.setAttribute(
+        "content",
+        getComputedStyle(document.body).backgroundColor,
+      );
+    };
+
+    button.addEventListener("click", () => {
+      const next = resolve() === "dark" ? "light" : "dark";
+      root.dataset.theme = next;
+      try {
+        localStorage.setItem("sumi-theme", next);
+      } catch {
+        /* private mode — the choice just won't persist */
+      }
+      syncLabel();
+      syncThemeColor();
+    });
+
+    // Only relevant while the visitor is still following the OS.
+    media.addEventListener("change", syncLabel);
+    syncLabel();
+    // Catches a theme restored from localStorage before first paint.
+    syncThemeColor();
+  })();
+</script>
+
+<style>
+  .theme-toggle {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    margin-inline-start: calc(var(--space-2) * -1);
+    color: var(--color-fg-muted);
+    border-radius: var(--radius);
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  .theme-toggle:hover {
+    color: var(--color-fg);
+  }
+
+  .theme-toggle__icon {
+    width: 0.875rem;
+    height: 0.875rem;
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    background: linear-gradient(
+      to right,
+      currentColor 0 50%,
+      transparent 50% 100%
+    );
+    transition: rotate var(--duration-base) var(--ease-out);
+  }
+
+  :root[data-theme="dark"] .theme-toggle__icon {
+    rotate: 180deg;
+  }
+</style>

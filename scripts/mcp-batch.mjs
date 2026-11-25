@@ -793,6 +793,21 @@ export async function checkMcpUrl(url, token) {
   }
 }
 
+// mcp-template-check exits 1 when the call fails but still prints its JSON report.
+function parseCheck(error) {
+  try {
+    return JSON.parse(error.out || '');
+  } catch {
+    return { ok: false, error: String(error.message || error).slice(0, 300) };
+  }
+}
+
+// The sample call uses made-up minimal arguments, so an MCP error result (isError) for them
+// still proves the server answers tool calls over HTTP. A crash, timeout or HTTP error does not.
+export function toolAnswered(result) {
+  return Boolean(result && (result.ok || (result.tool && result.tool.isError)));
+}
+
 async function waitHealth(url, ms) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
@@ -1269,16 +1284,16 @@ async function deployBuilt(row, report, owner, token) {
       const tool = readOnlyTool(listed.toolSchemas || []);
       if (tool) {
         const args = minimalArgs(tool.schema);
-        const called = await run(process.execPath, [
+        const result = await run(process.execPath, [
           path.join(ROOT, 'scripts/mcp-template-check.mjs'),
           '--url', `${report.demo}/mcp`,
           '--token', token,
           '--tool', tool.name,
           '--args', JSON.stringify(args),
-        ]);
-        const result = JSON.parse(called.out);
-        report.tests.edge = result.ok ? 'passed' : 'failed';
-        if (!result.ok) report.reason = result.error || 'tool call failed';
+        ]).then((called) => JSON.parse(called.out), (error) => parseCheck(error));
+        const answered = toolAnswered(result);
+        report.tests.edge = answered ? 'passed' : 'failed';
+        if (!answered) report.reason = result.error || 'tool call failed';
       }
     }
     await run(process.execPath, [

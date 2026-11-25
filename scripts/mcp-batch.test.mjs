@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  acceptLocal, applyProbe, autobuildInput, binFile, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, launchArgs, localError, nativeBinary, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
+  acceptLocal, applyProbe, autobuildInput, binFile, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, launchArgs, localError, nativeBinary, parseCsv, toolAnswered, PROBE_SOURCE, renderTemplate, upstreamEnv,
 } from './mcp-batch.mjs';
 import { generatedCopy } from './sync-mcp-http.mjs';
 
@@ -293,4 +293,11 @@ test('localError prefers the stdio child output', () => {
   const logs = 'mcp-http stdio-bridge listening\nstdio: Error: ENOENT: no such file ~/.claude\nmcp request failed Error: stdio server exited\n';
   assert.match(localError(logs), /ENOENT/);
   assert.match(localError('Error: boom\n'), /boom/);
+});
+
+test('toolAnswered accepts an MCP error result but not a crash', () => {
+  assert.equal(toolAnswered({ ok: true }), true);
+  assert.equal(toolAnswered({ ok: false, tool: { name: 'read', ok: false, isError: true } }), true);
+  assert.equal(toolAnswered({ ok: false, tool: { name: 'read', ok: false, outputBytes: 0 }, error: 'stdio server exited' }), false);
+  assert.equal(toolAnswered({ ok: false, error: 'timeout' }), false);
 });

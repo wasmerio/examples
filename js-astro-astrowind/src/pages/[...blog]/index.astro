@@ -1,0 +1,100 @@
+---
+import type { InferGetStaticPropsType, GetStaticPaths } from 'astro';
+
+import merge from 'lodash.merge';
+import type { ImageMetadata } from 'astro';
+import Layout from '~/layouts/PageLayout.astro';
+import SinglePost from '~/components/blog/SinglePost.astro';
+import ToBlogLink from '~/components/blog/ToBlogLink.astro';
+
+import { getCanonical, getPermalink, getBlogPermalink } from '~/utils/permalinks';
+import {
+  getStaticPathsBlogPost,
+  blogPostRobots,
+  isBlogListRouteEnabled,
+  isBlogCategoryRouteEnabled,
+} from '~/utils/blog';
+import { findImage } from '~/utils/images';
+import { truncateAtWord } from '~/utils/utils';
+import type { MetaData } from '~/types';
+import RelatedPosts from '~/components/blog/RelatedPosts.astro';
+import Breadcrumbs from '~/components/common/Breadcrumbs.astro';
+import StructuredData from '~/components/common/StructuredData.astro';
+import { SITE } from 'astrowind:config';
+
+export const prerender = true;
+
+export const getStaticPaths = (async () => {
+  return await getStaticPathsBlogPost();
+}) satisfies GetStaticPaths;
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+
+const { post } = Astro.props as Props;
+
+const url = getCanonical(getPermalink(post.permalink, 'post'));
+const image = (await findImage(post.image)) as ImageMetadata | string | undefined;
+
+const metadata = merge(
+  {
+    title: post.title,
+    // Search engines cut descriptions at about 155 characters; the full excerpt stays visible on the page.
+    description: truncateAtWord(post.excerpt, 155),
+    robots: {
+      index: blogPostRobots?.index,
+      follow: blogPostRobots?.follow,
+    },
+    openGraph: {
+      type: 'article',
+      article: {
+        publishedTime: post.publishDate.toISOString(),
+        modifiedTime: (post.updateDate ?? post.publishDate).toISOString(),
+        ...(post.author ? { authors: [post.author] } : {}),
+        ...(post.category ? { section: post.category.title } : {}),
+        ...(post.tags?.length ? { tags: post.tags.map((tag) => tag.title) } : {}),
+      },
+      ...(image
+        ? { images: [{ url: image, width: (image as ImageMetadata)?.width, height: (image as ImageMetadata)?.height }] }
+        : {}),
+    },
+  },
+  { ...(post?.metadata ? { ...post.metadata, canonical: post.metadata?.canonical || url } : {}) }
+) as MetaData;
+
+const imageUrl = typeof image === 'string' ? image : image?.src;
+
+// Article structured data. The breadcrumb trail below carries its own BreadcrumbList.
+const articleSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: post.title,
+  description: post.excerpt,
+  datePublished: post.publishDate.toISOString(),
+  dateModified: (post.updateDate ?? post.publishDate).toISOString(),
+  ...(post.author ? { author: { '@type': 'Person', name: post.author } } : {}),
+  publisher: { '@type': 'Organization', name: SITE?.name },
+  ...(imageUrl ? { image: imageUrl.startsWith('http') ? imageUrl : new URL(imageUrl, Astro.site).toString() } : {}),
+  ...(post.category ? { articleSection: post.category.title } : {}),
+  ...(post.tags?.length ? { keywords: post.tags.map((tag) => tag.title).join(', ') } : {}),
+  mainEntityOfPage: String(url),
+};
+
+const breadcrumbs = [
+  { text: 'Home', href: getPermalink('/') },
+  ...(isBlogListRouteEnabled ? [{ text: 'Blog', href: getBlogPermalink() }] : []),
+  ...(post.category && isBlogCategoryRouteEnabled
+    ? [{ text: post.category.title, href: getPermalink(post.category.slug, 'category') }]
+    : []),
+  { text: post.title },
+];
+---
+
+<Layout metadata={metadata}>
+  <StructuredData slot="head" schema={articleSchema} />
+  <Breadcrumbs bar hideCurrent items={breadcrumbs} />
+  <SinglePost post={{ ...post, image: image }} url={url}>
+    {post.Content && <post.Content />}
+  </SinglePost>
+  <ToBlogLink />
+  <RelatedPosts post={post} />
+</Layout>

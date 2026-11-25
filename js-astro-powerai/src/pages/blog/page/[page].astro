@@ -1,0 +1,62 @@
+---
+import Base from "@/layouts/Base.astro";
+import BlogCard from "@/components/BlogCard.astro";
+import FeaturedPost from "@/components/FeaturedPost.astro";
+import MainContainer from "@/components/MainContainer.astro";
+import Pagination from "@/components/Pagination.astro";
+import config from "@/config/config.json";
+import { getListPage, getSinglePage } from "@/lib/contentParser";
+import { sortByDate } from "@/lib/utils/sortFunctions";
+import CallToAction from "@/partials/CallToAction.astro";
+import PageHeader from "@/partials/PageHeader.astro";
+
+const { blog_folder, pagination } = config.settings;
+
+export async function getStaticPaths() {
+  const { pagination: pag } = config.settings;
+  const allPost = await getSinglePage("blog");
+  const totalPages = Math.ceil(allPost.length / pag);
+  const paths = [];
+  for (let i = 1; i < totalPages; i++) {
+    paths.push({ params: { page: String(i + 1) } });
+  }
+  return paths;
+}
+
+const { page } = Astro.params;
+const currentPage = Number(page) || 1;
+
+const postIndex = await getListPage(`${blog_folder}/-index.md`);
+const { title, meta_title, description, image } = postIndex.frontmatter;
+const posts = await getSinglePage(blog_folder);
+const sortedPosts = sortByDate(posts);
+const totalPages = Math.ceil(posts.length / pagination);
+const indexOfLastPost = currentPage * pagination;
+const indexOfFirstPost = indexOfLastPost - pagination;
+const currentPosts = sortedPosts.slice(indexOfFirstPost, indexOfLastPost);
+
+const page_header = { title, badge: "Blog", subtitle: description };
+const callToAction = await getListPage("sections/call-to-action.md");
+const featuredPost = sortedPosts.filter((post: any) => post.frontmatter.featured)[0];
+---
+
+<Base title={title} meta_title={meta_title} description={description} image={image}>
+  <PageHeader page_header={page_header}>
+    {featuredPost && <FeaturedPost data={featuredPost} />}
+  </PageHeader>
+  <section>
+    <MainContainer>
+      <div class="container-padding-x container-padding-y">
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-2.5 mb-10">
+          {currentPosts.map((post: any) => (
+            <div>
+              <BlogCard data={post} />
+            </div>
+          ))}
+        </div>
+        <Pagination section={blog_folder} currentPage={currentPage} totalPages={totalPages} />
+      </div>
+    </MainContainer>
+  </section>
+  <CallToAction data={callToAction}/>
+</Base>

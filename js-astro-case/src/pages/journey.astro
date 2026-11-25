@@ -1,0 +1,111 @@
+---
+/**
+ * Journey Timeline Page
+ * 
+ * Displays a chronological timeline of career growth and learning progression through
+ * expandable timeline entries. Each entry represents a milestone, learning experience,
+ * or career transition, with optional detailed content that can be revealed.
+ * 
+ * Features:
+ * - Queries all journey entries from content collection
+ * - Sorts by date (descending - most recent first)
+ * - Renders expandable content for each entry
+ * - Detects entries with body content vs. frontmatter-only
+ * - Visual timeline with color-coded entry types
+ * - Skills/technologies display per entry
+ * - Empty state handling
+ * 
+ * Entry Types:
+ * - milestone: Major achievements and launches
+ * - learning: Education and skill development
+ * - transition: Job changes and career moves
+ * 
+ * Route: /journey
+ * 
+ * @page
+ */
+
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SEO from '../components/SEO.astro';
+import TimelineEntry from '../components/TimelineEntry.astro';
+import { getCollection, render } from 'astro:content';
+import { pagesConfig } from '../pages.config';
+
+/**
+ * Queries all journey entries from the content collection
+ */
+const allJourneyEntries = await getCollection('journey');
+
+/**
+ * Sorts journey entries by date in descending order (most recent first)
+ * 
+ * Ensures the timeline displays with the latest experiences at the top,
+ * allowing visitors to see current context before historical progression.
+ */
+const sortedJourneyEntries = allJourneyEntries.sort((a, b) => {
+  return b.data.date.getTime() - a.data.date.getTime();
+});
+
+/**
+ * Renders content for each entry and checks for body content
+ * 
+ * Processes each journey entry to:
+ * 1. Render the MDX content component
+ * 2. Detect if the entry has body content beyond frontmatter
+ * 3. Return entry data with Content component and hasContent flag
+ * 
+ * This allows the TimelineEntry component to conditionally show
+ * the expand/collapse functionality only for entries with additional content.
+ */
+const entriesWithContent = await Promise.all(
+  sortedJourneyEntries.map(async (entry) => {
+    const { Content } = await render(entry);
+    // Check if entry has body content (not just frontmatter)
+    const hasContent = Boolean(entry.body && entry.body.trim().length > 0);
+    return { entry, Content, hasContent };
+  })
+);
+---
+
+<BaseLayout>
+  <SEO 
+    slot="head"
+    title={pagesConfig.journey.title}
+    description={pagesConfig.journey.description}
+    type="website"
+  />
+
+  <main class="page-container">
+    <header class="page-header">
+      <h1 class="page-title">{pagesConfig.journey.heading}</h1>
+      <p class="page-intro">
+        {pagesConfig.journey.intro}
+      </p>
+    </header>
+
+    {entriesWithContent.length > 0 ? (
+      <div class="journey-timeline">
+        {entriesWithContent.map(({ entry, Content, hasContent }) => (
+          <TimelineEntry
+            date={entry.data.date}
+            title={entry.data.title}
+            type={entry.data.type}
+            description={entry.data.description}
+            skills={entry.data.skills}
+            hasContent={hasContent}
+          >
+            {hasContent && <Content />}
+          </TimelineEntry>
+        ))}
+      </div>
+    ) : (
+      <p class="empty-state">No journey entries yet.</p>
+    )}
+  </main>
+
+  <style>
+    .journey-timeline {
+      margin-top: 2rem;
+    }
+  </style>
+</BaseLayout>

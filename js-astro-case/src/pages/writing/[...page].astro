@@ -1,0 +1,144 @@
+---
+/**
+ * Writing Index Page with Pagination
+ * 
+ * Lists all published articles (excluding drafts) with pagination support. Displays
+ * article cards with title, description, publish date, and tags. Uses a rest parameter
+ * route to handle both the first page (/writing) and subsequent pages (/writing/2, etc.).
+ * 
+ * Features:
+ * - Filters out draft articles (only shows published content)
+ * - Sorts by publish date (descending - newest first)
+ * - Pagination with 5 articles per page
+ * - Dynamic page statistics showing current range
+ * - SEO optimization per page
+ * - Empty state handling
+ * 
+ * Routes:
+ * - /writing (page 1)
+ * - /writing/2 (page 2)
+ * - /writing/3 (page 3)
+ * - etc.
+ * 
+ * @page
+ */
+
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import SEO from '../../components/SEO.astro';
+import Pagination from '../../components/Pagination.astro';
+import ArticleCard from '../../components/ArticleCard.astro';
+import PageStats from '../../components/PageStats.astro';
+import { getCollection } from 'astro:content';
+import { pagesConfig } from '../../pages.config';
+import type { GetStaticPaths } from 'astro';
+
+/**
+ * Generates static paths for all paginated pages
+ * 
+ * Queries published articles (draft: false), sorts by date, and creates
+ * pagination paths. Page 1 uses undefined param to match /writing route,
+ * while subsequent pages use numeric params (/writing/2, /writing/3, etc.).
+ * 
+ * @returns Array of path objects with params and props for each page
+ */
+export const getStaticPaths: GetStaticPaths = async () => {
+  const postsPerPage = 5;
+  
+  const allArticles = await getCollection('writing', ({ data }) => {
+    return data.draft === false;
+  });
+
+  // Sort by publishDate (descending - most recent first)
+  const sortedArticles = allArticles.sort((a, b) => {
+    return b.data.publishDate.getTime() - a.data.publishDate.getTime();
+  });
+
+  const totalPages = Math.ceil(sortedArticles.length / postsPerPage);
+
+  return Array.from({ length: totalPages }, (_, i) => {
+    const page = i + 1;
+    const start = i * postsPerPage;
+    const end = start + postsPerPage;
+    
+    return {
+      params: { page: page === 1 ? undefined : String(page) },
+      props: {
+        articles: sortedArticles.slice(start, end),
+        currentPage: page,
+        totalPages,
+        totalArticles: sortedArticles.length,
+      },
+    };
+  });
+};
+
+interface Props {
+  /** Articles for the current page */
+  articles: Awaited<ReturnType<typeof getCollection<'writing'>>>;
+  
+  /** Current page number (1-indexed) */
+  currentPage: number;
+  
+  /** Total number of pages */
+  totalPages: number;
+  
+  /** Total count of all published articles */
+  totalArticles: number;
+}
+
+const { articles, currentPage, totalPages, totalArticles } = Astro.props;
+const postsPerPage = 5;
+
+/**
+ * Generates page title based on current page number
+ * 
+ * Page 1 shows the main title, subsequent pages include page number.
+ */
+const pageTitle = currentPage === 1 
+  ? pagesConfig.writing.title
+  : `${pagesConfig.writing.title} - Page ${currentPage}`;
+---
+
+<BaseLayout>
+  <SEO 
+    slot="head"
+    title={pageTitle}
+    description={pagesConfig.writing.description}
+    type="website"
+  />
+
+  <main class="page-container">
+    <header class="page-header">
+      <h1 class="page-title">{pagesConfig.writing.heading}</h1>
+      <p class="page-intro">
+        {pagesConfig.writing.intro}
+      </p>
+      <PageStats text={totalPages > 1 
+        ? `Showing ${(currentPage - 1) * postsPerPage + 1}–${Math.min(currentPage * postsPerPage, totalArticles)} of ${totalArticles} articles`
+        : `${totalArticles} articles`
+      } />
+    </header>
+
+    {articles.length > 0 ? (
+      <div class="card-list">
+        {articles.map((article) => (
+          <ArticleCard
+            title={article.data.title}
+            slug={article.id}
+            description={article.data.description}
+            publishDate={article.data.publishDate}
+            tags={article.data.tags}
+          />
+        ))}
+      </div>
+    ) : (
+      <p class="empty-state">No articles published yet.</p>
+    )}
+
+    <Pagination 
+      currentPage={currentPage} 
+      totalPages={totalPages} 
+      baseUrl="/writing" 
+    />
+  </main>
+</BaseLayout>

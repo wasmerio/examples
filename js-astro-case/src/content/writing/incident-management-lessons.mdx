@@ -1,0 +1,308 @@
+---
+title: "Incident Management: Lessons from 5 Years of On-Call"
+description: "Practical insights on building effective incident response processes, reducing MTTR, and creating a sustainable on-call culture."
+publishDate: 2026-01-05
+updatedDate: 2026-01-06
+tags:
+  - "incident-management"
+  - "on-call"
+  - "reliability"
+  - "team-culture"
+draft: false
+---
+
+## Introduction
+
+After five years of being on-call across different organizations—from startups to large enterprises—I've learned that incident management is as much about people and processes as it is about technology.
+
+This post shares practical lessons on building incident response that actually works, reducing mean time to recovery (MTTR), and creating an on-call culture that doesn't burn out your team.
+
+## The Anatomy of Effective Incident Response
+
+### Severity Levels That Make Sense
+
+Most teams overcomplicate severity levels. Here's a simple framework that works:
+
+| Severity | Definition | Response Time | Example |
+|----------|------------|---------------|---------|
+| SEV1 | Complete service outage | Immediate | Payment system down |
+| SEV2 | Major feature degraded | 15 minutes | Search returning errors |
+| SEV3 | Minor impact | 1 hour | Slow dashboard loading |
+| SEV4 | No user impact | Next business day | Internal tool issue |
+
+The key insight: **severity is about user impact, not technical complexity**. A simple bug affecting all users is higher severity than a complex issue affecting none.
+
+### The First 5 Minutes
+
+The first five minutes of an incident determine its trajectory. Here's what should happen:
+
+```markdown
+1. Alert fires → On-call acknowledges (< 1 min)
+2. Quick assessment: Is this real? What's the blast radius?
+3. Decide: Can I fix this alone, or do I need help?
+4. If SEV1/SEV2: Start incident channel, page additional help
+5. Communicate: Post initial status update
+```
+
+I've seen teams waste 20+ minutes figuring out who should be involved. Pre-define escalation paths for common scenarios.
+
+## Reducing MTTR: What Actually Works
+
+### Runbooks That Get Used
+
+Most runbooks are write-only documents. Here's how to make them useful:
+
+**Bad runbook:**
+```
+If the database is slow, check the queries and optimize them.
+```
+
+**Good runbook:**
+```markdown
+## Symptom: Database latency > 500ms
+
+### Quick diagnosis (< 2 min)
+1. Check active connections: `SELECT count(*) FROM pg_stat_activity;`
+   - Normal: < 100
+   - Problem: > 200
+
+2. Check for long-running queries:
+   ```sql
+   SELECT pid, now() - pg_stat_activity.query_start AS duration, query
+   FROM pg_stat_activity
+   WHERE state != 'idle'
+   ORDER BY duration DESC
+   LIMIT 5;
+   ```
+
+### Common fixes
+- **Too many connections**: Restart the connection pooler
+  ```bash
+  kubectl rollout restart deployment/pgbouncer
+  ```
+- **Long-running query**: Kill it (if safe)
+  ```sql
+  SELECT pg_terminate_backend(<pid>);
+  ```
+
+### Escalation
+If not resolved in 15 min, page @database-team
+
+The difference: specific commands, expected values, and clear escalation paths.
+
+### Observability for Incidents
+
+During an incident, you need answers fast. Structure your observability around common questions:
+
+```typescript
+// What I want to know during an incident:
+const incidentQueries = {
+  // Is the problem getting worse or better?
+  errorTrend: 'rate(http_errors_total[5m])',
+  
+  // When did this start?
+  changePoint: 'changes(deployment_timestamp[1h])',
+  
+  // What's affected?
+  affectedEndpoints: 'topk(10, sum by (endpoint) (http_errors_total))',
+  
+  // Is it one bad actor or widespread?
+  errorsByUser: 'sum by (user_id) (http_errors_total)',
+};
+```
+
+Build dashboards that answer these questions with one click, not five minutes of query writing.
+
+## Building Sustainable On-Call
+
+### The On-Call Contract
+
+Every team should have an explicit on-call contract:
+
+```markdown
+## On-Call Expectations
+
+**Response time:**
+- SEV1: Acknowledge within 5 minutes
+- SEV2: Acknowledge within 15 minutes
+- SEV3+: Next business day
+
+**Compensation:**
+- $X per week of on-call
+- Time off after incidents (1 hour off per hour of incident)
+
+**Support:**
+- Never expected to fix alone—escalation is encouraged
+- No blame for pages during off-hours
+- Secondary on-call for backup
+
+**Boundaries:**
+- No on-call during PTO
+- Maximum 1 week per month
+- Quiet hours: 10pm-7am (SEV1 only)
+```
+
+Making expectations explicit prevents burnout and resentment.
+
+### Reducing Alert Fatigue
+
+Alert fatigue is the silent killer of on-call effectiveness. Here's how to fight it:
+
+**The 80/20 rule for alerts:**
+- 80% of pages should be actionable
+- If you're ignoring alerts, delete them
+
+**Weekly alert review:**
+```markdown
+## Alert Review - Week of Jan 15
+
+| Alert | Pages | Actionable | Action |
+|-------|-------|------------|--------|
+| High CPU | 12 | 2 | Raise threshold to 90% |
+| Disk space | 8 | 8 | Keep |
+| API latency | 15 | 3 | Add auto-scaling |
+| Memory leak | 1 | 1 | Keep |
+
+**Decision:** Delete High CPU alert, implement auto-scaling for API
+```
+
+### The Blameless Postmortem
+
+Postmortems are where learning happens—or doesn't. Here's a template that works:
+
+```markdown
+## Incident: Payment Processing Outage
+**Date:** 2024-08-15
+**Duration:** 47 minutes
+**Severity:** SEV1
+**Author:** [Name]
+
+### Summary
+Payment processing was unavailable for 47 minutes due to a 
+database connection pool exhaustion caused by a query regression 
+in the latest deployment.
+
+### Timeline
+- 14:23 - Deployment completed
+- 14:31 - First customer report
+- 14:35 - Alert fired, on-call paged
+- 14:42 - Root cause identified
+- 14:58 - Rollback completed
+- 15:10 - Full recovery confirmed
+
+### Root Cause
+A new query in the checkout flow was missing an index, causing 
+connections to be held for 30+ seconds instead of <100ms.
+
+### What Went Well
+- Quick identification of root cause
+- Rollback process worked smoothly
+- Customer communication was timely
+
+### What Could Be Improved
+- Query performance wasn't caught in code review
+- No load testing for the new feature
+- Alert fired 8 minutes after first customer report
+
+### Action Items
+| Action | Owner | Due Date |
+|--------|-------|----------|
+| Add query performance CI check | @backend | 2024-08-22 |
+| Implement synthetic monitoring | @sre | 2024-08-29 |
+| Review alert thresholds | @on-call | 2024-08-18 |
+```
+
+The key: focus on **systems**, not people. "The deployment process allowed a slow query" not "John deployed a slow query."
+
+## Incident Communication
+
+### Internal Communication
+
+During an incident, over-communicate:
+
+```markdown
+## Incident Update Template
+
+**Status:** Investigating | Identified | Monitoring | Resolved
+**Impact:** [Who is affected and how]
+**Current action:** [What we're doing right now]
+**Next update:** [When to expect the next update]
+
+Example:
+---
+🔴 **Status:** Identified
+**Impact:** ~30% of checkout attempts failing
+**Current action:** Rolling back deployment v2.3.4
+**Next update:** 10 minutes or when resolved
+```
+
+### External Communication
+
+For customer-facing incidents:
+
+**Do:**
+- Acknowledge quickly, even if you don't have details
+- Use plain language, not technical jargon
+- Provide regular updates, even if nothing changed
+- Share what you're doing to prevent recurrence
+
+**Don't:**
+- Blame third parties (even if it's their fault)
+- Promise specific resolution times
+- Over-explain technical details
+- Disappear after resolution
+
+## Measuring Incident Response
+
+### Metrics That Matter
+
+Track these metrics monthly:
+
+```typescript
+const incidentMetrics = {
+  // How often are we having incidents?
+  incidentCount: 'count by severity',
+  
+  // How quickly do we respond?
+  timeToAcknowledge: 'median time from alert to acknowledgment',
+  
+  // How quickly do we fix things?
+  timeToResolve: 'median time from alert to resolution',
+  
+  // Are we learning?
+  repeatIncidents: 'incidents with same root cause as previous',
+  
+  // Is on-call sustainable?
+  pagesPerWeek: 'average pages per on-call shift',
+};
+```
+
+### Trending in the Right Direction
+
+Good incident management shows:
+- Decreasing incident count over time
+- Stable or decreasing MTTR
+- Low repeat incident rate (< 10%)
+- Sustainable page volume (< 2 per night)
+
+## Lessons Learned
+
+After hundreds of incidents, here's what I know for sure:
+
+1. **Preparation beats reaction**. Time invested in runbooks and automation pays off 10x during incidents.
+2. **Communication is half the battle**. Most incident stress comes from uncertainty, not the technical problem.
+3. **Blameless culture is non-negotiable.** The moment people fear blame, they stop reporting issues and sharing learnings.
+4. **On-call sustainability matters.** Burned-out engineers make worse decisions and leave the company.
+5. **Every incident is a gift.** It's a free stress test of your systems and processes. Learn from it.
+
+## Conclusion
+
+Incident management isn't about preventing all failures—that's impossible. It's about responding effectively when failures happen, learning from them, and building systems (both technical and human) that improve over time.
+
+The best incident response teams I've worked with share one trait: they treat incidents as opportunities to improve, not as failures to hide.
+
+## Resources
+
+- [Incident Management for Operations](https://sre.google/sre-book/managing-incidents/) - Google SRE Book
+- [PagerDuty Incident Response Guide](https://response.pagerduty.com/)
+- [Learning from Incidents](https://www.learningfromincidents.io/) - Community resources

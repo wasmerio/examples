@@ -1,0 +1,242 @@
+---
+/**
+ * TableOfContents Component
+ * 
+ * Generates a collapsible table of contents from article headings (h2 and h3 only).
+ * Only renders when there are 3 or more qualifying headings to ensure the TOC adds value.
+ * Starts in a collapsed state by default to save space.
+ * 
+ * Features:
+ * - Automatic heading extraction and filtering
+ * - Collapsible/expandable interface
+ * - Smooth scroll to sections with header offset
+ * - Visual hierarchy for h2 vs h3 headings
+ * - Works with Astro View Transitions
+ * 
+ * @component
+ * 
+ * @example
+ * ```astro
+ * ---
+ * const { headings } = Astro.props;
+ * ---
+ * 
+ * <TableOfContents headings={headings} />
+ * ```
+ */
+
+interface Heading {
+  /** Heading level (2 for h2, 3 for h3) */
+  depth: number;
+  
+  /** Heading text content */
+  text: string;
+  
+  /** URL-safe slug for anchor linking */
+  slug: string;
+}
+
+interface Props {
+  /** Array of heading objects from the article content */
+  headings: Heading[];
+}
+
+const { headings } = Astro.props;
+
+/**
+ * Filters headings to only include h2 and h3 levels
+ * 
+ * Excludes h1 (page title) and deeper levels (h4+) to keep the TOC
+ * focused on main sections and subsections.
+ */
+const filteredHeadings = headings.filter(h => h.depth === 2 || h.depth === 3);
+
+/**
+ * Determines if the TOC should render
+ * 
+ * Only renders when there are 3 or more headings to ensure the TOC
+ * provides meaningful navigation value.
+ */
+const shouldRender = filteredHeadings.length >= 3;
+---
+
+{shouldRender && (
+  <nav class="table-of-contents" aria-label="Table of contents">
+    <button 
+      class="toc-toggle" 
+      type="button"
+      aria-expanded="false"
+      aria-controls="toc-list"
+    >
+      <span class="toc-title">Table of Contents</span>
+      <span class="toc-count">{filteredHeadings.length} sections</span>
+      <svg class="toc-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+    </button>
+    <ul class="toc-list" id="toc-list">
+      {filteredHeadings.map((heading) => (
+        <li class={`toc-item toc-depth-${heading.depth}`}>
+          <a href={`#${heading.slug}`} class="toc-link">
+            {heading.text}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </nav>
+)}
+
+<style>
+  .table-of-contents {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    overflow: hidden;
+  }
+
+  .toc-toggle {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 1rem 1.25rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    color: var(--color-text);
+    transition: background 0.2s ease;
+  }
+
+  .toc-toggle:hover {
+    background: var(--color-bg-elevated);
+  }
+
+  .toc-toggle:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: -2px;
+  }
+
+  .toc-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-secondary);
+  }
+
+  .toc-count {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    padding-right: 0.5rem;
+  }
+
+  .toc-icon {
+    color: var(--color-text-muted);
+    transition: transform 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .toc-toggle[aria-expanded="true"] .toc-icon {
+    transform: rotate(180deg);
+  }
+
+  .toc-list {
+    list-style: none;
+    padding: 0 1.25rem 1rem;
+    margin: 0;
+    display: none;
+  }
+
+  .toc-list.is-open {
+    display: block;
+  }
+
+  .toc-item {
+    margin-bottom: 0.5rem;
+  }
+
+  .toc-item:last-child {
+    margin-bottom: 0;
+  }
+
+  .toc-depth-3 {
+    padding-left: 1rem;
+  }
+
+  .toc-link {
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    display: block;
+    transition: color 0.2s ease;
+  }
+
+  .toc-link:hover {
+    color: var(--color-text);
+  }
+
+  @media (max-width: 640px) {
+    .toc-toggle {
+      padding: 0.875rem 1rem;
+    }
+
+    .toc-list {
+      padding: 0 1rem 0.875rem;
+    }
+
+    .toc-link {
+      font-size: 0.875rem;
+    }
+  }
+</style>
+
+<script>
+  function initTOC() {
+    const toggle = document.querySelector('.toc-toggle');
+    const list = document.querySelector('.toc-list');
+    
+    if (!toggle || !list) return;
+
+    // Toggle expand/collapse
+    toggle.addEventListener('click', () => {
+      const isExpanded = toggle.getAttribute('aria-expanded') === 'true';
+      toggle.setAttribute('aria-expanded', String(!isExpanded));
+      list.classList.toggle('is-open');
+    });
+
+    // Smooth scroll for TOC links
+    const tocLinks = document.querySelectorAll('.toc-link');
+    tocLinks.forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const href = link.getAttribute('href');
+        if (!href) return;
+        
+        const target = document.querySelector(href);
+        if (!target) return;
+
+        // Scroll with offset for sticky header
+        const header = document.querySelector('.site-header') as HTMLElement | null;
+        const headerHeight = header?.offsetHeight || 0;
+        const targetPosition = target.getBoundingClientRect().top + window.scrollY - headerHeight - 20;
+        
+        window.scrollTo({
+          top: targetPosition,
+          behavior: 'smooth'
+        });
+
+        // Update URL without jumping
+        history.pushState(null, '', href);
+      });
+    });
+  }
+
+  // Run on initial load
+  initTOC();
+
+  // Re-run on Astro page transitions
+  document.addEventListener('astro:after-swap', initTOC);
+</script>

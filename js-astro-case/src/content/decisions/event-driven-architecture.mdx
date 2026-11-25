@@ -1,0 +1,88 @@
+---
+title: "Adopting Event-Driven Architecture for Order Processing"
+date: 2024-03-10
+context: "Our synchronous order processing pipeline was becoming a bottleneck. Long-running operations blocked the checkout flow, and failures in downstream services caused cascading issues."
+decision: "Migrate order processing to an event-driven architecture using Apache Kafka"
+alternatives:
+  - option: "Optimize existing synchronous flow"
+    pros:
+      - "No architectural changes required"
+      - "Team already familiar with the codebase"
+      - "Lower risk"
+    cons:
+      - "Doesn't solve the fundamental coupling problem"
+      - "Still vulnerable to downstream failures"
+      - "Limited scalability improvements"
+  - option: "Use a simple message queue (RabbitMQ/SQS)"
+    pros:
+      - "Simpler than Kafka"
+      - "Easier to operate"
+      - "Good enough for basic async processing"
+    cons:
+      - "No event replay capability"
+      - "Limited retention"
+      - "Harder to add new consumers later"
+  - option: "Use Kafka for event streaming"
+    pros:
+      - "Event replay for debugging and recovery"
+      - "Easy to add new consumers"
+      - "High throughput and durability"
+      - "Natural audit log"
+    cons:
+      - "Operational complexity"
+      - "Learning curve for the team"
+      - "Eventual consistency challenges"
+reasoning: "Kafka's event log model provides capabilities we'll need as we grow: replay for debugging, easy addition of new consumers, and a natural audit trail. The operational complexity is manageable with modern tooling, and the team is ready to level up their distributed systems skills."
+tags:
+  - "architecture"
+  - "event-driven"
+  - "kafka"
+  - "scalability"
+relatedProjects:
+  - "payment-system-rebuild"
+  - "notification-system"
+---
+
+## The Breaking Point
+
+Our checkout flow was doing too much synchronously:
+1. Validate inventory
+2. Process payment
+3. Update inventory
+4. Send confirmation email
+5. Notify warehouse
+6. Update analytics
+
+If any step failed or was slow, the entire checkout failed. During Black Friday, payment provider latency caused a 30% checkout failure rate.
+
+## Event-Driven Design
+
+We redesigned around events:
+
+```
+Order Placed → [Kafka] → Multiple Consumers
+                         ├── Inventory Service
+                         ├── Payment Service
+                         ├── Notification Service
+                         ├── Warehouse Service
+                         └── Analytics Service
+```
+
+Each consumer processes independently. Failures are isolated and retried without affecting the user.
+
+## Implementation Challenges
+
+**Eventual Consistency**: Users might see "order placed" before inventory is updated. We added optimistic UI updates and clear status indicators.
+
+**Idempotency**: Consumers must handle duplicate events. We implemented idempotency keys for all operations.
+
+**Monitoring**: Distributed tracing became essential. We invested heavily in observability.
+
+## Results
+
+- Checkout success rate: 99.7% (up from 94%)
+- Average checkout time: 800ms (down from 3.2s)
+- Black Friday handled 3x previous peak with no issues
+- New features (fraud detection, loyalty points) added without touching checkout code
+
+The migration took 4 months but fundamentally improved our system's resilience.

@@ -1,0 +1,388 @@
+---
+title: "A Practical Testing Strategy for Real-World Applications"
+description: "How to build a testing strategy that catches bugs without slowing you down, based on years of trial and error."
+publishDate: 2025-05-20
+tags:
+  - "testing"
+  - "quality"
+  - "best-practices"
+draft: false
+---
+
+## Introduction
+
+"We need more tests" is easy to say but hard to do well. I've seen teams with 90% code coverage that still ship bugs, and teams with 50% coverage that rarely have production issues.
+
+The difference isn't the quantity of tests—it's the strategy behind them.
+
+## The Testing Pyramid (Revisited)
+
+The classic testing pyramid suggests:
+- Many unit tests (fast, isolated)
+- Some integration tests (slower, test interactions)
+- Few E2E tests (slowest, test full flows)
+
+This is a good starting point, but it's not the whole story.
+
+### The Problem with Pure Unit Tests
+
+```typescript
+// 100% unit test coverage, but does it work?
+class OrderService {
+  constructor(
+    private inventory: InventoryService,
+    private payment: PaymentService,
+    private shipping: ShippingService
+  ) {}
+
+  async createOrder(order: Order): Promise<OrderResult> {
+    await this.inventory.reserve(order.items);
+    await this.payment.charge(order.total);
+    await this.shipping.schedule(order);
+    return { success: true };
+  }
+}
+
+// Unit test with mocks
+test('createOrder calls all services', async () => {
+  const inventory = mock<InventoryService>();
+  const payment = mock<PaymentService>();
+  const shipping = mock<ShippingService>();
+  
+  const service = new OrderService(inventory, payment, shipping);
+  await service.createOrder(testOrder);
+  
+  expect(inventory.reserve).toHaveBeenCalled();
+  expect(payment.charge).toHaveBeenCalled();
+  expect(shipping.schedule).toHaveBeenCalled();
+});
+```
+
+This test passes, but it doesn't tell us if the system actually works. The mocks might not match real behavior.
+
+## My Testing Strategy
+
+### Level 1: Unit Tests for Pure Logic
+
+Test pure functions and business logic without dependencies:
+
+```typescript
+// Pure function - easy to test
+function calculateOrderTotal(items: OrderItem[], discount: Discount): number {
+  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  return applyDiscount(subtotal, discount);
+}
+
+test('calculateOrderTotal applies percentage discount', () => {
+  const items = [{ price: 100, quantity: 2 }];
+  const discount = { type: 'percentage', value: 10 };
+  
+  expect(calculateOrderTotal(items, discount)).toBe(180);
+});
+
+test('calculateOrderTotal handles empty cart', () => {
+  expect(calculateOrderTotal([], null)).toBe(0);
+});
+```
+
+### Level 2: Integration Tests for Components
+
+Test components with real dependencies (database, cache) but mock external services:
+
+```typescript
+describe('OrderRepository', () => {
+  let db: TestDatabase;
+  let repository: OrderRepository;
+
+  beforeAll(async () => {
+    db = await TestDatabase.create();
+    repository = new OrderRepository(db);
+  });
+
+  afterAll(() => db.destroy());
+
+  beforeEach(() => db.clear());
+
+  test('creates and retrieves order', async () => {
+    const order = await repository.create({
+      userId: 'user_123',
+      items: [{ productId: 'prod_1', quantity: 2 }]
+    });
+
+    const retrieved = await repository.findById(order.id);
+    
+    expect(retrieved).toMatchObject({
+      userId: 'user_123',
+      items: expect.arrayContaining([
+        expect.objectContaining({ productId: 'prod_1' })
+      ])
+    });
+  });
+
+  test('finds orders by user', async () => {
+    await repository.create({ userId: 'user_123', items: [] });
+    await repository.create({ userId: 'user_123', items: [] });
+    await repository.create({ userId: 'user_456', items: [] });
+
+    const orders = await repository.findByUser('user_123');
+    
+    expect(orders).toHaveLength(2);
+  });
+});
+```
+
+### Level 3: API Tests for Services
+
+Test your API endpoints with a real server but controlled dependencies:
+
+```typescript
+describe('POST /api/orders', () => {
+  let app: TestApp;
+
+  beforeAll(async () => {
+    app = await TestApp.create({
+      // Real database
+      database: testDb,
+      // Mock external services
+      paymentProvider: mockPaymentProvider,
+      inventoryService: mockInventoryService
+    });
+  });
+
+  test('creates order successfully', async () => {
+    mockInventoryService.checkAvailability.mockResolvedValue(true);
+    mockPaymentProvider.charge.mockResolvedValue({ success: true });
+
+    const response = await app.post('/api/orders', {
+      items: [{ productId: 'prod_1', quantity: 1 }],
+      paymentMethod: 'card_123'
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      id: expect.any(String),
+      status: 'confirmed'
+    });
+  });
+
+  test('returns 400 for invalid input', async () => {
+    const response = await app.post('/api/orders', {
+      items: [] // Empty cart
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('items');
+  });
+
+  test('returns 402 when payment fails', async () => {
+    mockInventoryService.checkAvailability.mockResolvedValue(true);
+    mockPaymentProvider.charge.mockResolvedValue({ 
+      success: false, 
+      error: 'Card declined' 
+    });
+
+    const response = await app.post('/api/orders', {
+      items: [{ productId: 'prod_1', quantity: 1 }],
+      paymentMethod: 'card_123'
+    });
+
+    expect(response.status).toBe(402);
+  });
+});
+```
+
+### Level 4: E2E Tests for Critical Paths
+
+Test complete user journeys for your most important flows:
+
+```typescript
+describe('Checkout Flow', () => {
+  test('user can complete purchase', async () => {
+    // Setup
+    const user = await createTestUser();
+    const product = await createTestProduct({ price: 99.99 });
+    
+    // Add to cart
+    await api.post('/cart/items', { productId: product.id }, { as: user });
+    
+    // Checkout
+    const order = await api.post('/checkout', {
+      paymentMethod: testCard,
+      shippingAddress: testAddress
+    }, { as: user });
+    
+    // Verify
+    expect(order.status).toBe('confirmed');
+    
+    // Check side effects
+    const inventory = await getProductInventory(product.id);
+    expect(inventory.reserved).toBe(1);
+    
+    const email = await getLastEmailTo(user.email);
+    expect(email.subject).toContain('Order Confirmation');
+  });
+});
+```
+
+## What to Test
+
+### Always Test
+
+- **Business logic**: Calculations, validations, state machines
+- **Edge cases**: Empty inputs, boundaries, error conditions
+- **Critical paths**: Checkout, authentication, payment
+- **Bug fixes**: Every bug fix should come with a test
+
+### Sometimes Test
+
+- **Integration points**: Database queries, API calls
+- **Complex UI interactions**: Multi-step forms, drag-and-drop
+
+### Rarely Test
+
+- **Simple CRUD**: If it's just passing data through, integration tests cover it
+- **Third-party libraries**: Trust that they work
+- **Implementation details**: Test behavior, not how it's implemented
+
+## Testing Anti-Patterns
+
+### Testing Implementation Details
+
+```typescript
+// Bad - tests implementation
+test('uses cache before database', async () => {
+  await service.getUser('123');
+  
+  expect(cache.get).toHaveBeenCalledBefore(database.query);
+});
+
+// Good - tests behavior
+test('returns user data', async () => {
+  const user = await service.getUser('123');
+  
+  expect(user).toMatchObject({ id: '123', name: 'John' });
+});
+```
+
+### Excessive Mocking
+
+```typescript
+// Bad - mocking everything
+test('processOrder', async () => {
+  const mockDb = mock<Database>();
+  const mockCache = mock<Cache>();
+  const mockLogger = mock<Logger>();
+  const mockMetrics = mock<Metrics>();
+  // ... 10 more mocks
+  
+  // This test tells us nothing about real behavior
+});
+
+// Good - use real dependencies where practical
+test('processOrder', async () => {
+  const service = new OrderService(realDb, realCache);
+  // Only mock external services
+  service.paymentProvider = mockPaymentProvider;
+  
+  const result = await service.processOrder(testOrder);
+  
+  // Verify real database state
+  const saved = await realDb.orders.findById(result.id);
+  expect(saved.status).toBe('confirmed');
+});
+```
+
+### Flaky Tests
+
+Tests that sometimes pass and sometimes fail are worse than no tests:
+
+```typescript
+// Bad - timing dependent
+test('debounces search', async () => {
+  input.type('hello');
+  await sleep(300);
+  expect(searchCalled).toBe(false);
+  await sleep(200);
+  expect(searchCalled).toBe(true);
+});
+
+// Good - use fake timers
+test('debounces search', async () => {
+  jest.useFakeTimers();
+  
+  input.type('hello');
+  jest.advanceTimersByTime(300);
+  expect(searchCalled).toBe(false);
+  
+  jest.advanceTimersByTime(200);
+  expect(searchCalled).toBe(true);
+});
+```
+
+## Test Organization
+
+### File Structure
+
+```
+src/
+├── orders/
+│   ├── order.service.ts
+│   ├── order.service.test.ts      # Unit tests
+│   ├── order.repository.ts
+│   └── order.repository.test.ts   # Integration tests
+└── __tests__/
+    ├── api/
+    │   └── orders.api.test.ts     # API tests
+    └── e2e/
+        └── checkout.e2e.test.ts   # E2E tests
+```
+
+### Naming Conventions
+
+```typescript
+describe('OrderService', () => {
+  describe('createOrder', () => {
+    test('creates order with valid input', () => {});
+    test('throws ValidationError for empty cart', () => {});
+    test('reserves inventory before charging payment', () => {});
+  });
+});
+```
+
+## Continuous Integration
+
+### Fast Feedback Loop
+
+```yaml
+# Run on every push
+test:unit:
+  script: npm run test:unit
+  timeout: 2 minutes
+
+# Run on PR
+test:integration:
+  script: npm run test:integration
+  timeout: 10 minutes
+
+# Run before deploy
+test:e2e:
+  script: npm run test:e2e
+  timeout: 30 minutes
+```
+
+### Fail Fast
+
+Run the fastest tests first. If unit tests fail, don't bother with E2E.
+
+## Conclusion
+
+A good testing strategy is about confidence, not coverage. You want to:
+
+1. Catch bugs before production
+2. Enable refactoring without fear
+3. Document expected behavior
+4. Not slow down development
+
+Focus your testing effort where it matters most: business logic, critical paths, and integration points. Skip the tests that don't add value.
+
+The best test suite is one that your team actually runs and trusts.

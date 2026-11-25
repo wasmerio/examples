@@ -1,0 +1,154 @@
+---
+/**
+ * StructuredData Component
+ * 
+ * Generates JSON-LD structured data for enhanced search engine understanding.
+ * Supports WebSite, Project, Article, Person, and BreadcrumbList schema types.
+ * Uses centralized configuration from src/config.ts
+ * 
+ * @param type - Schema.org type
+ * @param data - Data object containing the structured data fields
+ */
+import { siteConfig } from '../config';
+
+interface Props {
+  type: 'WebSite' | 'Project' | 'Article' | 'Person' | 'BreadcrumbList';
+  data?: Record<string, any>;
+}
+
+const { type, data = {} } = Astro.props;
+
+// Get site URL from config
+const siteURL = siteConfig.url.endsWith('/') ? siteConfig.url.slice(0, -1) : siteConfig.url;
+
+// Build social links array from config
+const socialLinks = Object.values(siteConfig.social).filter(Boolean);
+
+/**
+ * Generate JSON-LD structured data based on type
+ */
+function generateStructuredData(type: string, data: Record<string, any>) {
+  const baseContext = 'https://schema.org';
+  
+  switch (type) {
+    case 'WebSite':
+      return {
+        '@context': baseContext,
+        '@type': 'WebSite',
+        name: data.name || siteConfig.title,
+        description: data.description || siteConfig.description,
+        url: data.url || siteURL,
+        inLanguage: siteConfig.language,
+        author: {
+          '@type': 'Person',
+          name: siteConfig.author.name,
+          jobTitle: siteConfig.author.title,
+          url: siteURL,
+        },
+        potentialAction: {
+          '@type': 'SearchAction',
+          target: {
+            '@type': 'EntryPoint',
+            urlTemplate: `${siteURL}/writing?q={search_term_string}`,
+          },
+          'query-input': 'required name=search_term_string',
+        },
+      };
+
+    case 'Project':
+      return {
+        '@context': baseContext,
+        '@type': 'CreativeWork',
+        name: data.title,
+        description: data.description || data.outcomeSummary,
+        author: {
+          '@type': 'Person',
+          name: data.authorName || siteConfig.author.name,
+        },
+        dateCreated: data.year ? `${data.year}-01-01` : undefined,
+        keywords: data.techStack?.join(', '),
+        about: data.problem,
+        result: data.impact,
+      };
+    
+    case 'Article':
+      return {
+        '@context': baseContext,
+        '@type': 'Article',
+        headline: data.title,
+        description: data.description,
+        author: {
+          '@type': 'Person',
+          name: data.authorName || siteConfig.author.name,
+          url: siteURL,
+        },
+        datePublished: data.publishDate?.toISOString(),
+        dateModified: data.updatedDate?.toISOString() || data.publishDate?.toISOString(),
+        image: data.image || `${siteURL}/og-image.png`,
+        publisher: {
+          '@type': 'Person',
+          name: siteConfig.author.name,
+          url: siteURL,
+        },
+        mainEntityOfPage: {
+          '@type': 'WebPage',
+          '@id': data.url || Astro.url.href,
+        },
+        keywords: data.tags?.join(', '),
+        inLanguage: siteConfig.language,
+      };
+    
+    case 'Person':
+      return {
+        '@context': baseContext,
+        '@type': 'Person',
+        name: data.name || siteConfig.author.name,
+        jobTitle: data.jobTitle || siteConfig.author.title,
+        description: data.description || siteConfig.author.bio,
+        url: data.url || siteURL,
+        sameAs: data.socialLinks || socialLinks,
+        email: data.email || siteConfig.author.email,
+        image: data.image,
+        knowsAbout: data.skills || [],
+      };
+
+    case 'BreadcrumbList':
+      return {
+        '@context': baseContext,
+        '@type': 'BreadcrumbList',
+        itemListElement: data.items?.map((item: { name: string; url: string }, index: number) => ({
+          '@type': 'ListItem',
+          position: index + 1,
+          name: item.name,
+          item: item.url.startsWith('http') ? item.url : `${siteURL}${item.url}`,
+        })),
+      };
+    
+    default:
+      return null;
+  }
+}
+
+const structuredData = generateStructuredData(type, data);
+
+// Remove undefined values from the structured data
+function cleanObject(obj: any): any {
+  if (obj === null || obj === undefined) return null;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(cleanObject).filter(item => item !== undefined);
+  
+  const cleaned: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined && value !== null) {
+      cleaned[key] = cleanObject(value);
+    }
+  }
+  return cleaned;
+}
+
+const cleanedData = cleanObject(structuredData);
+---
+
+{cleanedData && (
+  <script is:inline type="application/ld+json" set:html={JSON.stringify(cleanedData, null, 2)} />
+)}

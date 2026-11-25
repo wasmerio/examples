@@ -1,0 +1,261 @@
+---
+title: "Zero-Downtime Database Migrations: A Practical Guide"
+description: "How to evolve your database schema without taking your application offline, with real examples from PostgreSQL migrations."
+publishDate: 2025-10-20
+tags:
+  - "database"
+  - "migrations"
+  - "postgresql"
+  - "devops"
+draft: false
+---
+
+## Introduction
+
+"We need to take the site down for maintenance" is a phrase that should be extinct in 2024. Yet I still see teams scheduling downtime for database migrations that could be done safely online.
+
+This guide covers the patterns I use to migrate databases without downtime, even for tables with millions of rows.
+
+## The Golden Rule
+
+**Never make a change that's incompatible with the currently running application code.**
+
+This means migrations happen in multiple phases:
+1. Deploy code that works with both old and new schema
+2. Run the migration
+3. Deploy code that only works with new schema
+4. Clean up (optional)
+
+## Safe Operations
+
+These operations are generally safe to run without downtime:
+
+### Adding a Nullable Column
+
+```sql
+ALTER TABLE users ADD COLUMN middle_name VARCHAR(100);
+```
+
+This is safe because:
+- Existing code doesn't know about the column (ignores it)
+- New code can handle NULL values
+
+### Adding an Index Concurrently
+
+```sql
+CREATE INDEX CONCURRENTLY idx_users_email ON users(email);
+```
+
+The `CONCURRENTLY` keyword is crucial—without it, the table is locked during index creation.
+
+### Adding a New Table
+
+```sql
+CREATE TABLE user_preferences (
+  user_id INTEGER REFERENCES users(id),
+  preferences JSONB
+);
+```
+
+New tables don't affect existing code.
+
+## Dangerous Operations
+
+These require careful handling:
+
+### Renaming a Column
+
+**Wrong way** (causes downtime):
+```sql
+ALTER TABLE users RENAME COLUMN name TO full_name;
+```
+
+**Right way** (zero downtime):
+
+1. Add new column:
+```sql
+ALTER TABLE users ADD COLUMN full_name VARCHAR(200);
+```
+
+2. Deploy code that writes to both columns:
+```typescript
+await db.query(
+  'UPDATE users SET name = $1, full_name = $1 WHERE id = $2',
+  [name, userId]
+);
+```
+
+3. Backfill existing data:
+```sql
+UPDATE users SET full_name = name WHERE full_name IS NULL;
+```
+
+4. Deploy code that reads from new column, writes to both
+
+5. Deploy code that only uses new column
+
+6. Drop old column:
+```sql
+ALTER TABLE users DROP COLUMN name;
+```
+
+### Adding a NOT NULL Constraint
+
+**Wrong way**:
+```sql
+ALTER TABLE users ALTER COLUMN email SET NOT NULL;
+```
+
+This scans the entire table and locks it.
+
+**Right way**:
+
+1. Add a check constraint (doesn't lock):
+```sql
+ALTER TABLE users ADD CONSTRAINT users_email_not_null 
+  CHECK (email IS NOT NULL) NOT VALID;
+```
+
+2. Validate the constraint (scans but doesn't lock):
+```sql
+ALTER TABLE users VALIDATE CONSTRAINT users_email_not_null;
+```
+
+3. Convert to NOT NULL (instant, uses existing constraint):
+```sql
+ALTER TABLE users ALTER COLUMN email SET NOT NULL;
+ALTER TABLE users DROP CONSTRAINT users_email_not_null;
+```
+
+### Changing Column Type
+
+**Wrong way**:
+```sql
+ALTER TABLE orders ALTER COLUMN amount TYPE DECIMAL(10,2);
+```
+
+**Right way**: Same pattern as renaming—add new column, migrate data, switch over.
+
+## Large Table Migrations
+
+For tables with millions of rows, even "safe" operations need care.
+
+### Batched Backfills
+
+Never update millions of rows in one transaction:
+
+```typescript
+async function backfillInBatches(batchSize = 1000) {
+  let processed = 0;
+  
+  while (true) {
+    const result = await db.query(`
+      UPDATE users 
+      SET full_name = name 
+      WHERE id IN (
+        SELECT id FROM users 
+        WHERE full_name IS NULL 
+        LIMIT $1
+      )
+      RETURNING id
+    `, [batchSize]);
+    
+    processed += result.rowCount;
+    console.log(`Processed ${processed} rows`);
+    
+    if (result.rowCount < batchSize) break;
+    
+    // Small delay to reduce load
+    await sleep(100);
+  }
+}
+```
+
+### Monitoring During Migrations
+
+Watch these metrics:
+- Database CPU and I/O
+- Replication lag
+- Query latency
+- Lock wait times
+
+## Testing Migrations
+
+### Local Testing
+
+1. Dump production schema (not data)
+2. Apply migration locally
+3. Run application tests
+
+### Staging Testing
+
+1. Restore recent production backup to staging
+2. Run migration
+3. Verify application works
+4. Check migration duration
+
+### Production Dry Run
+
+For critical migrations:
+```sql
+BEGIN;
+-- Run migration
+-- Check results
+ROLLBACK;
+```
+
+## Rollback Strategy
+
+Always have a rollback plan:
+
+1. **Additive changes**: Usually don't need rollback (new columns are ignored)
+2. **Data migrations**: Keep old column until confident
+3. **Destructive changes**: Have a restore plan
+
+## Real Example: Adding a Foreign Key
+
+We needed to add a foreign key from `orders` to `customers` on a table with 50M rows.
+
+**Approach**:
+
+1. Add constraint without validation:
+```sql
+ALTER TABLE orders 
+ADD CONSTRAINT fk_orders_customer 
+FOREIGN KEY (customer_id) REFERENCES customers(id) 
+NOT VALID;
+```
+
+2. Validate in batches during low-traffic period:
+```sql
+ALTER TABLE orders VALIDATE CONSTRAINT fk_orders_customer;
+```
+
+**Result**: Zero downtime, completed in 45 minutes during normal traffic.
+
+## Tools and Automation
+
+### Migration Linters
+
+Use tools that catch dangerous patterns:
+- [strong_migrations](https://github.com/ankane/strong_migrations) (Ruby)
+- [squawk](https://github.com/sbdchd/squawk) (PostgreSQL)
+
+### Deployment Integration
+
+Make migrations part of your deployment pipeline:
+1. Run migrations before deploying new code
+2. Verify migrations succeeded
+3. Deploy new application code
+
+## Conclusion
+
+Zero-downtime migrations require more planning and multiple deployments, but the payoff is worth it. Your users don't experience interruptions, and you can deploy with confidence at any time.
+
+The key principles:
+- Never break compatibility with running code
+- Make changes in small, reversible steps
+- Test thoroughly before production
+- Monitor during and after migrations
+
+Start treating database changes with the same care as application code, and "scheduled maintenance" becomes a thing of the past.

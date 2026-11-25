@@ -1,0 +1,345 @@
+---
+title: "API Versioning Strategies That Actually Work"
+description: "A practical comparison of API versioning approaches with recommendations based on real-world experience."
+publishDate: 2025-04-05
+tags:
+  - "api-design"
+  - "versioning"
+  - "best-practices"
+draft: false
+---
+
+## Introduction
+
+"How should we version our API?" is a question that sparks surprisingly heated debates. After building and maintaining APIs used by thousands of developers, I've learned that the best approach depends on your context—but some strategies are clearly better than others.
+
+## Why Version APIs?
+
+APIs are contracts. When you change an API, you risk breaking clients that depend on the old behavior. Versioning lets you:
+
+- Evolve your API without breaking existing clients
+- Deprecate old functionality gracefully
+- Support multiple client versions simultaneously
+
+## The Main Approaches
+
+### URL Path Versioning
+
+```
+GET /v1/users/123
+GET /v2/users/123
+```
+
+**Pros:**
+- Extremely clear and visible
+- Easy to route at load balancer level
+- Simple to implement
+- Easy to document
+
+**Cons:**
+- Clutters URLs
+- Can lead to code duplication
+- Makes it tempting to create too many versions
+
+**When to use:** Public APIs, APIs with many external consumers, when you want maximum clarity.
+
+### Query Parameter Versioning
+
+```
+GET /users/123?version=1
+GET /users/123?api-version=2023-01-15
+```
+
+**Pros:**
+- Keeps URLs clean
+- Optional parameter (can default to latest)
+- Easy to add to existing APIs
+
+**Cons:**
+- Easy to forget
+- Can be cached incorrectly
+- Less visible in logs and documentation
+
+**When to use:** Internal APIs, when you want versioning to be optional.
+
+### Header Versioning
+
+```
+GET /users/123
+Accept: application/vnd.myapi.v1+json
+
+GET /users/123
+X-API-Version: 2
+```
+
+**Pros:**
+- Clean URLs
+- Follows HTTP semantics (content negotiation)
+- Separates versioning from resource identification
+
+**Cons:**
+- Hidden from casual inspection
+- Harder to test in browser
+- More complex client implementation
+
+**When to use:** When you care about REST purity, sophisticated API consumers.
+
+### Date-Based Versioning
+
+```
+GET /users/123
+Stripe-Version: 2023-10-16
+```
+
+**Pros:**
+- Clear timeline of changes
+- Encourages incremental evolution
+- No arbitrary version numbers
+
+**Cons:**
+- Requires tracking what changed when
+- Can be confusing (which date do I use?)
+- Harder to communicate major changes
+
+**When to use:** APIs that evolve frequently with small changes (Stripe's approach).
+
+## My Recommendation
+
+For most APIs, I recommend **URL path versioning with a twist**:
+
+### The Strategy
+
+1. **Use URL versioning for major versions only**
+   ```
+   /v1/users
+   /v2/users  # Only when breaking changes are unavoidable
+   ```
+
+2. **Evolve within versions using additive changes**
+   - Add new fields (don't remove old ones)
+   - Add new endpoints
+   - Add new optional parameters
+
+3. **Use feature flags for gradual rollouts**
+   ```
+   GET /v1/users/123?include=new_profile_fields
+   ```
+
+### Why This Works
+
+- **Clarity**: Developers immediately see which version they're using
+- **Stability**: Major versions are rare, so clients don't need to update often
+- **Flexibility**: Additive changes let you evolve without breaking anyone
+
+## Making Changes Without Breaking Clients
+
+### Safe Changes (No Version Bump)
+
+```typescript
+// Adding a new optional field
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;  // New field, optional
+}
+
+// Adding a new endpoint
+GET /v1/users/123/preferences  // New endpoint
+
+// Adding a new optional parameter
+GET /v1/users?include_inactive=true  // New parameter
+```
+
+### Breaking Changes (Require Version Bump)
+
+```typescript
+// Removing a field
+// v1: { id, name, email }
+// v2: { id, name }  // email removed
+
+// Changing field type
+// v1: { age: "25" }  // string
+// v2: { age: 25 }    // number
+
+// Changing endpoint behavior
+// v1: GET /users returns all users
+// v2: GET /users returns paginated users
+```
+
+## Implementing Versioning
+
+### Router-Level Versioning
+
+```typescript
+// Express example
+const v1Router = express.Router();
+const v2Router = express.Router();
+
+v1Router.get('/users/:id', v1UserController.get);
+v2Router.get('/users/:id', v2UserController.get);
+
+app.use('/v1', v1Router);
+app.use('/v2', v2Router);
+```
+
+### Controller-Level Versioning
+
+```typescript
+class UserController {
+  async getUser(req: Request, res: Response) {
+    const version = this.getVersion(req);
+    const user = await this.userService.findById(req.params.id);
+    
+    if (version === 1) {
+      return res.json(this.serializeV1(user));
+    } else {
+      return res.json(this.serializeV2(user));
+    }
+  }
+
+  private serializeV1(user: User) {
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email
+    };
+  }
+
+  private serializeV2(user: User) {
+    return {
+      id: user.id,
+      fullName: user.name,  // Renamed field
+      emailAddress: user.email,
+      createdAt: user.createdAt  // New field
+    };
+  }
+}
+```
+
+### Shared Logic, Different Serialization
+
+The key is to share business logic while varying the API contract:
+
+```typescript
+// Shared service layer
+class UserService {
+  async findById(id: string): Promise<User> {
+    // Same logic for all versions
+  }
+}
+
+// Version-specific serializers
+const serializers = {
+  v1: new UserSerializerV1(),
+  v2: new UserSerializerV2()
+};
+
+// Controller uses appropriate serializer
+const serializer = serializers[version];
+return res.json(serializer.serialize(user));
+```
+
+## Deprecation Strategy
+
+### Communicate Early
+
+```http
+HTTP/1.1 200 OK
+Deprecation: Sun, 01 Jan 2025 00:00:00 GMT
+Sunset: Sun, 01 Jul 2025 00:00:00 GMT
+Link: </v2/users>; rel="successor-version"
+```
+
+### Provide Migration Guides
+
+Document exactly what changed and how to migrate:
+
+```markdown
+## Migrating from v1 to v2
+
+### User endpoint changes
+
+| v1 | v2 | Notes |
+|----|----|----|
+| `name` | `fullName` | Renamed for clarity |
+| `email` | `emailAddress` | Renamed for clarity |
+| - | `createdAt` | New field |
+
+### Code changes required
+
+```diff
+- const name = user.name;
++ const name = user.fullName;
+```
+```
+
+### Monitor Usage
+
+Track which versions are being used:
+
+```typescript
+app.use((req, res, next) => {
+  const version = extractVersion(req);
+  metrics.increment('api.requests', { version });
+  next();
+});
+```
+
+## Common Mistakes
+
+### Too Many Versions
+
+If you have v1, v2, v3, v4, v5... you're versioning too aggressively. Each version has maintenance cost.
+
+**Fix:** Use additive changes within versions. Only bump for truly breaking changes.
+
+### Inconsistent Versioning
+
+Different endpoints using different versioning schemes.
+
+**Fix:** Pick one approach and stick with it across your entire API.
+
+### No Deprecation Period
+
+Removing old versions without warning.
+
+**Fix:** Announce deprecation at least 6-12 months in advance. Monitor usage before removal.
+
+### Versioning Internal APIs
+
+Adding versioning overhead to APIs only used by your own team.
+
+**Fix:** Internal APIs can often just evolve with coordinated deployments.
+
+## Real-World Example
+
+Here's how I structured versioning for a payment API:
+
+```
+/v1/payments          # Original API (2020)
+/v1/payments/intents  # Added 2021, no version bump
+/v1/refunds           # Added 2021, no version bump
+
+/v2/payments          # Breaking changes (2023)
+                      # - Changed amount from cents to decimal
+                      # - Restructured error responses
+                      # - Removed deprecated fields
+```
+
+Timeline:
+- 2023-01: Announced v2, v1 deprecation
+- 2023-06: v2 released, v1 still supported
+- 2024-01: v1 sunset warning emails
+- 2024-06: v1 removed
+
+## Conclusion
+
+API versioning doesn't have to be complicated:
+
+1. Use URL path versioning for clarity
+2. Evolve within versions using additive changes
+3. Only create new versions for breaking changes
+4. Deprecate gracefully with long notice periods
+
+The goal is to give your API consumers stability while allowing your API to evolve. A well-versioned API builds trust and makes integration easier for everyone.

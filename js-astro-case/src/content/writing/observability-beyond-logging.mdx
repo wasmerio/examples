@@ -1,0 +1,371 @@
+---
+title: "Observability Beyond Logging: Traces, Metrics, and Understanding Production"
+description: "A practical guide to implementing observability that actually helps you understand and debug production systems."
+publishDate: 2025-06-13
+tags:
+  - "observability"
+  - "monitoring"
+  - "devops"
+  - "production"
+draft: false
+---
+
+## Introduction
+
+"Just add more logging" is the default response when production issues are hard to debug. But more logs often means more noise, not more insight.
+
+True observability requires a different approach: understanding your system through metrics, traces, and structured logs working together.
+
+## The Three Pillars
+
+### Logs
+
+What happened at a specific point in time.
+
+```json
+{
+  "timestamp": "2024-01-15T10:23:45Z",
+  "level": "error",
+  "message": "Payment failed",
+  "userId": "user_123",
+  "paymentId": "pay_456",
+  "error": "Card declined",
+  "traceId": "abc123"
+}
+```
+
+**Good for**: Detailed debugging, audit trails, understanding specific events.
+
+**Bad for**: Aggregation, trends, understanding system-wide behavior.
+
+### Metrics
+
+Numeric measurements over time.
+
+```
+http_requests_total{method="POST", path="/api/payments", status="500"} 42
+http_request_duration_seconds{quantile="0.99"} 2.5
+active_database_connections 45
+```
+
+**Good for**: Alerting, dashboards, understanding trends and patterns.
+
+**Bad for**: Understanding why something happened, debugging specific requests.
+
+### Traces
+
+The journey of a request through your system.
+
+```
+Trace: abc123
+├── API Gateway (2ms)
+├── Auth Service (15ms)
+├── Payment Service (450ms)
+│   ├── Validate Request (5ms)
+│   ├── Check Fraud (200ms)
+│   └── Process Payment (240ms)
+│       └── External Provider (235ms) ← slow!
+└── Notification Service (25ms)
+```
+
+**Good for**: Understanding latency, finding bottlenecks, debugging distributed systems.
+
+**Bad for**: Aggregation (too much data), simple systems.
+
+## Implementing Effective Logging
+
+### Structure Your Logs
+
+Unstructured logs are nearly useless at scale:
+
+```
+# Bad
+console.log(`User ${userId} failed to pay: ${error}`);
+
+# Good
+logger.error('Payment failed', {
+  userId,
+  paymentId,
+  amount,
+  currency,
+  errorCode: error.code,
+  errorMessage: error.message,
+  traceId: context.traceId
+});
+```
+
+### Log Levels Matter
+
+Use levels consistently:
+
+- **ERROR**: Something failed that shouldn't have
+- **WARN**: Something unexpected but handled
+- **INFO**: Significant business events
+- **DEBUG**: Detailed information for debugging (off in production)
+
+### Include Context
+
+Every log should answer: who, what, when, where, why?
+
+```typescript
+function processOrder(order: Order, context: Context) {
+  const logContext = {
+    orderId: order.id,
+    userId: order.userId,
+    traceId: context.traceId,
+    spanId: context.spanId
+  };
+
+  logger.info('Processing order', { ...logContext, amount: order.total });
+  
+  try {
+    // ... process order
+    logger.info('Order processed successfully', logContext);
+  } catch (error) {
+    logger.error('Order processing failed', { 
+      ...logContext, 
+      error: error.message,
+      stack: error.stack 
+    });
+    throw error;
+  }
+}
+```
+
+## Implementing Metrics
+
+### The Four Golden Signals
+
+Start with these for every service:
+
+1. **Latency**: How long requests take
+2. **Traffic**: How many requests you're handling
+3. **Errors**: How many requests fail
+4. **Saturation**: How "full" your service is
+
+```typescript
+// Example with Prometheus client
+const httpRequestDuration = new Histogram({
+  name: 'http_request_duration_seconds',
+  help: 'Duration of HTTP requests',
+  labelNames: ['method', 'path', 'status'],
+  buckets: [0.01, 0.05, 0.1, 0.5, 1, 2, 5]
+});
+
+const httpRequestsTotal = new Counter({
+  name: 'http_requests_total',
+  help: 'Total HTTP requests',
+  labelNames: ['method', 'path', 'status']
+});
+
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  res.on('finish', () => {
+    const duration = (Date.now() - start) / 1000;
+    const labels = { 
+      method: req.method, 
+      path: req.route?.path || 'unknown',
+      status: res.statusCode 
+    };
+    
+    httpRequestDuration.observe(labels, duration);
+    httpRequestsTotal.inc(labels);
+  });
+  
+  next();
+});
+```
+
+### Business Metrics
+
+Don't just monitor infrastructure—monitor what matters to the business:
+
+```typescript
+const ordersProcessed = new Counter({
+  name: 'orders_processed_total',
+  help: 'Total orders processed',
+  labelNames: ['status', 'payment_method']
+});
+
+const orderValue = new Histogram({
+  name: 'order_value_dollars',
+  help: 'Order value in dollars',
+  buckets: [10, 50, 100, 500, 1000, 5000]
+});
+```
+
+### Cardinality Warning
+
+Be careful with label values. High cardinality kills metric systems:
+
+```typescript
+// Bad - userId has unlimited values
+httpRequests.inc({ userId: user.id }); 
+
+// Good - limited set of values
+httpRequests.inc({ userType: user.type }); // 'free', 'premium', 'enterprise'
+```
+
+## Implementing Distributed Tracing
+
+### Propagate Context
+
+Pass trace context through your entire request flow:
+
+```typescript
+// HTTP client
+async function callService(url: string, context: Context) {
+  return fetch(url, {
+    headers: {
+      'X-Trace-Id': context.traceId,
+      'X-Span-Id': context.spanId,
+      'X-Parent-Span-Id': context.parentSpanId
+    }
+  });
+}
+
+// Message queue
+async function publishMessage(queue: string, message: any, context: Context) {
+  await queue.publish({
+    ...message,
+    _traceContext: {
+      traceId: context.traceId,
+      spanId: generateSpanId(),
+      parentSpanId: context.spanId
+    }
+  });
+}
+```
+
+### Instrument Key Operations
+
+Focus tracing on:
+- External service calls
+- Database queries
+- Cache operations
+- Message queue operations
+- Significant business logic
+
+```typescript
+async function processPayment(payment: Payment, context: Context) {
+  return tracer.startSpan('processPayment', { parent: context.span }, async (span) => {
+    span.setAttributes({
+      'payment.id': payment.id,
+      'payment.amount': payment.amount,
+      'payment.currency': payment.currency
+    });
+
+    try {
+      const result = await paymentProvider.charge(payment);
+      span.setStatus({ code: SpanStatusCode.OK });
+      return result;
+    } catch (error) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: error.message });
+      span.recordException(error);
+      throw error;
+    }
+  });
+}
+```
+
+## Connecting the Pillars
+
+The real power comes from connecting logs, metrics, and traces:
+
+### Trace ID in Everything
+
+Include trace ID in all logs and metrics:
+
+```typescript
+logger.info('Payment processed', {
+  traceId: context.traceId,  // Links to trace
+  paymentId: payment.id
+});
+
+paymentDuration.observe(
+  { traceId: context.traceId },  // Links to trace
+  duration
+);
+```
+
+### Exemplars
+
+Link metrics to specific traces:
+
+```typescript
+// When you see a spike in latency, click through to see
+// the actual traces that caused it
+httpLatency.observe(
+  { method: 'POST', path: '/payments' },
+  duration,
+  { traceId: context.traceId }  // Exemplar
+);
+```
+
+## Alerting Strategy
+
+### Alert on Symptoms, Not Causes
+
+```yaml
+# Bad - alerts on cause
+- alert: HighCPU
+  expr: cpu_usage > 80%
+
+# Good - alerts on symptom
+- alert: HighLatency
+  expr: http_request_duration_seconds{quantile="0.99"} > 2
+```
+
+### Use Multiple Signals
+
+```yaml
+- alert: PaymentServiceDegraded
+  expr: |
+    (
+      rate(payment_errors_total[5m]) / rate(payment_requests_total[5m]) > 0.01
+    ) and (
+      histogram_quantile(0.99, rate(payment_duration_seconds_bucket[5m])) > 5
+    )
+  annotations:
+    summary: "Payment service is degraded - high errors AND high latency"
+```
+
+## Practical Tips
+
+### Start Simple
+
+Don't try to instrument everything at once:
+1. Add the four golden signals to each service
+2. Add structured logging with trace IDs
+3. Add tracing to external calls
+4. Expand based on what you need to debug
+
+### Make Dashboards Useful
+
+A good dashboard answers: "Is the system healthy right now?"
+
+Include:
+- Request rate and error rate
+- Latency percentiles (p50, p95, p99)
+- Saturation metrics (queue depth, connection pool)
+- Key business metrics
+
+### Practice Using Your Observability
+
+Run game days where you:
+1. Inject failures
+2. Try to diagnose using only observability tools
+3. Identify gaps in instrumentation
+
+## Conclusion
+
+Good observability isn't about collecting more data—it's about collecting the right data and making it easy to use.
+
+Focus on:
+- Structured, contextual logs
+- The four golden signals for metrics
+- Traces for understanding request flow
+- Connecting all three with trace IDs
+
+When something goes wrong in production, you should be able to go from alert to root cause in minutes, not hours.

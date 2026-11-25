@@ -1,0 +1,198 @@
+# ThoughtLite
+
+<div align="center">
+    <p>
+        <img alt="ThoughtLite Light Mode Preview" src=".github/assets/preview-light.webp">
+        <img alt="ThoughtLite Dark Mode Preview" src=".github/assets/preview-dark.webp">
+    </p>
+    <p>
+        <a href="https://github.com/tuyuritio/astro-theme-thought-lite/releases/latest"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/tuyuritio/astro-theme-thought-lite"></a>
+        <a href="https://raw.githubusercontent.com/tuyuritio/astro-theme-thought-lite/refs/heads/main/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/tuyuritio/astro-theme-thought-lite"></a>
+        <a href="https://deepwiki.com/tuyuritio/astro-theme-thought-lite"><img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg"></a>
+    </p>
+    <p>コンテンツ作成に特化し、モダンな <a href="https://astro.build/">Astro</a> テーマ 🌟</p>
+    <p>
+        <small><a href="README.md">English</a></small>
+        <small><a href="README.zh-cn.md">简体中文</a></small>
+        <small><ins>日本語</ins></small>
+    </p>
+</div>
+
+> [!NOTE]
+> - デフォルトでは静的ビルドとなり、任意の静的ホスティングプラットフォームにデプロイできます。
+> - オプションで内蔵のコメントシステムを有効にできます（Cloudflare へのデプロイのみ対応）。
+
+🎬 **ライブデモ**：[Cloudflare Workers](https://thought-lite.ttio.workers.dev/ja)
+
+## ✨ 機能
+
+- [x] **レスポンシブデザイン** - モバイル、タブレット、デスクトップに対応。
+- [x] **ライト / ダークモード** - システムに自動追従し、手動切り替えもサポート。
+- [x] **CSR 動的コンテンツフィルタリング** - History API によるリストフィルタリングとページネーション。
+- [x] **i18n サポート** - 拡張可能な多言語対応、単一言語モードでも完璧に動作。
+- [x] **サイトマップ & フィード購読** - サイトマップと Atom フィードの自動生成。
+- [x] **OpenGraph サポート** - 組み込みの Open Graph メタタグでソーシャルメディア共有を最適化。
+
+### コメントシステム
+
+Cloudflare D1 ベースで、デプロイが簡単かつプライバシーも制御可能です。
+
+- [x] **軽量ユーザーシステム** - OAuth 認証とゲストコメントをサポート。
+- [x] **デスクトップ通知** - Web Push API を使用したリアルタイム通知。
+- [x] **メール通知** - RESTful API を使用したメール通知の送信。
+
+## 📋 前提条件
+
+コメントシステムを有効にする場合は、以下のアカウントをご用意ください：
+
+- [Cloudflare アカウント](https://dash.cloudflare.com/sign-up) - Cloudflare Workers のデプロイと D1 データベースホスティング用
+- [GitHub アカウント](https://github.com/signup) - コードホスティングと自動デプロイ用
+
+## ⚡️ クイックスタート
+
+### Astro コマンドを使用
+
+以下のコマンドを実行します：
+
+```sh
+pnpm create astro --template tuyuritio/astro-theme-thought-lite
+
+# 対話型プロンプトに従ってプロジェクトを作成
+
+cd <your-project-name>
+# pnpm db:migrate:local  # コメントシステムを有効にする場合は、先にローカルデータベースを初期化
+pnpm dev
+```
+
+### テンプレートを使用
+
+1. [このテンプレートを使用して](https://github.com/new?template_name=astro-theme-thought-lite&template_owner=tuyuritio)新しいリポジトリを作成するか、このリポジトリを [Fork](https://github.com/tuyuritio/astro-theme-thought-lite/fork) します。
+2. 以下のコマンドを実行します：
+
+```sh
+git clone <your-repo-url>
+cd <your-repo-name>
+pnpm install
+# pnpm db:migrate:local  # コメントシステムを有効にする場合は、先にローカルデータベースを初期化
+pnpm dev
+```
+
+## 🔧 設定
+
+テーマ関連の構成については、次のドキュメントを参照してください：
+
+- [Astro 設定リファレンス](https://docs.astro.build/ja/reference/configuration-reference/)
+- [サイト設定ガイド](https://thought-lite.ttio.workers.dev/ja/note/configuration)
+- [国際化設定ガイド](https://thought-lite.ttio.workers.dev/ja/note/internationalization)
+
+### コメントシステム
+
+- [コメントシステム設定ガイド](https://thought-lite.ttio.workers.dev/ja/note/comment)
+- [通知設定ガイド](https://thought-lite.ttio.workers.dev/ja/note/notification)
+- [OAuth 設定ガイド](https://thought-lite.ttio.workers.dev/ja/note/oauth)
+
+## 💻 コマンド
+
+テーマは以下の一般的なコマンドを提供します：
+
+| コマンド | アクション |
+| --- | --- |
+| `pnpm install` | プロジェクトの依存関係をインストール |
+| `pnpm update` | プロジェクトの依存関係を更新 |
+| `pnpm new` | 新しいコンテンツファイルを作成 |
+| `pnpm dev` | ローカル開発サーバーを起動（デフォルト：`http://localhost:4321`） |
+| `pnpm check` | Astro 型チェックを実行 |
+| `pnpm build` | 本番バージョンをビルド |
+| `pnpm preview` | ビルドしたサイトをプレビュー |
+| `pnpm format` | コードフォーマット |
+| `pnpm lint` | コードリント |
+
+### コメントシステム
+
+| コマンド | アクション |
+| --- | --- |
+| `pnpm deploy` | Cloudflare にデプロイ |
+| `pnpm deploy:dry` | デプロイをシミュレート |
+| `pnpm db:migration` | データベースマイグレーションファイルを生成 |
+| `pnpm db:migrate:local` | データベースマイグレーションをローカルで適用 |
+| `pnpm db:migrate:remote` | データベースマイグレーションをリモートで適用 |
+
+## 🚀 デプロイ
+
+### 静的ビルド
+
+デフォルト設定では純粋な静的サイトとしてビルドされ、任意の静的ホスティングプラットフォームにデプロイできます。各プラットフォームでのデプロイ方法は [Astro 公式デプロイガイド](https://docs.astro.build/ja/guides/deploy/) を参照してください。
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/tuyuritio/astro-theme-thought-lite&project-name=astro-blog-thought-lite&repository-name=astro-blog-thought-lite&teamSlug=tuyuritios-projects)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/integration/start/deploy?repository=https://github.com/tuyuritio/astro-theme-thought-lite)
+
+### SSR（コメントシステム有効時）
+
+```sh
+pnpm build &&
+pnpm db:migrate:remote &&
+pnpm deploy
+```
+
+GitHub Actions による**自動デプロイ**の設定については、[GitHub Actions 設定ガイド](https://thought-lite.ttio.workers.dev/ja/note/github-actions)を参照してください。
+
+## 🔄 更新
+
+アップストリームの更新を同期するには、以下のコマンドを実行します：
+
+```sh
+git remote add theme https://github.com/tuyuritio/astro-theme-thought-lite.git
+git fetch theme
+git merge theme/main  # 初回更新時は `--allow-unrelated-histories` フラグを追加
+pnpm install
+# pnpm db:migrate:local  # コメントシステムを有効にする場合は、データベースマイグレーションを同期
+```
+
+## ✍️ コンテンツ作成
+
+コンテンツ作成は `src/content` ディレクトリに集中しており、主に以下の部分を含みます：
+
+- `note` - 文記、入念に構成された詳細な長文作品に特化
+- `jotting` - 随筆、軽量で即時的なコンテンツ記録
+- `preface` - 序文、第一印象としてサイトのホームページに表示
+- `information` - 情報、各種説明的なコンテンツを含む
+
+詳細は[コンテンツ作成ガイド](https://thought-lite.ttio.workers.dev/ja/note/content)を参照してください。
+
+## 🤝 貢献
+
+あらゆる形式の貢献を歓迎し、感謝しています！
+
+- プロジェクトの宣伝や他のユーザーの支援
+- [Issues](https://github.com/tuyuritio/astro-theme-thought-lite/issues) の報告や新機能の提案
+- ドキュメントの改善や国際化（i18n）の支援
+- コード貢献の提出
+- 詳細は[コード貢献ガイド](CONTRIBUTING.md)を参照してください
+
+## 🙏 謝辞
+
+### 技術スタック
+
+- **コアフレームワーク** - [Astro](https://astro.build/)
+- **コア言語** - [TypeScript](https://www.typescriptlang.org/)
+- **UI コンポーネント** - [Svelte](https://svelte.dev/)
+- **CSS エンジン** - [Tailwind CSS](https://tailwindcss.com/)
+- **アイコン** - [Iconify](https://iconify.design/)
+- **フォント** - [Google Fonts](https://fonts.google.com/) | [ZeoSeven Fonts](https://fonts.zeoseven.com/)
+- **画像ビューア** - [Medium Zoom](https://github.com/francoischalifour/medium-zoom)
+- **SPA トランジション** - [Swup](https://swup.js.org/)
+- **コード品質** - [Biome](https://biomejs.dev/)
+- **ORM** - [Drizzle ORM](https://orm.drizzle.team/)
+- **データベース** - [Cloudflare D1](https://developers.cloudflare.com/d1/)
+- **エッジ展開** - [Cloudflare Workers](https://workers.cloudflare.com/)
+
+### インスピレーション
+
+- [Astro Sphere](https://github.com/markhorn-dev/astro-sphere)
+- [astro-vitesse](https://github.com/adrian-ub/astro-vitesse)
+- [Miniblog v1](https://github.com/nicholasdly/miniblog/tree/v1)
+- [AstroPaper with I18n](https://github.com/yousef8/astro-paper-i18n)
+
+## 📜 ライセンス
+
+このプロジェクトは [GPLv3](LICENSE) でライセンスされており、自由に変更および配布できますが、元の著作権表示を保持する必要があります。

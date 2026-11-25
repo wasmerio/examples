@@ -1,0 +1,254 @@
+---
+title: Markdown 拡張マニュアル
+timestamp: 2025-11-24 00:00:00+00:00
+tags: [Markup, Demo]
+description: テーマで拡張されたMarkdown構文機能の詳細ガイド。
+---
+
+Astro は Markdown エンジンとして [remark](https://github.com/remarkjs/remark) を使用しており、`astro.config.ts` でプラグイン設定インターフェースを提供しています。
+
+テーマには構文拡張のために以下のプラグインが組み込まれています：
+
+## 挿入
+
+> プラグイン：[`remark-ins`](https://www.npmjs.com/package/remark-ins)
+
+```
+++挿入コンテンツ++
+```
+
+++挿入コンテンツ++
+
+## マーキング
+
+> プラグイン：[`remark-flexible-markers`](https://www.npmjs.com/package/remark-flexible-markers)
+
+```
+==マーキングコンテンツ==
+```
+
+==マーキングコンテンツ==
+
+## Ruby
+
+> プラグイン：[`@tuyuritio/remark-ruby`](https://www.npmjs.com/package/@tuyuritio/remark-ruby)
+
+```
+{拼音}(pīn|yīn)
+```
+
+{拼音}(pīn|yīn)
+
+```
+{振り仮名}(ふ||が|な)
+```
+
+{振り仮名}(ふ||が|な)
+
+## マスク
+
+> プラグイン：[`@tuyuritio/remark-spoiler`](https://www.npmjs.com/package/@tuyuritio/remark-spoiler)
+
+```
+!!マスクコンテンツ!!
+```
+
+!!マスクコンテンツ!!
+
+## Emoji
+
+> プラグイン：[`remark-gemoji`](https://www.npmjs.com/package/remark-gemoji)
+
+```
+:wink: :cry: :laughing: :yum:
+```
+
+:wink: :cry: :laughing: :yum:
+
+[Emoji チートシート](https://github.com/ikatyang/emoji-cheat-sheet?tab=readme-ov-file#table-of-contents)
+
+## Katex
+
+> プラグイン：[`remark-math`](https://www.npmjs.com/package/remark-math) & [`rehype-katex`](https://www.npmjs.com/package/rehype-katex)
+
+```
+$e^{ix} = \cos x + i \sin x$
+```
+
+$e^{ix} = \cos x + i \sin x$
+
+```
+$$
+(f*g)(t)=\int f(\tau)g(t-\tau)d\tau
+$$
+```
+
+$$
+(f*g)(t)=\int f(\tau)g(t-\tau)d\tau
+$$
+
+## 脚注
+
+> プラグイン：[`remark-footnotes-extra`](https://www.npmjs.com/package/remark-footnotes-extra)
+
+```
+脚注[^1]
+[^1]: 脚注は**マークアップを含める**ことができます。
+```
+
+脚注[^1]
+[^1]: 脚注は**マークアップを含める**ことができます。
+
+```
+インライン脚注^[インライン情報]
+```
+
+インライン脚注^[インライン情報]
+
+## 略語
+
+> プラグイン：[`@tuyuritio/remark-abbreviation`](https://www.npmjs.com/package/@tuyuritio/remark-abbreviation)
+
+```
+ABBR abbr xABBRx
+
+*[ABBR]: Abbreviation
+```
+
+ABBR abbr xABBRx
+
+*[ABBR]: Abbreviation
+
+## GitHub Alerts
+
+> プラグイン：[`@tuyuritio/remark-github-alert`](https://www.npmjs.com/package/@tuyuritio/remark-github-alert)
+
+
+```
+> [!NOTE]
+> 一般情報
+```
+
+> [!NOTE]
+> 一般情報
+
+```
+> [!TIP]
+> オプション情報
+```
+
+> [!TIP]
+> オプション情報
+
+```
+> [!IMPORTANT]
+> 重要情報
+```
+
+> [!IMPORTANT]
+> 重要情報
+
+```
+> [!WARNING]
+> リスク情報
+```
+
+> [!WARNING]
+> リスク情報
+
+```
+> [!CAUTION]
+> 警告情報
+```
+
+> [!CAUTION]
+> 警告情報
+
+```
+> [!NOTE] (･ρ･)ﾉ
+> カスタムタイトルテキスト
+```
+
+> [!NOTE] (･ρ･)ﾉ
+> カスタムタイトルテキスト
+
+## 拡張テーブル
+
+> プラグイン：[remark-extended-table](https://www.npmjs.com/package/remark-extended-table)
+
+```
+| 左揃え   | 中央 | 右揃え |   中央   |
+|:-------- |:----:| ------:| -------- |
+| 通常セル |  マージセル  || マージ列 |
+| 通常セル |   2×2 セル   ||    ^     |
+| 通常セル |      ^       || 通常セル |
+```
+
+| 左揃え | 中央 | 右揃え | 中央 |
+|:- |:-:| -:| - |
+| 通常セル | マージセル || マージ列 |
+| 通常セル | 2×2 セル ||^|
+| 通常セル | ^ || 通常セル |
+
+## インライン要素の属性拡張 {#custom-id}
+
+<style>
+.red {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.big {
+  font-size: 1.25em;
+  font-weight: bold;
+}
+
+.colorful {
+  font-weight: bold;
+  background: linear-gradient(90deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
+  background-size: 200% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: rainbow 3s linear infinite;
+}
+
+@keyframes rainbow {
+  0% {
+    background-position: 0% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+</style>
+
+> プラグイン：[`@tuyuritio/remark-attribute`](https://www.npmjs.com/package/@tuyuritio/remark-attribute)
+
+```
+## インライン要素の属性拡張 {#custom-id}
+```
+
+```
+![](https://picsum.photos/1600/900?random=1){width=300}
+```
+
+![](https://picsum.photos/1600/900?random=1){width=300}
+
+```
+**重要**{.colorful}コンテンツ
+```
+
+**重要**{.colorful}コンテンツ
+
+```
+*複数の*{.red .big}クラス名
+```
+
+*複数の*{.red .big}クラス名
+
+```
+**カスタム属性**{key="This is a value"}
+```
+
+**カスタム属性**{key="This is a value"}

@@ -1,0 +1,49 @@
+---
+import { getCollection } from "astro:content";
+import { getRelativeLocaleUrl } from "astro:i18n";
+import config, { monolocale } from "$config";
+import Base from "$layouts/Base.astro";
+import Note from "$components/Note.svelte";
+import i18nit from "$i18n";
+
+export async function getStaticPaths() {
+	// Create path for each locale, omitting default locale from URL
+	return config.i18n.locales.map(locale => ({ params: { locale: config.i18n.defaultLocale === locale ? undefined : locale } }));
+}
+
+const { locale = config.i18n.defaultLocale } = Astro.params;
+
+const t = i18nit(locale);
+
+const notes = await getCollection("note", note => {
+	// Filter by publication status and locale
+	let published = !note.data.draft;
+	let localed = monolocale || note.id.split("/")[0] === locale;
+
+	return published && localed;
+});
+
+// Standardize note structure
+let list = notes.map(note => ({
+	id: note.id,
+	url: getRelativeLocaleUrl(locale, `/note/${monolocale ? note.id : note.id.split("/").slice(1).join("/")}`),
+	data: {
+		title: note.data.title,
+		timestamp: note.data.timestamp,
+		series: note.data.series,
+		tags: note.data.tags,
+		sensitive: note.data.sensitive,
+		top: note.data.top
+	}
+}));
+
+// Extract all unique series and tags from the filtered notes
+const series = Array.from(new Set(notes.map(note => note.data.series).filter((series): series is string => Boolean(series)))).sort();
+const tags = Array.from(new Set(notes.flatMap(note => note.data.tags).filter((tag): tag is string => Boolean(tag)))).sort();
+---
+
+<Base title={t("navigation.note")} {locale}>
+	<main class="flex flex-col grow">
+		<Note client:load {locale} notes={list} {series} {tags} />
+	</main>
+</Base>

@@ -1,0 +1,212 @@
+<!-- wasmer:start -->
+## Deploy on Wasmer
+
+This folder is the [ThoughtLite](https://github.com/tuyuritio/astro-theme-thought-lite) Astro theme by tuyuritio, copied from commit `26c98e140a582825fa9a73e37b49d428ab8ff64b` so it can be deployed as a Wasmer Edge template.
+
+- **Demo:** https://astro-thought-lite.wasmer.app
+- **Deploy:** open the template on [wasmer.io/templates](https://wasmer.io/templates) and click **Deploy**, or run `wasmer deploy` in this folder. Wasmer installs with pnpm, runs the build script with Node 24 and serves the static `dist/` folder.
+- **Changed for Wasmer:**
+  - Removed the @astrojs/cloudflare adapter from astro.config.ts and build a static site, since every page can be prerendered. The package stays in package.json so the lockfile is unchanged.
+  - Resized 3 images over 300 KB to at most 1600 px wide, keeping file names and formats.
+- **Environment variables:** The theme's example env file lists `PASS_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `AUTHOR_ID`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_DATABASE_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_TURNSTILE_SITE_KEY`, `CLOUDFLARE_TURNSTILE_SECRET_KEY`, `EMAIL_FROM`, `EMAIL_REPLY_TO`. The demo builds and runs without them; set them in the app's settings to turn on the features that use them.
+- **Credit:** theme by [tuyuritio](https://github.com/tuyuritio), GPL-3.0. The theme's license file is kept unchanged.
+<!-- wasmer:end -->
+
+# ThoughtLite
+
+<div align="center">
+    <p>
+        <img alt="ThoughtLite Light Mode Preview" src=".github/assets/preview-light.webp">
+        <img alt="ThoughtLite Dark Mode Preview" src=".github/assets/preview-dark.webp">
+    </p>
+    <p>
+        <a href="https://github.com/tuyuritio/astro-theme-thought-lite/releases/latest"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/tuyuritio/astro-theme-thought-lite"></a>
+        <a href="https://raw.githubusercontent.com/tuyuritio/astro-theme-thought-lite/refs/heads/main/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/tuyuritio/astro-theme-thought-lite"></a>
+        <a href="https://deepwiki.com/tuyuritio/astro-theme-thought-lite"><img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg"></a>
+    </p>
+    <p>A modern <a href="https://astro.build/">Astro</a> theme, focused on content creation 🌟</p>
+    <p>
+        <small><ins>English</ins></small>
+        <small><a href="README.zh-cn.md">简体中文</a></small>
+        <small><a href="README.ja.md">日本語</a></small>
+    </p>
+</div>
+
+> [!NOTE]
+> - Static build by default, deployable to any static hosting platform.
+> - Optional built-in comment system (Cloudflare deployment only).
+
+🎬 **Live Demo**: [Cloudflare Workers](https://thought-lite.ttio.workers.dev)
+
+## ✨ Features
+
+- [x] **Responsive Design** - Adaptive for mobile, tablet, and desktop.
+- [x] **Light / Dark Mode** - Auto-follows system preference with manual toggle support.
+- [x] **CSR Dynamic Content Filtering** - List filtering and pagination via History API.
+- [x] **i18n Support** - Extensible multilingual support, also works perfectly in monolingual mode.
+- [x] **Sitemap & Feed Subscription** - Automated generation of Sitemap and Atom Feed.
+- [x] **OpenGraph Support** - Built-in Open Graph meta tags for optimized social media sharing.
+
+### Comment System
+
+Powered by Cloudflare D1 — easy to deploy with privacy control.
+
+- [x] **Lightweight User System** - Supports OAuth authentication and guest comments.
+- [x] **Desktop Notifications** - Real-time notifications using Web Push API.
+- [x] **Email Notifications** - Send email notifications using RESTful API.
+
+## 📋 Prerequisites
+
+If you plan to enable the comment system, make sure you have:
+
+- [Cloudflare Account](https://dash.cloudflare.com/sign-up) - For Cloudflare Workers deployment and D1 database hosting
+- [GitHub Account](https://github.com/signup) - For code hosting and automated deployment
+
+## ⚡️ Quick Start
+
+### Using Astro Command
+
+Run the following command:
+
+```sh
+pnpm create astro --template tuyuritio/astro-theme-thought-lite
+
+# Follow the interactive prompts to create the project
+
+cd <your-project-name>
+# pnpm db:migrate:local  # Initialize local database if the comment system is enabled
+pnpm dev
+```
+
+### Using Template
+
+1. [Use this template](https://github.com/new?template_name=astro-theme-thought-lite&template_owner=tuyuritio) to create a new repository or [fork](https://github.com/tuyuritio/astro-theme-thought-lite/fork) this repository.
+2. Run the following commands:
+
+```sh
+git clone <your-repo-url>
+cd <your-repo-name>
+pnpm install
+# pnpm db:migrate:local  # Initialize local database if the comment system is enabled
+pnpm dev
+```
+
+## 🔧 Configuration
+
+Related theme configuration can be found in the following documents:
+
+- [Astro Configuration Reference](https://docs.astro.build/en/reference/configuration-reference/)
+- [Site Configuration Guide](https://thought-lite.ttio.workers.dev/note/configuration)
+- [Internationalization Configuration Guide](https://thought-lite.ttio.workers.dev/note/internationalization)
+
+### Comment System
+
+- [Comment System Configuration Guide](https://thought-lite.ttio.workers.dev/note/comment)
+- [Notification Configuration Guide](https://thought-lite.ttio.workers.dev/note/notification)
+- [OAuth Configuration Guide](https://thought-lite.ttio.workers.dev/note/oauth)
+
+## 💻 Commands
+
+The theme provides the following commonly used commands:
+
+| Command | Action |
+| --- | --- |
+| `pnpm install` | Install project dependencies |
+| `pnpm update` | Update project dependencies |
+| `pnpm new` | Create a new content file |
+| `pnpm dev` | Start the local development server (default: `http://localhost:4321`) |
+| `pnpm check` | Run Astro type checking |
+| `pnpm build` | Build the production version |
+| `pnpm preview` | Preview the built site |
+| `pnpm format` | Format code |
+| `pnpm lint` | Lint code |
+
+### Comment System
+
+| Command | Action |
+| --- | --- |
+| `pnpm deploy` | Deploy to Cloudflare |
+| `pnpm deploy:dry` | Simulate Cloudflare deployment |
+| `pnpm db:migration` | Generate database migration files |
+| `pnpm db:migrate:local` | Apply database migrations locally |
+| `pnpm db:migrate:remote` | Apply database migrations remotely |
+
+## 🚀 Deployment
+
+### Static Build
+
+The default configuration builds into a pure static site and can be deployed to any static hosting platform. Refer to the [Astro Official Deployment Guide](https://docs.astro.build/en/guides/deploy/).
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/tuyuritio/astro-theme-thought-lite&project-name=astro-blog-thought-lite&repository-name=astro-blog-thought-lite&teamSlug=tuyuritios-projects)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/integration/start/deploy?repository=https://github.com/tuyuritio/astro-theme-thought-lite)
+
+### SSR (Comment System Enabled)
+
+```sh
+pnpm build &&
+pnpm db:migrate:remote &&
+pnpm deploy
+```
+
+For **automated deployment** using GitHub Actions, refer to [GitHub Actions Configuration Guide](https://thought-lite.ttio.workers.dev/note/github-actions).
+
+## 🔄 Updates
+
+Run the following commands to sync upstream updates:
+
+```sh
+git remote add theme https://github.com/tuyuritio/astro-theme-thought-lite.git
+git fetch theme
+git merge theme/main  # Add `--allow-unrelated-histories` flag for first update
+pnpm install
+# pnpm db:migrate:local  # Sync database migrations if the comment system is enabled
+```
+
+## ✍️ Content Creation
+
+Content creation is centralized in the `src/content` directory, mainly including:
+
+- `note` - Focused on carefully crafted and detailed long-form works
+- `jotting` - Lightweight and immediate content recording
+- `preface` - Displayed on the homepage as the first impression
+- `information` - Containing various descriptive content
+
+For details, refer to the [Content Creation Guide](https://thought-lite.ttio.workers.dev/note/content).
+
+## 🤝 Contributing
+
+All kinds of contributions are welcome and appreciated!
+
+- Help promote the project or assist other users
+- Report [issues](https://github.com/tuyuritio/astro-theme-thought-lite/issues) or suggest new features
+- Improve documentation or help with internationalization (i18n)
+- Submit code contributions
+- See [Contribution Guide](CONTRIBUTING.md) for more information
+
+## 🙏 Acknowledgments
+
+### Tech Stack
+
+- **Core Framework** - [Astro](https://astro.build/)
+- **Core Language** - [TypeScript](https://www.typescriptlang.org/)
+- **UI Components** - [Svelte](https://svelte.dev/)
+- **CSS Engine** - [Tailwind CSS](https://tailwindcss.com/)
+- **Icons** - [Iconify](https://iconify.design/)
+- **Fonts** - [Google Fonts](https://fonts.google.com/) | [ZeoSeven Fonts](https://fonts.zeoseven.com/)
+- **Image Viewer** - [Medium Zoom](https://github.com/francoischalifour/medium-zoom)
+- **SPA Transitions** - [Swup](https://swup.js.org/)
+- **Code Quality** - [Biome](https://biomejs.dev/)
+- **ORM** - [Drizzle ORM](https://orm.drizzle.team/)
+- **Database** - [Cloudflare D1](https://developers.cloudflare.com/d1/)
+- **Edge Deployment** - [Cloudflare Workers](https://workers.cloudflare.com/)
+
+### Inspiration
+
+- [Astro Sphere](https://github.com/markhorn-dev/astro-sphere)
+- [astro-vitesse](https://github.com/adrian-ub/astro-vitesse)
+- [Miniblog v1](https://github.com/nicholasdly/miniblog/tree/v1)
+- [AstroPaper with I18n](https://github.com/yousef8/astro-paper-i18n)
+
+## 📜 License
+
+This project is licensed under [GPLv3](LICENSE), allowing free modification and distribution, but the original copyright notice must be retained.

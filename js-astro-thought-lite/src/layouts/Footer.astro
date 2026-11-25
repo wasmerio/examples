@@ -1,0 +1,135 @@
+---
+import { getCollection, getEntry, render } from "astro:content";
+import { getRelativeLocaleUrl } from "astro:i18n";
+import { monolocale } from "$config";
+import Icon from "$components/Icon.svelte";
+import i18nit from "$i18n";
+
+let { locale, author, copyright } = Astro.props;
+
+const t = i18nit(locale);
+
+let ccURL: string;
+let ccLabel: string;
+
+// Map Creative Commons license types to their official URLs and descriptions
+switch (copyright.type) {
+	case "CC BY 4.0":
+		ccURL = "https://creativecommons.org/licenses/by/4.0/";
+		ccLabel = "Attribution 4.0 International";
+		break;
+
+	case "CC BY-SA 4.0":
+		ccURL = "https://creativecommons.org/licenses/by-sa/4.0/";
+		ccLabel = "Attribution-ShareAlike 4.0 International";
+		break;
+
+	case "CC BY-NC 4.0":
+		ccURL = "https://creativecommons.org/licenses/by-nc/4.0/";
+		ccLabel = "Creative Commons Attribution-NonCommercial 4.0 International";
+		break;
+
+	case "CC BY-NC-SA 4.0":
+		ccURL = "https://creativecommons.org/licenses/by-nc-sa/4.0/";
+		ccLabel = "Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International";
+		break;
+
+	case "CC BY-ND 4.0":
+		ccURL = "https://creativecommons.org/licenses/by-nd/4.0/";
+		ccLabel = "Creative Commons Attribution-NoDerivatives 4.0 International";
+		break;
+
+	case "CC BY-NC-ND 4.0":
+		ccURL = "https://creativecommons.org/licenses/by-nc-nd/4.0/";
+		ccLabel = "Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International";
+		break;
+
+	default:
+		ccURL = "https://creativecommons.org/publicdomain/zero/1.0/";
+		ccLabel = "CC0 1.0 Universal";
+		break;
+}
+
+// Build array of Creative Commons icons based on license type
+// Start with base CC icon, then add specific license component icons
+const ccIcons: `${string}--${string}`[] = ["fa6-brands--creative-commons"];
+if (copyright.type === "CC0 1.0") {
+	// CC0 uses a special "zero" icon
+	ccIcons.push("fa6-brands--creative-commons-zero");
+} else {
+	// For other licenses, add icons based on license components
+	if (copyright.type.includes("BY")) ccIcons.push("fa6-brands--creative-commons-by"); // Attribution required
+	if (copyright.type.includes("NC")) ccIcons.push("fa6-brands--creative-commons-nc"); // Non-commercial
+	if (copyright.type.includes("SA")) ccIcons.push("fa6-brands--creative-commons-sa"); // Share-alike
+	if (copyright.type.includes("ND")) ccIcons.push("fa6-brands--creative-commons-nd"); // No derivatives
+}
+
+// Fetch notes and jottings collections to calculate total word count
+
+const notes = await getCollection("note", note => {
+	// Filter by publication status and locale
+	let published = !note.data.draft;
+	let localed = monolocale || note.id.split("/")[0] === locale;
+
+	return published && localed;
+});
+
+// Calculate total word count across all notes
+const noteWords = (await Promise.all(notes.map(async note => (await render(note)).remarkPluginFrontmatter.words))).reduce((summary, words) => summary + words, 0);
+
+const jottings = await getCollection("jotting", jotting => {
+	// Filter by publication status and locale
+	let published = !jotting.data.draft;
+	let localed = monolocale || jotting.id.split("/")[0] === locale;
+
+	return published && localed;
+});
+
+// Calculate total word count across all jottings
+const jottingWords = (await Promise.all(jottings.map(async jotting => (await render(jotting)).remarkPluginFrontmatter.words))).reduce((summary, words) => summary + words, 0);
+
+// Aggregate total word count
+const totalWords = noteWords + jottingWords;
+
+// Check if policy file exists for current locale
+const localePrefix = monolocale ? "" : `${locale}/`;
+const policy = await getEntry("information", `${localePrefix}policy`);
+---
+
+<footer class="flex flex-col sm:flex-row items-center justify-between gap-2 mt-8 mb-5 sm:mb-3 text-sm font-mono">
+	<div class="flex items-center gap-1">
+		{copyright.type !== "CC0 1.0" && (
+			<>
+				<Icon name="lucide--copyright" />
+				<span>{copyright.year}</span>
+			</>
+		)}
+		{author.link ? (
+			<a href={author.link} target="_blank" rel="noopener noreferrer">
+				{author.name}
+			</a>
+		) : (
+			<span>{author.name}</span>
+		)}
+		<span>|</span>
+		<a target="_blank" href={ccURL} aria-label={ccLabel} class="flex items-center gap-1">
+			{ccIcons.map(icon => <Icon name={icon} />)}
+		</a>
+		<span>·</span>
+		<Icon name="lucide--activity" title={t("statistics", { count: totalWords })} />
+		{policy && (
+			<>
+				<span>·</span>
+				<a href={getRelativeLocaleUrl(locale, "/policy")} aria-label="Policy" class="inline-flex">
+					<Icon name="lucide--scale" title={t("navigation.policy")} />
+				</a>
+			</>
+		)}
+	</div>
+	<code class="flex items-center gap-2.5">
+		<p>Powered by</p>
+		<a href="https://astro.build/" aria-label="Astro" target="_blank" class="inline-flex"><Icon name="simple-icons--astro" /></a>
+		<span>·</span>
+		<a href="https://github.com/tuyuritio/astro-theme-thought-lite" aria-label="Theme" target="_blank" class="inline-flex"><Icon name="simple-icons--github" title={t("theme")} /></a>
+	</code>
+</footer>

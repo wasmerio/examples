@@ -1,0 +1,123 @@
+---
+import { render, getCollection } from "astro:content";
+import { getRelativeLocaleUrl } from "astro:i18n";
+import config, { monolocale } from "$config";
+import Time from "$lib/time";
+import Base from "$layouts/Base.astro";
+import Heatmap from "$components/Heatmap.astro";
+import Logo from "$icons/site-logo.svg";
+import i18nit from "$i18n";
+
+export async function getStaticPaths() {
+	// Create path for each locale, omitting default locale from URL
+	return config.i18n.locales.map(locale => ({ params: { locale: config.i18n.defaultLocale === locale ? undefined : locale } }));
+}
+
+const { locale = config.i18n.defaultLocale } = Astro.params;
+
+const t = i18nit(locale);
+
+// Get preface content for current locale, sorted by timestamp (latest first)
+const prefaces = (
+	await getCollection("preface", preface => {
+		// Handle single locale setup
+		if (monolocale) return true;
+
+		// Extract language and ID from file path structure
+		const [language, id] = preface.id.split("/");
+		preface.id = id;
+
+		// Filter by current locale
+		return language === locale;
+	})
+).sort((a, b) => b.data.timestamp.getTime() - a.data.timestamp.getTime());
+
+// Get published notes for current locale
+const notes = await getCollection("note", note => {
+	// Assign type property
+	Reflect.set(note, "type", "note");
+
+	// Filter by publication status and locale
+	let published = !note.data.draft;
+	let localed = monolocale || note.id.split("/")[0] === locale;
+
+	// Filter published notes by current locale
+	return published && localed;
+});
+
+// Get published jottings for current locale
+const jottings = await getCollection("jotting", jotting => {
+	// Assign type property
+	Reflect.set(jotting, "type", "jotting");
+
+	// Check monolocale setup or extract language to match locale
+	let localed = monolocale || jotting.id.split("/")[0] === locale;
+
+	// Filter published notes by current locale
+	return !jotting.data.draft && localed;
+});
+
+// Combine contents
+let items: { id: string; type?: string; data: { timestamp: Date; tags?: string[]; [key: string]: any } }[] = [];
+
+// Determine which sections to include
+const sections = config.latest || "*";
+
+// Add contents based on config
+if (sections === "*" || sections.includes("note")) items = items.concat(notes);
+if (sections === "*" || sections.includes("jotting")) items = items.concat(jottings);
+
+// Get the latest content for display
+const latest = items.sort((a, b) => b.data.timestamp.getTime() - a.data.timestamp.getTime())[0];
+
+// Get the latest preface for display
+const preface = prefaces[0];
+// Render preface content if available, otherwise use empty object
+const { Content } = preface ? await render(preface) : ({} as any);
+---
+
+<Base title={t("navigation.home")} {locale}>
+	<main class="flex flex-col gap-5 sm:gap-20 grow">
+		<header class="flex items-center justify-center flex-wrap-reverse grow-[0.6]">
+			{config.prologue && <article class="me-auto font-cursive font-thin text-xl sm:text-2xl leading-loose whitespace-pre-line">{config.prologue}</article>}
+			<Logo width={100} />
+		</header>
+
+		{preface && (
+			<section class="flex flex-col">
+				<article class="markdown">
+					<Content />
+				</article>
+				<a href={getRelativeLocaleUrl(locale, "/preface")} class="self-end my-2 text-sm text-secondary">
+					—— {Time.toLocaleDateString(preface.data.timestamp, locale)}
+				</a>
+			</section>
+		)}
+
+		<footer class="flex items-center justify-center flex-wrap-reverse gap-10">
+			<Heatmap {locale} {notes} {jottings} />
+
+			{latest && (
+				<blockquote class="grow flex flex-col">
+					<h4>{t("home.latest")}</h4>
+					<div class="flex flex-col sm:flex-row justify-between gap-1 mt-1">
+						<a href={getRelativeLocaleUrl(locale, `/${latest.type}/${monolocale ? latest.id : latest.id.split("/").slice(1).join("/")}`)} class="link">
+							{latest.data.series && `${latest.data.series} | `}
+							{latest.data.title}
+						</a>
+						<div class="flex flex-wrap gap-1">
+							{latest.data.tags?.map(tag => (
+								<a href={`${getRelativeLocaleUrl(locale, `/${latest.type}`)}?tag=${encodeURIComponent(tag)}`} class="text-secondary text-sm link">
+									#{tag}
+								</a>
+							))}
+						</div>
+					</div>
+					<time datetime={latest.data.timestamp.toISOString()} class="text-secondary font-mono text-xs">
+						{Time.toString(latest.data.timestamp)}
+					</time>
+				</blockquote>
+			)}
+		</footer>
+	</main>
+</Base>

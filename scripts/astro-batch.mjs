@@ -535,7 +535,9 @@ function yarnBerry(dir) {
   return existsSync(path.join(dir, '.yarnrc.yml')) || /__metadata:/.test(existsSync(path.join(dir, 'yarn.lock')) ? readFileSync(path.join(dir, 'yarn.lock'), 'utf8').slice(0, 2000) : '');
 }
 
-export function installCommand(manager, frozen = true, dir = '') {
+// Same install commands as Anybuild (crates/anybuild/resources/starlib/tools/node.bzl): the lockfile pins versions,
+// but the install is not frozen, so an older lockfile format is upgraded the way the Wasmer build does it.
+export function installCommand(manager, frozen = false, dir = '') {
   if (manager === 'pnpm') return [pnpmCmd(dir)[0], [...pnpmCmd(dir)[1], 'install', frozen ? '--frozen-lockfile' : '--no-frozen-lockfile']];
   if (manager === 'yarn') {
     const [cmd, base] = yarnCmd(dir);
@@ -680,7 +682,7 @@ function classify(stage, text) {
 
 async function localBuild(work, manager, env, info) {
   const pkg = readJson(path.join(work, 'package.json')) || {};
-  const [cmd, args] = installCommand(manager, true, work);
+  const [cmd, args] = installCommand(manager, false, work);
   try {
     await run(cmd, args, { cwd: work, env, timeout: STEP_TIMEOUT });
   } catch (error) {
@@ -1146,8 +1148,13 @@ function readJsonFile(file, fallback) {
 }
 
 // Apps earlier runs created for these slugs, so a rerun may redeploy them; any other existing app is off limits.
-function ownApps(dir) {
+async function ownApps(dir) {
   const apps = new Set();
+  // Folders this branch already pushed: an interrupted run may have deployed their app before recording it.
+  for (const name of (await gitOut(['diff', '--name-only', 'origin/main...HEAD'])).split('\n')) {
+    const folder = name.split('/')[0];
+    if (folder.startsWith('js-astro-')) apps.add(folder.replace(/^js-/, ''));
+  }
   if (!existsSync(dir)) return apps;
   for (const name of readdirSync(dir).filter((item) => item.endsWith('.jsonl'))) {
     for (const row of loadJsonl(path.join(dir, name)).values()) if (row.createdApp) apps.add(row.createdApp);
@@ -1209,7 +1216,7 @@ async function main() {
     trackedMentions: await trackedMentions(slugs),
     licenseReview: readJsonFile(path.join(reportsDir, 'license-review.json'), {}),
     fixes: readJsonFile(path.join(reportsDir, 'config-fixes.json'), {}),
-    ownApps: ownApps(reportsDir),
+    ownApps: dryRun ? new Set() : await ownApps(reportsDir),
     owner,
     rows: reportRows,
     branch: dryRun ? '' : await gitOut(['rev-parse', '--abbrev-ref', 'HEAD']),

@@ -227,8 +227,9 @@ test('the Wasmer README section replaces itself on reruns', () => {
   assert.equal(twice, '<!-- wasmer:start -->\nB\n<!-- wasmer:end -->\n\n# Theme\n');
 });
 
-test('installs are frozen to the lockfile', () => {
-  assert.deepEqual(installCommand('npm'), ['npm', ['ci', '--no-audit', '--no-fund']]);
-  assert.deepEqual(installCommand('pnpm'), ['npx', ['-y', 'pnpm@10.34.9', 'install', '--frozen-lockfile']]);
-  assert.deepEqual(installCommand('bun'), ['bun', ['install', '--frozen-lockfile']]);
+test('local installs run the same commands as Anybuild', () => {
+  assert.deepEqual(installCommand('npm'), ['npm', ['install', '--no-audit', '--no-fund']]);
+  assert.deepEqual(installCommand('pnpm'), ['npx', ['-y', 'pnpm@10.34.9', 'install', '--no-frozen-lockfile']]);
+  assert.deepEqual(installCommand('bun'), ['bun', ['install']]);
+  assert.deepEqual(installCommand('npm', true), ['npm', ['ci', '--no-audit', '--no-fund']]);
 });

@@ -1,0 +1,343 @@
+---
+/**
+ * GalleryEmbed — renders an inline grid of a gallery inside an MDX post.
+ *
+ * Usage in an .mdx file:
+ *   <GalleryEmbed slug="gallery-folder-name" />
+ *
+ * Props:
+ *   slug      — name of the folder in src/data/galleries/ (required)
+ *   limit     — maximum number of images to show (default: 6; 0 = all)
+ *   showLink  — show "View full gallery" link (default: true)
+ *   cols      — grid columns: 2 | 3 | 4 (default: 3)
+ */
+import { Image } from "astro:assets";
+import { getCollection } from "astro:content";
+import { getGalleryImages, type GalleryImage } from "@/utils/gallery";
+import GalleryLightbox from "./GalleryLightbox.astro";
+
+type Props = {
+  slug: string;
+  limit?: number;
+  showLink?: boolean;
+  cols?: 2 | 3 | 4;
+};
+
+const { slug, limit = 6, showLink = true, cols = 3 } = Astro.props;
+
+const locale = Astro.currentLocale || "en";
+const prefix = locale === "es" ? "/es" : "";
+
+// ── 1. Find the collection entry by slug ────────────────────────────
+// Find ALL entries (including drafts) so the embed works in preview;
+// the draft filter is applied by the author choosing not to publish the post.
+const allGalleries = await getCollection(
+  "galleries",
+  ({ id }) =>
+    id.startsWith(`${locale}/`) || (locale === "en" && !id.startsWith("es/"))
+);
+const entry = allGalleries.find(g => {
+  // Normalize separators and strip extension to match purely the slug (excluding locale prefix)
+  const normalized = g.id
+    .replace(/\\/g, "/")
+    .replace(/^(?:en|es)\//, "")
+    .replace(/\/index\.(md|mdx)$/, "")
+    .replace(/\.(md|mdx)$/, "");
+  return normalized === slug;
+});
+
+// ── 2. Load images from folder ───────────────────────────────────────
+const folderImages: GalleryImage[] = getGalleryImages(
+  slug,
+  locale,
+  entry?.data.title ?? slug
+);
+
+const visibleImages = limit > 0 ? folderImages.slice(0, limit) : folderImages;
+const remaining = folderImages.length - visibleImages.length;
+
+// Unique ID for the lightbox (allows multiple embeds on the same page)
+const lbId = `ge-lb-${slug}`;
+
+// CSS grid class according to requested columns
+const gridClass = {
+  2: "ge-grid-2",
+  3: "ge-grid-3",
+  4: "ge-grid-4",
+}[cols];
+---
+
+{!entry ? (
+  <div class="ge-error">
+    {locale === "es" ? (
+      <>
+        ⚠️ Galería <code>{slug}</code> no encontrada. Verifica que{" "}
+        <code>
+          src/data/galleries/{locale}/{slug}/index.md
+        </code>{" "}
+        exista.
+      </>
+    ) : (
+      <>
+        ⚠️ Gallery <code>{slug}</code> not found. Verify that{" "}
+        <code>src/data/galleries/{slug}/index.md</code> exists.
+      </>
+    )}
+  </div>
+) : (
+  <figure class="gallery-embed not-prose" data-gallery-embed={slug}>
+    {/* Embedded gallery header */}
+    <div class="ge-header">
+      <svg
+        class="ge-icon"
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
+      </svg>
+      <span class="ge-title">{entry.data.title}</span>
+      {remaining > 0 && <span class="ge-count">+{remaining} more</span>}
+    </div>
+
+    {/* Image grid */}
+    {visibleImages.length > 0 ? (
+      <ul
+        class:list={["ge-grid", gridClass]}
+        role="list"
+        aria-label={`Gallery: ${entry.data.title}`}
+      >
+        {visibleImages.map((img, idx) => (
+          <li>
+            <button
+              class="ge-item group"
+              data-lb={lbId}
+              data-index={idx}
+              aria-label={`View image: ${img.alt}`}
+              type="button"
+            >
+              <Image
+                src={img.src}
+                alt={img.alt}
+                class="ge-img"
+                loading={idx < 3 ? "eager" : "lazy"}
+                fetchpriority={idx < 2 ? "high" : "auto"}
+                widths={[300, 600]}
+                sizes={`(max-width: 640px) ${cols === 2 ? "50vw" : "33vw"}, ${cols === 4 ? "25vw" : cols === 2 ? "40vw" : "30vw"}`}
+                format="avif"
+                quality={72}
+              />
+              <div class="ge-overlay">
+                <span class="ge-alt">{img.alt}</span>
+              </div>
+            </button>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p class="ge-empty">
+        {locale === "es"
+          ? "Esta galería aún no tiene imágenes."
+          : "This gallery doesn't have any images yet."}
+      </p>
+    )}
+
+    {/* Footer: description + link to full gallery */}
+    <figcaption class="ge-footer">
+      {entry.data.description && (
+        <span class="ge-desc">{entry.data.description}</span>
+      )}
+      {showLink && (
+        <a href={`${prefix}/galleries/${slug}`} class="ge-link">
+          {locale === "es" ? "Ver galería completa" : "View full gallery"}
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <line x1="7" y1="17" x2="17" y2="7" />
+            <polyline points="7 7 17 7 17 17" />
+          </svg>
+        </a>
+      )}
+    </figcaption>
+  </figure>
+)}
+
+{entry && visibleImages.length > 0 && (
+  <GalleryLightbox id={lbId} label={`Viewer: ${entry.data.title}`} />
+)}
+
+<style>
+  /* ── Container ── */
+  .gallery-embed {
+    margin-block: 2rem;
+    border: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+    border-radius: 1rem;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  .ge-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: color-mix(in srgb, var(--foreground) 3%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 20%, transparent);
+  }
+  .ge-icon {
+    color: var(--accent);
+    flex-shrink: 0;
+  }
+  .ge-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    flex: 1;
+  }
+  .ge-count {
+    font-size: 0.75rem;
+    color: var(--foreground);
+    opacity: 0.5;
+  }
+
+  /* ── Grid ── */
+  .ge-grid {
+    display: grid;
+    gap: 2px;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .ge-grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .ge-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .ge-grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  @media (max-width: 480px) {
+    .ge-grid-3,
+    .ge-grid-4 {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  /* ── Image item ── */
+  .ge-item {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    cursor: zoom-in;
+    background: color-mix(in srgb, var(--foreground) 5%, transparent);
+    padding: 0;
+    border: none;
+  }
+  .ge-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.35s ease;
+    display: block;
+  }
+  .ge-item:hover .ge-img {
+    transform: scale(1.06);
+  }
+  .ge-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    padding: 0.5rem;
+    background: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.55) 0%,
+      transparent 55%
+    );
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  .ge-item:hover .ge-overlay,
+  .ge-item:focus-visible .ge-overlay {
+    opacity: 1;
+  }
+  .ge-alt {
+    font-size: 0.7rem;
+    color: white;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    line-height: 1.3;
+  }
+
+  /* ── Footer ── */
+  .ge-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.625rem 1rem;
+    border-top: 1px solid color-mix(in srgb, var(--border) 20%, transparent);
+    background: color-mix(in srgb, var(--foreground) 2%, transparent);
+  }
+  .ge-desc {
+    font-size: 0.8rem;
+    opacity: 0.6;
+    line-height: 1.4;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ge-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--accent);
+    white-space: nowrap;
+    text-decoration: none;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+  }
+  .ge-link:hover {
+    opacity: 0.75;
+    text-decoration: underline;
+  }
+
+  /* ── Error ── */
+  .ge-error {
+    margin-block: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid color-mix(in srgb, orange 40%, transparent);
+    background: color-mix(in srgb, orange 8%, transparent);
+    font-size: 0.875rem;
+  }
+  .ge-empty {
+    padding: 2rem;
+    text-align: center;
+    font-size: 0.875rem;
+    opacity: 0.5;
+  }
+</style>

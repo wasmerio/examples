@@ -1,0 +1,521 @@
+---
+import { Font } from "astro:assets";
+import { ClientRouter } from "astro:transitions";
+import { PUBLIC_GOOGLE_SITE_VERIFICATION } from "astro:env/client";
+import { SITE } from "@/config";
+import SearchModal from "@/components/SearchModal.astro";
+import { useTranslations, getTargetLanguageUrl } from "@/i18n/utils";
+import "@/styles/global.css";
+
+type Props = {
+  title?: string;
+  author?: string;
+  profile?: string;
+  description?: string;
+  ogImage?: string;
+  canonicalURL?: string;
+  pubDatetime?: Date;
+  modDatetime?: Date | null;
+  scrollSmooth?: boolean;
+  prev?: string;
+  next?: string;
+  structuredData?: Record<string, unknown>;
+  tags?: string[];
+};
+
+const {
+  title = SITE.title,
+  author = SITE.author,
+  profile = SITE.profile,
+  description = SITE.desc,
+  ogImage = SITE.ogImage ? `/${SITE.ogImage}` : "/devosfera-og.webp",
+  canonicalURL: canonicalURLProp,
+  pubDatetime,
+  modDatetime,
+  scrollSmooth = false,
+  prev,
+  next,
+  structuredData: structuredDataProp,
+  tags,
+} = Astro.props;
+
+const locale = Astro.currentLocale || SITE.lang || "en";
+const t = useTranslations(locale);
+
+// Always build canonical from SITE.website (production URL), never localhost.
+// Normalize trailing slash: always include it for consistency.
+const rawPath = Astro.url.pathname.replace(/\/$/, "");
+const canonicalURL =
+  canonicalURLProp ??
+  new URL(rawPath === "" ? "/" : `${rawPath}/`, SITE.website);
+
+const enUrl = new URL(
+  getTargetLanguageUrl(Astro.url.pathname, "en"),
+  Astro.site ?? SITE.website
+);
+const esUrl = new URL(
+  getTargetLanguageUrl(Astro.url.pathname, "es"),
+  Astro.site ?? SITE.website
+);
+
+const socialImageURL = new URL(ogImage, Astro.url);
+
+// Whether this page is a blog post (has a publish date)
+const isArticle = Boolean(pubDatetime);
+
+const finalStructuredData =
+  structuredDataProp ??
+  (isArticle
+    ? {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        mainEntityOfPage: {
+          "@type": "WebPage",
+          "@id": canonicalURL.toString(),
+        },
+        headline: title,
+        description,
+        image: socialImageURL.toString(),
+        url: canonicalURL.toString(),
+        datePublished: pubDatetime!.toISOString(),
+        ...(modDatetime && { dateModified: modDatetime.toISOString() }),
+        author: [
+          {
+            "@type": "Person",
+            name: author,
+            ...(profile && { url: profile }),
+          },
+        ],
+        publisher: {
+          "@type": "Person",
+          name: author,
+          ...(profile && { url: profile }),
+        },
+      }
+    : rawPath === "" || rawPath === "/es"
+      ? {
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          name: SITE.title,
+          url: SITE.website,
+          description: locale === "es" ? t("index.heroDesc") : SITE.desc,
+        }
+      : rawPath === "/about" || rawPath === "/es/about"
+        ? {
+            "@context": "https://schema.org",
+            "@type": "ProfilePage",
+            mainEntity: {
+              "@type": "Person",
+              name: author,
+              description:
+                locale === "es"
+                  ? "Desarrollador, estudiante y videojugador. Creador de Astro Devosfera."
+                  : "Developer, student, and gamer. Creator of Astro Devosfera.",
+              ...(profile && { url: profile }),
+            },
+          }
+        : null);
+
+const showCursorGlow = SITE.backdropEffects.cursorGlow;
+const showGrain = SITE.backdropEffects.grain;
+---
+
+<!doctype html>
+<html
+  dir={SITE.dir}
+  lang={locale}
+  class={`${scrollSmooth ? "scroll-smooth" : ""}`}
+>
+  <head>
+    <script is:inline>
+      try {
+        if (window.location.pathname === "/") {
+          const preferredLang = localStorage.getItem("preferred-lang");
+          if (preferredLang === "es") {
+            window.location.replace("/es");
+          }
+        }
+      } catch {}
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="theme-color" content="" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="canonical" href={canonicalURL} />
+    <link rel="alternate" hreflang="en" href={enUrl} />
+    <link rel="alternate" hreflang="es" href={esUrl} />
+    <link rel="alternate" hreflang="x-default" href={enUrl} />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Relational Pagination Links -->
+    {prev && <link rel="prev" href={prev} />}
+    {next && <link rel="next" href={next} />}
+
+    <!-- Load Fonts -->
+    <!-- Only preload the primary body font. Others load async to avoid bandwidth contention. -->
+    <Font
+      cssVariable="--font-wotfard"
+      preload={[{ subset: "latin", weight: 400, style: "normal" }]}
+    />
+    <Font cssVariable="--font-sriracha" />
+    <Font cssVariable="--font-firacode" />
+
+    <!-- General Meta Tags -->
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={author} />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:site_name" content={SITE.title} />
+    <meta property="og:type" content={isArticle ? "article" : "website"} />
+    <meta property="og:locale" content={locale === "es" ? "es_ES" : "en_US"} />
+    <meta
+      property="og:locale:alternate"
+      content={locale === "es" ? "en_US" : "es_ES"}
+    />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:image" content={socialImageURL} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Article Published/Modified time -->
+    {pubDatetime && (
+      <meta
+        property="article:published_time"
+        content={pubDatetime.toISOString()}
+      />
+    )}
+    {modDatetime && (
+      <meta
+        property="article:modified_time"
+        content={modDatetime.toISOString()}
+      />
+    )}
+    {isArticle &&
+      tags &&
+      tags.map(tag => <meta property="article:tag" content={tag} />)}
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content={canonicalURL} />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImageURL} />
+    <meta name="twitter:creator" content={SITE.author} />
+
+    <!-- Google JSON-LD Structured data -->
+    {finalStructuredData && (
+      <script
+        type="application/ld+json"
+        is:inline
+        set:html={JSON.stringify(finalStructuredData)}
+      />
+    )}
+
+    <!-- Enable RSS feed auto-discovery  -->
+    <!-- https://docs.astro.build/en/recipes/rss/#enabling-rss-feed-auto-discovery -->
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={SITE.title}
+      href={new URL(locale === "es" ? "es/rss.xml" : "rss.xml", Astro.site)}
+    />
+
+    {
+      // If PUBLIC_GOOGLE_SITE_VERIFICATION is set in the environment variable,
+      // include google-site-verification tag in the heading
+      // Learn more: https://support.google.com/webmasters/answer/9008080#meta_tag_verification&zippy=%2Chtml-tag
+      PUBLIC_GOOGLE_SITE_VERIFICATION && (
+        <meta
+          name="google-site-verification"
+          content={PUBLIC_GOOGLE_SITE_VERIFICATION}
+        />
+      )
+    }
+
+    <ClientRouter />
+
+    <!-- Minimal inline script to prevent FOUC - sets theme immediately -->
+    <script is:inline>
+      (function () {
+        const initialColorScheme = ""; // "light" | "dark"
+        const currentTheme = localStorage.getItem("theme");
+
+        function getPreferTheme() {
+          if (currentTheme) return currentTheme;
+          if (initialColorScheme) return initialColorScheme;
+          return window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        }
+
+        const themeValue = getPreferTheme();
+
+        // Set theme immediately to prevent flash
+        document.firstElementChild?.setAttribute("data-theme", themeValue);
+
+        // Export minimal API for external script
+        window.theme = {
+          themeValue: themeValue,
+          getTheme: () => window.theme.themeValue,
+          setTheme: val => {
+            window.theme.themeValue = val;
+          },
+        };
+      })();
+    </script>
+
+    <!-- Self-healing deployment asset sync: auto-reloads if a stale chunk/stylesheet 404s after a new deploy -->
+    <script is:inline>
+      (function () {
+        window.addEventListener(
+          "error",
+          function (e) {
+            const target = e.target;
+            if (!target) return;
+            const isStylesheet =
+              target.tagName === "LINK" && target.rel === "stylesheet";
+            const isScript = target.tagName === "SCRIPT";
+            if (isStylesheet || isScript) {
+              const url = target.href || target.src || "";
+              if (url.includes("/_astro/")) {
+                const reloadKey =
+                  "astro_chunk_reload_" +
+                  encodeURIComponent(window.location.pathname);
+                if (!sessionStorage.getItem(reloadKey)) {
+                  sessionStorage.setItem(reloadKey, "1");
+                  window.location.reload();
+                }
+              }
+            }
+          },
+          true
+        );
+
+        document.addEventListener("astro:page-load", function () {
+          const reloadKey =
+            "astro_chunk_reload_" +
+            encodeURIComponent(window.location.pathname);
+          sessionStorage.removeItem(reloadKey);
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <!-- Global decorative backdrop (grid, glow, cursor glow, noise) -->
+    <div
+      class="site-backdrop pointer-events-none"
+      aria-hidden="true"
+      transition:persist
+    >
+      <div class="site-grid"></div>
+      {showCursorGlow && <div class="site-cursor-glow"></div>}
+      {showGrain && <div class="site-grain"></div>}
+    </div>
+
+    <slot />
+
+    <SearchModal />
+
+    <!-- Load full theme logic -->
+    <script src="../scripts/theme.ts"></script>
+    <!-- Smart prefetch for slow connections -->
+    <script src="../scripts/smart-prefetch.ts"></script>
+  </body>
+</html>
+
+<style>
+  .site-backdrop {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    z-index: 0;
+    mask-image: linear-gradient(
+      to bottom,
+      black 0%,
+      black 40%,
+      rgba(0, 0, 0, 0.3) 70%,
+      transparent 100%
+    );
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      black 0%,
+      black 40%,
+      rgba(0, 0, 0, 0.3) 70%,
+      transparent 100%
+    );
+  }
+
+  .site-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--accent) 1px, transparent 1px),
+      linear-gradient(90deg, var(--accent) 1px, transparent 1px);
+    background-size: 50px 50px;
+    opacity: 0.035;
+    mask-image: radial-gradient(
+      ellipse 100% 60% at 50% 0%,
+      black 15%,
+      transparent 100%
+    );
+    -webkit-mask-image: radial-gradient(
+      ellipse 100% 60% at 50% 0%,
+      black 15%,
+      transparent 100%
+    );
+  }
+
+  .site-cursor-glow {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 800px;
+    height: 800px;
+    margin-left: -400px;
+    margin-top: -400px;
+    transform: translate(var(--site-cx, 50vw), var(--site-cy, 50vh))
+      translateZ(0);
+    background: radial-gradient(
+      circle,
+      color-mix(in oklab, var(--accent) 8%, transparent) 0%,
+      color-mix(in oklab, var(--accent) 3%, transparent) 40%,
+      transparent 70%
+    );
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+    contain: paint;
+  }
+
+  .site-cursor-glow.active {
+    opacity: 1;
+    will-change: transform;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .site-cursor-glow {
+      transition: none;
+    }
+  }
+
+  .site-grain {
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.4' numOctaves='4' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix type='matrix' values='0.5 0 0 0 0 0 0.5 0 0 0 0 0 0.5 0 0 0 0 0 1 0' in='noise'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 240px 240px;
+    opacity: 0.09;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    contain: paint;
+  }
+</style>
+
+{showCursorGlow && <script>
+  let cursorCleanup: AbortController | null = null;
+
+  document.addEventListener("astro:page-load", () => {
+    // Cleanup previous listeners
+    if (cursorCleanup) cursorCleanup.abort();
+    cursorCleanup = new AbortController();
+    const { signal } = cursorCleanup;
+
+    // Skip on touch devices and respect reduced-motion preference.
+    if (
+      window.matchMedia("(pointer: coarse), (prefers-reduced-motion: reduce)")
+        .matches
+    ) {
+      return;
+    }
+
+    const cursorGlow = document.querySelector<HTMLElement>(".site-cursor-glow");
+    let ticking = false;
+    let isActive = false;
+
+    if (!cursorGlow) return;
+
+    document.addEventListener(
+      "mousemove",
+      (e: MouseEvent) => {
+        if (ticking) return;
+
+        ticking = true;
+        window.requestAnimationFrame(() => {
+          cursorGlow.style.setProperty("--site-cx", `${e.clientX}px`);
+          cursorGlow.style.setProperty("--site-cy", `${e.clientY}px`);
+          if (!isActive) {
+            cursorGlow.classList.add("active");
+            isActive = true;
+          }
+          ticking = false;
+        });
+      },
+      { signal, passive: true }
+    );
+
+    document.addEventListener(
+      "mouseleave",
+      () => {
+        if (!isActive) return;
+        cursorGlow.classList.remove("active");
+        isActive = false;
+      },
+      { signal }
+    );
+  });
+</script>}
+
+<script>
+  let langCleanup: AbortController | null = null;
+
+  document.addEventListener("astro:page-load", () => {
+    if (langCleanup) langCleanup.abort();
+    langCleanup = new AbortController();
+    const { signal } = langCleanup;
+
+    const pathname = window.location.pathname;
+
+    // 1. Track listing / home routes for contextual `cd ..` back navigation
+    const isDetailRoute =
+      /^(\/es)?\/posts\/(?!\d+\/?$)[^/]+/.test(pathname) ||
+      /^(\/es)?\/galleries\/[^/]+/.test(pathname);
+    if (
+      !isDetailRoute &&
+      pathname !== "/404" &&
+      pathname !== "/404.html" &&
+      !pathname.startsWith("/search") &&
+      !pathname.startsWith("/es/search")
+    ) {
+      sessionStorage.setItem("backUrl", pathname + window.location.search);
+    }
+
+    // 2. Auto-save preference based on path (except root /)
+    if (pathname !== "/") {
+      if (pathname.startsWith("/es/") || pathname === "/es") {
+        localStorage.setItem("preferred-lang", "es");
+      } else {
+        localStorage.setItem("preferred-lang", "en");
+      }
+    }
+
+    // 3. Track language switcher button clicks
+    document.addEventListener(
+      "click",
+      e => {
+        const toggle = (e.target as HTMLElement).closest("[data-lang-toggle]");
+        if (toggle) {
+          const targetLang = toggle.getAttribute("data-lang-toggle");
+          if (targetLang) {
+            localStorage.setItem("preferred-lang", targetLang);
+          }
+        }
+      },
+      { signal }
+    );
+  });
+</script>

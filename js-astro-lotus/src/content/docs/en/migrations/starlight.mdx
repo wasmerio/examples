@@ -1,0 +1,385 @@
+---
+title: Migrate from Starlight
+description: Move an existing Astro Starlight documentation site to Lotus while preserving content, routes, navigation, i18n, and MDX authoring patterns.
+
+---
+
+import { Callout, FileTree, Steps } from '@prosefly/astro-components';
+
+Use this guide when you want to keep an existing Astro Starlight documentation
+site, but move the documentation shell, navigation model, theme tokens, and MDX
+component imports to Lotus.
+
+Most migrations do not require rewriting documentation prose. The work is
+usually configuration, routing, and component imports: replace the Starlight
+integration, register the Lotus docs collection, move site and sidebar settings
+into `theme.config.json`, then review Starlight-specific MDX usage.
+
+<Callout type="tip" title="Keep the first pass mechanical">
+  Preserve content and public URLs first. Tune appearance, navigation density,
+  and custom components after the Lotus build is working locally.
+</Callout>
+
+## Migration Map
+
+| Starlight concept | Lotus equivalent |
+| --- | --- |
+| `starlight()` integration | `lotus()` integration |
+| `@astrojs/starlight` package | `@prosefly/astro-theme-lotus` |
+| Starlight built-in MDX components | `@prosefly/astro-components` |
+| `src/content/docs` | Default `docsLoader()` content root |
+| `sidebar` config | `theme.config.json` `docsNav` |
+| `locales` config | `defaultLocale` and `locales` |
+| Default docs routes at `/` | Default `docsBase: '/'` |
+| Custom docs prefix | `docsBase`, for example `'/docs'` |
+| Edit links and source links | `source` and `editLink` |
+| Custom CSS and theme styling | Lotus CSS tokens and component overrides |
+
+## Before You Start
+
+Inspect the existing Starlight project before editing:
+
+- `package.json`
+- `astro.config.*`
+- `src/content.config.*`
+- `src/content/docs`
+- Starlight `sidebar`, `locales`, `social`, `editLink`, and search settings
+- MDX imports from `@astrojs/starlight/components`
+- custom Starlight components, CSS, or theme overrides
+
+Run the current project once before migrating if possible. That gives you a
+known-good baseline for routes, sidebar order, locale behavior, and search.
+
+## Migration Steps
+
+<Steps>
+
+1. **Replace the package dependency.**
+
+   Remove Starlight and install Lotus.
+
+   ```sh
+   pnpm remove @astrojs/starlight
+   pnpm add @prosefly/astro-theme-lotus
+   ```
+
+   Install `@prosefly/astro-components` directly when your own MDX or Astro
+   files import shared documentation components.
+
+   ```sh
+   pnpm add @prosefly/astro-components
+   ```
+
+2. **Replace the Astro integration.**
+
+   Move from `starlight()` to `lotus()`.
+
+   ```ts title="astro.config.ts before"
+   import { defineConfig } from 'astro/config';
+   import starlight from '@astrojs/starlight';
+
+   export default defineConfig({
+     integrations: [
+       starlight({
+         title: 'Acme Docs',
+         sidebar: [
+           {
+             label: 'Guides',
+             items: [{ label: 'Overview', slug: 'overview' }],
+           },
+         ],
+       }),
+     ],
+   });
+   ```
+
+   ```ts title="astro.config.ts after"
+   import { defineConfig } from 'astro/config';
+   import lotus from '@prosefly/astro-theme-lotus';
+
+   export default defineConfig({
+     integrations: [lotus()],
+   });
+   ```
+
+   Keep dynamic values in `lotus({...})` only when they need TypeScript,
+   environment variables, or imports. Put static project configuration in
+   `theme.config.json`.
+
+3. **Register the docs collection.**
+
+   Lotus reads MDX docs through `docsLoader()` and validates frontmatter with
+   `docsSchema()`.
+
+   ```ts title="src/content.config.ts"
+   import { defineCollection } from 'astro:content';
+   import { docsLoader, docsSchema } from '@prosefly/astro-theme-lotus/content';
+
+   const docs = defineCollection({
+     loader: docsLoader(),
+     schema: docsSchema(),
+   });
+
+   export const collections = { docs };
+   ```
+
+4. **Keep the content tree unless you need to change routes.**
+
+   The default Lotus loader reads `src/content/docs`, which matches the normal
+   Starlight content root.
+
+   <FileTree>
+
+   - src
+     - content
+       - docs
+         - index.mdx
+         - overview.mdx
+         - guides
+           - installation.mdx
+
+   </FileTree>
+
+   With the default `docsBase: '/'`, `src/content/docs/overview.mdx` renders at
+   `/overview/`. Set `docsBase: '/docs'` only when docs should move under
+   `/docs/` or the project has another homepage at `/`.
+
+5. **Move project settings into `theme.config.json`.**
+
+   Start with identity, site navigation, source links, and edit links.
+
+   ```json title="theme.config.json"
+   {
+     "$schema": "https://prosefly.dev/schema/lotus.json",
+     "name": "Acme Docs",
+     "description": "Documentation for Acme.",
+     "favicon": "/favicon.svg",
+     "logo": "/images/logo.svg",
+     "siteNav": [
+       { "label": "Docs", "href": "/" },
+       {
+         "label": "GitHub",
+         "href": "https://github.com/acme/acme",
+         "external": true
+       }
+     ],
+     "source": {
+       "github": "acme/acme",
+       "branch": "main"
+     },
+     "editLink": true
+   }
+   ```
+
+6. **Convert Starlight sidebar config to `docsNav`.**
+
+   Lotus sidebar items reference content collection entry IDs. With
+   `docsLoader()`, those IDs are relative to `src/content/docs`.
+
+   ```ts title="Starlight sidebar"
+   sidebar: [
+     {
+       label: 'Guides',
+       items: [
+         { label: 'Overview', slug: 'overview' },
+         {
+           label: 'Configuration',
+           autogenerate: { directory: 'configuration' },
+         },
+       ],
+     },
+   ]
+   ```
+
+   ```json title="Lotus docsNav"
+   {
+     "docsNav": [
+       {
+         "slug": "guides",
+         "label": "Guides",
+         "icon": "lucide:rocket",
+         "items": [
+           "overview",
+           {
+             "label": "Configuration",
+             "items": [
+               { "autogenerate": { "directory": "configuration" } }
+             ]
+           }
+         ]
+       }
+     ]
+   }
+   ```
+
+   Use explicit string items when page order matters. Use `autogenerate` when a
+   whole directory should follow the file tree.
+
+7. **Convert i18n configuration.**
+
+   Lotus uses locale keys for route prefixes. The special `root` locale renders
+   without a locale prefix.
+
+   ```ts title="astro.config.ts before"
+   starlight({
+     defaultLocale: 'en',
+     locales: {
+       en: { label: 'English', lang: 'en' },
+       'zh-cn': { label: '简体中文', lang: 'zh-CN' },
+     },
+   })
+   ```
+
+   ```ts title="theme.config.json or lotus({...}) after"
+   {
+     "defaultLocale": "root",
+     "locales": {
+       "root": {
+         "label": "English",
+         "lang": "en",
+         "directory": "en"
+       },
+       "zh-cn": {
+         "label": "简体中文",
+         "lang": "zh-CN",
+         "directory": "zh-cn"
+       }
+     }
+   }
+   ```
+
+   With this setup, `src/content/docs/en/overview.mdx` renders at `/overview/`
+   and `src/content/docs/zh-cn/overview.mdx` renders at `/zh-cn/overview/`.
+   Add `docsBase: '/docs'` when those routes should become `/docs/overview/`
+   and `/docs/zh-cn/overview/`.
+
+8. **Replace Starlight MDX component imports.**
+
+   Change imports from Starlight components to `@prosefly/astro-components`.
+
+   ```mdx title="before"
+   import { Card, CardGrid, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+   ```
+
+   ```mdx title="after"
+   import { Card, CardGrid, Steps, Tabs, TabItem } from '@prosefly/astro-components';
+   ```
+
+   Review callouts, cards, tabs, steps, file trees, badges, accordions, and
+   icons. Many authoring patterns are intentionally close to Starlight, but
+   component names, props, and styling tokens should still be checked.
+
+9. **Move custom styling to Lotus tokens.**
+
+   Starlight CSS variables and custom components do not map one-to-one. Start
+   with Lotus CSS tokens for color, radius, and surfaces.
+
+   ```css title="src/styles/lotus.css"
+   :root {
+     --lotus-accent: oklch(0.6 0.18 250);
+     --lotus-radius-md: 0.5rem;
+   }
+   ```
+
+   Use component overrides only when configuration and CSS cannot express the
+   required behavior.
+
+10. **Validate the migrated site.**
+
+    Run checks and inspect the generated routes.
+
+    ```sh
+    pnpm check
+    pnpm build
+    ```
+
+    Search for leftover Starlight imports and config.
+
+    ```sh
+    rg "@astrojs/starlight|starlight\\(" .
+    ```
+
+</Steps>
+
+## Things To Check Carefully
+
+- `docsBase` controls public routes. Changing it can break existing links.
+- `root` is the unprefixed locale in Lotus.
+- `docsNav` string items use content entry IDs, not final page URLs.
+- `slug` frontmatter changes the public URL, but sidebar ownership still follows
+  the entry ID.
+- Starlight component imports should be replaced even when the Markdown syntax
+  looks compatible.
+- Custom Starlight theme overrides need manual review.
+- Search behavior should be tested after the production build.
+
+## Related Lotus Docs
+
+- [Installation](/docs/installation/)
+- [Content Routing](/docs/configuration/content-routing/)
+- [Internationalization](/docs/configuration/i18n/)
+- [Docs Navigation](/docs/configuration/docs-nav/)
+- [Overriding Components](/docs/customization/overriding-components/)
+
+## AI-assisted Migration Prompt
+
+Use this prompt with Codex or another code-aware assistant when you want it to
+migrate an existing Starlight project automatically. Run it from the project
+root so the assistant can inspect the Astro config, content collections, docs
+files, MDX imports, and theme configuration.
+
+<Callout type="warning" title="Review before committing">
+  Treat the AI output as a migration draft. Review the diff, run the checks, and
+  verify the site locally before publishing.
+</Callout>
+
+```txt title="Prompt"
+You are migrating an existing Astro Starlight documentation site to
+@prosefly/astro-theme-lotus.
+
+Goal:
+Move the project from Starlight to Lotus while preserving existing documentation
+content, public routes, frontmatter intent, docs navigation, i18n structure,
+search behavior, and MDX authoring patterns wherever Lotus supports them.
+
+Before editing:
+1. Inspect package.json, astro.config.*, src/content.config.*, docs content,
+   sidebar configuration, i18n directories, Starlight component imports, and any
+   custom theme overrides.
+2. Summarize the migration plan briefly.
+3. Do not delete content or rewrite prose unless it is required for compatibility.
+4. Preserve user changes and avoid destructive git commands.
+
+Migration tasks:
+1. Replace Starlight package usage with @prosefly/astro-theme-lotus and
+   @prosefly/astro-components where appropriate.
+2. Update Astro integration setup to use lotus().
+3. Register docsLoader() and docsSchema() in src/content.config.ts.
+4. Move Starlight site, sidebar, social, edit link, i18n, search, and appearance
+   settings into theme.config.json. Put component overrides or dynamic values in
+   lotus({...}) options in astro.config.ts.
+5. Preserve compatible frontmatter fields including title, description, slug,
+   sidebar, tableOfContents, prev, next, pagefind, and draft.
+6. Convert Starlight-only MDX component imports to @prosefly/astro-components.
+7. Convert Starlight sidebar autogeneration to Lotus docsNav entries using
+   string slugs, groups, links, and autogenerate.directory.
+8. Convert Starlight locales into Lotus locales and defaultLocale. Keep the
+   default locale unprefixed when the existing site uses unprefixed default docs.
+9. Keep docsBase and route behavior compatible with the existing public URLs
+   whenever possible.
+10. If the project has custom Starlight components or theme overrides, map them
+    to Lotus configuration, CSS tokens, or component overrides. Only add a Lotus
+    component override when configuration and CSS are not enough.
+
+Validation:
+1. Run the project's formatter or lint command if available.
+2. Run astro check or the package check command.
+3. Run a production build.
+4. Report any remaining Starlight imports, broken internal links, missing
+   sidebar entries, or behavior that needs manual review.
+
+Output:
+1. List the files changed.
+2. Explain any manual decisions or behavior changes.
+3. Include the exact validation commands and results.
+```

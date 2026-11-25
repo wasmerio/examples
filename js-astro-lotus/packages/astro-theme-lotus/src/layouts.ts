@@ -1,0 +1,8 @@
+export { default as BaseLayout } from './layouts/BaseLayout.astro';
+export { default as DocsContextLayout } from './layouts/DocsContextLayout.astro';
+export { default as DocsLayout } from './layouts/DocsLayout.astro';
+export { default as SiteFooter } from './layouts/SiteFooter.astro';
+export { default as SiteHeader } from './layouts/SiteHeader.astro';
+export { default as SplashLayout } from './layouts/SplashLayout.astro';
+export { default as TextLayout } from './layouts/TextLayout.astro';
+export type { HeadConfig } from './lib/page/head';

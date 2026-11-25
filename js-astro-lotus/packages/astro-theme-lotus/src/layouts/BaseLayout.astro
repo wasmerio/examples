@@ -1,0 +1,113 @@
+---
+import 'virtual:prosefly/lotus/styles.css';
+import { getThemeAttributes } from '../lib/appearance';
+import {
+  createHead,
+  isHeadStyleSource,
+  type HeadConfig,
+  type HeadConfigEntry,
+} from '../lib/page/head';
+import { stringifyJsonLd, type JsonLdNode } from '../lib/page/schema';
+import { createOpenGraphHead } from '../lib/page/seo';
+import rawThemeConfig from 'virtual:prosefly/lotus/config';
+import Assistant from 'virtual:prosefly/lotus/components/Assistant';
+import { getDefaultLocale, type NormalizedLocale } from '../lib/i18n';
+import type { LotusThemeConfig } from '../lib/theme';
+import packageJson from '../../package.json';
+
+interface Props {
+  title?: string;
+  description?: string;
+  head?: HeadConfig;
+  headDefaults?: HeadConfig;
+  jsonLd?: JsonLdNode | JsonLdNode[];
+  locale?: NormalizedLocale;
+}
+
+const themeConfig = rawThemeConfig as LotusThemeConfig;
+const { title, description = themeConfig.description, head, headDefaults, jsonLd, locale = getDefaultLocale(themeConfig) } = Astro.props;
+const themeAttrs = getThemeAttributes();
+const pageTitle = title
+  ? `${title} - ${themeConfig.name}`
+  : themeConfig.name;
+const generator = `Lotus (${packageJson.version}) by Prosefly`;
+const jsonLdContent = jsonLd ? stringifyJsonLd(jsonLd) : undefined;
+const faviconLinks = normalizeFaviconLinks(themeConfig.favicon);
+const pageHead = createHead(
+  [
+    { tag: 'meta', attrs: { charset: 'utf-8' } },
+    { tag: 'meta', attrs: { name: 'viewport', content: 'width=device-width, initial-scale=1' } },
+    { tag: 'title', content: pageTitle },
+    ...(description ? [{ tag: 'meta', attrs: { name: 'description', content: description } }] : []),
+    ...(Astro.site
+      ? [{ tag: 'link', attrs: { rel: 'canonical', href: new URL(Astro.url.pathname, Astro.site).href } }]
+      : []),
+    { tag: 'meta', attrs: { name: 'generator', content: generator } },
+    ...faviconLinks.map((link) => ({ tag: 'link', attrs: link })),
+    ...(jsonLdContent
+      ? [{ tag: 'script', attrs: { type: 'application/ld+json' }, content: jsonLdContent }]
+      : []),
+  ],
+  headDefaults,
+  themeConfig.head,
+  head,
+);
+const headEntries = createHead(createOpenGraphHead(pageHead), pageHead)
+  .filter((entry) => !isHeadStyleSource(entry));
+const themeInitScript = `
+(() => {
+  try {
+    const savedTheme = window.localStorage.getItem('lotus-theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      document.documentElement.dataset.theme = savedTheme;
+    }
+  } catch {}
+})();
+`;
+
+function normalizeFaviconLinks(favicon: LotusThemeConfig['favicon']) {
+  if (!favicon) {
+    return [];
+  }
+
+  const links = Array.isArray(favicon) ? favicon : [favicon];
+
+  return links.map((link) => {
+    if (typeof link === 'string') {
+      return {
+        href: link,
+        rel: 'icon',
+      };
+    }
+
+    return {
+      rel: link.rel ?? 'icon',
+      href: link.href,
+      type: link.type,
+      sizes: link.sizes,
+      media: link.media,
+      color: link.color,
+    };
+  });
+}
+
+function getHeadAttrs(entry: HeadConfigEntry) {
+  return entry.src && entry.tag !== 'style'
+    ? { ...entry.attrs, src: entry.src }
+    : entry.attrs;
+}
+---
+
+<html dir={locale.dir} lang={locale.lang} {...themeAttrs}>
+  <head>
+    <script is:inline set:html={themeInitScript}></script>
+    {headEntries.map((entry) => {
+      const Tag = entry.tag;
+      return <Tag {...getHeadAttrs(entry)} set:html={entry.content} />;
+    })}
+  </head>
+  <body class="min-h-screen bg-(--lotus-background) text-(--lotus-text)">
+    <slot />
+    <Assistant />
+  </body>
+</html>

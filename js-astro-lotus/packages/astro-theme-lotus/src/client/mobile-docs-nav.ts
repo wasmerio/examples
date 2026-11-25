@@ -1,0 +1,203 @@
+export {};
+
+const prosefly = window.__prosefly ??= {};
+const proseflyLotus = (prosefly.lotus ??= {});
+
+const initializedDrawers = new WeakSet<HTMLElement>();
+let teardownMobileDocsNav: (() => void) | undefined;
+
+function cleanupMobileDocsNav(): void {
+  teardownMobileDocsNav?.();
+  teardownMobileDocsNav = undefined;
+}
+
+function initMobileDocsNav(): void {
+  cleanupMobileDocsNav();
+
+  const drawer = document.querySelector<HTMLElement>('[data-mobile-sidebar]');
+  const openButtons = Array.from(document.querySelectorAll('[data-mobile-sidebar-open]'));
+  const closeButtons = drawer
+    ? Array.from(drawer.querySelectorAll('[data-mobile-sidebar-close]'))
+    : [];
+  const sectionSwitch = document.querySelector<HTMLDetailsElement>('[data-section-switch]');
+  const sectionOptions = Array.from(document.querySelectorAll<HTMLElement>('[data-section-option]'));
+  const sectionPanels = Array.from(document.querySelectorAll<HTMLElement>('[data-section-panel]'));
+  const summaryLabel = document.querySelector('[data-section-summary-label]');
+  const summaryCount = document.querySelector('[data-section-summary-count]');
+  const summaryIcons = Array.from(document.querySelectorAll<HTMLElement>('[data-section-summary-icon]'));
+
+  if (!drawer || !openButtons.length || initializedDrawers.has(drawer)) {
+    return;
+  }
+
+  initializedDrawers.add(drawer);
+  drawer.dataset.mobileDocsNavReady = 'true';
+
+  const controller = new AbortController();
+  let closeTimer: number | undefined;
+  let openAnimationFrame: number | undefined;
+  let previousOverflow = '';
+  let overflowLocked = false;
+  let previousFocus: HTMLElement | null = null;
+
+  const getFocusableElements = () => Array.from(
+    drawer.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => !element.hasAttribute('hidden') && !element.closest('[hidden]'));
+
+  const setOpenButtonState = (open: boolean) => {
+    openButtons.forEach((button) => {
+      button.setAttribute('aria-expanded', String(open));
+    });
+  };
+
+  const openDrawer = () => {
+    if (closeTimer !== undefined) {
+      window.clearTimeout(closeTimer);
+      closeTimer = undefined;
+    }
+
+    previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    drawer.hidden = false;
+    drawer.removeAttribute('inert');
+    setOpenButtonState(true);
+    previousOverflow = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    overflowLocked = true;
+    openAnimationFrame = window.requestAnimationFrame(() => {
+      openAnimationFrame = undefined;
+      drawer.setAttribute('data-open', '');
+      getFocusableElements()[0]?.focus({ preventScroll: true });
+    });
+  };
+
+  const closeDrawer = () => {
+    if (drawer.hidden) {
+      return;
+    }
+
+    if (openAnimationFrame !== undefined) {
+      window.cancelAnimationFrame(openAnimationFrame);
+      openAnimationFrame = undefined;
+    }
+
+    drawer.removeAttribute('data-open');
+    document.documentElement.style.overflow = previousOverflow;
+    overflowLocked = false;
+    setOpenButtonState(false);
+    previousFocus?.focus({ preventScroll: true });
+    drawer.setAttribute('inert', '');
+    closeTimer = window.setTimeout(() => {
+      closeTimer = undefined;
+      drawer.hidden = true;
+    }, 180);
+  };
+
+  const handleKeydown = (event: KeyboardEvent) => {
+    if (drawer.hidden) {
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      closeDrawer();
+      return;
+    }
+
+    if (event.key !== 'Tab') {
+      return;
+    }
+
+    const focusableElements = getFocusableElements();
+    const first = focusableElements[0];
+    const last = focusableElements[focusableElements.length - 1];
+
+    if (!first || !last) {
+      event.preventDefault();
+      return;
+    }
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+      return;
+    }
+
+    if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  const handleSectionOption = (event: Event) => {
+    const option = event.currentTarget as HTMLElement;
+    const slug = option.getAttribute('data-section-option');
+
+    if (!slug) {
+      return;
+    }
+
+    sectionOptions.forEach((item) => {
+      const active = item.getAttribute('data-section-option') === slug;
+      item.toggleAttribute('data-active', active);
+
+      if (active) {
+        item.setAttribute('aria-current', 'page');
+      } else {
+        item.removeAttribute('aria-current');
+      }
+    });
+
+    sectionPanels.forEach((panel) => {
+      panel.hidden = panel.getAttribute('data-section-panel') !== slug;
+    });
+    window.dispatchEvent(new Event('resize'));
+
+    summaryIcons.forEach((icon) => {
+      icon.hidden = icon.getAttribute('data-section-summary-icon') !== slug;
+    });
+
+    if (summaryLabel) {
+      summaryLabel.textContent = option.getAttribute('data-section-label') ?? '';
+    }
+
+    if (summaryCount) {
+      summaryCount.textContent = option.getAttribute('data-section-count') ?? '';
+    }
+
+    sectionSwitch?.removeAttribute('open');
+  };
+
+  openButtons.forEach((button) => button.addEventListener('click', openDrawer, { signal: controller.signal }));
+  closeButtons.forEach((button) => button.addEventListener('click', closeDrawer, { signal: controller.signal }));
+  drawer.querySelectorAll('a').forEach((link) => link.addEventListener('click', closeDrawer, { signal: controller.signal }));
+  sectionOptions.forEach((option) => option.addEventListener('click', handleSectionOption, { signal: controller.signal }));
+  window.addEventListener('keydown', handleKeydown, { signal: controller.signal });
+
+  teardownMobileDocsNav = () => {
+    controller.abort();
+    initializedDrawers.delete(drawer);
+
+    if (closeTimer !== undefined) {
+      window.clearTimeout(closeTimer);
+      closeTimer = undefined;
+    }
+
+    if (openAnimationFrame !== undefined) {
+      window.cancelAnimationFrame(openAnimationFrame);
+      openAnimationFrame = undefined;
+    }
+
+    if (overflowLocked) {
+      document.documentElement.style.overflow = previousOverflow;
+      overflowLocked = false;
+    }
+  };
+}
+
+proseflyLotus.initMobileDocsNav = initMobileDocsNav;
+proseflyLotus.initMobileDocsNav?.();
+document.addEventListener('astro:before-swap', cleanupMobileDocsNav);
+document.addEventListener('astro:page-load', () => {
+  proseflyLotus.initMobileDocsNav?.();
+});

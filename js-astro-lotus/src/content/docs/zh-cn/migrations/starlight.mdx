@@ -1,0 +1,373 @@
+---
+title: 从 Starlight 迁移
+description: 将已有 Astro Starlight 文档站点迁移到 Lotus，同时保留内容、路由、导航、i18n 和 MDX 写法。
+
+---
+
+import { Callout, FileTree, Steps } from '@prosefly/astro-components';
+
+当你想保留已有 Astro Starlight 文档站点的内容，但把 documentation shell、导航模型、
+theme tokens 和 MDX component imports 迁移到 Lotus 时，可以使用这篇指南。
+
+大多数迁移不需要重写文档正文。主要工作通常是 configuration、routing 和 component
+imports：替换 Starlight integration，注册 Lotus docs collection，把站点和 sidebar
+配置迁移到 `theme.config.json`，然后检查 Starlight 专属的 MDX 用法。
+
+<Callout type="tip" title="第一轮迁移尽量机械化">
+  先保留内容和 public URLs，让 Lotus build 在本地跑通。外观、导航密度和自定义组件可以
+  在迁移成功后再调整。
+</Callout>
+
+## 迁移映射
+
+| Starlight 概念 | Lotus 对应项 |
+| --- | --- |
+| `starlight()` integration | `lotus()` integration |
+| `@astrojs/starlight` package | `@prosefly/astro-theme-lotus` |
+| Starlight built-in MDX components | `@prosefly/astro-components` |
+| `src/content/docs` | 默认 `docsLoader()` content root |
+| `sidebar` config | `theme.config.json` 里的 `docsNav` |
+| `locales` config | `defaultLocale` 和 `locales` |
+| 默认 docs routes at `/` | 默认 `docsBase: '/'` |
+| 自定义 docs prefix | `docsBase`，例如 `'/docs'` |
+| Edit links 和 source links | `source` 和 `editLink` |
+| 自定义 CSS 和 theme styling | Lotus CSS tokens 和 component overrides |
+
+## 开始之前
+
+先检查现有 Starlight 项目：
+
+- `package.json`
+- `astro.config.*`
+- `src/content.config.*`
+- `src/content/docs`
+- Starlight `sidebar`、`locales`、`social`、`editLink` 和 search 配置
+- 来自 `@astrojs/starlight/components` 的 MDX imports
+- 自定义 Starlight components、CSS 或 theme overrides
+
+如果可以，先把当前项目跑起来一次。这样你会有一个已知可用的 baseline，方便对照 routes、
+sidebar order、locale behavior 和 search。
+
+## 迁移步骤
+
+<Steps>
+
+1. **替换 package dependency。**
+
+   移除 Starlight，安装 Lotus。
+
+   ```sh
+   pnpm remove @astrojs/starlight
+   pnpm add @prosefly/astro-theme-lotus
+   ```
+
+   如果你自己的 MDX 或 Astro 文件会 import shared documentation components，
+   也需要直接安装 `@prosefly/astro-components`。
+
+   ```sh
+   pnpm add @prosefly/astro-components
+   ```
+
+2. **替换 Astro integration。**
+
+   从 `starlight()` 改成 `lotus()`。
+
+   ```ts title="astro.config.ts before"
+   import { defineConfig } from 'astro/config';
+   import starlight from '@astrojs/starlight';
+
+   export default defineConfig({
+     integrations: [
+       starlight({
+         title: 'Acme Docs',
+         sidebar: [
+           {
+             label: 'Guides',
+             items: [{ label: 'Overview', slug: 'overview' }],
+           },
+         ],
+       }),
+     ],
+   });
+   ```
+
+   ```ts title="astro.config.ts after"
+   import { defineConfig } from 'astro/config';
+   import lotus from '@prosefly/astro-theme-lotus';
+
+   export default defineConfig({
+     integrations: [lotus()],
+   });
+   ```
+
+   只有需要 TypeScript、environment variables 或 imports 的动态值，才放到
+   `lotus({...})` 里。静态项目配置优先放在 `theme.config.json`。
+
+3. **注册 docs collection。**
+
+   Lotus 通过 `docsLoader()` 读取 MDX docs，并用 `docsSchema()` 校验 frontmatter。
+
+   ```ts title="src/content.config.ts"
+   import { defineCollection } from 'astro:content';
+   import { docsLoader, docsSchema } from '@prosefly/astro-theme-lotus/content';
+
+   const docs = defineCollection({
+     loader: docsLoader(),
+     schema: docsSchema(),
+   });
+
+   export const collections = { docs };
+   ```
+
+4. **除非要改变路由，否则保留 content tree。**
+
+   默认 Lotus loader 读取 `src/content/docs`，这和常见 Starlight content root 一致。
+
+   <FileTree>
+
+   - src
+     - content
+       - docs
+         - index.mdx
+         - overview.mdx
+         - guides
+           - installation.mdx
+
+   </FileTree>
+
+   默认 `docsBase: '/'` 时，`src/content/docs/overview.mdx` 渲染到 `/overview/`。
+   只有当 docs 需要移到 `/docs/` 下，或项目已经有独立 homepage at `/` 时，才设置
+   `docsBase: '/docs'`。
+
+5. **把项目配置移到 `theme.config.json`。**
+
+   先迁移 identity、site navigation、source links 和 edit links。
+
+   ```json title="theme.config.json"
+   {
+     "$schema": "https://prosefly.dev/schema/lotus.json",
+     "name": "Acme Docs",
+     "description": "Documentation for Acme.",
+     "favicon": "/favicon.svg",
+     "logo": "/images/logo.svg",
+     "siteNav": [
+       { "label": "Docs", "href": "/" },
+       {
+         "label": "GitHub",
+         "href": "https://github.com/acme/acme",
+         "external": true
+       }
+     ],
+     "source": {
+       "github": "acme/acme",
+       "branch": "main"
+     },
+     "editLink": true
+   }
+   ```
+
+6. **把 Starlight sidebar config 转成 `docsNav`。**
+
+   Lotus sidebar items 引用 content collection entry IDs。使用 `docsLoader()` 时，
+   这些 IDs 相对于 `src/content/docs`。
+
+   ```ts title="Starlight sidebar"
+   sidebar: [
+     {
+       label: 'Guides',
+       items: [
+         { label: 'Overview', slug: 'overview' },
+         {
+           label: 'Configuration',
+           autogenerate: { directory: 'configuration' },
+         },
+       ],
+     },
+   ]
+   ```
+
+   ```json title="Lotus docsNav"
+   {
+     "docsNav": [
+       {
+         "slug": "guides",
+         "label": "Guides",
+         "icon": "lucide:rocket",
+         "items": [
+           "overview",
+           {
+             "label": "Configuration",
+             "items": [
+               { "autogenerate": { "directory": "configuration" } }
+             ]
+           }
+         ]
+       }
+     ]
+   }
+   ```
+
+   页面顺序重要时，使用明确的 string items。一个目录整体跟随文件树时，使用
+   `autogenerate`。
+
+7. **转换 i18n 配置。**
+
+   Lotus 使用 locale keys 作为 route prefixes。特殊的 `root` locale 不带 locale prefix。
+
+   ```ts title="astro.config.ts before"
+   starlight({
+     defaultLocale: 'en',
+     locales: {
+       en: { label: 'English', lang: 'en' },
+       'zh-cn': { label: '简体中文', lang: 'zh-CN' },
+     },
+   })
+   ```
+
+   ```ts title="theme.config.json or lotus({...}) after"
+   {
+     "defaultLocale": "root",
+     "locales": {
+       "root": {
+         "label": "English",
+         "lang": "en",
+         "directory": "en"
+       },
+       "zh-cn": {
+         "label": "简体中文",
+         "lang": "zh-CN",
+         "directory": "zh-cn"
+       }
+     }
+   }
+   ```
+
+   这个配置下，`src/content/docs/en/overview.mdx` 渲染到 `/overview/`，
+   `src/content/docs/zh-cn/overview.mdx` 渲染到 `/zh-cn/overview/`。如果你设置了
+   `docsBase: '/docs'`，它们会变成 `/docs/overview/` 和 `/docs/zh-cn/overview/`。
+
+8. **替换 Starlight MDX component imports。**
+
+   把 Starlight components 的 imports 改成 `@prosefly/astro-components`。
+
+   ```mdx title="before"
+   import { Card, CardGrid, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+   ```
+
+   ```mdx title="after"
+   import { Card, CardGrid, Steps, Tabs, TabItem } from '@prosefly/astro-components';
+   ```
+
+   检查 callouts、cards、tabs、steps、file trees、badges、accordions 和 icons。
+   很多 authoring patterns 与 Starlight 接近，但 component names、props 和 styling
+   tokens 仍然需要确认。
+
+9. **把自定义样式迁移到 Lotus tokens。**
+
+   Starlight CSS variables 和 custom components 不是一一对应。先用 Lotus CSS tokens
+   迁移 color、radius 和 surfaces。
+
+   ```css title="src/styles/lotus.css"
+   :root {
+     --lotus-accent: oklch(0.6 0.18 250);
+     --lotus-radius-md: 0.5rem;
+   }
+   ```
+
+   只有 configuration 和 CSS 无法表达需要的行为时，再使用 component overrides。
+
+10. **验证迁移后的站点。**
+
+    运行检查并确认生成 routes。
+
+    ```sh
+    pnpm check
+    pnpm build
+    ```
+
+    搜索是否还有残留的 Starlight imports 和 config。
+
+    ```sh
+    rg "@astrojs/starlight|starlight\\(" .
+    ```
+
+</Steps>
+
+## 重点检查
+
+- `docsBase` 控制 public routes，改错会破坏已有链接。
+- `root` 是 Lotus 中不带前缀的 locale。
+- `docsNav` string items 使用 content entry IDs，不是最终 page URLs。
+- frontmatter `slug` 会改变 public URL，但 sidebar ownership 仍然跟随 entry ID。
+- 即使 Markdown 语法看起来兼容，也应该替换 Starlight component imports。
+- 自定义 Starlight theme overrides 需要人工检查。
+- Search behavior 应该在 production build 后验证。
+
+## 相关 Lotus 文档
+
+- [安装](/docs/zh-cn/installation/)
+- [内容路由](/docs/zh-cn/configuration/content-routing/)
+- [国际化](/docs/zh-cn/configuration/i18n/)
+- [Docs Navigation](/docs/zh-cn/configuration/docs-nav/)
+- [覆盖组件](/docs/zh-cn/customization/overriding-components/)
+
+## AI 辅助迁移 Prompt
+
+如果你想让 Codex 或其他 code-aware assistant 自动迁移现有 Starlight 项目，可以使用
+下面的 prompt。在项目根目录运行，让 assistant 能检查 Astro config、content
+collections、docs files、MDX imports 和 theme configuration。
+
+<Callout type="warning" title="提交前需要 review">
+  把 AI 输出当作 migration draft。提交前检查 diff，运行 checks，并在本地验证站点。
+</Callout>
+
+```txt title="Prompt"
+You are migrating an existing Astro Starlight documentation site to
+@prosefly/astro-theme-lotus.
+
+Goal:
+Move the project from Starlight to Lotus while preserving existing documentation
+content, public routes, frontmatter intent, docs navigation, i18n structure,
+search behavior, and MDX authoring patterns wherever Lotus supports them.
+
+Before editing:
+1. Inspect package.json, astro.config.*, src/content.config.*, docs content,
+   sidebar configuration, i18n directories, Starlight component imports, and any
+   custom theme overrides.
+2. Summarize the migration plan briefly.
+3. Do not delete content or rewrite prose unless it is required for compatibility.
+4. Preserve user changes and avoid destructive git commands.
+
+Migration tasks:
+1. Replace Starlight package usage with @prosefly/astro-theme-lotus and
+   @prosefly/astro-components where appropriate.
+2. Update Astro integration setup to use lotus().
+3. Register docsLoader() and docsSchema() in src/content.config.ts.
+4. Move Starlight site, sidebar, social, edit link, i18n, search, and appearance
+   settings into theme.config.json. Put component overrides or dynamic values in
+   lotus({...}) options in astro.config.ts.
+5. Preserve compatible frontmatter fields including title, description, slug,
+   sidebar, tableOfContents, prev, next, pagefind, and draft.
+6. Convert Starlight-only MDX component imports to @prosefly/astro-components.
+7. Convert Starlight sidebar autogeneration to Lotus docsNav entries using
+   string slugs, groups, links, and autogenerate.directory.
+8. Convert Starlight locales into Lotus locales and defaultLocale. Keep the
+   default locale unprefixed when the existing site uses unprefixed default docs.
+9. Keep docsBase and route behavior compatible with the existing public URLs
+   whenever possible.
+10. If the project has custom Starlight components or theme overrides, map them
+    to Lotus configuration, CSS tokens, or component overrides. Only add a Lotus
+    component override when configuration and CSS are not enough.
+
+Validation:
+1. Run the project's formatter or lint command if available.
+2. Run astro check or the package check command.
+3. Run a production build.
+4. Report any remaining Starlight imports, broken internal links, missing
+   sidebar entries, or behavior that needs manual review.
+
+Output:
+1. List the files changed.
+2. Explain any manual decisions or behavior changes.
+3. Include the exact validation commands and results.
+```

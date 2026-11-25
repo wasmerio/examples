@@ -1,0 +1,308 @@
+---
+title: Integrations
+description: Configure Astro Components, OpenAPI references, Expressive Code, and Lotus Markdown behavior.
+
+---
+
+import { Card, CardGrid } from '@prosefly/astro-components';
+
+Lotus coordinates Astro Components, syntax highlighting, Lotus-owned Markdown
+behavior, and optional OpenAPI reference pages.
+
+<CardGrid>
+  <Card icon="lucide:braces" title="OpenAPI" href="#openapi">
+    Generate API reference routes, navigation, search entries, and Markdown from
+    one or more OpenAPI documents.
+  </Card>
+  <Card icon="lucide:blocks" title="Astro Components" href="#astro-components">
+    Configure shared icons and Markdown transforms explicitly when the defaults
+    are not right for your project.
+  </Card>
+  <Card icon="lucide:code-2" title="Expressive Code" href="#expressive-code">
+    Render syntax-highlighted code blocks with frames, copy buttons, markers,
+    and theme-aware styling.
+  </Card>
+  <Card icon="lucide:git-branch" title="Mermaid" href="#mermaid">
+    Render supported Mermaid code blocks as responsive, themed SVG diagrams at
+    build time.
+  </Card>
+  <Card icon="lucide:terminal" title="Package Manager Tabs" href="#package-manager-tabs">
+    Turn recognized npm and Python install commands into synchronized tabbed
+    command blocks.
+  </Card>
+  <Card icon="lucide:message-square-warning" title="Callout Directives" href="#callout-directives">
+    Write admonitions with Markdown directive syntax such as `:::tip`.
+  </Card>
+  <Card icon="lucide:languages" title="CJK-Friendly Markdown" href="#cjk-friendly-markdown">
+    Make emphasis and GFM strikethrough work better in Chinese, Japanese, and
+    Korean text.
+  </Card>
+  <Card icon="lucide:images" title="Image Galleries" href="#image-galleries">
+    Transform Markdown image-only paragraphs into responsive gallery figures.
+  </Card>
+</CardGrid>
+
+## Astro Components
+
+Lotus adds `@prosefly/astro-components/integration` with its default options
+when the project has not already registered it. If you register the integration
+yourself, Lotus detects it by name and does not add or configure another copy.
+
+Add it explicitly whenever you need to change icon loading or shared Markdown
+transforms. Register it only once:
+
+```ts title="astro.config.ts"
+import { defineConfig } from 'astro/config';
+import proseflyComponents from '@prosefly/astro-components/integration';
+import lotus from '@prosefly/astro-theme-lotus';
+
+export default defineConfig({
+  integrations: [
+    proseflyComponents({
+      icons: {
+        preload: ['lucide:sparkles'],
+      },
+      markdown: {
+        mermaid: false,
+      },
+    }),
+    lotus(),
+  ],
+});
+```
+
+The integration can appear before or after `lotus()` in the array. Its full
+option types and defaults come from `@prosefly/astro-components` rather than
+the Lotus configuration schema.
+
+## OpenAPI
+
+Lotus can use the restricted `@prosefly-pro/astro-openapi` package when it is
+installed in the documentation project. The package is loaded only when an
+`openapi` option is configured. If the package is unavailable, Lotus omits its
+generated routes and navigation while the rest of the site continues to build.
+
+```sh
+pnpm add @prosefly-pro/astro-openapi
+```
+
+Configure one OpenAPI document directly and add its generated navigation where
+it should appear:
+
+```ts
+lotus({
+  openapi: {
+    file: './src/openapi.yaml',
+    base: '/api',
+    playground: {
+      proxy: 'https://proxy.example.com/_proxy',
+    },
+  },
+  docsNav: [
+    {
+      slug: 'api',
+      label: 'API Reference',
+      icon: 'lucide:braces',
+      items: [{ openapi: {} }],
+    },
+  ],
+})
+```
+
+Lotus injects the introduction, operation, webhook, and Markdown routes. It also
+adds the reference content to local search, Pagefind output, `llms.txt`, and
+`llms-full.txt`. A separate content collection or files under `src/pages` are
+not required.
+
+When `playground.proxy` is set, operation pages show a **Try it** dialog for
+path, query, header, authentication, and request-body input. The proxy is a
+separate Fetch handler provided by `@prosefly-pro/astro-openapi/proxy`; it can
+run on a Worker or another Fetch-compatible runtime and does not require an
+Astro server. Configure its `verifyOrigin` callback to accept only your docs
+site origins.
+
+For multiple documents, give every source a unique name and route base:
+
+```ts
+lotus({
+  openapi: {
+    sources: {
+      cafe: {
+        file: './src/openapi/cafe.yaml',
+        base: '/api/cafe',
+      },
+      fruits: {
+        file: './src/openapi/fruits.yaml',
+        base: '/api/fruits',
+      },
+    },
+  },
+  docsNav: [
+    {
+      slug: 'cafe-api',
+      label: 'Cafe API',
+      items: [{ openapi: { source: 'cafe' } }],
+    },
+    {
+      slug: 'fruits-api',
+      label: 'Fruits API',
+      items: [{ openapi: { source: 'fruits' } }],
+    },
+  ],
+})
+```
+
+The source name belongs to the OpenAPI configuration; it is not an Astro content
+collection name. This allows a shared `theme.config.json` to declare the API
+reference in every environment: installing the restricted package enables it,
+while public or local installs without registry access simply omit it.
+
+## Iconify
+
+The Astro Components integration scans static `<Icon name="...">` usage in
+Astro and MDX files by default. Configure its `icons` option when you need a
+different Iconify endpoint, dynamic icon names, or no source scan.
+
+```ts
+proseflyComponents({
+  icons: {
+    apiBase: 'https://api.iconify.design',
+    preload: ['lucide:sparkles'],
+    scan: true,
+  },
+})
+```
+
+Use `preload` for icons that cannot be detected statically.
+
+Set `scan: false` when a project wants only explicit preload names.
+
+## Expressive Code
+
+Expressive Code is enabled by default.
+
+```ts
+lotus({
+  markdown: {
+    expressiveCode: {
+      defaultProps: {
+        showLineNumbers: false,
+      },
+    },
+  },
+})
+```
+
+Lotus configures light and dark Shiki themes, line numbers, copy button styling,
+and code frame styling to match the theme tokens.
+
+Disable Expressive Code when a project should use Astro's built-in Shiki
+renderer.
+
+```ts
+lotus({
+  markdown: {
+    expressiveCode: false,
+  },
+})
+```
+
+## Mermaid
+
+The default Astro Components integration renders supported `mermaid` code
+blocks as responsive inline SVG during the Astro build. It ships no Mermaid
+runtime to the browser and automatically keeps Mermaid source out of syntax
+highlighting.
+
+See [Mermaid Diagrams](/docs/essentials/mermaid/) for supported diagram types,
+authoring syntax, accessibility, and theming.
+
+Configure Astro Components explicitly when Mermaid blocks should remain
+ordinary code:
+
+```ts
+proseflyComponents({
+  markdown: {
+    mermaid: false,
+  },
+})
+```
+
+## Package Manager Tabs
+
+The default Astro Components integration turns recognized install commands
+into tabbed command blocks.
+
+```ts
+proseflyComponents({
+  markdown: {
+    packageManagerTabs: false,
+  },
+})
+```
+
+Set the Astro Components `markdown.packageManagerTabs` option to `false` to
+keep package-manager commands as normal code blocks.
+
+## Callout Directives
+
+The default Astro Components integration adds Starlight-style admonition syntax
+for `note`, `tip`, `warning`, `caution`, and `danger`. See
+[Admonitions](/docs/essentials/admonitions/) for authoring syntax and usage
+guidance.
+
+Set the Astro Components `markdown.calloutDirectives` option to `false` to keep
+Markdown directives untouched.
+
+```ts
+proseflyComponents({
+  markdown: {
+    calloutDirectives: false,
+  },
+})
+```
+
+## CJK-Friendly Markdown
+
+`markdown.cjkFriendly` controls CJK-friendly parsing for emphasis and GFM
+strikethrough. The default is `auto`: Lotus enables it when `locales` contains a
+Chinese, Japanese, or Korean locale key or `lang` value.
+
+```ts
+lotus({
+  locales: {
+    root: { label: 'English', directory: 'en' },
+    'zh-cn': { label: '简体中文', lang: 'zh-CN', directory: 'zh-cn' },
+  },
+  markdown: {
+    cjkFriendly: 'auto',
+  },
+})
+```
+
+Set it to `true` to force the parser support on, or `false` to keep plain
+CommonMark and GFM parsing.
+
+## Image Galleries
+
+The default Astro Components integration transforms paragraphs containing only
+Markdown images into responsive gallery figures.
+
+See [Images](/docs/essentials/images/) for authoring details.
+
+Disable the transform when a project wants image-only paragraphs to stay as
+normal Markdown output.
+
+```ts
+proseflyComponents({
+  markdown: {
+    imageGallery: false,
+  },
+})
+```
+
+## Component Overrides
+
+Use `components` to replace selected Lotus theme components. See
+[Overriding Components](/docs/customization/overriding-components/) for the
+complete override surface and examples.

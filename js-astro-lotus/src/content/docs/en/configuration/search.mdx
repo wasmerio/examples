@@ -1,0 +1,223 @@
+---
+title: Search
+description: Configure the built-in search dialog and generated search index.
+
+---
+
+import { Callout } from '@prosefly/astro-components';
+
+Lotus includes a provider-based search dialog. The default provider is `local`,
+which uses a generated JSON index and searches entirely in the browser.
+
+```ts
+search: {
+  provider: 'local',
+}
+```
+
+This is the default, so most projects do not need to set `search` explicitly.
+
+Disable the default search trigger and dialog with:
+
+```ts
+search: false
+```
+
+The default header reads this setting and omits the search UI when search is
+disabled.
+
+## Providers
+
+Lotus supports the built-in local provider, Pagefind, and Algolia DocSearch.
+
+### Local
+
+```ts
+search: {
+  provider: 'local',
+}
+```
+
+The local provider generates a small JSON index during the Astro build and
+searches it entirely in the browser.
+
+### Pagefind
+
+Use Pagefind when a site has enough content that a dedicated static search index
+is a better fit than shipping one JSON file.
+
+Pagefind is an optional peer dependency. Install it before selecting this
+provider:
+
+```sh
+npm install pagefind
+```
+
+```ts
+search: {
+  provider: 'pagefind',
+}
+```
+
+When enabled, Lotus runs Pagefind after `astro build`, indexes the generated
+HTML, and writes the browser bundle and index files to `/pagefind/`.
+
+```ts
+search: {
+  provider: 'pagefind',
+  outputSubdir: 'pagefind',
+  excludeSelectors: ['[data-no-search]'],
+}
+```
+
+`outputSubdir` changes the generated output folder. `excludeSelectors` appends
+selectors to the default ignored chrome selectors. `rootSelector` can be set for
+advanced Pagefind setups, but most Lotus sites should rely on the built-in
+`data-pagefind-body` and `data-pagefind-ignore` markers.
+
+### DocSearch
+
+```ts
+search: {
+  provider: 'docsearch',
+  appId: '...',
+  apiKey: '...', // search-only key
+  indexName: 'docs',
+}
+```
+
+DocSearch is loaded from the official CDN only when the provider is enabled.
+The default Lotus search trigger opens the DocSearch modal through the
+DocSearch JavaScript API.
+
+For localized DocSearch indexes, `indexName` can be a map keyed by Lotus locale
+keys or language tags:
+
+```ts
+search: {
+  provider: 'docsearch',
+  appId: '...',
+  apiKey: '...',
+  indexName: {
+    root: 'docs',
+    'zh-cn': 'docs_zh_cn',
+  },
+}
+```
+
+DocSearch crawling and indexing are outside Lotus. Use a search-only API key in
+client config, never an admin key. Use `searchParameters` to scope results by
+language, version, or any facet produced by your crawler.
+
+```ts
+search: {
+  provider: 'docsearch',
+  appId: '...',
+  apiKey: '...',
+  indexName: 'docs',
+  searchParameters: {
+    facetFilters: ['language:en'],
+  },
+}
+```
+
+Set `cssUrl` or `jsUrl` to self-host the DocSearch assets instead of loading
+them from jsDelivr.
+
+## Local Search
+
+With the default `docsBase: '/'`, the search index is available at
+`/search.json`. When `docsBase` is `/docs`, the index is available at
+`/docs/search.json`.
+
+## Search Dialog
+
+The default header includes a search trigger. Opening it loads the generated
+index on demand and searches page title, description, section, sidebar group,
+excerpt, and stripped page content.
+
+Results are scored locally in the browser. The highest-scoring results appear
+first, with keyboard support for moving through results and opening the active
+result.
+
+## Search Index
+
+Each indexed item includes:
+
+| Field | Source |
+| --- | --- |
+| `title` | Page frontmatter title |
+| `description` | Page frontmatter description |
+| `href` | Generated docs URL |
+| `slug` | Entry slug or slug override |
+| `section` | Owning top-level sidebar label |
+| `group` | Owning sidebar group label |
+| `excerpt` | Short text excerpt from the page body |
+| `content` | Searchable text extracted from MDX |
+
+The index strips code fences, imports, exports, MDX tags, image syntax, and
+most Markdown punctuation before storing searchable content.
+
+## Excluding Pages
+
+Use `pagefind: false` to exclude a page from the generated search index:
+
+```md
+---
+title: Internal Notes
+pagefind: false
+---
+```
+
+The field name is kept for Starlight compatibility. In Lotus it controls the
+built-in `search.json` output. When the active provider is Pagefind, Lotus also
+uses this field to decide whether the rendered page receives Pagefind indexing
+attributes.
+
+Draft pages are also excluded from production search results because
+`draft: true` excludes them from production builds.
+
+## Custom Search UI
+
+Override `SearchDialog` when the default trigger or dialog needs project
+specific behavior:
+
+```ts title="astro.config.ts"
+lotus({
+  components: {
+    SearchDialog: './src/components/lotus/SearchDialog.astro',
+  },
+})
+```
+
+The theme package also exports smaller building blocks:
+
+```astro
+---
+import {
+  SearchDialogContent,
+  SearchDialogTrigger,
+} from '@prosefly/astro-theme-lotus/components';
+---
+
+<SearchDialogTrigger />
+<SearchDialogContent />
+```
+
+The built-in content component renders the active provider shell. For local
+search it emits `data-search-provider` and `data-search-index`.
+For Pagefind search it also emits `data-pagefind-bundle`, and the page
+layout adds Pagefind indexing attributes. For DocSearch, it emits a DocSearch
+container and loads the CDN assets on demand.
+
+## Limits
+
+<Callout type="tip" title="Keep the default until scale requires more">
+  The built-in search is designed for documentation sites that can ship a static
+  JSON index. Start there, then switch to a dedicated provider only when content
+  volume or language requirements demand it.
+</Callout>
+
+Lotus search is intentionally lightweight. It does not provide stemming,
+language-aware tokenization, typo correction, or server-side ranking. Use a
+dedicated search service when a large documentation site needs those features.

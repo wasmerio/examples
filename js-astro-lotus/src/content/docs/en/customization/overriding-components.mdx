@@ -1,0 +1,147 @@
+---
+title: Overriding Components
+description: Replace Lotus shell components when configuration is not enough.
+---
+
+Use component overrides when a project needs to replace part of the Lotus shell:
+markup, placement, or behavior. Prefer normal theme configuration and CSS tokens
+first. For example, use `pageActions`, `footer.sections`, `themeModeControl`,
+accent colors, gray scale, radius, and CSS variables before replacing a
+component.
+
+Overrides are configured in `astro.config.ts` through the `components` object
+passed to `lotus({...})`. Paths are resolved from the project root.
+
+```ts title="astro.config.ts"
+import { defineConfig } from 'astro/config';
+import lotus from '@prosefly/astro-theme-lotus';
+
+export default defineConfig({
+  integrations: [
+    lotus({
+      components: {
+        PageAside: './src/components/lotus/PageAside.astro',
+      },
+    }),
+  ],
+});
+```
+
+## How It Works
+
+The shell renders named override slots. Each slot has a default implementation,
+and many defaults delegate to public theme components exported from
+`@prosefly/astro-theme-lotus/components`.
+
+```txt
+layout -> override slot -> default implementation -> public theme component
+```
+
+Use `lotus({ components })` with override slot names such as `PageAside` or
+`PageActions`. Import public theme components only when your local override
+wants to reuse package behavior. See [Theme Components](/docs/customization/theme-components/)
+for the public export list.
+
+## Override Points
+
+Only these names are valid keys in the `components` object passed to
+`lotus({...})`.
+
+| Name | Where It Renders | Props |
+| --- | --- | --- |
+| `Assistant` | Global assistant widget area near the end of `<body>`. | none |
+| `SiteBrand` | Main header brand link. | none |
+| `HeaderNavbar` | Desktop header navbar and mobile menu navbar. | `currentPath?: string`, `mobile?: boolean` |
+| `HeaderSocialIcons` | Desktop header social area and mobile menu social area. | `mobile?: boolean` |
+| `FooterLinks` | Footer link grid. | none |
+| `SearchDialog` | Main header search trigger and dialog. | none |
+| `ThemeSwitch` | Desktop header and mobile menu theme mode area. | none |
+| `PageHeader` | Docs article title area. | `title`, `description?`, `sectionTitle?`, `pageActions`, `pageUrl`, `markdownUrl`, `currentLocale` |
+| `PageActions` | Action control inside `PageHeader`. | `actions`, `title`, `pageUrl`, `markdownUrl`, `currentLocale?` |
+| `PageAside` | Right sidebar content and mobile page tools. | `headings`, `editUrl`, `title`, `pageUrl`, `markdownUrl`, `currentSlug`, `currentLocale`, `tableOfContents?` |
+| `PageMeta` | Last updated and contributors below docs content. | `contributors`, `lastUpdated`, `title`, `currentLocale` |
+| `PageNavigation` | Previous and next links below docs content. | `navigation`, `currentLocale?` |
+
+Importing a public component does not make it an override point. The configured
+key must be one of the slot names above.
+
+## Minimal Override
+
+Create a local Astro component for the slot. This example keeps the default
+right sidebar and adds an EthicalAds placement below it:
+
+```astro title="src/components/lotus/PageAside.astro"
+---
+import { PageAside } from '@prosefly/astro-theme-lotus/components';
+---
+
+<PageAside {...Astro.props} />
+
+<aside class="mt-6 border-t border-(--lotus-border-subtle) pt-5">
+  <script
+    async
+    src="https://media.ethicalads.io/media/client/ethicalads.min.js"
+  ></script>
+  <div
+    class="flat"
+    data-ea-publisher="your-publisher-id"
+    data-ea-type="text"
+  ></div>
+</aside>
+```
+
+Register it:
+
+```ts title="astro.config.ts"
+lotus({
+  components: {
+    PageAside: './src/components/lotus/PageAside.astro',
+  },
+})
+```
+
+Lotus now renders this file anywhere the shell asks for `PageAside`.
+
+## Reusing Existing Behavior
+
+An override can still reuse Lotus behavior. Import from
+`@prosefly/astro-theme-lotus/components` when you want the package
+implementation, and forward `Astro.props` if the component receives props.
+
+Use a virtual module when one override needs to call another configured override
+slot. This preserves the user's replacement instead of forcing the package
+implementation.
+
+```astro title="src/components/lotus/PageHeader.astro"
+---
+import PageActions from 'virtual:prosefly/lotus/components/PageActions';
+---
+
+<header>
+  <h1>{Astro.props.title}</h1>
+  <PageActions
+    actions={Astro.props.pageActions}
+    currentLocale={Astro.props.currentLocale}
+    markdownUrl={Astro.props.markdownUrl}
+    pageUrl={Astro.props.pageUrl}
+    title={Astro.props.title}
+  />
+</header>
+```
+
+## Translations
+
+Lotus provides the resolved UI translator on `Astro.locals.t`. Use it when
+visible shell text should follow the current locale. See
+[Internationalization](/docs/configuration/i18n/#translator-api) for the
+translator API.
+
+## Debugging
+
+If an override does not appear:
+
+- Confirm the key matches one of the supported override point names exactly.
+- Confirm the file path is relative to the project root.
+- Restart the dev server after changing `astro.config.ts`.
+- Check that the override file has a default Astro component export.
+- Forward `Astro.props` when reusing a public theme component.

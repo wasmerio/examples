@@ -1,0 +1,55 @@
+---
+import ArticleCard from "../../components/ui/ArticleCard.astro";
+import { getCollection } from "astro:content";
+import type { GetStaticPaths } from "astro";
+import type { CollectionEntry } from "astro:content";
+import BaseLayout from "../../components/layout/BaseLayout.astro";
+import Categories from "../../components/shared/Categories.astro";
+import BaseHero from "../../components/shared/BaseHero.astro";
+import Container from "../../components/ui/Container.astro";
+type Note = CollectionEntry<"notes">;
+
+export const getStaticPaths = (async () => {
+  const allNotes = await getCollection("notes");
+  const filteredNotes = allNotes.filter((note: Note) => (import.meta.env.PROD ? !note.data.draft : true));
+
+  const allCategories: string[] = Array.from(new Set(filteredNotes.map((note: Note) => note.data.category)));
+
+  return allCategories.map((categoryPath) => {
+    const categoryNotes = filteredNotes.filter((note: Note) => note.data.category === categoryPath);
+
+    return {
+      params: { category: categoryPath },
+      props: { categoryNotes, allCategories },
+    };
+  });
+}) satisfies GetStaticPaths;
+
+const { categoryNotes, allCategories } = Astro.props;
+
+const sortedNotes = categoryNotes.sort(
+  (a: Note, b: Note) => b.data.publishedAt.getTime() - a.data.publishedAt.getTime()
+);
+---
+
+<BaseLayout title="Notes" description="Short-form thoughts and learnings">
+  <main>
+    <Container>
+      <BaseHero title="Notes" description="Short-form thoughts and learnings" />
+      <Categories categories={allCategories} currentPath={Astro.url.pathname} basePath="notes" />
+
+      <div class="content-list">
+        {
+          sortedNotes.map((note: Note) => (
+            <ArticleCard
+              title={note.data.title}
+              description={note.data.description}
+              url={`/notes/${note.id}`}
+              date={note.data.publishedAt}
+            />
+          ))
+        }
+      </div>
+    </Container>
+  </main>
+</BaseLayout>

@@ -1,0 +1,158 @@
+---
+import LanguagePicker from '@/components/LanguagePicker.astro'
+import { getRelativeLocaleUrl } from 'astro:i18n';
+import { defaultLocale, useTranslations,prefixDefaultLocale, getLocale } from '@/i18n/i18n.ts';
+import { resolveAsset } from '@/utils/paths.ts';
+import { getCollection } from 'astro:content';
+
+const t = useTranslations(getLocale(Astro.currentLocale));
+
+const thoughts = await getCollection('thought');
+const currentLocale = getLocale(Astro.currentLocale);
+const hasThoughts = thoughts.some(thought => thought.id.startsWith(currentLocale));
+
+interface NavLink {
+  url: string;
+  name: string;
+  isHiddenOnMobile?: boolean;
+  isHidden?: boolean; // Hide nav item through CSS to avoid js active item not found
+}
+
+const links: NavLink[] = [
+  { url: '/', name: t('Navbar-1'), isHidden: true },
+  { url: '/resume', name: t('Navbar-2') },
+  { url: '/work', name: t('Navbar-3') },
+  { url: '/faq', name: t('Navbar-4') },
+  { url: '/thought', name: t('Navbar-5'), isHidden: !hasThoughts },
+];
+
+function isActiveNavItem(navItem: string) {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+  const { pathname } = new URL(Astro.url);
+  const pathWithoutBase = base && pathname.startsWith(base) ? pathname.slice(base.length) : pathname;
+  const currentPath = pathWithoutBase.replace(/^\/|\/$/g, '');
+  const localePrefix = prefixDefaultLocale ? Astro.currentLocale : '';
+  const isHomepage = navItem === '/'
+  const isDefaultLocaleActive = currentPath === localePrefix
+  const isOtherLocaleActive = currentPath === Astro.currentLocale
+
+  if (isHomepage) {
+    return isOtherLocaleActive || isDefaultLocaleActive;
+  }
+
+  return currentPath.includes(navItem.replace(/^\/|\/$/g, ''));
+}
+---
+
+<nav style="min-height: var(--navbar-height)" class="px-4 py-2 flex gap-2 flex-col md:flex-row  justify-center z-50 relative md:justify-between items-center container mx-auto print:hidden">
+  <a
+    class="hover:bg-primary-100 p-4 -m-4 rounded-full aspect-square flex justify-center items-center transition-colors"
+    href={getRelativeLocaleUrl(Astro.currentLocale || defaultLocale, '/')}
+  >
+      <img
+      width="40"
+      height="40"
+      src={resolveAsset('/assets/global/logo.svg')}
+      alt="Logo"
+    />
+  </a>
+
+  <div class="flex flex-wrap gap-2 items-center justify-center">
+    <div class="relative" data-nav-container>
+      <div
+        id="nav-indicator"
+        class="nav-indicator absolute left-0 top-0 z-0 rounded-full bg-primary-900 transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] opacity-0 pointer-events-none"
+        transition:persist
+      ></div>
+      <ul class="flex flex-wrap gap-2 items-center">
+        {
+          links.map(({ url, name, isHiddenOnMobile = false, isHidden = false }) => {
+            const active = isActiveNavItem(url);
+
+            const hiddenClass = 'hidden'
+            const hiddenOnMobileClass = `${hiddenClass} md:inline-block`
+
+            let finalHiddenClass = '';
+            if (isHidden) {
+              finalHiddenClass = hiddenClass;
+            } else if (isHiddenOnMobile) {
+              finalHiddenClass = hiddenOnMobileClass;
+            } 
+
+            return (
+              <li class={finalHiddenClass}>
+                <a
+                  data-nav-link
+                  data-active={active ? 'true' : 'false'}
+                  class={`md:px-8 px-4 py-4 rounded-full transition-colors whitespace-nowrap relative z-10 block ${
+                    active ? 'text-primary-50' : 'text-primary-900 hover:bg-primary-100'
+                  }`}
+                  href={getRelativeLocaleUrl(Astro.currentLocale || defaultLocale, url)}
+                >
+                  {name}
+                </a>
+              </li>
+            );
+          })
+        }
+        <li>
+          <LanguagePicker/>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<script is:inline>
+  (function initNavbar() {
+    function init() {
+      const container = document.querySelector('[data-nav-container]');
+      if (!container) return;
+
+      const indicator = container.querySelector('#nav-indicator');
+      const activeLink = container.querySelector('[data-nav-link][data-active="true"]');
+
+      function updateIndicator(el) {
+        if (!indicator || !el) return;
+        indicator.style.width = `${el.offsetWidth}px`;
+        indicator.style.height = `${el.offsetHeight}px`;
+        indicator.style.transform = `translate(${el.offsetLeft}px, ${el.offsetTop}px)`;
+        indicator.style.opacity = '1';
+      }
+
+      if (activeLink) {
+        if (!window.navInitialized) {
+          // First load of the site: snap to position
+          indicator.style.transition = 'none';
+          updateIndicator(activeLink);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (indicator) indicator.style.transition = '';
+            });
+          });
+          window.navInitialized = true;
+        } else {
+          // Subsequent loads (persisted): slide from old position
+          updateIndicator(activeLink);
+        }
+      }
+
+      window.addEventListener('resize', () => {
+        const currentActive = container.querySelector('[data-nav-link][data-active="true"]');
+        if (currentActive) updateIndicator(currentActive);
+      });
+    }
+
+    if (!window.navListenerAdded) {
+      window.navListenerAdded = true;
+      document.addEventListener('astro:page-load', init);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  })();
+</script>
+

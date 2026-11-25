@@ -1,0 +1,160 @@
+---
+interface TabItem {
+  id: string;
+  label: string;
+  panelId: string;
+}
+
+interface Props {
+  tabs: TabItem[];
+  defaultTabId: string;
+  tabKey?: string;
+  rootClass?: string;
+  hiddenPanelClasses?: string[];
+  style?: string;
+}
+
+const {
+  tabs,
+  defaultTabId,
+  tabKey = 'default',
+  rootClass = '',
+  hiddenPanelClasses = ['hidden'],
+  style,
+} = Astro.props as Props;
+---
+
+<div
+  class={rootClass}
+  style={style}
+  data-tab-toggle
+  data-tab-key={tabKey}
+  data-hidden-panel-classes={hiddenPanelClasses.join(' ')}
+  role="tablist"
+>
+  <div class="relative flex flex-wrap gap-2 rounded-full bg-primary-100 bg-opacity-90 p-1">
+    <div
+      class="tab-indicator absolute left-0 top-0 z-0 rounded-full bg-white shadow-sm transition-all duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+    ></div>
+    {tabs.map((tab) => {
+      const isActive = tab.id === defaultTabId;
+
+      return (
+        <button
+          type="button"
+          id={`tab-${tab.id}`}
+          role="tab"
+          class:list={[
+            'resume-tab-btn relative z-10 cursor-pointer rounded-full px-6 py-2 text-sm font-medium transition-colors hover:text-primary-900 whitespace-nowrap',
+            isActive ? 'text-primary-900' : 'text-primary-600',
+          ]}
+          data-tab-id={tab.id}
+          data-panel-id={tab.panelId}
+          aria-selected={isActive ? 'true' : 'false'}
+        >
+          {tab.label}
+        </button>
+      );
+    })}
+  </div>
+</div>
+
+<script is:inline>
+  (function initTabs() {
+    function init() {
+      document.querySelectorAll('[data-tab-toggle]').forEach((root) => {
+        if (root.dataset.initialized === 'true') return;
+
+        const { tabKey, hiddenPanelClasses: hiddenClassesStr } = root.dataset;
+        const hiddenPanelClasses = hiddenClassesStr?.split(' ').filter(Boolean) || ['hidden'];
+        const storageKey = `active-tab-${tabKey}`;
+        const indicator = root.querySelector('.tab-indicator');
+
+        function updateIndicator(btn) {
+          if (!indicator || !btn) return;
+          indicator.style.width = `${btn.offsetWidth}px`;
+          indicator.style.height = `${btn.offsetHeight}px`;
+          indicator.style.transform = `translate(${btn.offsetLeft}px, ${btn.offsetTop}px)`;
+        }
+
+        function applyTab(selectedId, shouldSave = true) {
+          let activeBtn = null;
+
+          root.querySelectorAll('button').forEach((btn) => {
+            const isActive = btn.dataset.tabId === selectedId;
+
+            btn.classList.toggle('text-primary-900', isActive);
+            btn.classList.toggle('text-primary-600', !isActive);
+            btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+
+            if (isActive) {
+              activeBtn = btn;
+            }
+
+            const panel = document.getElementById(btn.dataset.panelId);
+            if (panel) {
+              hiddenPanelClasses.forEach((c) => panel.classList.toggle(c, !isActive));
+            }
+          });
+
+          if (activeBtn) {
+            updateIndicator(activeBtn);
+          }
+
+          if (shouldSave) {
+            localStorage.setItem(storageKey, selectedId);
+          }
+        }
+
+        // Initialize indicator position without animation initially
+        if (indicator) {
+          indicator.style.transition = 'none';
+        }
+
+        // Restore from localStorage or use default
+        const savedTabId = localStorage.getItem(storageKey);
+        const buttons = [...root.querySelectorAll('button')];
+        const defaultTabBtn = root.querySelector('[aria-selected="true"]');
+        const hasSavedTab = savedTabId && buttons.some((b) => b.dataset.tabId === savedTabId);
+        const selectedId = hasSavedTab ? savedTabId : defaultTabBtn?.dataset.tabId;
+
+        if (selectedId) {
+          applyTab(selectedId, false);
+        }
+
+        // Re-enable transition after initial position
+        if (indicator) {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              indicator.style.transition = '';
+            });
+          });
+        }
+
+        root.querySelectorAll('button').forEach((button) => {
+          button.addEventListener('click', () => {
+            applyTab(button.dataset.tabId, true);
+          });
+        });
+
+        window.addEventListener('resize', () => {
+          const activeBtn = root.querySelector('[aria-selected="true"]');
+          if (activeBtn) updateIndicator(activeBtn);
+        });
+
+        root.setAttribute('data-initialized', 'true');
+      });
+    }
+
+    if (!window.tabsListenerAdded) {
+      window.tabsListenerAdded = true;
+      document.addEventListener('astro:page-load', init);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  })();
+</script>

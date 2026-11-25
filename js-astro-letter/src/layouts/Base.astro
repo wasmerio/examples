@@ -1,0 +1,180 @@
+---
+import { SEO } from 'astro-seo';
+import '@/styles/global.css';
+import { getEntry } from 'astro:content';
+import Navbar from '@/components/Navbar.astro';
+import Footer from '@/components/Footer.astro';
+import { regionTags, useTranslations, languageTags, defaultLocale, prefixDefaultLocale, getLocale } from '@/i18n/i18n.ts';
+import { resolveAsset } from '@/utils/paths.ts';
+import { ClientRouter } from "astro:transitions";
+
+const config = await getEntry('config', 'site');
+const { favicons, globalOgImage, website } = config!.data;
+const { username } = website;
+
+const t = useTranslations(getLocale(Astro.currentLocale));
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+
+const globalTitle = `${title || t('Head-1')} - ${t('Head-2', { name: username })}`;
+const globalDescription = `${
+  description || t('Head-3', { name: username })
+}`;
+const globalOgImageAlt = t('Head-4', { name: username });
+const currentLocale = getLocale(Astro.currentLocale);
+
+// Custom View Transition Animation
+const anim = {
+  old: {
+    name: "change-page",
+    duration: "0.3s",
+    easing: "ease-out",
+    direction: "reverse",
+  },
+  new: {
+    name: "change-page",
+    duration: "0.3s",
+    easing: "ease-out",
+  },
+};
+
+const customTransition = {
+  forwards: anim,
+  backwards: anim,
+};
+
+function getPathnameWithoutLocale(pathname: string) {
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+  const pathWithoutBase = base && pathname.startsWith(base) ? pathname.slice(base.length) : pathname;
+  return pathWithoutBase.replace(`/${Astro.currentLocale}`, '').replace(/\/?$/, '/');
+}
+---
+
+<!DOCTYPE html>
+<html style={
+  `--globalHighlightTextureImage: url(${resolveAsset(website.globalHighlightTextureImage)})`
+} class="font-sans-serif text-primary-900 selection:bg-accent/40 selection:text-black" lang={languageTags[currentLocale]} translate="no">
+  <head>
+    <SEO
+    charset="UTF-8"
+    title={globalTitle}
+    description={globalDescription}
+    openGraph={{
+      basic: {
+        title: `${globalTitle}`,
+        type: 'website',
+        image: `${resolveAsset(globalOgImage.url)}`,
+      },
+      image: {
+        type: `${globalOgImage.type}`,
+        alt: `${globalOgImageAlt}`,
+        height: 630,
+        width: 1200,
+      },
+    }}
+    twitter={{
+      title: `${globalTitle}`,
+      description: `${globalDescription}`,
+      image: `${resolveAsset(globalOgImage.url)}`,
+      imageAlt: `${globalOgImageAlt}`,
+    }}
+    extend={{
+      link: [
+        { rel: 'manifest', href: resolveAsset('/manifest.webmanifest') },
+          // Default Language Alternates
+          {
+            rel: "alternate",
+            hreflang: "x-default",
+            href: new URL(
+              resolveAsset(defaultLocale + getPathnameWithoutLocale(Astro.url.pathname)),
+              Astro.site
+            ).toString()
+          },
+
+          // Language Alternates - Region
+          ...(Object.keys(regionTags) as Array<keyof typeof regionTags>).map(tag => {
+            const regionMap = {
+              zh: 'zh-tw' 
+            }
+            return ({
+            rel: "alternate",
+            hreflang: tag,
+            href: new URL(
+              resolveAsset(regionMap[tag] + getPathnameWithoutLocale(Astro.url.pathname)),
+              Astro.site
+            ).toString()
+          })}),
+
+          // Language Alternates - Countries
+          ...Object.keys(languageTags).map(tag => ({
+            rel: "alternate",
+            hreflang: tag,
+            href: new URL(
+              prefixDefaultLocale 
+                ? resolveAsset(tag + getPathnameWithoutLocale(Astro.url.pathname)) 
+                : new URL(Astro.url.pathname, Astro.site).toString(),
+              Astro.site
+            ).toString()
+          })),
+        
+      ],
+      meta: [
+        {
+          name: 'viewport',
+          content: 'width=device-width, initial-scale=1',
+        },
+        {
+          name: 'google',
+          content: 'notranslate'
+        }
+      ],
+    }}
+  />
+    <link rel="apple-touch-icon" sizes="180x180" href={resolveAsset(favicons['apple-touch-icon'])}/>
+    <link rel="icon" type="image/png" sizes="32x32" href={resolveAsset(favicons['32'])} />
+    <link rel="icon" type="image/png" sizes="16x16" href={resolveAsset(favicons['16'])} />
+    <ClientRouter fallback="swap" />
+  </head>
+  <body
+    class="bg-fixed print:bg-none"
+    style={`
+    background-color: #f5f5f5;
+    background-image: url('${resolveAsset(website.globalBackgroundTextureImage)}')
+    `}
+  >
+    <Navbar />
+    <div transition:animate={customTransition} style="margin-top: calc(var(--navbar-height) * -1);">
+      <slot />
+    </div>
+    <Footer />
+  </body>
+</html>
+
+<style is:inline>
+  @media print {
+    .no-print, .no-print * {
+        display: none !important;
+    }
+  }
+
+  @keyframes change-page {
+    0% {
+      opacity: 0;
+      transform: translateY(-5px);
+    }
+
+    50% {
+      opacity: 0.1;
+    }
+
+    100% {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+</style>

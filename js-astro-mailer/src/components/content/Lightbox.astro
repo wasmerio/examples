@@ -1,0 +1,177 @@
+---
+import Icon from "@/components/ui/Icon.astro";
+
+/**
+ * The enlarged view. One dialog per page, driven by any element carrying
+ * `data-lightbox` — a `Figure`, or a plain Markdown image wired up by
+ * `ProseRuntime`. The cover is not one of them.
+ *
+ * A native `<dialog>` does the work that is easy to get wrong by hand: it traps
+ * focus, closes on Escape, returns focus to the trigger, and marks the rest of
+ * the page inert. The script only has to pick the picture and step through the
+ * group, in the order the writer put them in.
+ */
+---
+
+<dialog class="lightbox" data-lightbox-dialog aria-label="Image viewer">
+  <div class="lightbox__inner">
+    <button class="lightbox__close" type="button" data-lightbox-close aria-label="Close">
+      <Icon name="close" size={24} />
+    </button>
+
+    <button
+      class="lightbox__nav lightbox__nav--prev"
+      type="button"
+      data-lightbox-prev
+      aria-label="Previous image"
+    >
+      <Icon name="arrow-left" size={28} />
+    </button>
+
+    <figure class="lightbox__figure">
+      <img data-lightbox-img alt="" />
+      <figcaption class="lightbox__caption">
+        <span data-lightbox-text></span>
+        <span class="lightbox__count" data-lightbox-count></span>
+      </figcaption>
+    </figure>
+
+    <button
+      class="lightbox__nav lightbox__nav--next"
+      type="button"
+      data-lightbox-next
+      aria-label="Next image"
+    >
+      <Icon name="arrow-right" size={28} />
+    </button>
+  </div>
+</dialog>
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>("[data-lightbox-dialog]");
+
+  if (dialog && typeof dialog.showModal === "function") {
+    const img = dialog.querySelector<HTMLImageElement>("[data-lightbox-img]")!;
+    const text = dialog.querySelector<HTMLElement>("[data-lightbox-text]")!;
+    const count = dialog.querySelector<HTMLElement>("[data-lightbox-count]")!;
+    const prev = dialog.querySelector<HTMLButtonElement>("[data-lightbox-prev]")!;
+    const next = dialog.querySelector<HTMLButtonElement>("[data-lightbox-next]")!;
+
+    let group: HTMLElement[] = [];
+    let index = 0;
+
+    /* A trigger carries either a srcset (a cover or a Figure) or a single src
+       (a plain Markdown image wired up at runtime). */
+    const assign = (target: HTMLImageElement, element: HTMLElement) => {
+      const srcset = element.dataset.lightboxSrcset;
+      if (srcset) {
+        target.sizes = "100vw";
+        target.srcset = srcset;
+      } else {
+        target.removeAttribute("sizes");
+        target.removeAttribute("srcset");
+      }
+      target.src = element.dataset.lightboxSrc ?? "";
+    };
+
+    /* Neighbours are fetched while the reader looks at this one, so an arrow
+       press lands on a picture that is already there. */
+    const warm = (at: number) => {
+      if (group.length < 2) return;
+      assign(new Image(), group[(at + group.length) % group.length]);
+    };
+
+    const show = (at: number) => {
+      /* Wraps both ways, so the arrows never dead-end mid-set. */
+      index = (at + group.length) % group.length;
+      const element = group[index];
+
+      assign(img, element);
+      img.alt = element.dataset.lightboxAlt ?? "";
+
+      const caption = element.dataset.lightboxCaption ?? "";
+      const credit = element.dataset.lightboxCredit ?? "";
+      text.textContent = [caption, credit].filter(Boolean).join(" — ");
+      count.textContent = group.length > 1 ? `${index + 1} / ${group.length}` : "";
+
+      const many = group.length > 1;
+      prev.hidden = !many;
+      next.hidden = !many;
+
+      warm(index + 1);
+      warm(index - 1);
+    };
+
+    document.addEventListener("click", (event) => {
+      const trigger = (event.target as HTMLElement | null)?.closest<HTMLElement>("[data-lightbox]");
+      if (!trigger) return;
+      event.preventDefault();
+
+      const name = trigger.dataset.lightboxGroup ?? "";
+      /* Collected in document order, so the arrows follow the order the writer
+         put the pictures in. */
+      group = [...document.querySelectorAll<HTMLElement>("[data-lightbox]")].filter(
+        (element) => (element.dataset.lightboxGroup ?? "") === name,
+      );
+      show(group.indexOf(trigger));
+      dialog.showModal();
+      document.documentElement.classList.add("has-open-lightbox");
+    });
+
+    prev.addEventListener("click", () => show(index - 1));
+    next.addEventListener("click", () => show(index + 1));
+    dialog.querySelector("[data-lightbox-close]")?.addEventListener("click", () => dialog.close());
+
+    /* Escape is handled here as well as by the dialog itself: some browsers
+       treat the first press as a focus hint rather than a close request. */
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") show(index - 1);
+      if (event.key === "ArrowRight") show(index + 1);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        dialog.close();
+      }
+    });
+
+    /* The dialog fills the viewport, so the backdrop test is against the figure
+       rather than against the dialog itself. */
+    dialog.addEventListener("click", (event) => {
+      const figure = dialog.querySelector(".lightbox__figure");
+      if (figure && !figure.contains(event.target as Node)) {
+        if (!(event.target as HTMLElement | null)?.closest("button")) dialog.close();
+      }
+    });
+
+    /* Swipe, which on a phone is the real control: the arrows overlap the
+       picture there. */
+    let startX = 0;
+    let startY = 0;
+
+    dialog.addEventListener(
+      "touchstart",
+      (event) => {
+        startX = event.changedTouches[0].clientX;
+        startY = event.changedTouches[0].clientY;
+      },
+      { passive: true },
+    );
+
+    dialog.addEventListener(
+      "touchend",
+      (event) => {
+        const dx = event.changedTouches[0].clientX - startX;
+        const dy = event.changedTouches[0].clientY - startY;
+        if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
+        show(index + (dx < 0 ? 1 : -1));
+      },
+      { passive: true },
+    );
+
+    /* Drop the source on close so a large picture is not held in memory. */
+    dialog.addEventListener("close", () => {
+      img.removeAttribute("src");
+      img.removeAttribute("srcset");
+      document.documentElement.classList.remove("has-open-lightbox");
+    });
+  }
+</script>

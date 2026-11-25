@@ -1,0 +1,86 @@
+---
+import { getCollection } from "astro:content";
+import type { GetStaticPaths, Page } from "astro";
+import IssueIndex from "@/components/IssueIndex.astro";
+import Pagination from "@/components/Pagination.astro";
+import SiteFooter from "@/components/SiteFooter.astro";
+import SiteHeader from "@/components/SiteHeader.astro";
+import Avatar from "@/components/ui/Avatar.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { siteConfig } from "@/config/site";
+import { writerBio } from "@/config/writers";
+import {
+  allWriters,
+  formatDate,
+  publishedIssues,
+  withTrailingSlash,
+  type Issue,
+  type WriterSummary,
+} from "@/lib/issues";
+
+export const getStaticPaths = (async ({ paginate }) => {
+  const issues = publishedIssues(await getCollection("issues"));
+
+  return allWriters(issues).flatMap((writer) =>
+    paginate(writer.issues, {
+      pageSize: 20,
+      params: { writer: writer.slug },
+      props: { writer },
+    }),
+  );
+}) satisfies GetStaticPaths;
+
+interface Props {
+  writer: WriterSummary;
+  page: Page<Issue>;
+}
+
+const { writer, page } = Astro.props;
+const latest = writer.issues[0];
+const bio = writerBio(writer.name);
+const title = page.currentPage === 1 ? writer.name : `${writer.name} - Page ${page.currentPage}`;
+const prevUrl = withTrailingSlash(page.url.prev);
+const nextUrl = withTrailingSlash(page.url.next);
+---
+
+<BaseLayout
+  title={title}
+  description={`Issues written by ${writer.name}, ${writer.role}, for ${siteConfig.name}.`}
+  image={latest?.data.cover.src}
+  imageAlt={latest?.data.cover.alt}
+  prevUrl={prevUrl}
+  nextUrl={nextUrl}
+>
+  <SiteHeader />
+  <main id="content">
+    <div class="container">
+      <header class="writer-hero">
+        <Avatar name={writer.name} size="xl" />
+        <div class="stack" style="gap:0.6rem">
+          <h1 class="t-h1">{writer.name}</h1>
+          <p class="t-lead">{writer.role}</p>
+          {bio && <p class="t-body t-dim" style="max-width:52ch">{bio}</p>}
+          <p class="meta">
+            <span>
+              {page.total} {page.total === 1 ? "issue" : "issues"}
+            </span>
+            {latest && <span class="dot-sep" aria-hidden="true" />}
+            {latest && <span>Latest {formatDate(latest.data.date)}</span>}
+          </p>
+        </div>
+      </header>
+    </div>
+
+    <section class="container section--tight" aria-label={`Issues by ${writer.name}`}>
+      <IssueIndex issues={page.data} headingLevel="h2" />
+      <Pagination
+        prevUrl={prevUrl}
+        nextUrl={nextUrl}
+        currentPage={page.currentPage}
+        lastPage={page.lastPage}
+        label={`${writer.name} pagination`}
+      />
+    </section>
+  </main>
+  <SiteFooter />
+</BaseLayout>

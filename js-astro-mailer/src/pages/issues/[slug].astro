@@ -1,0 +1,239 @@
+---
+import { getCollection, render } from "astro:content";
+import { Image } from "astro:assets";
+import Lightbox from "@/components/content/Lightbox.astro";
+import ProseRuntime from "@/components/content/ProseRuntime.astro";
+import IssueCard from "@/components/IssueCard.astro";
+import IssueMeta from "@/components/IssueMeta.astro";
+import SectionHead from "@/components/SectionHead.astro";
+import ShareRow from "@/components/ShareRow.astro";
+import SiteFooter from "@/components/SiteFooter.astro";
+import SiteHeader from "@/components/SiteHeader.astro";
+import SubscribePanel from "@/components/SubscribePanel.astro";
+import TopicChip from "@/components/TopicChip.astro";
+import Avatar from "@/components/ui/Avatar.astro";
+import Icon from "@/components/ui/Icon.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { siteConfig } from "@/config/site";
+import { writerBio } from "@/config/writers";
+import {
+  adjacentIssues,
+  formatDate,
+  issueHref,
+  issueNumber,
+  issueSlug,
+  publishedIssues,
+  relatedIssues,
+  writerSlug,
+  type Issue,
+} from "@/lib/issues";
+import { issueComponents } from "@/lib/issue-components";
+import { issueBreadcrumbSchema, issueSchema } from "@/lib/schema";
+
+export async function getStaticPaths() {
+  const issues = publishedIssues(await getCollection("issues"));
+  return issues.map((issue) => ({
+    params: { slug: issueSlug(issue) },
+    props: { issue, issues },
+  }));
+}
+
+interface Props {
+  issue: Issue;
+  issues: Issue[];
+}
+
+const { issue, issues } = Astro.props;
+const { Content } = await render(issue);
+const data = issue.data;
+
+const { newer, older } = adjacentIssues(issues, issue);
+const related = relatedIssues(issues, issue);
+const bio = writerBio(data.author.name);
+const url = new URL(issueHref(issue), siteConfig.siteUrl).toString();
+const absoluteCover = new URL(data.cover.src.src, siteConfig.siteUrl).toString();
+const structuredData = [issueSchema(issue, absoluteCover), issueBreadcrumbSchema(issue)];
+---
+
+<BaseLayout
+  title={data.title}
+  description={data.excerpt}
+  image={data.cover.src}
+  imageAlt={data.cover.alt}
+  type="article"
+  structuredData={structuredData}
+>
+  <SiteHeader />
+
+  <div class="reading-bar" aria-hidden="true">
+    <div class="reading-bar__fill" data-reading-progress></div>
+  </div>
+
+  <main id="content">
+    <article data-article>
+      <div class="reading">
+        <header class="issue-head">
+          <p class="issue-head__no">
+            <span class="t-number">Issue No. {issueNumber(issue)}</span>
+            <span class="dot-sep" aria-hidden="true"></span>
+            <time datetime={data.date.toISOString()}>{formatDate(data.date, "long")}</time>
+          </p>
+
+          <h1 class="t-h1">{data.title}</h1>
+          <p class="t-lead">{data.excerpt}</p>
+
+          <div class="issue-head__row">
+            <IssueMeta issue={issue} linked />
+            <TopicChip topic={data.topic} />
+          </div>
+        </header>
+
+        <figure class="issue-figure">
+          <div class="issue-figure__frame">
+            <Image
+              src={data.cover.src}
+              alt={data.cover.alt}
+              widths={[640, 960, 1400]}
+              sizes="(min-width: 44rem) 42rem, 92vw"
+              loading="eager"
+              fetchpriority="high"
+            />
+          </div>
+          <figcaption class="credit">
+            Photograph by{" "}
+            <a class="link" href={data.cover.creditUrl} rel="noopener noreferrer">
+              {data.cover.creditName}
+            </a>
+          </figcaption>
+        </figure>
+
+        <div class="issue-body">
+          <div class="prose">
+            <Content components={issueComponents} />
+          </div>
+          <ProseRuntime />
+
+          {
+            data.updatedDate && (
+              <p class="t-meta" style="margin-top:2rem">
+                Updated{" "}
+                <time datetime={data.updatedDate.toISOString()}>
+                  {formatDate(data.updatedDate, "long")}
+                </time>
+              </p>
+            )
+          }
+
+          <div class="issue-share">
+            <ShareRow title={data.title} url={url} />
+          </div>
+
+          <footer class="issue-foot">
+            <div class="writer-note">
+              <Avatar name={data.author.name} size="lg" />
+              <div class="stack" style="gap:0.3rem">
+                <p class="t-h4">
+                  <a class="link" href={`/writers/${writerSlug(data.author.name)}/`}>
+                    {data.author.name}
+                  </a>
+                </p>
+                <p class="t-meta">{data.author.role}</p>
+                {bio && <p class="t-small t-dim" style="margin-top:0.4rem">{bio}</p>}
+              </div>
+            </div>
+
+            {
+              (newer || older) && (
+                <nav class="issue-nav" aria-label="Issue navigation">
+                  {older ? (
+                    <a class="issue-nav__link" href={issueHref(older)} rel="prev">
+                      <span class="issue-nav__label">
+                        <Icon name="arrow-left" size={14} />
+                        Previous
+                      </span>
+                      <span class="issue-nav__title">{older.data.title}</span>
+                    </a>
+                  ) : (
+                    <span />
+                  )}
+
+                  {newer ? (
+                    <a class="issue-nav__link issue-nav__link--next" href={issueHref(newer)} rel="next">
+                      <span class="issue-nav__label">
+                        Next
+                        <Icon name="arrow-right" size={14} />
+                      </span>
+                      <span class="issue-nav__title">{newer.data.title}</span>
+                    </a>
+                  ) : (
+                    <span />
+                  )}
+                </nav>
+              )
+            }
+          </footer>
+        </div>
+      </div>
+    </article>
+
+    <div class="container section">
+      <SubscribePanel id="issue-subscribe" />
+    </div>
+
+    {
+      related.length > 0 && (
+        <section class="container section--tight" aria-labelledby="related-title">
+          <SectionHead title="Keep reading" id="related-title" href="/archive/" linkLabel="All issues" />
+          <div class="cards cards--3">
+            {related.map((item) => (
+              <IssueCard issue={item} headingLevel="h3" showExcerpt={false} />
+            ))}
+          </div>
+        </section>
+      )
+    }
+  </main>
+
+  <Lightbox />
+  <SiteFooter />
+</BaseLayout>
+
+<script>
+  const article = document.querySelector<HTMLElement>("[data-article]");
+  const bar = document.querySelector<HTMLElement>("[data-reading-progress]");
+
+  if (article && bar) {
+    let ticking = false;
+
+    const update = () => {
+      const rect = article.getBoundingClientRect();
+      const total = rect.height - window.innerHeight;
+      const read = total > 0 ? Math.min(Math.max(-rect.top / total, 0), 1) : 0;
+      bar.style.setProperty("--progress", `${(read * 100).toFixed(2)}%`);
+      ticking = false;
+    };
+
+    const schedule = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(update);
+    };
+
+    update();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule, { passive: true });
+  }
+</script>
+
+<style>
+  .issue-head__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.25rem;
+  }
+
+  .issue-share {
+    margin-top: clamp(2rem, 4vw, 2.75rem);
+  }
+</style>

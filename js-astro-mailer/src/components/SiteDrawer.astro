@@ -1,0 +1,142 @@
+---
+import LocalIcon from "@/components/LocalIcon.astro";
+import Icon from "@/components/ui/Icon.astro";
+import { primaryNavigation, siteConfig } from "@/config/site";
+import { socialIconFor } from "@/lib/socials";
+
+/**
+ * The menu on anything narrower than the desktop bar: the whole site at the
+ * full width of the window, the signup button under it, and the publication's
+ * accounts at the foot.
+ *
+ * Focus is trapped while it is open, because it is a modal panel over an inert
+ * page, and returned to the burger on close.
+ */
+const path = Astro.url.pathname;
+const isCurrent = (href: string) => path === href || (href !== "/" && path.startsWith(href));
+---
+
+<div class="drawer-backdrop" data-drawer-backdrop hidden></div>
+
+<div
+  id="mobile-menu"
+  class="drawer"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Site menu"
+  hidden
+  data-drawer
+>
+  <div class="drawer__head">
+    <a class="wordmark" href="/">{siteConfig.name}</a>
+    <button type="button" class="icon-btn" data-drawer-close aria-label="Close menu">
+      <Icon name="close" size={20} />
+    </button>
+  </div>
+
+  <nav class="drawer__nav" aria-label="Site">
+    {
+      primaryNavigation.map((item) => (
+        <a href={item.href} aria-current={isCurrent(item.href) ? "page" : undefined}>
+          {item.label}
+        </a>
+      ))
+    }
+    <a href="/search/">Search</a>
+  </nav>
+
+  <div class="drawer__foot">
+    <a class="btn btn--lg" href="/#subscribe">Subscribe</a>
+    <div class="social-row">
+      {
+        siteConfig.socials.map((social) => (
+          <a
+            class="icon-btn"
+            href={social.href}
+            rel={social.href.startsWith("http") ? "noopener noreferrer" : undefined}
+          >
+            <LocalIcon name={socialIconFor(social.label)} size={16} />
+            <span class="sr-only">{social.label}</span>
+          </a>
+        ))
+      }
+    </div>
+  </div>
+</div>
+
+<script>
+  const panel = document.querySelector<HTMLElement>("[data-drawer]");
+  const backdrop = document.querySelector<HTMLElement>("[data-drawer-backdrop]");
+  const openers = document.querySelectorAll<HTMLButtonElement>("[data-drawer-open]");
+
+  if (panel && backdrop && openers.length) {
+    const focusable =
+      'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    let opener: HTMLElement | null = null;
+
+    const isOpen = () => document.documentElement.classList.contains("has-open-menu");
+
+    const open = (from: HTMLElement) => {
+      opener = from;
+      panel.hidden = false;
+      backdrop.hidden = false;
+      /* The panel slides in from off-screen, so it has to be in the layout for
+         a frame before the class that moves it lands. */
+      void panel.getBoundingClientRect();
+      document.documentElement.classList.add("has-open-menu");
+      openers.forEach((button) => button.setAttribute("aria-expanded", "true"));
+      panel.querySelector<HTMLElement>(focusable)?.focus();
+    };
+
+    const close = () => {
+      if (!isOpen()) return;
+      document.documentElement.classList.remove("has-open-menu");
+      openers.forEach((button) => button.setAttribute("aria-expanded", "false"));
+      opener?.focus({ preventScroll: true });
+
+      /* Hidden only once the slide has finished, or the panel disappears
+         mid-animation. */
+      window.setTimeout(() => {
+        if (isOpen()) return;
+        panel.hidden = true;
+        backdrop.hidden = true;
+      }, 400);
+    };
+
+    openers.forEach((button) =>
+      button.addEventListener("click", () => (isOpen() ? close() : open(button))),
+    );
+    panel.querySelector("[data-drawer-close]")?.addEventListener("click", close);
+    backdrop.addEventListener("click", close);
+    panel.addEventListener("click", (event) => {
+      if ((event.target as HTMLElement).closest("a")) close();
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (!isOpen()) return;
+
+      if (event.key === "Escape") {
+        close();
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const items = [...panel.querySelectorAll<HTMLElement>(focusable)].filter(
+        (item) => item.offsetParent !== null,
+      );
+      if (!items.length) return;
+
+      const first = items[0];
+      const last = items[items.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+  }
+</script>

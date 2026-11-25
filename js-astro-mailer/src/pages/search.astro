@@ -1,0 +1,140 @@
+---
+import PageIntro from "@/components/PageIntro.astro";
+import SiteFooter from "@/components/SiteFooter.astro";
+import SiteHeader from "@/components/SiteHeader.astro";
+import Icon from "@/components/ui/Icon.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { siteConfig } from "@/config/site";
+---
+
+<BaseLayout title="Search" description={`Search the ${siteConfig.name} archive.`} noindex>
+  <SiteHeader />
+  <main id="content">
+    <div class="container">
+      <PageIntro
+        title="Search"
+        description="Search every issue by title, topic, number, or writer."
+      >
+        <form class="search-page-form" role="search" data-page-search>
+          <label class="sr-only" for="search-query">Search issues</label>
+          <div class="field">
+            <input
+              id="search-query"
+              class="field__input"
+              name="q"
+              type="search"
+              placeholder="Deliverability, interviews, 04…"
+              autocomplete="off"
+              enterkeyhint="search"
+              data-page-input
+            />
+          </div>
+          <button type="submit" class="btn">
+            <Icon name="search" size={15} />
+            Search
+          </button>
+        </form>
+      </PageIntro>
+    </div>
+
+    <section class="container section--tight" aria-label="Search results">
+      <p class="t-meta" role="status" aria-live="polite" data-page-status>Loading the archive…</p>
+      <div data-page-results></div>
+    </section>
+
+    <script is:inline>
+      (() => {
+        const form = document.querySelector("[data-page-search]");
+        const input = document.querySelector("[data-page-input]");
+        const results = document.querySelector("[data-page-results]");
+        const status = document.querySelector("[data-page-status]");
+        const runtime = window.mailerSearch;
+        if (!form || !input || !results || !status || !runtime) return;
+
+        const esc = runtime.escapeHtml;
+
+        const rowMarkup = (item) =>
+          '<a class="index__row" href="' +
+          esc(item.href) +
+          '"><span class="index__no">' +
+          esc(item.number) +
+          '</span><div class="index__main"><h2 class="index__title">' +
+          esc(item.title) +
+          '</h2><p class="index__excerpt">' +
+          esc(item.excerpt) +
+          '</p></div><span class="index__topic"><span class="chip" data-topic="' +
+          esc(item.topic.toLowerCase()) +
+          '">' +
+          esc(item.topic) +
+          '</span></span><p class="meta index__meta"><span>' +
+          esc(item.date) +
+          "</span></p></a>";
+
+        const render = async (query) => {
+          if (!query) {
+            const items = await runtime.load();
+            status.textContent = "Search " + items.length + " issues.";
+            results.innerHTML = "";
+            return;
+          }
+
+          const matches = await runtime.search(query);
+          status.textContent =
+            matches.length + (matches.length === 1 ? " result for " : " results for ") + query + ".";
+          results.innerHTML = matches.length
+            ? '<div class="index">' + matches.map(rowMarkup).join("") + "</div>"
+            : '<p class="t-body t-dim">Nothing matched. Try a topic, a writer, or an issue number.</p>';
+        };
+
+        /* The URL is the state: typing rewrites it, so a result page can be shared
+           and the back button returns to the previous query. */
+        const sync = (query, replace) => {
+          const url = new URL(window.location.href);
+          if (query) url.searchParams.set("q", query);
+          else url.searchParams.delete("q");
+          window.history[replace ? "replaceState" : "pushState"]({}, "", url);
+        };
+
+        const initial = new URLSearchParams(window.location.search).get("q") || "";
+        input.value = initial;
+        void render(initial.trim());
+
+        let timer;
+        input.addEventListener("input", () => {
+          window.clearTimeout(timer);
+          timer = window.setTimeout(() => {
+            const query = input.value.trim();
+            sync(query, true);
+            void render(query);
+          }, 160);
+        });
+
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const query = input.value.trim();
+          sync(query, false);
+          void render(query);
+        });
+
+        window.addEventListener("popstate", () => {
+          const query = new URLSearchParams(window.location.search).get("q") || "";
+          input.value = query;
+          void render(query.trim());
+        });
+      })();
+    </script>
+  </main>
+  <SiteFooter />
+</BaseLayout>
+
+
+
+<style>
+  .search-page-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    width: 100%;
+    max-width: 34rem;
+  }
+</style>

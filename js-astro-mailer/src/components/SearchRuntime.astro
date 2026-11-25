@@ -1,0 +1,60 @@
+---
+/**
+ * One search implementation for both entry points — the header dialog and the
+ * results page. The index is fetched once, on the first query, and cached for
+ * the life of the page.
+ */
+---
+
+<script is:inline>
+  (() => {
+    let indexPromise;
+
+    const load = () => {
+      indexPromise ??= fetch("/search-index.json")
+        .then((response) => (response.ok ? response.json() : []))
+        .catch(() => []);
+      return indexPromise;
+    };
+
+    /** Every term has to appear somewhere in the record — narrowing, not fuzzy. */
+    const search = async (query) => {
+      const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+      if (terms.length === 0) return [];
+
+      const items = await load();
+      return items.filter((item) => {
+        const haystack = [item.title, item.excerpt, item.topic, item.author, item.number]
+          .join(" ")
+          .toLowerCase();
+        return terms.every((term) => haystack.includes(term));
+      });
+    };
+
+    const escapeHtml = (value) =>
+      String(value).replace(
+        /[&<>"']/g,
+        (character) =>
+          ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+          })[character],
+      );
+
+    const resultMarkup = (item) => `
+      <a class="search-result" href="${escapeHtml(item.href)}">
+        <span class="search-result__title">${escapeHtml(item.title)}</span>
+        <span class="search-result__meta">
+          <span>No. ${escapeHtml(item.number)}</span>
+          <span>${escapeHtml(item.topic)}</span>
+          <span>${escapeHtml(item.date)}</span>
+        </span>
+      </a>
+    `;
+
+    window.mailerSearch = { load, search, escapeHtml, resultMarkup };
+  })();
+</script>

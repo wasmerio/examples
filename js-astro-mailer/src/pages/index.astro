@@ -1,0 +1,198 @@
+---
+import { getCollection } from "astro:content";
+import { Image } from "astro:assets";
+import IssueCard from "@/components/IssueCard.astro";
+import IssueIndex from "@/components/IssueIndex.astro";
+import IssueMeta from "@/components/IssueMeta.astro";
+import SectionHead from "@/components/SectionHead.astro";
+import SiteFooter from "@/components/SiteFooter.astro";
+import SiteHeader from "@/components/SiteHeader.astro";
+import SubscribeForm from "@/components/SubscribeForm.astro";
+import SubscribePanel from "@/components/SubscribePanel.astro";
+import TopicChip from "@/components/TopicChip.astro";
+import WriterCard from "@/components/WriterCard.astro";
+import Icon from "@/components/ui/Icon.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { siteConfig } from "@/config/site";
+import { topicMeta } from "@/config/topics";
+import {
+  allWriters,
+  byTopic,
+  issueHref,
+  issueNumber,
+  leadIssue,
+  publishedIssues,
+  topics,
+  formatDate,
+} from "@/lib/issues";
+
+const issues = publishedIssues(await getCollection("issues"));
+
+/*
+ * The front page is dealt from the top down: the lead takes the flagged issue
+ * (or the newest), two cards take the next two, and the ledger takes the rest.
+ * Nothing repeats between them.
+ */
+const lead = leadIssue(issues);
+const rest = issues.filter((issue) => issue.id !== lead?.id);
+/* `featured` can promote an older issue, so the badge has to check rather than
+   assume — a flagged back issue labelled "Latest" would simply be wrong. */
+const leadIsNewest = lead?.id === issues[0]?.id;
+const recent = rest.slice(0, 2);
+const ledger = rest.slice(2, 9);
+
+const writers = allWriters(issues);
+const topicCounts = topics
+  .map((topic) => ({ topic, count: byTopic(issues, topic).length }))
+  .filter((entry) => entry.count > 0);
+---
+
+<BaseLayout>
+  <SiteHeader />
+
+  <main id="content">
+    <section class="container" id="subscribe" aria-labelledby="masthead-title">
+      <div class="masthead">
+        <h1 class="t-display" id="masthead-title">{siteConfig.tagline}.</h1>
+        <p class="t-lead">{siteConfig.bio}</p>
+        <SubscribeForm id="masthead-email" />
+        <p class="meta masthead__facts">
+          <span>{issues.length} issues</span>
+          <span class="dot-sep" aria-hidden="true"></span>
+          <span>{siteConfig.cadence}</span>
+          <span class="dot-sep" aria-hidden="true"></span>
+          <a class="link" href="/archive/">Read the archive</a>
+        </p>
+      </div>
+    </section>
+
+    {
+      lead && (
+        <section class="container" aria-labelledby="lead-title">
+          <a class="lead" href={issueHref(lead)}>
+            <div class="lead__media">
+              <Image
+                src={lead.data.cover.src}
+                alt={lead.data.cover.alt}
+                widths={[480, 720, 1080]}
+                sizes="(min-width: 56rem) 34rem, 92vw"
+                loading="eager"
+                fetchpriority="high"
+              />
+            </div>
+
+            <div class="lead__body">
+              <p class="meta">
+                <span class="chip chip--current">
+                  {leadIsNewest ? "Latest issue" : "Featured"}
+                </span>
+                <span class="t-number">No. {issueNumber(lead)}</span>
+                <span class="dot-sep" aria-hidden="true" />
+                <span>{formatDate(lead.data.date)}</span>
+              </p>
+
+              <h2 class="t-h1" id="lead-title">{lead.data.title}</h2>
+              <p class="t-lead">{lead.data.excerpt}</p>
+
+              <IssueMeta issue={lead} showWriter />
+
+              <span class="arrow-link">
+                Read this issue
+                <Icon name="arrow-right" size={15} />
+              </span>
+            </div>
+          </a>
+        </section>
+      )
+    }
+
+    {
+      recent.length > 0 && (
+        <section class="container section" aria-labelledby="recent-title">
+          <SectionHead title="Also recently" id="recent-title" href="/archive/" linkLabel="All issues" />
+          <div class="cards cards--2">
+            {recent.map((issue) => (
+              <IssueCard issue={issue} headingLevel="h3" />
+            ))}
+          </div>
+        </section>
+      )
+    }
+
+    {
+      ledger.length > 0 && (
+        <section class="container section--tight" aria-labelledby="ledger-title">
+          <SectionHead
+            title="Back issues"
+            id="ledger-title"
+            note="Every issue, numbered, newest first."
+            href="/archive/"
+            linkLabel="Full archive"
+          />
+          <IssueIndex issues={ledger} />
+        </section>
+      )
+    }
+
+    <section class="container section" aria-labelledby="topics-title">
+      <SectionHead title="Read by topic" id="topics-title" href="/topics/" />
+      <div class="topic-grid">
+        {
+          topicCounts.map(({ topic, count }) => (
+            <div class="topic-tile">
+              <TopicChip topic={topic} count={count} />
+              <p class="t-small t-dim">{topicMeta[topic].summary}</p>
+            </div>
+          ))
+        }
+      </div>
+    </section>
+
+    {
+      writers.length > 0 && (
+        <section class="container section--tight" aria-labelledby="writers-title">
+          <SectionHead title="Who writes it" id="writers-title" href="/writers/" />
+          <div class="writer-grid">
+            {writers.slice(0, 4).map((writer) => (
+              <WriterCard writer={writer} />
+            ))}
+          </div>
+        </section>
+      )
+    }
+
+    <section class="container section">
+      <SubscribePanel id="home-subscribe" />
+    </section>
+  </main>
+
+  <SiteFooter />
+</BaseLayout>
+
+<style>
+  .topic-grid {
+    display: grid;
+    gap: 1.5rem;
+  }
+
+  .topic-tile {
+    display: grid;
+    gap: 0.6rem;
+    justify-items: start;
+    border-top: 1px solid var(--line);
+    padding-top: 1rem;
+  }
+
+  @media (min-width: 40rem) {
+    .topic-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.5rem 2.5rem;
+    }
+  }
+
+  @media (min-width: 68rem) {
+    .topic-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+</style>

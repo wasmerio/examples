@@ -1,0 +1,107 @@
+---
+import { getCollection } from "astro:content";
+import type { GetStaticPaths, Page } from "astro";
+import IssueCard from "@/components/IssueCard.astro";
+import IssueIndex from "@/components/IssueIndex.astro";
+import PageIntro from "@/components/PageIntro.astro";
+import Pagination from "@/components/Pagination.astro";
+import SiteFooter from "@/components/SiteFooter.astro";
+import SiteHeader from "@/components/SiteHeader.astro";
+import TopicChip from "@/components/TopicChip.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { topicMeta } from "@/config/topics";
+import {
+  byTopic,
+  publishedIssues,
+  topicSlug,
+  topics,
+  withTrailingSlash,
+  type Issue,
+  type Topic,
+} from "@/lib/issues";
+
+export const getStaticPaths = (async ({ paginate }) => {
+  const issues = publishedIssues(await getCollection("issues"));
+
+  return topics.flatMap((topic) =>
+    paginate(byTopic(issues, topic), {
+      pageSize: 12,
+      params: { topic: topicSlug(topic) },
+      props: { topic },
+    }),
+  );
+}) satisfies GetStaticPaths;
+
+interface Props {
+  topic: Topic;
+  page: Page<Issue>;
+}
+
+const { topic, page } = Astro.props;
+/* The first three run as cards so every topic opens with something to look at;
+   the rest fall into the same ledger the archive uses. The column count
+   follows the card count, so one or two cards fill the row rather than
+   leaving a gap. */
+const lead = page.currentPage === 1 ? page.data.slice(0, 3) : [];
+const rest = page.data.slice(lead.length);
+const leadColumns = lead.length >= 3 ? "cards--3" : lead.length === 2 ? "cards--2" : "cards--solo";
+
+const title = page.currentPage === 1 ? topic : `${topic} - Page ${page.currentPage}`;
+const prevUrl = withTrailingSlash(page.url.prev);
+const nextUrl = withTrailingSlash(page.url.next);
+---
+
+<BaseLayout
+  title={title}
+  description={topicMeta[topic].summary}
+  image={page.data[0]?.data.cover.src}
+  imageAlt={page.data[0]?.data.cover.alt}
+  prevUrl={prevUrl}
+  nextUrl={nextUrl}
+>
+  <SiteHeader />
+  <main id="content">
+    <div class="container">
+      <PageIntro
+        title={topic}
+        description={topicMeta[topic].summary}
+        note={`${page.total} ${page.total === 1 ? "issue" : "issues"}`}
+      >
+        <div class="chip-row">
+          {topics.map((item) => <TopicChip topic={item} class={item === topic ? "chip--current" : ""} />)}
+        </div>
+      </PageIntro>
+    </div>
+
+    <section class="container section--tight" aria-label={`${topic} issues`}>
+      {
+        lead.length > 0 && (
+          <div class:list={["cards", leadColumns]} style="margin-bottom:clamp(2rem,4vw,3rem)">
+            {lead.map((issue, index) => (
+              <IssueCard issue={issue} headingLevel="h2" eager={index < 3} />
+            ))}
+          </div>
+        )
+      }
+
+      {rest.length > 0 && <IssueIndex issues={rest} headingLevel="h2" />}
+
+      <Pagination
+        prevUrl={prevUrl}
+        nextUrl={nextUrl}
+        currentPage={page.currentPage}
+        lastPage={page.lastPage}
+        label={`${topic} pagination`}
+      />
+    </section>
+  </main>
+  <SiteFooter />
+</BaseLayout>
+
+<style>
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+</style>

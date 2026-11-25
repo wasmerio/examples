@@ -1,0 +1,176 @@
+---
+import Icon from "@/components/ui/Icon.astro";
+import SearchRuntime from "@/components/SearchRuntime.astro";
+import SiteDrawer from "@/components/SiteDrawer.astro";
+import { primaryNavigation, siteConfig } from "@/config/site";
+
+/**
+ * Wordmark, the routes that matter, search, colour mode, and the signup
+ * button. Everything else lives in the footer, which is what lets the bar look
+ * the same at 360px as it does at 1600px. Below the nav breakpoint the routes
+ * move into `SiteDrawer`.
+ */
+const path = Astro.url.pathname;
+const isCurrent = (href: string) => path === href || (href !== "/" && path.startsWith(href));
+---
+
+<header class="site-header" data-site-header>
+  <div class="container site-header__inner">
+    <a class="wordmark" href="/" aria-label={`${siteConfig.name} home`}>
+      {siteConfig.name}
+    </a>
+
+    <nav class="site-nav" aria-label="Primary">
+      {
+        primaryNavigation.map((item) => (
+          <a href={item.href} aria-current={isCurrent(item.href) ? "page" : undefined}>
+            {item.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="header-actions">
+      <button type="button" class="header-search" data-search-open>
+        <Icon name="search" size={15} />
+        <span>Search issues</span>
+        <kbd aria-hidden="true">/</kbd>
+      </button>
+
+      <button
+        type="button"
+        class="icon-btn header-search-icon"
+        aria-label="Search issues"
+        data-search-open
+      >
+        <Icon name="search" size={18} />
+      </button>
+
+      <button type="button" class="icon-btn" data-theme-toggle aria-label="Switch colour theme">
+        <Icon name="sun" size={18} class="theme-sun" />
+        <Icon name="moon" size={18} class="theme-moon" />
+      </button>
+
+      <a class="btn header-cta" href="/#subscribe">Subscribe</a>
+
+      <button
+        type="button"
+        class="icon-btn menu-btn"
+        aria-controls="mobile-menu"
+        aria-expanded="false"
+        data-drawer-open
+      >
+        <Icon name="menu" size={20} class="menu-open" />
+        <Icon name="close" size={20} class="menu-close" />
+        <span class="sr-only">Toggle menu</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<SiteDrawer />
+
+<dialog class="search-dialog" data-search-dialog aria-label={`Search ${siteConfig.name}`}>
+  <form class="search-field" action="/search/" method="get" role="search">
+    <Icon name="search" size={19} class="t-faint" />
+    <label class="sr-only" for="site-search">Search issues</label>
+    <input
+      id="site-search"
+      name="q"
+      type="search"
+      placeholder="Search issues, topics, writers…"
+      autocomplete="off"
+      enterkeyhint="search"
+      data-search-input
+    />
+    <button type="button" class="icon-btn" aria-label="Close search" data-search-close>
+      <Icon name="close" size={18} />
+    </button>
+  </form>
+  <p class="search-status" aria-live="polite" data-search-status>Type to search the archive.</p>
+  <div class="search-results" data-search-results></div>
+</dialog>
+
+<SearchRuntime />
+
+<script>
+  const header = document.querySelector<HTMLElement>("[data-site-header]");
+
+  /* The bar only grows a rule once the page has moved under it, and it only
+     hides once the page has scrolled past it — so a short page, or a rubber
+     band at the top, never makes it flicker. */
+  let lastY = window.scrollY;
+
+  const onScroll = () => {
+    if (!header) return;
+    const y = window.scrollY;
+    const past = y > header.offsetHeight;
+    /* An open drawer or dialog owns the viewport; moving the bar under it
+       would be motion nobody asked for. */
+    const modal = document.documentElement.classList.contains("has-open-menu");
+
+    header.classList.toggle("is-stuck", y > 4);
+    header.classList.toggle("is-hidden", past && !modal && y > lastY);
+    lastY = y;
+  };
+
+  onScroll();
+  window.addEventListener("scroll", onScroll, { passive: true });
+
+  const dialog = document.querySelector<HTMLDialogElement>("[data-search-dialog]");
+  const input = dialog?.querySelector<HTMLInputElement>("[data-search-input]");
+  const results = dialog?.querySelector<HTMLElement>("[data-search-results]");
+  const status = dialog?.querySelector<HTMLElement>("[data-search-status]");
+
+  const render = async () => {
+    const runtime = window.mailerSearch;
+    if (!input || !results || !status || !runtime) return;
+
+    const query = input.value.trim();
+    if (!query) {
+      const items = await runtime.load();
+      status.textContent = `Search ${items.length} issues by title, topic, number, or writer.`;
+      results.innerHTML = "";
+      return;
+    }
+
+    const matches = (await runtime.search(query)).slice(0, 8);
+    /* A slower query resolving after a faster one must not overwrite it. */
+    if (input.value.trim() !== query) return;
+
+    status.textContent = `${matches.length} ${matches.length === 1 ? "result" : "results"} for “${query}”.`;
+    results.innerHTML = matches.map(runtime.resultMarkup).join("");
+  };
+
+  const open = () => {
+    if (!dialog?.showModal || dialog.open) return;
+    dialog.showModal();
+    void render();
+    window.requestAnimationFrame(() => input?.focus());
+  };
+
+  document.querySelectorAll("[data-search-open]").forEach((button) => {
+    button.addEventListener("click", open);
+  });
+
+  dialog?.querySelector("[data-search-close]")?.addEventListener("click", () => dialog.close());
+  dialog?.addEventListener("click", (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+  input?.addEventListener("input", () => void render());
+
+  document.addEventListener("keydown", (event) => {
+    const target = event.target;
+    const editing =
+      target instanceof HTMLElement &&
+      (target.matches("input, textarea, select") || target.isContentEditable);
+    const command = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
+    const slash = event.key === "/" && !editing && !event.metaKey && !event.ctrlKey && !event.altKey;
+    if (!command && !slash) return;
+
+    event.preventDefault();
+    if (dialog?.open) dialog.close();
+    else open();
+  });
+</script>
+

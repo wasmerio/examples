@@ -1,0 +1,184 @@
+---
+import FeaturedProducts from "@/components/FeaturedProducts.astro";
+import config from "@/config/config.json";
+import { AddToCart } from "@/functional-components/cart/AddToCart";
+import ProductGallery from "@/functional-components/product/ProductGallery";
+import ShowTags from "@/functional-components/product/ShowTags";
+import Tabs from "@/functional-components/product/Tabs";
+import { VariantSelector } from "@/functional-components/product/VariantSelector";
+import SocialShare from "@/functional-components/SocialShare";
+import Base from "@/layouts/Base.astro";
+import { getListPage } from "@/lib/contentParser.astro";
+import { getProduct, getProductRecommendations } from "@/lib/shopify";
+
+const { slug } = Astro.params;
+const product = await getProduct(slug as string);
+
+const paymentSection = await getListPage(
+  "paymentSection",
+  "payments-and-delivery"
+);
+
+const { payment_methods, estimated_delivery } = paymentSection.data;
+
+if (!product) {
+  return Astro.redirect("/404");
+}
+
+const {
+  id,
+  title,
+  description,
+  descriptionHtml,
+  priceRange,
+  compareAtPriceRange,
+  images,
+  options,
+  variants,
+  tags,
+} = product;
+
+const relatedProducts = await getProductRecommendations(id);
+const defaultVariantId = variants.length > 0 ? variants[0].id : undefined;
+
+const { currencySymbol } = config.shopify;
+---
+
+<Base>
+  <section class="md:section-sm">
+    <div class="container">
+      <div class="row justify-center">
+        {/* right side contents */}
+        <div class="col-10 md:col-8 lg:col-6">
+          <ProductGallery client:only="react" images={images} />
+        </div>
+
+        {/* left side contents */}
+        <div class="col-10 md:col-8 lg:col-5 md:ml-7 py-6 lg:py-0">
+          <h1 class="text-3xl md:h2 mb-2 md:mb-6">{title}</h1>
+
+          <div class="flex gap-2 items-center">
+            <h4 class="text-text-light dark:text-darkmode-text-light max-md:h2">
+              {currencySymbol}
+              {priceRange?.minVariantPrice.amount}{" "}
+              {priceRange?.minVariantPrice?.currencyCode}
+            </h4>
+            {
+              parseFloat(compareAtPriceRange?.maxVariantPrice.amount) > 0 ? (
+                <s class="text-text-light max-md:h3 dark:text-darkmode-text-light">
+                  {currencySymbol}{" "}
+                  {compareAtPriceRange?.maxVariantPrice?.amount}{" "}
+                  {compareAtPriceRange?.maxVariantPrice?.currencyCode}
+                </s>
+              ) : (
+                ""
+              )
+            }
+          </div>
+
+          <div class="my-10 md:my-10 space-y-6 md:space-y-10">
+            <div>
+              {
+                options && (
+                  <VariantSelector
+                    client:only="react"
+                    options={options}
+                    variants={variants}
+                    images={images}
+                  />
+                )
+              }
+            </div>
+          </div>
+
+          <div class="flex gap-4 mt-8 md:mt-10 mb-6">
+            <AddToCart
+              client:only="react"
+              variants={product?.variants}
+              availableForSale={product?.availableForSale}
+              stylesClass={"btn max-md:btn-sm btn-primary"}
+              handle={null}
+              defaultVariantId={defaultVariantId}
+            />
+          </div>
+
+          <div class="mb-8 md:mb-10">
+            <p
+              class="p-2 max-md:text-sm rounded-md bg-light dark:bg-darkmode-light inline"
+            >
+              {estimated_delivery}
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <h5 class="max-md:text-base">Payment:</h5>
+            {
+              payment_methods?.map(
+                (payment: { name: string; image_url: string }) => (
+                  <img
+                    src={payment.image_url}
+                    alt={payment.name}
+                    width={44}
+                    height={32}
+                  />
+                )
+              )
+            }
+          </div>
+
+          <hr class="my-6 border border-border dark:border-border/40" />
+
+          <div class="flex gap-3 items-center mb-6">
+            <h5 class="max-md:text-base">Share:</h5>
+            <SocialShare
+              socialName={title}
+              className="social-icons"
+              pathname={Astro.url.pathname}
+              client:only="react"
+            />
+          </div>
+
+          {
+            tags.length > 0 && (
+              <div class="flex flex-wrap gap-3 items-center">
+                <h5 class="max-md:text-base">Tags:</h5>
+                <ShowTags client:only="react" tags={tags} />
+              </div>
+            )
+          }
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* Description of a product  */}
+  {
+    description && (
+      <section>
+        <div class="container">
+          <div class="row">
+            <div class="col-10 lg:col-11 mx-auto mt-12">
+              <Tabs client:only="react" descriptionHtml={descriptionHtml} />
+            </div>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
+  {/* Recommended Products section  */}
+  <section class="section">
+    <div class="container">
+      {
+        relatedProducts?.length > 0 && (
+          <>
+            <div class="text-center mb-6 md:mb-14">
+              <h2 class="mb-2">Related Products</h2>
+            </div>
+            <FeaturedProducts products={relatedProducts.slice(0, 4)} />
+          </>
+        )
+      }
+    </div>
+  </section>
+</Base>

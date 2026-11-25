@@ -2,7 +2,7 @@
 
 ## Demo
 
-https://hugo-notepadium.wasmer.app
+https://hugo-notepadium-qdzhang.wasmer.app
 
 ## About the theme
 

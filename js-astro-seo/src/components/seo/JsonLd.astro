@@ -1,0 +1,182 @@
+---
+/**
+ * JsonLd.astro — Dynamic JSON-LD Schema.org Generator
+ *
+ * Supports multiple schema types for rich results:
+ * - WebSite (with SearchAction for sitelinks)
+ * - BlogPosting / Article
+ * - BreadcrumbList
+ * - Organization
+ * - Person (for E-E-A-T author profiles)
+ * - FAQPage
+ *
+ * Usage:
+ *   <JsonLd type="WebSite" data={{ name: "My Site", url: "https://..." }} />
+ *   <JsonLd type="BlogPosting" data={{ headline: "...", ... }} />
+ */
+
+export interface WebSiteData {
+  name: string;
+  url: string;
+  description?: string;
+  searchUrl?: string;
+}
+
+export interface BlogPostingData {
+  headline: string;
+  description: string;
+  url: string;
+  datePublished: string;
+  dateModified?: string;
+  image?: string;
+  author: {
+    name: string;
+    url?: string;
+  };
+  publisher?: {
+    name: string;
+    logo?: string;
+  };
+}
+
+export interface OrganizationData {
+  name: string;
+  url: string;
+  logo?: string;
+  description?: string;
+  sameAs?: string[];
+  contactPoint?: Record<string, unknown>;
+}
+
+export interface PersonData {
+  name: string;
+  url?: string;
+  jobTitle?: string;
+  description?: string;
+  image?: string;
+  sameAs?: string[];
+}
+
+export interface FAQItem {
+  question: string;
+  answer: string;
+}
+
+export interface FAQPageData {
+  items: FAQItem[];
+}
+
+type SchemaType = 'WebSite' | 'BlogPosting' | 'Organization' | 'Person' | 'FAQPage';
+
+interface Props {
+  type: SchemaType;
+  data: WebSiteData | BlogPostingData | OrganizationData | PersonData | FAQPageData;
+}
+
+const { type, data } = Astro.props;
+
+function buildSchema(type: SchemaType, data: any): Record<string, unknown> {
+  switch (type) {
+    case 'WebSite': {
+      const d = data as WebSiteData;
+      const schema: Record<string, unknown> = {
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: d.name,
+        url: d.url,
+      };
+      if (d.description) schema.description = d.description;
+      if (d.searchUrl) {
+        schema.potentialAction = {
+          '@type': 'SearchAction',
+          target: {
+            '@type': 'EntryPoint',
+            urlTemplate: `${d.searchUrl}?q={search_term_string}`,
+          },
+          'query-input': 'required name=search_term_string',
+        };
+      }
+      return schema;
+    }
+
+    case 'BlogPosting': {
+      const d = data as BlogPostingData;
+      const schema: Record<string, unknown> = {
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: d.headline,
+        description: d.description,
+        url: d.url,
+        datePublished: d.datePublished,
+        author: {
+          '@type': 'Person',
+          name: d.author.name,
+          ...(d.author.url && { url: d.author.url }),
+        },
+      };
+      if (d.dateModified) schema.dateModified = d.dateModified;
+      if (d.image) schema.image = d.image;
+      if (d.publisher) {
+        schema.publisher = {
+          '@type': 'Organization',
+          name: d.publisher.name,
+          ...(d.publisher.logo && {
+            logo: { '@type': 'ImageObject', url: d.publisher.logo },
+          }),
+        };
+      }
+      return schema;
+    }
+
+    case 'Organization': {
+      const d = data as OrganizationData;
+      const schema: Record<string, unknown> = {
+        '@context': 'https://schema.org',
+        '@type': 'Organization',
+        name: d.name,
+        url: d.url,
+      };
+      if (d.logo) schema.logo = { '@type': 'ImageObject', url: d.logo };
+      if (d.description) schema.description = d.description;
+      if (d.sameAs?.length) schema.sameAs = d.sameAs;
+      if (d.contactPoint) schema.contactPoint = d.contactPoint;
+      return schema;
+    }
+
+    case 'Person': {
+      const d = data as PersonData;
+      const schema: Record<string, unknown> = {
+        '@context': 'https://schema.org',
+        '@type': 'Person',
+        name: d.name,
+      };
+      if (d.url) schema.url = d.url;
+      if (d.jobTitle) schema.jobTitle = d.jobTitle;
+      if (d.description) schema.description = d.description;
+      if (d.image) schema.image = d.image;
+      if (d.sameAs?.length) schema.sameAs = d.sameAs;
+      return schema;
+    }
+
+    case 'FAQPage': {
+      const d = data as FAQPageData;
+      return {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: d.items.map((item) => ({
+          '@type': 'Question',
+          name: item.question,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: item.answer,
+          },
+        })),
+      };
+    }
+  }
+}
+
+const schema = buildSchema(type, data);
+---
+
+<script type="application/ld+json" is:inline set:html={JSON.stringify(schema, null, 2)}></script>

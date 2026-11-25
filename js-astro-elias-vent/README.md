@@ -1,0 +1,94 @@
+<!-- wasmer:start -->
+## Deploy on Wasmer
+
+This folder is the [Elias Vent: Portfolio Template](https://github.com/agnilem/elias-vent-astro) Astro theme by agnilem, copied from commit `20cd1a83e7ac5aacb80ddb3eddff2b3ebb44a48b` so it can be deployed as a Wasmer Edge template.
+
+- **Demo:** https://astro-elias-vent.wasmer.app
+- **Deploy:** open the template on [wasmer.io/templates](https://wasmer.io/templates) and click **Deploy**, or run `wasmer deploy` in this folder. Wasmer installs with npm, runs the build script with Node 24 and serves the static `dist/` folder.
+- **Changed for Wasmer:**
+  - Added .nvmrc with Node 24, the Node version Wasmer builds with.
+- **Environment variables:** None.
+- **Credit:** theme by [agnilem](https://github.com/agnilem), MIT. The theme's license file is kept unchanged.
+<!-- wasmer:end -->
+
+<p align="center">
+  <a href="https://startfrom.co/?utm_source=github&utm_medium=readme&utm_campaign=elias-vent"><img alt="Elias Vent: A dark, motion-led portfolio template for Astro and Next.js. Free and MIT licensed, by Startfrom." src="./.github/assets/cover.jpg" width="100%"></a>
+</p>
+
+<p align="center">
+  <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-111111?style=flat-square"></a>
+  <img alt="Astro 7" src="https://img.shields.io/badge/Astro-7-111111?style=flat-square">
+  <img alt="Next.js 16" src="https://img.shields.io/badge/Next.js-16-111111?style=flat-square">
+  <img alt="Static output" src="https://img.shields.io/badge/output-static-111111?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="https://elias-vent.startfrom.co"><b>Astro demo</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://elias-vent-next.startfrom.co"><b>Next.js demo</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://startfrom.co/?utm_source=github&utm_medium=readme&utm_campaign=elias-vent"><b>Startfrom</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://buy.polar.sh/polar_cl_C7mCmNfCQK9xTynrq5u0t4I4CpMoRc5tN5UCB3mx56l?utm_source=github&utm_medium=readme&utm_campaign=elias-vent"><b>All Astro Themes</b></a>
+</p>
+
+# Elias Vent, a portfolio theme for Astro and Next.js
+
+A dark, motion-led portfolio theme for product and motion designers. Static output, no framework runtime: every interaction is a small vanilla TypeScript module. This folder is the Astro theme; the same site for Next.js is in [`next/`](next/).
+
+## Features
+
+- WebGL cylinder carousel in the hero: project covers curve on a cylinder with a liquid and chromatic shader that reacts to scroll speed. Falls back to plain images without WebGL.
+- Lenis smooth scrolling
+- Scroll-scrubbed word and block reveals, portrait parallax
+- Awards list with a cover image that follows the cursor
+- 3D flip cards, a looping ticker, a pinned services switcher, an image fly-in gallery
+- FAQ accordion, contact form with loading and success states
+- Liquid gradient shader in the footer
+- Case study pages generated from Markdown, with a "next project" link
+- 404 page with a spinning image ring
+- Honours `prefers-reduced-motion`: smooth scrolling, idle animation and reveals are switched off
+- Sora font, self-hosted through Fontsource
+
+## Getting started
+
+```sh
+npm install
+npm run dev      # http://localhost:4321
+npm run build    # outputs to dist/
+npm run preview  # serves dist/
+```
+
+## Editing content
+
+- `src/content/site.json` holds all site copy: name, tagline, navigation, socials, awards, principles, services, gallery, FAQ, contact text and the 404 ring images.
+- `src/content/projects/*.md` holds one file per case study. The frontmatter fields (title, category, order, role, timeline, year, overview, challenge, images) drive both the home carousel and `/projects/<file-name>`. Any Markdown body renders under the overview (the demo files leave it empty, matching the original).
+- Images live in `public/assets/`.
+- Colors, type scale and layout live in `src/styles/global.css`.
+
+The contact form has no backend. Point it at your form service in `src/scripts/fx/contact.ts`.
+
+Every behaviour (menu, carousel, reveals, accordion, form and so on) is a module in `src/scripts/`, loaded once from `src/layouts/Base.astro` through `src/scripts/entry.ts`.
+
+## Environment variables
+
+Both are off by default. Set them to `true` to enable.
+
+| Variable | Effect |
+| --- | --- |
+| `PUBLIC_VERCEL_ANALYTICS` | Loads Vercel Web Analytics and Speed Insights |
+| `PUBLIC_STORE_BADGE` | Shows the fixed store badge in the corner |
+
+## Next.js version
+
+The `next/` folder holds the same site built with Next.js 16 (App Router, React 19, static export). It renders the same markup, styles and behaviour, checked element by element against this build on every page. See [`next/README.md`](next/README.md) to run it on its own.
+
+`next/` is generated from this Astro source by `tools/astro-to-next.mjs` (markup) and `tools/collect-css.mjs` (styles); content and scripts are copied as they are. If you keep both, edit the Astro files and run `node tools/astro-to-next.mjs && node tools/collect-css.mjs`. If you only want Next.js, copy `next/` out and edit it directly.
+
+## Deploy
+
+The build is plain static files in `dist/`, so it runs on any static host. On Vercel or Netlify, import the repo and keep the defaults (build command `npm run build`, output `dist`). Update `site` in `astro.config.mjs` to your domain so canonical and Open Graph URLs are correct.
+
+## License and credits
+
+MIT, see `LICENSE`. Sora is by Jonathan Barnbrook and Julián Moncada, licensed under the SIL Open Font License 1.1. Placeholder images are for demo purposes only; replace them with your own work.

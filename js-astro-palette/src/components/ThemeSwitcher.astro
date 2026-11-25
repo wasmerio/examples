@@ -1,0 +1,374 @@
+---
+---
+
+<div class="theme-hint" id="theme-hint">
+  <span class="theme-hint-label" id="theme-hint-label">Light</span>
+</div>
+
+<div class="theme-overlay" id="theme-overlay" hidden>
+  <div class="theme-overlay-panel" role="dialog" aria-label="Theme switcher" aria-modal="true">
+    <div class="search-input-row">
+      <span class="search-prompt" aria-hidden="true">$</span>
+      <input id="theme-input" type="search" autocomplete="off" spellcheck="false" aria-label="Filter themes" />
+      <span class="search-caret" aria-hidden="true"></span>
+    </div>
+    <div class="theme-overlay-list" id="theme-overlay-list" role="listbox" aria-label="Themes">
+      <div class="theme-separator"><span>Dark</span></div>
+      <button type="button" role="option" data-value="ayu">Ayu Dark</button>
+      <button type="button" role="option" data-value="catppuccin">Catppuccin</button>
+      <button type="button" role="option" data-value="dracula">Dracula</button>
+      <button type="button" role="option" data-value="everforest">Everforest</button>
+      <button type="button" role="option" data-value="github-dark">GitHub Dark</button>
+      <button type="button" role="option" data-value="gruvbox">Gruvbox</button>
+      <button type="button" role="option" data-value="kanagawa">Kanagawa</button>
+      <button type="button" role="option" data-value="monokai">Monokai</button>
+      <button type="button" role="option" data-value="night-owl">Night Owl</button>
+      <button type="button" role="option" data-value="nord">Nord</button>
+      <button type="button" role="option" data-value="one-dark">One Dark</button>
+      <button type="button" role="option" data-value="oxocarbon">Oxocarbon</button>
+      <button type="button" role="option" data-value="palenight">Palenight</button>
+      <button type="button" role="option" data-value="poimandres">Poimandres</button>
+      <button type="button" role="option" data-value="rose-pine">Rose Pine</button>
+      <button type="button" role="option" data-value="solarized">Solarized</button>
+      <button type="button" role="option" data-value="terminal">Terminal</button>
+      <button type="button" role="option" data-value="tokyo-night">Tokyo Night</button>
+      <button type="button" role="option" data-value="vesper">Vesper</button>
+      <div class="theme-separator"><span>Light</span></div>
+      <button type="button" role="option" data-value="alucard">Alucard</button>
+      <button type="button" role="option" data-value="ayu-light">Ayu Light</button>
+      <button type="button" role="option" data-value="catppuccin-latte">Catppuccin Latte</button>
+      <button type="button" role="option" data-value="everforest-light">Everforest Light</button>
+      <button type="button" role="option" data-value="github-light">GitHub Light</button>
+      <button type="button" role="option" data-value="gruvbox-light">Gruvbox Light</button>
+      <button type="button" role="option" data-value="kanagawa-lotus">Kanagawa Lotus</button>
+      <button type="button" role="option" data-value="night-owl-light">Light Owl</button>
+      <button type="button" role="option" data-value="one-light">One Light</button>
+      <button type="button" role="option" data-value="oxocarbon-light">Oxocarbon Light</button>
+      <button type="button" role="option" data-value="rose-pine-dawn">Rose Pine Dawn</button>
+      <button type="button" role="option" data-value="solarized-light">Solarized Light</button>
+      <button type="button" role="option" data-value="tokyo-night-day">Tokyo Day</button>
+      <p class="search-empty" id="theme-empty" hidden>No matching themes</p>
+    </div>
+    <div class="theme-overlay-footer">
+      <span class="theme-overlay-actions">
+        <button class="theme-close-btn" type="button" id="theme-close-btn">esc</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { DEFAULT_PALETTE } from '../lib/palette';
+
+  let controller: AbortController | undefined;
+
+  function initThemeSwitcher(): void {
+    controller?.abort();
+    controller = new AbortController();
+    const { signal } = controller;
+
+    const overlay = document.getElementById('theme-overlay');
+    const list = document.getElementById('theme-overlay-list');
+    const hintLabel = document.getElementById('theme-hint-label');
+    const themeHint = document.getElementById('theme-hint');
+    const closeButton = document.getElementById('theme-close-btn');
+    const input = document.getElementById('theme-input') as HTMLInputElement | null;
+    const emptyMessage = document.getElementById('theme-empty');
+    if (!overlay || !list || !themeHint || !closeButton || !input || !emptyMessage) return;
+
+    const options: HTMLButtonElement[] = Array.from(list.querySelectorAll<HTMLButtonElement>("[role='option']"));
+    const separators: HTMLElement[] = Array.from(list.querySelectorAll<HTMLElement>('.theme-separator'));
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const saved = localStorage.getItem('site-palette') || '';
+    let committed = saved || getDefaultPalette();
+    // The option highlighted with the arrow keys or the mouse. Focus stays
+    // in the input so typing keeps working while navigating.
+    let cursor: HTMLButtonElement | undefined;
+
+    function getDefaultPalette(): string {
+      return media.matches ? DEFAULT_PALETTE.dark : DEFAULT_PALETTE.light;
+    }
+
+    function setPalette(value: string): void {
+      document.documentElement.setAttribute('data-palette', value || getDefaultPalette());
+    }
+
+    function updateUI(value: string): void {
+      const activeValue = value || getDefaultPalette();
+      for (const option of options) {
+        option.setAttribute('aria-selected', String(option.dataset.value === activeValue));
+      }
+      const active = options.find((option) => option.dataset.value === activeValue);
+      if (hintLabel && active) hintLabel.textContent = (active.textContent ?? '').trim();
+    }
+
+    function getVisibleOptions(): HTMLButtonElement[] {
+      return options.filter((option) => !option.hidden);
+    }
+
+    function filterOptions(query: string): void {
+      const needle = query.trim().toLowerCase();
+      for (const option of options) {
+        option.hidden = !(option.textContent ?? '').toLowerCase().includes(needle);
+      }
+      // Hide a Dark/Light heading when none of its themes match.
+      for (const separator of separators) {
+        let next = separator.nextElementSibling;
+        let hasVisibleOption = false;
+        while (next && !next.classList.contains('theme-separator')) {
+          if (next instanceof HTMLButtonElement && !next.hidden) hasVisibleOption = true;
+          next = next.nextElementSibling;
+        }
+        separator.hidden = !hasVisibleOption;
+      }
+      emptyMessage!.hidden = getVisibleOptions().length > 0;
+    }
+
+    function openOverlay(): void {
+      if (!overlay) return;
+      overlay.hidden = false;
+      document.body.style.overflow = 'hidden';
+      committed = localStorage.getItem('site-palette') || getDefaultPalette();
+      input!.value = '';
+      filterOptions('');
+      updateUI(committed);
+      // Start on the current theme, so Enter keeps it and the arrow keys
+      // move from it.
+      cursor = options.find((option) => option.dataset.value === committed);
+      cursor?.scrollIntoView({ block: 'nearest' });
+      // On touch screens, focusing the input opens the on-screen keyboard
+      // over the list; tapping the input row still focuses it.
+      if (window.matchMedia('(pointer: coarse)').matches) cursor?.focus();
+      else input!.focus();
+    }
+
+    function closeOverlay(): void {
+      if (!overlay) return;
+      overlay.hidden = true;
+      document.body.style.overflow = '';
+    }
+
+    function toggleOverlay(): void {
+      if (overlay?.hidden) openOverlay();
+      else closeOverlay();
+    }
+
+    function preview(option: HTMLButtonElement | undefined): void {
+      if (!option) return;
+      cursor = option;
+      setPalette(option.dataset.value ?? '');
+      updateUI(option.dataset.value ?? '');
+      option.scrollIntoView({ block: 'nearest' });
+    }
+
+    function commit(value: string): void {
+      setPalette(value);
+      localStorage.setItem('site-palette', value);
+      updateUI(value);
+      closeOverlay();
+    }
+
+    function revert(): void {
+      setPalette(committed);
+      updateUI(committed);
+      closeOverlay();
+    }
+
+    media.addEventListener('change', () => {
+      if (!localStorage.getItem('site-palette')) {
+        setPalette('');
+        updateUI('');
+      }
+    }, { signal });
+
+    options.forEach((option) => {
+      option.addEventListener('click', () => commit(option.dataset.value ?? ''), { signal });
+      option.addEventListener('mouseenter', () => preview(option), { signal });
+    });
+
+    input.addEventListener('input', () => {
+      filterOptions(input.value);
+      // Keep the highlighted theme while it still matches. Otherwise move the
+      // highlight to the first match, so Enter picks the theme that looks
+      // selected.
+      if (cursor && !cursor.hidden) return;
+      const firstMatch = getVisibleOptions()[0];
+      if (firstMatch) {
+        preview(firstMatch);
+      } else {
+        cursor = undefined;
+        setPalette(committed);
+        updateUI(committed);
+      }
+    }, { signal });
+    input.parentElement?.addEventListener('click', () => input.focus(), { signal });
+
+    document.addEventListener('keydown', (event) => {
+      if (overlay.hidden) return;
+      const visibleOptions = getVisibleOptions();
+      const cursorIndex = cursor ? visibleOptions.indexOf(cursor) : -1;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const step = event.key === 'ArrowDown' ? 1 : -1;
+        const startIndex = step === 1 ? 0 : visibleOptions.length - 1;
+        const targetIndex = cursorIndex >= 0
+          ? Math.min(visibleOptions.length - 1, Math.max(0, cursorIndex + step))
+          : startIndex;
+        preview(visibleOptions[targetIndex]);
+      } else if (event.key === 'Enter') {
+        if (document.activeElement === closeButton) return;
+        const focused = visibleOptions.find((option) => option === document.activeElement);
+        const target = focused ?? cursor ?? visibleOptions[0];
+        if (!target) return;
+        event.preventDefault();
+        commit(target.dataset.value ?? '');
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        revert();
+      } else if (event.key === 'Tab') {
+        // Trap focus inside the dialog while it is open.
+        const focusables: HTMLElement[] = [input, ...visibleOptions, closeButton];
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (!first || !last) return;
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    }, { signal });
+
+    if (localStorage.getItem('site-theme-hint-seen') === '1') {
+      themeHint.classList.add('is-seen');
+    }
+    themeHint.addEventListener('mouseenter', () => {
+      localStorage.setItem('site-theme-hint-seen', '1');
+      themeHint.classList.add('is-seen');
+    }, { once: true, signal });
+    themeHint.addEventListener('click', toggleOverlay, { signal });
+    closeButton.addEventListener('click', revert, { signal });
+    setPalette(saved);
+    updateUI(saved);
+  }
+
+  document.addEventListener('astro:page-load', initThemeSwitcher);
+</script>
+
+<style is:global>
+  .theme-hint {
+    position: fixed;
+    bottom: 1rem;
+    left: 1rem;
+    z-index: 30;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease;
+  }
+
+  .theme-hint::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border: 1px solid var(--accent);
+    border-radius: calc(var(--radius-md) + 4px);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .theme-hint:not(.is-seen)::after {
+    animation: theme-hint-pulse 3.6s ease-in-out infinite;
+  }
+
+  .theme-hint:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .theme-overlay-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.8rem 0.6rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--term-border) transparent;
+  }
+
+  .theme-overlay-list::-webkit-scrollbar { width: 5px; }
+  .theme-overlay-list::-webkit-scrollbar-thumb {
+    background: var(--term-border);
+    border-radius: 1px;
+  }
+
+  .theme-separator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.8rem;
+    margin-top: 0.3rem;
+    color: var(--term-muted);
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-weight: 700;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .theme-separator:first-child { margin-top: 0; }
+
+  .theme-overlay-list [hidden] { display: none; }
+
+  .theme-overlay-list button {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 0.35rem 0.8rem;
+    border: 0;
+    border-radius: 1px;
+    background: transparent;
+    color: var(--term-text);
+    font-family: inherit;
+    font-size: 0.82rem;
+    font-weight: 400;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+    line-height: 1.5;
+  }
+
+  .theme-overlay-list button:hover,
+  .theme-overlay-list button:focus-visible {
+    outline: none;
+    background: var(--term-active-bg);
+    color: var(--term-text);
+  }
+
+  .theme-overlay-list button[aria-selected="true"] {
+    background: var(--term-active-bg);
+    color: var(--term-text);
+    font-weight: 700;
+  }
+
+  @keyframes theme-hint-pulse {
+    0%, 70%, 100% { opacity: 0; transform: scale(1); }
+    78% { opacity: 0.45; transform: scale(1.06); }
+    88% { opacity: 0; transform: scale(1.13); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .theme-hint::after { display: none; }
+  }
+</style>

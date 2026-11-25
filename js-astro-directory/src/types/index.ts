@@ -1,0 +1,32 @@
+export interface Tool {
+    title: string;
+    body: string;
+    tag?: string;
+    url: string;
+    "date-added": string;
+    slug?: string;
+}
+
+export interface Category {
+    category: string;
+    title: string;
+    content: Tool[];
+}
+
+export interface ToolsConfig {
+    tools: Category[];
+}
+
+export interface MetadataEntry {
+    slug: string;
+    title?: string | undefined;
+    description?: string | undefined;
+    ogImage?: string | undefined;
+    twitterHandle?: string | undefined;
+    githubUrl?: string | undefined;
+    featured?: boolean | undefined;
+}
+
+export type MetadataMap = Record<string, MetadataEntry>;
+
+export type SlugMap = Record<string, string[]>;

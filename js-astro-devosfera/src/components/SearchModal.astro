@@ -1,0 +1,829 @@
+---
+/**
+ * SearchModal — A floating, interactive modal for site-wide searching.
+ * Utilizes Pagefind for fast, static indexing and searching capabilities.
+ * Includes visual elements like cursors glows, sparkles, and keyboard navigation.
+ */
+import "@pagefind/default-ui/css/ui.css";
+import { useTranslations } from "@/i18n/utils";
+
+const locale = Astro.currentLocale || "en";
+const t = useTranslations(locale);
+---
+
+<!-- Search Modal Overlay -->
+<div
+  id="search-modal"
+  class="search-modal-overlay"
+  role="dialog"
+  aria-modal="true"
+  aria-label={t("search.title")}
+>
+  <div class="search-modal-backdrop" data-search-close></div>
+  <div class="search-modal-container" data-modal-card>
+    <!-- Aurora orbs background -->
+    <div class="modal-aurora" aria-hidden="true">
+      <div class="modal-aurora-orb modal-aurora-orb-1"></div>
+      <div class="modal-aurora-orb modal-aurora-orb-2"></div>
+      <div class="modal-aurora-orb modal-aurora-orb-3"></div>
+    </div>
+    <!-- Cursor-follow glow -->
+    <div class="modal-cursor-glow" data-modal-glow aria-hidden="true"></div>
+    <!-- Sparkles -->
+    <div class="modal-sparkles" aria-hidden="true">
+      <div class="sparkle sparkle-1"></div>
+      <div class="sparkle sparkle-2"></div>
+      <div class="sparkle sparkle-3"></div>
+      <div class="sparkle sparkle-4"></div>
+      <div class="sparkle sparkle-5"></div>
+    </div>
+    <!-- Animated border glow -->
+    <div class="modal-border-glow" aria-hidden="true"></div>
+
+    <!-- Header -->
+    <div class="search-modal-header">
+      <div class="search-modal-title">
+        <span class="search-icon-ring">
+          <svg
+            class="size-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </span>
+        <span class="search-title-text">{t("search.title")}</span>
+      </div>
+      <div class="search-modal-shortcuts">
+        <kbd class="kbd-key">⌘</kbd>
+        <kbd class="kbd-key">K</kbd>
+        <span class="shortcuts-sep">·</span>
+        <kbd class="kbd-key">esc</kbd>
+        <span class="shortcuts-label">{t("search.close")}</span>
+      </div>
+      <button
+        class="search-modal-close"
+        data-search-close
+        aria-label={t("search.closeLabel")}
+      >
+        <svg
+          class="size-4"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Search body -->
+    <div class="search-modal-body">
+      <div
+        id="modal-pagefind-search"
+        class="premium-search"
+        style="--pagefind-ui-scale: 0.9;"
+        data-placeholder={t("search.placeholder")}
+        data-clear={t("search.close")}
+      ></div>
+      <!-- Empty state illustration -->
+      <div class="search-empty-state" data-search-empty>
+        <div class="empty-icon">
+          <svg
+            class="size-10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+        <p class="empty-text">{t("search.placeholder")}</p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="search-modal-footer">
+      <div class="footer-hint">
+        <span class="footer-icon">↵</span>
+        {t("search.open")}
+      </div>
+      <div class="footer-hint">
+        <span class="footer-icon">↑↓</span>
+        {t("search.navigate")}
+      </div>
+      <div class="footer-powered">
+        powered by <strong>pagefind</strong>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let cleanupHelper: AbortController | null = null;
+
+  function initSearchModal() {
+    // Clean up previous listeners if they exist to avoid duplication on page navigation
+    if (cleanupHelper) cleanupHelper.abort();
+    cleanupHelper = new AbortController();
+    const { signal } = cleanupHelper;
+
+    const modal = document.getElementById("search-modal");
+    if (!modal) return;
+
+    const card = modal.querySelector("[data-modal-card]") as HTMLElement;
+    const glow = modal.querySelector("[data-modal-glow]") as HTMLElement;
+    const emptyState = modal.querySelector(
+      "[data-search-empty]"
+    ) as HTMLElement;
+    let pagefindLoaded = false;
+
+    // Mouse follow glow on card
+    if (card && glow) {
+      card.addEventListener(
+        "mousemove",
+        (e: MouseEvent) => {
+          requestAnimationFrame(() => {
+            const rect = card.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            glow.style.setProperty("--gx", `${x}px`);
+            glow.style.setProperty("--gy", `${y}px`);
+            glow.style.opacity = "1";
+          });
+        },
+        { signal }
+      );
+
+      card.addEventListener(
+        "mouseleave",
+        () => {
+          glow.style.opacity = "0";
+        },
+        { signal }
+      );
+    }
+
+    function openModal() {
+      modal!.classList.add("active");
+      document.body.style.overflow = "hidden";
+
+      if (!pagefindLoaded) {
+        loadPagefind();
+        pagefindLoaded = true;
+      }
+
+      setTimeout(() => {
+        const input = modal!.querySelector<HTMLInputElement>(
+          ".pagefind-ui__search-input"
+        );
+        input?.focus();
+      }, 100);
+    }
+
+    function closeModal() {
+      modal!.classList.remove("active");
+      document.body.style.overflow = "";
+    }
+
+    // Keyboard navigation for search results
+    modal!.addEventListener(
+      "keydown",
+      (e: KeyboardEvent) => {
+        const isInputFocused = document.activeElement?.classList.contains(
+          "pagefind-ui__search-input"
+        );
+        const results = Array.from(
+          modal!.querySelectorAll<HTMLElement>(".pagefind-ui__result-link")
+        );
+        const activeElement = document.activeElement as HTMLElement;
+        const currentIndex = results.indexOf(activeElement);
+
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          if (isInputFocused && results.length > 0) {
+            results[0].focus();
+          } else if (currentIndex >= 0 && currentIndex < results.length - 1) {
+            results[currentIndex + 1].focus();
+          }
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          if (currentIndex > 0) {
+            results[currentIndex - 1].focus();
+          } else if (currentIndex === 0) {
+            const input = modal!.querySelector<HTMLInputElement>(
+              ".pagefind-ui__search-input"
+            );
+            input?.focus();
+          }
+        } else if (e.key === "Enter") {
+          if (currentIndex >= 0) {
+            activeElement.click();
+          }
+        }
+      },
+      { signal }
+    );
+
+    async function loadPagefind() {
+      const container = document.getElementById("modal-pagefind-search");
+      if (!container) return;
+
+      if (import.meta.env.DEV) {
+        container.innerHTML = `
+          <div class="bg-muted/75 rounded-lg p-4 space-y-3 border border-accent/10">
+            <p class="text-sm"><strong>⚠ DEV mode</strong> — Build the project first to enable search.</p>
+            <code class="block bg-black text-white text-xs px-3 py-2 rounded-lg font-mono">pnpm run build</code>
+          </div>`;
+      }
+
+      const onIdle =
+        window.requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1));
+      onIdle(async () => {
+        if (signal.aborted) return;
+
+        // Ensure Pagefind UI does not re-initialize on the same element
+        if (container.querySelector(".pagefind-ui")) return;
+
+        // @ts-expect-error — Missing types for @pagefind/default-ui package.
+        const { PagefindUI } = await import("@pagefind/default-ui");
+
+        // Navigation may have occurred while the module was loading (first load, uncached)
+        if (signal.aborted || container.querySelector(".pagefind-ui")) return;
+
+        const placeholder = container.getAttribute("data-placeholder") || "";
+        const clear = container.getAttribute("data-clear") || "";
+
+        new PagefindUI({
+          element: "#modal-pagefind-search",
+          showImages: false,
+          showSubResults: true,
+          translations: {
+            placeholder,
+            clear_search: clear,
+          },
+        });
+
+        // Hide empty state when user types
+        const input = modal!.querySelector<HTMLInputElement>(
+          ".pagefind-ui__search-input"
+        );
+        if (input && emptyState) {
+          input.addEventListener(
+            "input",
+            () => {
+              // Ensure we check value to toggle empty state
+              emptyState.style.display = input.value.trim() ? "none" : "";
+            },
+            { signal }
+          );
+        }
+
+        // Refocus input if modal is open (essential for first load)
+        if (modal!.classList.contains("active")) {
+          setTimeout(() => {
+            input?.focus();
+          }, 200);
+        }
+      });
+    }
+
+    // Close triggers
+    modal.querySelectorAll("[data-search-close]").forEach(el => {
+      el.addEventListener("click", closeModal, { signal });
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener(
+      "keydown",
+      (e: KeyboardEvent) => {
+        if (e.key === "Escape" && modal.classList.contains("active")) {
+          e.preventDefault();
+          closeModal();
+        }
+      },
+      { signal }
+    );
+
+    document.addEventListener(
+      "keydown",
+      (e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+          e.preventDefault();
+          if (modal.classList.contains("active")) {
+            closeModal();
+          } else {
+            openModal();
+          }
+        }
+      },
+      { signal }
+    );
+
+    document.querySelectorAll("[data-search-trigger]").forEach(el => {
+      el.addEventListener(
+        "click",
+        (e: Event) => {
+          e.preventDefault();
+          openModal();
+        },
+        { signal }
+      );
+    });
+
+    modal.addEventListener(
+      "click",
+      (e: Event) => {
+        const target = e.target as HTMLElement;
+        if (target.closest(".pagefind-ui__result-link")) {
+          closeModal();
+        }
+      },
+      { signal }
+    );
+  }
+
+  // Initialize on load and on view transitions navigation
+  document.addEventListener("astro:page-load", initSearchModal);
+</script>
+
+<style>
+  /* ===== Overlay ===== */
+  .search-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: min(10vh, 5rem);
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 0.25s ease,
+      visibility 0.25s ease;
+  }
+
+  .search-modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  /* ===== Backdrop ===== */
+  .search-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: color-mix(in srgb, var(--background) 80%, transparent);
+  }
+
+  /* ===== Container ===== */
+  .search-modal-container {
+    position: relative;
+    width: 94%;
+    max-width: 680px;
+    max-height: 78vh;
+    display: flex;
+    flex-direction: column;
+    border-radius: 1.25rem;
+    border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
+    background: color-mix(in srgb, var(--foreground) 3%, var(--background));
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 5%, transparent),
+      0 4px 12px color-mix(in srgb, var(--background) 40%, transparent),
+      0 20px 60px -12px color-mix(in srgb, var(--background) 70%, transparent),
+      0 0 100px -20px color-mix(in srgb, var(--accent) 12%, transparent);
+    transform: scale(0.95) translateY(-12px);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .search-modal-overlay.active .search-modal-container {
+    transform: scale(1) translateY(0);
+  }
+
+  /* ===== Aurora orbs ===== */
+  .modal-aurora {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    border-radius: inherit;
+    z-index: 0;
+  }
+
+  .modal-aurora-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(70px);
+    opacity: 0.6;
+  }
+
+  .search-modal-overlay.active .modal-aurora-orb {
+    will-change: transform;
+  }
+
+  .modal-aurora-orb-1 {
+    width: 280px;
+    height: 280px;
+    top: -40%;
+    left: -15%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--accent) 30%, transparent),
+      transparent 70%
+    );
+    animation: modal-orb-1 6s ease-in-out infinite alternate;
+  }
+
+  .modal-aurora-orb-2 {
+    width: 220px;
+    height: 220px;
+    top: 20%;
+    right: -10%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--border) 25%, transparent),
+      transparent 70%
+    );
+    animation: modal-orb-2 8s ease-in-out infinite alternate;
+  }
+
+  .modal-aurora-orb-3 {
+    width: 180px;
+    height: 180px;
+    bottom: -30%;
+    left: 35%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--accent) 18%, transparent),
+      transparent 70%
+    );
+    animation: modal-orb-3 10s ease-in-out infinite alternate;
+  }
+
+  @keyframes modal-orb-1 {
+    0% {
+      transform: translate(0, 0) scale(1);
+    }
+    100% {
+      transform: translate(50px, 30px) scale(1.3);
+    }
+  }
+  @keyframes modal-orb-2 {
+    0% {
+      transform: translate(0, 0) scale(1);
+    }
+    100% {
+      transform: translate(-40px, 20px) scale(1.2);
+    }
+  }
+  @keyframes modal-orb-3 {
+    0% {
+      transform: translate(0, 0) scale(1);
+    }
+    100% {
+      transform: translate(30px, -20px) scale(1.15);
+    }
+  }
+
+  /* ===== Cursor glow ===== */
+  .modal-cursor-glow {
+    position: absolute;
+    width: 350px;
+    height: 350px;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--accent) 15%, transparent),
+      color-mix(in srgb, var(--accent) 5%, transparent) 40%,
+      transparent 70%
+    );
+    filter: blur(40px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    transform: translate(
+      calc(var(--gx, 0px) - 175px),
+      calc(var(--gy, 0px) - 175px)
+    );
+    z-index: 0;
+  }
+
+  .search-modal-overlay.active .modal-cursor-glow {
+    will-change: transform;
+  }
+
+  /* ===== Sparkles ===== */
+  .modal-sparkles {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+    border-radius: inherit;
+  }
+
+  .sparkle {
+    position: absolute;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--accent) 50%, transparent);
+    opacity: 0;
+    animation: sparkle-pulse 3s ease-in-out infinite;
+  }
+
+  .sparkle-1 {
+    top: 12%;
+    left: 8%;
+    animation-delay: 0s;
+  }
+  .sparkle-2 {
+    top: 25%;
+    right: 12%;
+    animation-delay: 0.6s;
+  }
+  .sparkle-3 {
+    bottom: 30%;
+    left: 20%;
+    animation-delay: 1.2s;
+  }
+  .sparkle-4 {
+    top: 8%;
+    right: 25%;
+    animation-delay: 1.8s;
+  }
+  .sparkle-5 {
+    bottom: 15%;
+    right: 8%;
+    animation-delay: 2.4s;
+  }
+
+  @keyframes sparkle-pulse {
+    0%,
+    100% {
+      opacity: 0;
+      transform: scale(0);
+    }
+    50% {
+      opacity: 0.8;
+      transform: scale(1);
+    }
+  }
+
+  /* ===== Animated border glow ===== */
+  .modal-border-glow {
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 0;
+    background: conic-gradient(
+      from var(--border-angle, 0deg),
+      transparent 0%,
+      color-mix(in srgb, var(--accent) 25%, transparent) 10%,
+      transparent 20%,
+      transparent 80%,
+      color-mix(in srgb, var(--accent) 15%, transparent) 90%,
+      transparent 100%
+    );
+    mask:
+      linear-gradient(black, black) content-box,
+      linear-gradient(black, black);
+    -webkit-mask:
+      linear-gradient(black, black) content-box,
+      linear-gradient(black, black);
+    mask-composite: exclude;
+    -webkit-mask-composite: xor;
+    padding: 1px;
+    animation: border-rotate 4s linear infinite;
+  }
+
+  @keyframes border-rotate {
+    0% {
+      --border-angle: 0deg;
+    }
+    100% {
+      --border-angle: 360deg;
+    }
+  }
+
+  @property --border-angle {
+    syntax: "<angle>";
+    inherits: false;
+    initial-value: 0deg;
+  }
+
+  /* ===== Header ===== */
+  .search-modal-header {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.9rem 1.25rem;
+    border-bottom: 1px solid
+      color-mix(
+        in srgb,
+        var(--accent) 8%,
+        color-mix(in srgb, var(--foreground) 6%, transparent)
+      );
+    background: color-mix(in srgb, var(--background) 40%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .search-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .search-icon-ring {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 0.375rem;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  .search-title-text {
+    background: linear-gradient(135deg, var(--foreground), var(--accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .search-modal-shortcuts {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+    color: color-mix(in srgb, var(--foreground) 35%, transparent);
+  }
+
+  .kbd-key {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    padding: 0.05rem 0.3rem;
+    font-size: 0.6rem;
+    font-family: inherit;
+    border-radius: 0.25rem;
+    border: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+    background: color-mix(in srgb, var(--foreground) 5%, transparent);
+    color: color-mix(in srgb, var(--foreground) 50%, transparent);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--background) 30%, transparent);
+  }
+
+  .shortcuts-sep {
+    margin: 0 0.15rem;
+    opacity: 0.3;
+  }
+
+  .shortcuts-label {
+    margin-left: 0.1rem;
+  }
+
+  .search-modal-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.625rem;
+    height: 1.625rem;
+    border-radius: 0.375rem;
+    color: color-mix(in srgb, var(--foreground) 40%, transparent);
+    transition: all 0.2s ease;
+    margin-left: 0.25rem;
+  }
+
+  .search-modal-close:hover {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 15%, transparent);
+  }
+
+  /* ===== Body ===== */
+  .search-modal-body {
+    position: relative;
+    z-index: 2;
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem 1.5rem 1.5rem;
+  }
+
+  /* Scrollbar */
+  .search-modal-body::-webkit-scrollbar {
+    width: 5px;
+  }
+  .search-modal-body::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .search-modal-body::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    border-radius: 10px;
+  }
+
+  /* ===== Empty state ===== */
+  .search-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 2rem 1rem;
+    text-align: center;
+  }
+
+  .empty-icon {
+    color: color-mix(in srgb, var(--accent) 30%, transparent);
+    animation: empty-float 3s ease-in-out infinite;
+  }
+
+  @keyframes empty-float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-6px);
+    }
+  }
+
+  .empty-text {
+    font-size: 0.825rem;
+    color: color-mix(in srgb, var(--foreground) 35%, transparent);
+    max-width: 280px;
+    line-height: 1.5;
+  }
+
+  /* ===== Footer ===== */
+  .search-modal-footer {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.6rem 1.25rem;
+    border-top: 1px solid
+      color-mix(
+        in srgb,
+        var(--accent) 6%,
+        color-mix(in srgb, var(--foreground) 5%, transparent)
+      );
+    background: color-mix(in srgb, var(--background) 50%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    font-size: 0.65rem;
+    color: color-mix(in srgb, var(--foreground) 30%, transparent);
+  }
+
+  .footer-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .footer-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.125rem;
+    padding: 0 0.2rem;
+    font-size: 0.6rem;
+    border-radius: 0.2rem;
+    border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+    background: color-mix(in srgb, var(--foreground) 4%, transparent);
+  }
+
+  .footer-powered {
+    margin-left: auto;
+  }
+
+  .footer-powered strong {
+    color: var(--accent);
+    font-weight: 600;
+  }
+</style>

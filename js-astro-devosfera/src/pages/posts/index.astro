@@ -1,0 +1,466 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+import Breadcrumb from "@/components/Breadcrumb.astro";
+import AuroraHero from "@/components/AuroraHero.astro";
+import Card from "@/components/Card.astro";
+import "@pagefind/default-ui/css/ui.css";
+import type { ContentEntry } from "@/utils/contentEntry";
+import getSortedPosts from "@/utils/getSortedPosts";
+import postFilter from "@/utils/postFilter";
+import { slugifyStr } from "@/utils/slugify";
+import { SITE } from "@/config";
+import { useTranslations } from "@/i18n/utils";
+
+const locale = Astro.currentLocale || "en";
+const t = useTranslations(locale);
+
+const isMatchingLocale = (id: string) =>
+  id.startsWith(`${locale}/`) || (locale === "en" && !id.startsWith("es/"));
+
+const [blogPosts, galleryPosts] = await Promise.all([
+  getCollection(
+    "blog",
+    entry => postFilter(entry) && isMatchingLocale(entry.id)
+  ),
+  SITE.showGalleries && SITE.showGalleriesInIndex
+    ? getCollection(
+        "galleries",
+        entry => postFilter(entry) && isMatchingLocale(entry.id)
+      )
+    : Promise.resolve([]),
+]);
+const posts = getSortedPosts([...blogPosts, ...galleryPosts]);
+const totalPosts = posts.length;
+
+const tagMap = new Map<string, { label: string; count: number }>();
+for (const post of posts) {
+  if (!("tags" in post.data) || !post.data.tags) continue;
+  const seenSlugs = new Set<string>();
+  for (const rawTag of post.data.tags) {
+    const slug = slugifyStr(rawTag);
+    if (seenSlugs.has(slug)) continue;
+    seenSlugs.add(slug);
+    const existing = tagMap.get(slug);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      tagMap.set(slug, { label: rawTag, count: 1 });
+    }
+  }
+}
+
+const filterTags = Array.from(tagMap.entries())
+  .map(([slug, info]) => ({ slug, ...info }))
+  .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+  .slice(0, 10);
+
+const pageSize = SITE.postPerPage || 12;
+
+const metaTitle = `${t("posts.title")} | ${SITE.title}`;
+const metaDesc = t("posts.desc");
+---
+
+<Layout title={metaTitle} description={metaDesc}>
+  <Header />
+  <Breadcrumb />
+  <main id="main-content" class="app-layout pb-4">
+    <!-- Hero -->
+    <AuroraHero title={t("posts.title")} description={t("posts.desc")}>
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <span class="hero-badge">
+          {totalPosts} {t("posts.count")}
+        </span>
+      </div>
+    </AuroraHero>
+
+    <!-- Posts Toolbar -->
+    <div class="posts-toolbar mb-8">
+      <div class="posts-search-wrapper">
+        <div
+          id="posts-pagefind"
+          class="premium-search"
+          data-placeholder={t("search.placeholder")}
+          data-clear={t("search.close")}
+        ></div>
+      </div>
+
+      {filterTags.length > 0 && (
+        <div
+          data-tag-filter-bar
+          class="flex flex-wrap items-center gap-2"
+          role="group"
+          aria-label={t("tags.title")}
+        >
+          <button
+            type="button"
+            class="tag-filter-chip active"
+            data-tag-filter="all"
+            aria-pressed="true"
+          >
+            {t("posts.allTags")}
+          </button>
+          {filterTags.map(tag => (
+            <button
+              type="button"
+              class="tag-filter-chip"
+              data-tag-filter={tag.slug}
+              aria-pressed="false"
+            >
+              #{tag.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+
+    <!-- Posts Grid -->
+    <div
+      data-default-posts-container
+      class="w-full"
+      data-page-size={pageSize}
+      data-showing-label={t("posts.showing")}
+      data-of-label={t("posts.of")}
+    >
+      {posts.length === 0 ? (
+        <div class="empty-state">
+          <div class="empty-icon-wrapper">
+            <svg
+              class="size-12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="9" y1="15" x2="15" y2="15" />
+            </svg>
+          </div>
+          <h3 class="empty-title">{t("posts.emptyTitle")}</h3>
+          <p class="empty-desc">{t("posts.emptyDesc")}</p>
+        </div>
+      ) : (
+        <>
+          <ul class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {posts.map((data: ContentEntry, index) => (
+              <Card
+                {...data}
+                loading={index < 3 ? "eager" : "lazy"}
+                fetchpriority={index < 3 ? "high" : "auto"}
+              />
+            ))}
+          </ul>
+
+          <div
+            data-load-more-wrap
+            class:list={[
+              "mt-10 flex flex-col items-center gap-3",
+              { hidden: posts.length <= pageSize },
+            ]}
+          >
+            <p
+              data-visible-count
+              class="font-firacode text-xs text-foreground/55 select-none"
+            >
+              {t("posts.showing")} {Math.min(pageSize, posts.length)}{" "}
+              {t("posts.of")} {posts.length}
+            </p>
+            <button
+              type="button"
+              data-load-more-btn
+              class="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-accent/25 bg-accent/10 px-6 py-2.5 font-firacode text-xs font-semibold tracking-wider text-accent uppercase transition-all duration-200 hover:border-accent/50 hover:bg-accent/20"
+            >
+              {t("posts.loadMore")}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  </main>
+
+  <Footer />
+</Layout>
+
+<script>
+  let cleanupController: AbortController | null = null;
+
+  function initPostsPage() {
+    if (cleanupController) cleanupController.abort();
+    cleanupController = new AbortController();
+    const { signal } = cleanupController;
+
+    const defaultContainer = document.querySelector<HTMLElement>(
+      "[data-default-posts-container]"
+    );
+    const filterBar = document.querySelector<HTMLElement>(
+      "[data-tag-filter-bar]"
+    );
+    const loadMoreWrap = document.querySelector<HTMLElement>(
+      "[data-load-more-wrap]"
+    );
+    const visibleCountEl = document.querySelector<HTMLElement>(
+      "[data-visible-count]"
+    );
+    const loadMoreBtn = document.querySelector<HTMLButtonElement>(
+      "[data-load-more-btn]"
+    );
+    const cards = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-post-card]")
+    );
+
+    const pageSize = Math.max(
+      1,
+      Number(defaultContainer?.dataset.pageSize) || 12
+    );
+    const showingLabel = defaultContainer?.dataset.showingLabel || "Showing";
+    const ofLabel = defaultContainer?.dataset.ofLabel || "of";
+
+    let activeTag = "all";
+    let visibleLimit = pageSize;
+
+    function updateCards() {
+      if (cards.length === 0) return;
+
+      const matchingCards = cards.filter(card => {
+        if (activeTag === "all") return true;
+        const cardTags = (card.dataset.tags || "").split(",").filter(Boolean);
+        return cardTags.includes(activeTag);
+      });
+
+      const visibleSet = new Set(matchingCards.slice(0, visibleLimit));
+      cards.forEach(card => {
+        card.style.display = visibleSet.has(card) ? "" : "none";
+      });
+
+      const shown = Math.min(visibleLimit, matchingCards.length);
+      const total = matchingCards.length;
+
+      if (visibleCountEl) {
+        visibleCountEl.textContent = `${showingLabel} ${shown} ${ofLabel} ${total}`;
+      }
+      if (loadMoreWrap) {
+        loadMoreWrap.classList.toggle("hidden", total === 0 || shown >= total);
+      }
+    }
+
+    if (filterBar) {
+      const filterBtns = Array.from(
+        filterBar.querySelectorAll<HTMLButtonElement>("[data-tag-filter]")
+      );
+      filterBtns.forEach(btn => {
+        btn.addEventListener(
+          "click",
+          () => {
+            activeTag = btn.dataset.tagFilter || "all";
+            visibleLimit = pageSize;
+            filterBtns.forEach(b => {
+              const isSelected = b === btn;
+              b.classList.toggle("active", isSelected);
+              b.setAttribute("aria-pressed", String(isSelected));
+            });
+            updateCards();
+          },
+          { signal }
+        );
+      });
+    }
+
+    if (loadMoreBtn) {
+      loadMoreBtn.addEventListener(
+        "click",
+        () => {
+          visibleLimit += pageSize;
+          updateCards();
+        },
+        { signal }
+      );
+    }
+
+    updateCards();
+
+    // Initialize Pagefind local search
+    const container = document.querySelector("#posts-pagefind");
+    if (!container || container.childElementCount > 0) return;
+
+    const onIdle = window.requestIdleCallback || (cb => setTimeout(cb, 1));
+    onIdle(async () => {
+      if (signal.aborted) return;
+      if (container.childElementCount > 0) return;
+
+      // @ts-expect-error PagefindUI does not export ESM compatible types in this dynamic import
+      const { PagefindUI } = await import("@pagefind/default-ui");
+
+      // Navigation may have occurred while the module was loading (first load, uncached)
+      if (signal.aborted || container.childElementCount > 0) return;
+
+      if (import.meta.env.DEV) {
+        container.innerHTML = `
+          <div class="bg-muted/75 rounded p-4 text-sm mb-4 border border-border">
+            <p><strong>Dev Mode:</strong> The search will attempt to use the latest built index. If you don't see results, run <code>pnpm run build</code> first.</p>
+          </div>
+        `;
+      }
+
+      const placeholder = container.getAttribute("data-placeholder") || "";
+      const clear = container.getAttribute("data-clear") || "";
+
+      new PagefindUI({
+        element: "#posts-pagefind",
+        showImages: false,
+        showSubResults: true,
+        translations: {
+          placeholder,
+          clear_search: clear,
+        },
+      });
+
+      // Toggle default posts grid & tag filter bar visibility when typing
+      const input = container.querySelector<HTMLInputElement>(
+        ".pagefind-ui__search-input"
+      );
+
+      if (input && defaultContainer) {
+        const toggleVisibility = () => {
+          const hasValue = input.value.trim().length > 0;
+          defaultContainer.style.display = hasValue ? "none" : "";
+          if (filterBar) filterBar.style.display = hasValue ? "none" : "";
+        };
+
+        input.addEventListener("input", toggleVisibility, { signal });
+
+        container.addEventListener(
+          "click",
+          e => {
+            if (
+              (e.target as HTMLElement).closest(".pagefind-ui__search-clear")
+            ) {
+              requestAnimationFrame(() => toggleVisibility());
+            }
+          },
+          { signal }
+        );
+      }
+
+      // Intercept Global Cmd+K / Ctrl+K to focus inline search instead of Modal
+      const handleCmdK = (e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+          e.preventDefault();
+          e.stopPropagation();
+          if (input) {
+            input.focus();
+            input.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }
+      };
+
+      // Use capture mode to intercept before the global modal listener
+      document.addEventListener("keydown", handleCmdK, {
+        signal,
+        capture: true,
+      });
+    });
+  }
+
+  document.addEventListener("astro:page-load", initPostsPage);
+</script>
+
+<style>
+  /* Toolbar & Search Styles */
+  .posts-toolbar {
+    position: relative;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  /* Tag Filter Chips */
+  .tag-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.8rem;
+    border-radius: 999px;
+    font-family: var(--font-firacode, monospace);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: color-mix(in srgb, var(--foreground) 70%, transparent);
+    border: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+    background: color-mix(in srgb, var(--muted) 15%, transparent);
+    cursor: pointer;
+    transition:
+      color 0.2s ease,
+      border-color 0.2s ease,
+      background-color 0.2s ease;
+  }
+
+  .tag-filter-chip:hover {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+
+  .tag-filter-chip.active {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    font-weight: 600;
+  }
+
+  /* Empty State */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+    border-radius: 1.5rem;
+    border: 2px dashed color-mix(in srgb, var(--border) 40%, transparent);
+    background: color-mix(in srgb, var(--background) 50%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .empty-icon-wrapper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 5rem;
+    height: 5rem;
+    border-radius: 1.25rem;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    color: var(--accent);
+    margin-bottom: 1.5rem;
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent),
+      0 10px 30px -10px color-mix(in srgb, var(--accent) 25%, transparent);
+    animation: empty-float 4s ease-in-out infinite alternate;
+  }
+
+  @keyframes empty-float {
+    0% {
+      transform: translateY(0);
+    }
+    100% {
+      transform: translateY(-8px);
+    }
+  }
+
+  .empty-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--foreground);
+    margin-bottom: 0.5rem;
+  }
+
+  .empty-desc {
+    font-size: 0.95rem;
+    color: var(--muted-foreground);
+    max-width: 300px;
+    margin: 0 auto;
+  }
+</style>

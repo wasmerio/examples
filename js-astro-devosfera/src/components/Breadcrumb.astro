@@ -1,0 +1,350 @@
+---
+import IconChevronLeft from "@/assets/icons/IconChevronLeft.svg";
+import { SITE } from "@/config";
+import { buildBreadcrumbItems } from "@/utils/breadcrumbs";
+import { useTranslations } from "@/i18n/utils";
+
+type Props = {
+  withBackButton?: boolean;
+};
+
+const { withBackButton = false } = Astro.props as Props;
+
+const locale = Astro.currentLocale || SITE.lang || "en";
+const t = useTranslations(locale);
+
+const breadcrumbs = buildBreadcrumbItems(Astro.url.pathname, {
+  locale,
+  compactNumericPagination: true,
+});
+
+const currentPageLabel =
+  breadcrumbs.at(-1)?.label ?? (locale === "es" ? "Inicio" : "Home");
+const prefix = locale === "es" ? "/es" : "";
+
+// Compile JSON-LD BreadcrumbList Schema for SEO
+const breadcrumbSchema = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: locale === "es" ? "Inicio" : "Home",
+      item: new URL(prefix || "/", SITE.website).toString(),
+    },
+    ...breadcrumbs.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 2,
+      name: item.label,
+      item: new URL(item.href || Astro.url.pathname, SITE.website).toString(),
+    })),
+  ],
+};
+---
+
+<nav
+  class:list={["app-layout mt-6 mb-2", { "overflow-hidden": withBackButton }]}
+  aria-label={
+    withBackButton
+      ? locale === "es"
+        ? "Navegación contextual"
+        : "Contextual navigation"
+      : "breadcrumb"
+  }
+>
+  <script
+    type="application/ld+json"
+    is:inline
+    set:html={JSON.stringify(breadcrumbSchema)}
+  />
+  <div
+    class:list={[
+      "flex items-center gap-3",
+      { "justify-between": withBackButton },
+    ]}
+  >
+    {withBackButton && (
+      <a
+        id="back-button"
+        href={prefix || "/"}
+        class="breadcrumb-bar back-btn group shrink-0 gap-2! text-foreground/90 transition-colors duration-200 hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 focus-visible:ring-offset-2 focus-visible:ring-offset-background font-firacode text-sm"
+        aria-label={
+          locale === "es"
+            ? `Volver a la página anterior. Contexto actual: ${currentPageLabel}`
+            : `Go back to the previous page. Current context: ${currentPageLabel}`
+        }
+      >
+        <IconChevronLeft class="size-4 opacity-70 transition-transform duration-200 group-hover:-translate-x-0.5 rtl:rotate-180 rtl:group-hover:translate-x-0.5" />
+        <span aria-hidden="true" class="tracking-wide">
+          cd ..
+        </span>
+        <span class="visually-hidden">{t("nav.goBack")}</span>
+      </a>
+    )}
+
+    <ol
+      class:list={[
+        "breadcrumb-bar font-firacode text-sm",
+        {
+          "has-back": withBackButton,
+        },
+      ]}
+    >
+      <li class:list={["breadcrumb-item", { "is-root": withBackButton }]}>
+        <a
+          href={prefix || "/"}
+          class:list={[
+            "breadcrumb-home",
+            { "breadcrumb-link-soft": withBackButton },
+          ]}
+          aria-label={locale === "es" ? "Inicio" : "Home"}
+          title={locale === "es" ? "Inicio" : "Home"}
+        >
+          <span aria-hidden="true">~</span>
+          <span class="visually-hidden">
+            {locale === "es" ? "Inicio" : "Home"}
+          </span>
+        </a>
+      </li>
+      {breadcrumbs.map(item => (
+        <li class:list={["breadcrumb-item", { "is-current": !item.href }]}>
+          {item.href ? (
+            <a href={item.href} class="breadcrumb-link">
+              {item.label}
+            </a>
+          ) : (
+            <span
+              class="breadcrumb-current"
+              aria-current="page"
+              title={item.label}
+            >
+              {item.label}
+            </span>
+          )}
+        </li>
+      ))}
+    </ol>
+  </div>
+</nav>
+
+<style>
+  .breadcrumb-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 0.4rem 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--border) 30%, transparent);
+    border-radius: 999px;
+    background:
+      linear-gradient(
+        130deg,
+        color-mix(in srgb, var(--accent) 10%, transparent) 0%,
+        transparent 44%
+      ),
+      color-mix(in srgb, var(--foreground) 3%, var(--background));
+    box-shadow:
+      inset 0 1px 0 color-mix(in srgb, white 20%, transparent),
+      0 10px 28px -20px color-mix(in srgb, var(--accent) 45%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(125%);
+    backdrop-filter: blur(10px) saturate(125%);
+    scrollbar-width: none;
+    animation: breadcrumb-in 0.35s ease-out both;
+  }
+
+  .breadcrumb-bar.has-back {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-backdrop-filter: blur(6px);
+    scrollbar-width: none;
+  }
+
+  .breadcrumb-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .breadcrumb-item {
+    flex-shrink: 0;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .breadcrumb-item + .breadcrumb-item::before {
+    content: "/";
+    margin-inline: 0.3rem;
+    opacity: 0.6;
+    color: color-mix(in srgb, var(--accent) 65%, var(--foreground));
+  }
+
+  .breadcrumb-home,
+  .breadcrumb-link,
+  .breadcrumb-current {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 0.45rem;
+    line-height: 1;
+    text-decoration: none;
+  }
+
+  .breadcrumb-home {
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    color: color-mix(in srgb, var(--foreground) 65%, transparent);
+    transition:
+      color 0.2s ease,
+      background-color 0.2s ease,
+      transform 0.2s ease;
+  }
+
+  .breadcrumb-home:hover,
+  .breadcrumb-home:focus-visible {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+    transform: translateY(-1px);
+  }
+
+  .breadcrumb-link-soft {
+    width: auto;
+    height: auto;
+    padding: 0.15rem 0.45rem;
+    border-radius: 0.35rem;
+    color: color-mix(in srgb, var(--foreground) 72%, transparent);
+    transition:
+      color 0.2s ease,
+      background-color 0.2s ease;
+  }
+
+  .breadcrumb-link-soft:hover,
+  .breadcrumb-link-soft:focus-visible {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    transform: none;
+  }
+
+  .back-btn {
+    flex-shrink: 0;
+  }
+
+  .breadcrumb-link,
+  .breadcrumb-current {
+    padding: 0.35rem 0.55rem;
+    white-space: nowrap;
+  }
+
+  .breadcrumb-link {
+    color: color-mix(in srgb, var(--foreground) 72%, transparent);
+    transition:
+      color 0.2s ease,
+      background-color 0.2s ease;
+  }
+
+  .breadcrumb-link:hover,
+  .breadcrumb-link:focus-visible {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+
+  .breadcrumb-current {
+    max-width: min(34ch, 64vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: color-mix(in srgb, var(--accent) 92%, var(--foreground));
+    background: color-mix(in srgb, var(--accent) 11%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  @media (max-width: 640px) {
+    .breadcrumb-bar.has-back .breadcrumb-item:not(.is-back):not(.is-current) {
+      display: none;
+    }
+
+    /* .breadcrumb-bar.has-back .breadcrumb-item.is-current .breadcrumb-current {
+      max-width: 38vw;
+    } */
+
+    /* .breadcrumb-current {
+      max-width: min(24ch, 58vw);
+    } */
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .breadcrumb-bar,
+    .breadcrumb-home,
+    .breadcrumb-link,
+    .back-btn,
+    .breadcrumb-link-soft {
+      animation: none;
+      transition: none;
+    }
+  }
+
+  @keyframes breadcrumb-in {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+</style>
+
+{withBackButton && <script>
+  const BACK_BUTTON_SELECTOR = "#back-button";
+
+  function getDefaultBackUrl() {
+    const pathname = window.location.pathname;
+    return pathname === "/es" || pathname.startsWith("/es/") ? "/es" : "/";
+  }
+
+  function toSafeBackPath(rawBackUrl: string | null, fallbackUrl: string) {
+    if (!rawBackUrl) return fallbackUrl;
+
+    try {
+      const parsedUrl = new URL(rawBackUrl, window.location.origin);
+      const isSameOrigin = parsedUrl.origin === window.location.origin;
+      const isHttpProtocol =
+        parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:";
+
+      if (!isSameOrigin || !isHttpProtocol) return fallbackUrl;
+
+      return (
+        `${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}` ||
+        fallbackUrl
+      );
+    } catch {
+      return fallbackUrl;
+    }
+  }
+
+  function updateGoBackUrl() {
+    const backButton =
+      document.querySelector<HTMLAnchorElement>(BACK_BUTTON_SELECTOR);
+
+    if (!backButton) return;
+
+    const defaultBackUrl = getDefaultBackUrl();
+    const rawBackUrl = sessionStorage.getItem("backUrl");
+    backButton.href = toSafeBackPath(rawBackUrl, defaultBackUrl);
+  }
+
+  document.addEventListener("astro:page-load", updateGoBackUrl);
+  updateGoBackUrl();
+</script>}

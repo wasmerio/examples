@@ -1,0 +1,332 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+import Breadcrumb from "@/components/Breadcrumb.astro";
+import AuroraHero from "@/components/AuroraHero.astro";
+import IconHash from "@/assets/icons/IconHash.svg";
+import getUniqueTags from "@/utils/getUniqueTags";
+import getPostsByTag from "@/utils/getPostsByTag";
+import postFilter from "@/utils/postFilter";
+import { SITE } from "@/config";
+import { useTranslations } from "@/i18n/utils";
+
+const locale = Astro.currentLocale || "en";
+const t = useTranslations(locale);
+const prefix = locale === "es" ? "/es" : "";
+
+const isMatchingLocale = (id: string) =>
+  id.startsWith(`${locale}/`) || (locale === "en" && !id.startsWith("es/"));
+
+const [blogPosts, galleryPosts] = await Promise.all([
+  getCollection(
+    "blog",
+    entry => postFilter(entry) && isMatchingLocale(entry.id)
+  ),
+  SITE.showGalleries && SITE.showGalleriesInIndex
+    ? getCollection(
+        "galleries",
+        entry => postFilter(entry) && isMatchingLocale(entry.id)
+      )
+    : Promise.resolve([]),
+]);
+const posts = [...blogPosts, ...galleryPosts];
+
+const tags = getUniqueTags(posts);
+const tagsWithCount = tags.map(({ tag, tagName }) => ({
+  tag,
+  tagName,
+  count: getPostsByTag(posts, tag).length,
+}));
+
+const maxCount = Math.max(1, ...tagsWithCount.map(t => t.count));
+---
+
+<Layout title={`${t("tags.title")} | ${SITE.title}`}>
+  <Header />
+  <Breadcrumb />
+  <main id="main-content" class="app-layout pb-12">
+    <!-- Hero with mouse-tracking aurora -->
+    <AuroraHero
+      title={t("tags.title")}
+      description={t("tags.desc")}
+      class="mb-10"
+    >
+      <div class="mt-4 flex items-center gap-2 text-sm text-foreground/50">
+        <span class="hero-badge">
+          {tagsWithCount.length}
+          {t("tags.count")}
+        </span>
+        <span class="hero-badge">
+          {posts.length}
+          {t("tags.postsCount")}
+        </span>
+      </div>
+    </AuroraHero>
+
+    <div class="tags-grid">
+      {tagsWithCount.map(({ tag, tagName, count }) => {
+        const intensity = count / maxCount;
+        return (
+          <a
+            href={`${prefix}/tags/${tag}/`}
+            transition:name={tag}
+            class="tag-card group"
+            data-tag-card
+          >
+            <div class="tag-aurora" data-tag-aurora />
+            <div class="tag-border-glow" data-tag-border />
+            <div class="tag-content">
+              <div class="flex items-center gap-1.5">
+                <IconHash class="size-5 text-accent opacity-60 transition-opacity group-hover:opacity-100" />
+                <span class="tag-name">{tagName}</span>
+              </div>
+              <div class="tag-count">
+                <span class="tag-count-number">{count}</span>
+                <span class="tag-count-label">
+                  {count === 1 ? t("tags.post") : t("tags.posts")}
+                </span>
+              </div>
+            </div>
+            <div class="tag-bar">
+              <div
+                class="tag-bar-fill"
+                style={`width: ${Math.max(intensity * 100, 8)}%`}
+              />
+            </div>
+          </a>
+        );
+      })}
+    </div>
+  </main>
+  <Footer />
+</Layout>
+
+<script>
+  let tagsCleanup: AbortController | null = null;
+
+  document.addEventListener("astro:page-load", () => {
+    // Cleanup previous listeners
+    if (tagsCleanup) tagsCleanup.abort();
+    tagsCleanup = new AbortController();
+    const { signal } = tagsCleanup;
+
+    // Tag cards mouse-follow aurora
+    const tagCards = document.querySelectorAll("[data-tag-card]");
+    tagCards.forEach(card => {
+      const aurora = card.querySelector("[data-tag-aurora]") as HTMLElement;
+      const border = card.querySelector("[data-tag-border]") as HTMLElement;
+      if (!aurora || !border) return;
+
+      card.addEventListener(
+        "mousemove",
+        e => {
+          requestAnimationFrame(() => {
+            const rect = (card as HTMLElement).getBoundingClientRect();
+            const x = (e as MouseEvent).clientX - rect.left;
+            const y = (e as MouseEvent).clientY - rect.top;
+            aurora.style.setProperty("--mx", `${x}px`);
+            aurora.style.setProperty("--my", `${y}px`);
+            aurora.style.opacity = "1";
+            border.style.setProperty("--mx", `${x}px`);
+            border.style.setProperty("--my", `${y}px`);
+            border.style.opacity = "1";
+          });
+        },
+        { signal }
+      );
+
+      card.addEventListener(
+        "mouseleave",
+        () => {
+          aurora.style.opacity = "0";
+          border.style.opacity = "0";
+        },
+        { signal }
+      );
+    });
+  });
+</script>
+
+<style>
+  /* ===== Tags Grid ===== */
+  .tags-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 1rem;
+  }
+
+  /* ===== Tag Card ===== */
+  .tag-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1.25rem;
+    border-radius: 1rem;
+    background: color-mix(
+      in srgb,
+      var(--color-foreground) 2%,
+      var(--color-background)
+    );
+    border: 1px solid
+      color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    overflow: hidden;
+    transition:
+      transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.3s ease,
+      box-shadow 0.3s ease;
+    text-decoration: none;
+    color: var(--color-foreground);
+    isolation: isolate;
+  }
+
+  .tag-card:hover {
+    transform: translateY(-3px);
+    border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+    box-shadow:
+      0 10px 40px -10px color-mix(in srgb, var(--color-accent) 15%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 8%, transparent),
+      inset 0 1px 0 color-mix(in srgb, var(--color-accent) 6%, transparent);
+  }
+
+  /* Mouse-follow aurora inside card */
+  .tag-aurora {
+    position: absolute;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--color-accent) 22%, transparent),
+      color-mix(in srgb, var(--color-border) 10%, transparent) 40%,
+      transparent 70%
+    );
+    filter: blur(35px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    transform: translate(
+      calc(var(--mx, 0px) - 100px),
+      calc(var(--my, 0px) - 100px)
+    );
+    z-index: -1;
+  }
+
+  .tag-card:hover .tag-aurora,
+  .tag-card:focus-within .tag-aurora {
+    will-change: transform;
+  }
+
+  /* Mouse-follow border glow */
+  .tag-border-glow {
+    position: absolute;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--color-accent) 40%, transparent),
+      transparent 70%
+    );
+    filter: blur(20px);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.35s ease;
+    transform: translate(
+      calc(var(--mx, 0px) - 60px),
+      calc(var(--my, 0px) - 60px)
+    );
+    z-index: -1;
+    mix-blend-mode: screen;
+  }
+
+  .tag-card:hover .tag-border-glow,
+  .tag-card:focus-within .tag-border-glow {
+    will-change: transform;
+  }
+
+  .tag-content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .tag-name {
+    font-weight: 600;
+    font-size: 1rem;
+    transition:
+      color 0.2s ease,
+      text-shadow 0.3s ease;
+  }
+
+  .tag-card:hover .tag-name {
+    color: var(--color-accent);
+    text-shadow: 0 0 20px
+      color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
+
+  .tag-count {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  .tag-count-number {
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--color-accent);
+    transition: text-shadow 0.3s ease;
+  }
+
+  .tag-card:hover .tag-count-number {
+    text-shadow: 0 0 15px
+      color-mix(in srgb, var(--color-accent) 50%, transparent);
+  }
+
+  .tag-count-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.5;
+  }
+
+  /* Progress bar */
+  .tag-bar {
+    position: relative;
+    z-index: 1;
+    height: 3px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    overflow: hidden;
+  }
+
+  .tag-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      var(--color-accent),
+      var(--color-border)
+    );
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+
+  .tag-card:hover .tag-bar-fill {
+    box-shadow:
+      0 0 12px color-mix(in srgb, var(--color-accent) 60%, transparent),
+      0 0 25px color-mix(in srgb, var(--color-accent) 20%, transparent);
+  }
+
+  @media (max-width: 480px) {
+    .tags-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

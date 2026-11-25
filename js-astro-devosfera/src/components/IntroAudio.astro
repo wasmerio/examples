@@ -1,0 +1,437 @@
+---
+/**
+ * IntroAudio — Blog intro/brand audio player.
+ * Toggable from SITE.introAudio.enabled in config.ts.
+ * Terminal/cyberpunk aesthetic coherent with the rest of the UI.
+ */
+interface Props {
+  src: string;
+  label?: string;
+  duration?: number;
+  isStream?: boolean;
+  class?: string;
+}
+
+const {
+  src,
+  label = "INTRO.MP3",
+  duration = 30,
+  isStream: streamOverride,
+  class: className = "",
+} = Astro.props;
+const isStream = streamOverride ?? /^https?:\/\//i.test(src);
+const formattedDuration = `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}`;
+---
+
+<div
+  id="intro-audio-player"
+  class:list={["intro-audio-wrap", className, { "is-stream": isStream }]}
+  data-src={src}
+  data-label={label}
+  data-duration={String(duration)}
+  data-stream={isStream ? "true" : "false"}
+  role="region"
+  aria-label={isStream ? "Live radio player" : "Intro audio player"}
+>
+  <!-- Terminal-like prefix indicator -->
+  <span class="intro-audio-prefix" aria-hidden="true">
+    $
+  </span>
+  <span class="intro-audio-cmd" aria-hidden="true">
+    play
+  </span>
+
+  <!-- Play/pause button -->
+  <button
+    id="intro-audio-btn"
+    class="intro-audio-btn"
+    aria-label="Play intro audio"
+    type="button"
+  >
+    <!-- Play icon -->
+    <svg
+      id="intro-icon-play"
+      class="intro-icon"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M3 2.5a.5.5 0 0 1 .765-.424l10 5.5a.5.5 0 0 1 0 .848l-10 5.5A.5.5 0 0 1 3 13.5v-11z"></path>
+    </svg>
+    <!-- Pause icon -->
+    <svg
+      id="intro-icon-pause"
+      class="intro-icon hidden"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M5.5 3.5A1.5 1.5 0 0 1 7 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5zm5 0A1.5 1.5 0 0 1 12 5v6a1.5 1.5 0 0 1-3 0V5a1.5 1.5 0 0 1 1.5-1.5z"></path>
+    </svg>
+  </button>
+
+  <!-- Waveform bars (animated during playback) -->
+  <div class="intro-waveform" id="intro-waveform" aria-hidden="true">
+    {Array.from({ length: 8 }).map((_, i) => (
+      <span
+        class="intro-wave-bar"
+        style={`--delay: ${i * 0.07}s; --h: ${[55, 80, 40, 95, 65, 85, 45, 70][i]}%`}
+      />
+    ))}
+  </div>
+
+  <!-- Progress bar -->
+  {!isStream && (
+    <div
+      class="intro-progress-track"
+      id="intro-progress-track"
+      role="slider"
+      tabindex="0"
+      aria-valuenow={0}
+      aria-valuemin={0}
+      aria-valuemax={duration}
+      aria-label="Audio progress control"
+    >
+      <div class="intro-progress-bar" id="intro-progress-bar" />
+    </div>
+  )}
+
+  <!-- Time -->
+  {isStream ? (
+    <span class="intro-live-pill" aria-live="off">
+      LIVE
+    </span>
+  ) : (
+    <span class="intro-time" id="intro-time" aria-live="off">
+      <>
+        <span id="intro-current">0:00</span>
+        <span class="opacity-30"> /</span>
+        <span id="intro-total" class="opacity-30">
+          {formattedDuration}
+        </span>
+      </>
+    </span>
+  )}
+
+  <!-- File label -->
+  <span class="intro-label" aria-label={`File: ${label}`}>
+    {label}
+  </span>
+</div>
+
+<style>
+  .intro-audio-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.9rem;
+    border-radius: 0.6rem;
+    border: 1px solid color-mix(in oklab, var(--border) 40%, transparent);
+    background: color-mix(in oklab, var(--muted) 10%, transparent);
+    font-family: var(--font-firacode, monospace);
+    font-size: 0.72rem;
+    color: var(--foreground);
+    transition:
+      border-color 0.3s,
+      background 0.3s;
+    max-width: 100%;
+    backdrop-filter: blur(4px);
+  }
+
+  /* playing state applied by JS */
+  .intro-audio-wrap.playing {
+    border-color: color-mix(in oklab, var(--accent) 55%, transparent);
+    background: color-mix(in oklab, var(--accent) 6%, transparent);
+    box-shadow: 0 0 18px -4px
+      color-mix(in oklab, var(--accent) 20%, transparent);
+  }
+
+  .intro-audio-prefix {
+    color: var(--accent);
+    opacity: 0.5;
+    user-select: none;
+  }
+  .intro-audio-cmd {
+    color: var(--accent);
+    opacity: 0.7;
+    user-select: none;
+    letter-spacing: 0.03em;
+  }
+
+  /* ── Play/pause button ── */
+  .intro-audio-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    border: 1px solid color-mix(in oklab, var(--accent) 50%, transparent);
+    background: color-mix(in oklab, var(--accent) 12%, transparent);
+    color: var(--accent);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition:
+      background 0.2s,
+      border-color 0.2s,
+      transform 0.15s;
+    outline: none;
+  }
+
+  .intro-audio-btn:hover {
+    background: color-mix(in oklab, var(--accent) 22%, transparent);
+    border-color: var(--accent);
+    transform: scale(1.1);
+  }
+
+  .intro-audio-btn:focus-visible {
+    outline: 2px dashed var(--accent);
+    outline-offset: 2px;
+  }
+
+  .intro-icon {
+    width: 0.65rem;
+    height: 0.65rem;
+  }
+
+  .hidden {
+    display: none !important;
+  }
+
+  /* ── Waveform bars ── */
+  .intro-waveform {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 1rem;
+  }
+
+  .intro-wave-bar {
+    display: block;
+    width: 2px;
+    border-radius: 999px;
+    background: var(--accent);
+    height: 30%;
+    opacity: 0.35;
+    transition: opacity 0.3s;
+  }
+
+  /* active animation */
+  .playing .intro-wave-bar {
+    opacity: 0.8;
+    animation: wave-bounce 0.6s ease-in-out infinite alternate;
+    animation-delay: var(--delay, 0s);
+  }
+
+  @keyframes wave-bounce {
+    from {
+      height: 20%;
+    }
+    to {
+      height: var(--h, 80%);
+    }
+  }
+
+  /* ── Progress bar ── */
+  .intro-progress-track {
+    position: relative;
+    height: 3px;
+    width: 7rem;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--border) 30%, transparent);
+    flex-shrink: 0;
+    cursor: pointer;
+    overflow: hidden;
+    user-select: none;
+    touch-action: none;
+    outline: none;
+  }
+
+  .intro-progress-track:focus-visible {
+    outline: 2px dashed var(--accent);
+    outline-offset: 4px;
+    background: color-mix(in oklab, var(--border) 45%, transparent);
+  }
+
+  @media (max-width: 480px) {
+    .intro-progress-track {
+      width: 4.5rem;
+    }
+    .intro-label {
+      display: none;
+    }
+  }
+
+  .intro-progress-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      var(--accent) 0%,
+      color-mix(in oklab, var(--accent) 70%, var(--foreground)) 100%
+    );
+    transition: width 0.25s linear;
+  }
+
+  /* ── Time ── */
+  .intro-time {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.68rem;
+    color: var(--foreground);
+    opacity: 0.6;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .intro-live-pill {
+    border-radius: 999px;
+    border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent);
+    background: color-mix(in oklab, var(--accent) 14%, transparent);
+    color: var(--accent);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 0.15rem 0.45rem;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* ── Label ── */
+  .intro-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    opacity: 0.55;
+    text-transform: uppercase;
+    user-select: none;
+    white-space: nowrap;
+  }
+</style>
+
+<script>
+  import {
+    getIntroAudioStore,
+    formatAudioTime,
+    toggleIntroAudioPlayback,
+    subscribeIntroAudioState,
+    type IntroAudioState,
+  } from "@/utils/introAudioStore";
+
+  function initIntroAudio() {
+    const wrap = document.getElementById(
+      "intro-audio-player"
+    ) as HTMLElement | null;
+    const btn = document.getElementById(
+      "intro-audio-btn"
+    ) as HTMLButtonElement | null;
+    const iconPlay = document.getElementById(
+      "intro-icon-play"
+    ) as SVGElement | null;
+    const iconPause = document.getElementById(
+      "intro-icon-pause"
+    ) as SVGElement | null;
+    const bar = document.getElementById(
+      "intro-progress-bar"
+    ) as HTMLElement | null;
+    const track = document.getElementById(
+      "intro-progress-track"
+    ) as HTMLElement | null;
+    const current = document.getElementById(
+      "intro-current"
+    ) as HTMLElement | null;
+    const totalLabel = document.getElementById(
+      "intro-total"
+    ) as HTMLElement | null;
+
+    if (!wrap || !btn) return;
+    if (wrap.dataset.introAudioInitialized === "true") return;
+    wrap.dataset.introAudioInitialized = "true";
+
+    const src = wrap.dataset.src ?? "";
+    const label = wrap.dataset.label ?? "INTRO.MP3";
+    const durationHint = Number(wrap.dataset.duration ?? "0");
+    const isStream = wrap.dataset.stream === "true";
+    const store = getIntroAudioStore({ src, label, isStream, durationHint });
+
+    const playLabel = isStream ? "Play live radio" : "Play intro audio";
+    const pauseLabel = isStream ? "Pause radio" : "Pause intro audio";
+
+    const setPlaying = (playing: boolean) => {
+      wrap.classList.toggle("playing", playing);
+      iconPlay?.classList.toggle("hidden", playing);
+      iconPause?.classList.toggle("hidden", !playing);
+      btn.setAttribute("aria-label", playing ? pauseLabel : playLabel);
+    };
+
+    const render = (state: IntroAudioState) => {
+      if (state.src !== src) return;
+
+      setPlaying(state.playing);
+
+      if (state.isStream) {
+        return;
+      }
+
+      const total = state.duration;
+      const now = state.currentTime;
+      const pct = total > 0 ? (now / total) * 100 : 0;
+
+      if (bar) bar.style.width = `${pct}%`;
+
+      const nowStr = formatAudioTime(now);
+      if (current && current.textContent !== nowStr) {
+        current.textContent = nowStr;
+      }
+
+      if (track) {
+        track.setAttribute("aria-valuenow", String(Math.floor(now)));
+        const maxVal = String(Math.max(total, 0));
+        if (track.getAttribute("aria-valuemax") !== maxVal) {
+          track.setAttribute("aria-valuemax", maxVal);
+        }
+      }
+
+      if (totalLabel) {
+        const totalStr = formatAudioTime(total);
+        if (totalLabel.textContent !== totalStr) {
+          totalLabel.textContent = totalStr;
+        }
+      }
+    };
+
+    btn.addEventListener("click", () => toggleIntroAudioPlayback(store));
+
+    // Click on progress bar to skip
+    track?.addEventListener("click", (e: MouseEvent) => {
+      if (isStream) return;
+      const rect = track.getBoundingClientRect();
+      const ratio = (e.clientX - rect.left) / rect.width;
+      const total = store.audio.duration || durationHint;
+      if (total > 0) {
+        store.audio.currentTime = ratio * total;
+      }
+    });
+
+    // Keyboard on progress bar to skip
+    track?.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (isStream) return;
+      const total = store.audio.duration || durationHint;
+      if (total <= 0) return;
+
+      if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+        e.preventDefault();
+        store.audio.currentTime = Math.min(store.audio.currentTime + 5, total);
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+        e.preventDefault();
+        store.audio.currentTime = Math.max(store.audio.currentTime - 5, 0);
+      }
+    });
+
+    subscribeIntroAudioState(store, render);
+  }
+
+  // Initialize on full load and also on navigation with View Transitions.
+  initIntroAudio();
+  document.addEventListener("astro:page-load", initIntroAudio);
+</script>

@@ -1,0 +1,77 @@
+---
+import { COMMENT_CONFIG } from '../config';
+import '../styles/waline.css';
+
+const serverURL = COMMENT_CONFIG.waline.serverURL;
+---
+
+{COMMENT_CONFIG.enable && (
+  <>
+    <section class="comment">
+      <div id="waline" class="waline-container" data-server-url={serverURL}></div>
+    </section>
+    <script is:inline>
+  // 把“实际生效的暗色状态”同步到 <html data-dark>，供 Waline 的 dark 选择器匹配。
+  // 站点是混合模式：手动切换写 data-theme，auto 模式无 data-theme 时跟随系统偏好。
+  function syncDark() {
+    const el = document.documentElement;
+    const attr = el.getAttribute('data-theme');
+    const dark =
+      attr === 'dark' ||
+      (!attr && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    el.setAttribute('data-dark', dark ? 'true' : 'false');
+  }
+  syncDark();
+  new MutationObserver(syncDark).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  });
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncDark);
+
+  (async function () {
+    const container = document.getElementById('waline');
+    if (!container) return;
+    const serverURL = container.getAttribute('data-server-url');
+    if (!serverURL) {
+      container.textContent = '评论系统配置错误';
+      return;
+    }
+    try {
+      const { init } = await import('https://unpkg.com/@waline/client@v3/dist/waline.js');
+      init({
+        el: '#waline',
+        serverURL,
+        lang: 'zh-CN',
+        dark: 'html[data-dark="true"]',
+        reaction: false,
+        imageUploader: false,  // 禁用图片上传（同时隐藏工具栏上传按钮）
+        noRss: true,           // 隐藏评论区 RSS 订阅链接
+      });
+
+      // 评论计数改为“评论 (n)”：locale 无此配置项，只能渲染后改写文本。
+      // Waline 提交/加载评论会重渲染，用 MutationObserver 持续修正。
+      function fixCount() {
+        const el = container.querySelector('.wl-count');
+        if (!el) return;
+        const m = el.textContent.trim().match(/^(\d+)\s*评论$/);
+        if (m) el.textContent = `评论 (${m[1]})`;
+      }
+      new MutationObserver(fixCount).observe(container, {
+        childList: true,
+        subtree: true,
+      });
+      fixCount();
+    } catch (err) {
+      console.error('Waline failed to load:', err);
+      container.textContent = '评论系统加载失败，请稍后刷新重试';
+    }
+  })();
+    </script>
+  </>
+)}
+
+<style>
+  .comment {
+    margin-top: 2rem;
+  }
+</style>

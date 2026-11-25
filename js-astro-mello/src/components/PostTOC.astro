@@ -1,0 +1,145 @@
+---
+const { headings } = Astro.props;
+
+// 过滤掉 h1，并且只保留 h2 和 h3
+const toc = headings.filter(h => h.depth === 2 || h.depth === 3);
+---
+
+{toc.length > 0 && (
+  <nav class="toc-container">
+    <h3 class="toc-title">目录</h3>
+    <ul class="toc-list">
+      {toc.map(heading => (
+        <li class={`toc-item toc-depth-${heading.depth}`}>
+          <a href={`#${heading.slug}`} class="toc-link">
+            {heading.text}
+          </a>
+        </li>
+      ))}
+    </ul>
+  </nav>
+)}
+
+<style>
+  .toc-container {
+    font-size: var(--text-description-fontsize);
+    padding-left: 2rem;
+  }
+  .toc-title {
+    margin: 0;
+    font-weight: bold;
+    margin-bottom: 1rem;
+    color: var(--text-title-color);
+  }
+  .toc-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .toc-link {
+    width: fit-content;
+    color: var(--text-description-color);
+    text-decoration: none;
+    display: block;
+    line-height: 1.4;
+  }
+  .toc-link:hover {
+    color: var(--text-title-color);
+  }
+  .toc-link.active {
+    width: fit-content;
+    padding: 0 4px;
+    margin-left: -4px;
+    background-color: var(--accent-color);
+    color: var(--accent-contrast-color);
+  }
+  .toc-depth-3 {
+    padding-left: 0.5rem;
+    border-left: 1px solid var(--line-divider-color);
+  }
+</style>
+<script>
+  // 1. 使用 requestAnimationFrame 优化滚动性能
+  let ticking = false;
+
+  const initTOC = () => {
+    const tocLinks = document.querySelectorAll('.toc-link');
+    const headings = Array.from(document.querySelectorAll('.markdown-body h2, .markdown-body h3'));
+    const sidebar = document.querySelector('.toc-container'); // 获取侧边栏容器
+
+    if (tocLinks.length === 0 || headings.length === 0) return;
+
+    const highlightToc = () => {
+      const scrollPosition = window.scrollY + 100;
+      let currentId = '';
+
+      // 检测是否滚动到了页面最底部
+      const isAtBottom = window.innerHeight + Math.round(window.scrollY) >= document.body.offsetHeight - 10;
+
+      if (isAtBottom) {
+        // 如果到底了，直接高亮最后一个标题
+        currentId = headings[headings.length - 1].getAttribute('id');
+      } else {
+        for (let i = 0; i < headings.length; i++) {
+          const heading = headings[i];
+          const top = heading.getBoundingClientRect().top + window.scrollY;
+          if (top <= scrollPosition) {
+            currentId = heading.getAttribute('id');
+          } else {
+            break;
+          }
+        }
+      }
+
+      // 如果当前高亮的项没有变，就不做任何 DOM 操作，节省性能
+      const currentActive = document.querySelector('.toc-link.active');
+      if (currentActive && currentActive.getAttribute('href') === `#${CSS.escape(currentId)}`) {
+        return;
+      }
+
+      // 更新高亮状态
+      tocLinks.forEach(link => link.classList.remove('active'));
+      
+      if (currentId) {
+        const activeLink = document.querySelector(`.toc-link[href="#${CSS.escape(currentId)}"]`);
+        if (activeLink) {
+          activeLink.classList.add('active');
+          
+          // 2. 如果侧边栏过长，让高亮项自动滚动到可视区域
+          if (sidebar) {
+            const linkRect = activeLink.getBoundingClientRect();
+            const sidebarRect = sidebar.getBoundingClientRect();
+            // 如果高亮项在侧边栏的可视区之外
+            if (linkRect.top < sidebarRect.top || linkRect.bottom > sidebarRect.bottom) {
+               activeLink.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            }
+          }
+        }
+      }
+    };
+
+    // 监听滚动事件 (包装在 rAF 中)
+    window.addEventListener('scroll', () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          highlightToc();
+          ticking = false;
+        });
+        ticking = true;
+      }
+    }, { passive: true });
+
+    // 首次加载执行
+    highlightToc();
+  };
+
+  // 确保 DOM 加载完毕
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initTOC);
+  } else {
+    initTOC();
+  }
+</script>

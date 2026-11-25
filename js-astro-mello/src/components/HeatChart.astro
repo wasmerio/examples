@@ -1,0 +1,115 @@
+---
+import { getCollection } from 'astro:content'
+
+const posts = await getCollection('posts')
+const counts = new Map<string, number>()
+
+for (const post of posts) {
+  const key = post.data.published.toISOString().slice(0, 10)
+  counts.set(key, (counts.get(key) || 0) + 1)
+}
+
+const buildWeeks = (weeks: number) => {
+  const today = new Date()
+  const end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()))
+  const start = new Date(end)
+  start.setUTCDate(end.getUTCDate() - end.getUTCDay() - (weeks - 1) * 7)
+
+  return Array.from({ length: weeks }, (_, weekIndex) =>
+    Array.from({ length: 7 }, (_, dayIndex) => {
+      const date = new Date(start)
+      date.setUTCDate(start.getUTCDate() + weekIndex * 7 + dayIndex)
+
+      const key = date.toISOString().slice(0, 10)
+      const count = counts.get(key) || 0
+      const level = count === 0 ? 0 : count === 1 ? 1 : count === 2 ? 2 : count <= 4 ? 3 : 4
+
+      return { key, count, level }
+    }),
+  )
+}
+
+const variants = [
+  { className: 'heatmap-desktop', weeks: buildWeeks(53), label: '近一年写作热力图' },
+  { className: 'heatmap-mobile', weeks: buildWeeks(26), label: '近半年写作热力图' },
+]
+---
+
+{variants.map((variant) => (
+  <div class={`heatmap ${variant.className}`}>
+    <div class="heatmap-grid" role="img" aria-label={variant.label}>
+      {variant.weeks.map((week) => (
+        <div class="heatmap-week">
+          {week.map((day) => (
+            <span
+              class={`heatmap-day level-${day.level}`}
+              title={`${day.key} · ${day.count} 篇`}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  </div>
+))}
+
+<style>
+  .heatmap {
+    width: 100%;
+    user-select: none;
+  }
+
+  .heatmap-mobile {
+    display: none;
+  }
+
+  .heatmap-grid {
+    display: flex;
+    width: 100%;
+    gap: 2px;
+  }
+
+  .heatmap-week {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .heatmap-day {
+    width: 100%;
+    aspect-ratio: 1;
+    background-color: var(--bg-sunken);
+  }
+
+  .heatmap-day.level-1 {
+    background-color: color-mix(in srgb, var(--accent-color) 30%, var(--bg-sunken));
+  }
+
+  .heatmap-day.level-2 {
+    background-color: color-mix(in srgb, var(--accent-color) 50%, var(--bg-sunken));
+  }
+
+  .heatmap-day.level-3 {
+    background-color: color-mix(in srgb, var(--accent-color) 70%, var(--bg-sunken));
+  }
+
+  .heatmap-day.level-4 {
+    background-color: var(--accent-color);
+  }
+
+  @media (max-width: 640px) {
+    .heatmap-desktop {
+      display: none;
+    }
+
+    .heatmap-mobile {
+      display: block;
+    }
+
+    .heatmap-grid,
+    .heatmap-week {
+      gap: 1px;
+    }
+  }
+</style>

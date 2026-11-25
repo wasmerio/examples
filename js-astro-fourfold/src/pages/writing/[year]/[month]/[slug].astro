@@ -1,0 +1,40 @@
+---
+import { render } from 'astro:content';
+import BaseLayout from '../../../../layouts/BaseLayout.astro';
+import TagList from '../../../../components/blog/TagList.astro';
+import TableOfContents from '../../../../components/blog/TableOfContents.astro';
+import FavoriteButton from '../../../../components/islands/FavoriteButton.astro';
+import CopyLink from '../../../../components/islands/CopyLink.astro';
+import PostCard from '../../../../components/blog/PostCard.astro';
+import { getPublishedWriting, writingPath } from '../../../../lib/content';
+export async function getStaticPaths(){
+  const entries=await getPublishedWriting();
+  return entries.map((entry)=>{ const d=entry.data.publishedAt; return {params:{year:String(d.getFullYear()),month:String(d.getMonth()+1).padStart(2,'0'),slug:entry.id.replace(/^.*\//,'').replace(/\.(md|mdx)$/,'')},props:{entry}} });
+}
+const { entry }=Astro.props;
+const { Content, headings }=await render(entry);
+const all=await getPublishedWriting();
+const index=all.findIndex((item)=>item.id===entry.id);
+const previous=all[index+1]; const next=all[index-1];
+const related=all.filter((item)=>item.id!==entry.id && item.data.tags.some((tag:string)=>entry.data.tags.includes(tag))).slice(0,3);
+const structuredData = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: entry.data.title,
+  description: entry.data.description,
+  datePublished: entry.data.publishedAt.toISOString(),
+  dateModified: (entry.data.updatedAt ?? entry.data.publishedAt).toISOString(),
+  author: { '@type': 'Person', name: entry.data.author ?? 'Site Author' },
+  mainEntityOfPage: new URL(Astro.url.pathname, Astro.site).toString(),
+};
+---
+<BaseLayout title={`${entry.data.seoTitle ?? entry.data.title} · Fourfold`} description={entry.data.description} canonical={entry.data.canonical} type="article" structuredData={structuredData}>
+  <article class="article narrow">
+    <header><p class="eyebrow">Writing</p><h1>{entry.data.title}</h1><p class="dek">{entry.data.description}</p><div class="meta"><time datetime={entry.data.publishedAt.toISOString()}>发布于 {entry.data.publishedAt.toLocaleDateString('zh-CN')}</time>{entry.data.updatedAt && <> · 更新于 {entry.data.updatedAt.toLocaleDateString('zh-CN')}</>}{entry.data.minutes && <> · {entry.data.minutes} 分钟阅读</>}</div><TagList tags={entry.data.tags}/><div class="actions"><FavoriteButton id={Astro.url.pathname}/><CopyLink url={new URL(Astro.url.pathname, Astro.site).toString()}/></div></header>
+    <TableOfContents headings={headings.filter((h)=>h.depth<=3)}/>
+    <div class="prose"><Content /></div>
+  </article>
+  {related.length>0 && <section class="narrow"><div class="section-heading"><h2>相关文章</h2></div><div class="list">{related.map((item)=><PostCard entry={item}/>)}</div></section>}
+  <nav class="post-nav narrow" aria-label="文章导航"><div>{previous && <><span>上一篇</span><a href={writingPath(previous)}>{previous.data.title}</a></>}</div><div>{next && <><span>下一篇</span><a href={writingPath(next)}>{next.data.title}</a></>}</div></nav>
+</BaseLayout>
+<style>.article{padding:5rem 0}.article h1{font-size:clamp(2.8rem,7vw,5.4rem);line-height:1;letter-spacing:-.06em;margin:.6rem 0 1.2rem}.dek{font-size:1.25rem;color:var(--muted)}.actions{display:flex;gap:.6rem;margin-top:1.5rem}.post-nav{display:grid;grid-template-columns:1fr 1fr;gap:2rem;border-top:1px solid var(--line);padding-top:2rem;margin-top:4rem}.post-nav div:last-child{text-align:right}.post-nav span{display:block;color:var(--muted);font-size:.8rem}.post-nav a{font-weight:700}@media(max-width:40rem){.post-nav{grid-template-columns:1fr}.post-nav div:last-child{text-align:left}}</style>

@@ -1,0 +1,92 @@
+---
+import Post from "@/components/Post.astro";
+import config from "@/config/config.json";
+import Base from "@/layouts/Base.astro";
+import Pagination from "@/layouts/components/Pagination.astro";
+import { getSinglePage } from "@/lib/contentParser.astro";
+import { getTaxonomy } from "@/lib/taxonomyParser.astro";
+import { sortByDate } from "@/lib/utils/sortFunctions";
+import taxonomyFilter from "@/lib/utils/taxonomyFilter";
+import { markdownify } from "@/lib/utils/textConverter";
+import type { GetStaticPathsOptions } from "astro";
+import { Image } from "astro:assets";
+import type { CollectionEntry } from "astro:content";
+import { getEntry } from "astro:content";
+
+export const getStaticPaths = async ({ paginate }: GetStaticPathsOptions) => {
+  const { pagination } = config.settings;
+  const allPosts = await getSinglePage("posts");
+  const sortByDatePosts = sortByDate(allPosts);
+
+  const categories = await getTaxonomy("posts", "categories");
+  return categories
+    .map((category) => {
+      const filterByTags = taxonomyFilter(
+        sortByDatePosts,
+        "categories",
+        category
+      );
+      return paginate(filterByTags, {
+        params: { category: category || "" },
+        pageSize: pagination,
+      });
+    })
+    .flat();
+};
+
+const homepage = (await getEntry(
+  "homepage",
+  "-index"
+)) as CollectionEntry<"homepage">;
+const { banner } = homepage.data;
+const { page } = Astro.props;
+const { category } = Astro.params;
+---
+
+<Base title={category}>
+  <!-- Banner -->
+  <section
+    class="banner"
+    style="background-image: url('/images/banner/banner-bg.svg')"
+  >
+    <div class="container">
+      <div class="row">
+        <div class="lg:col-6">
+          {
+            banner?.title && (
+              <h1 set:html={markdownify(banner?.title)} class="h2 mb-8" />
+            )
+          }
+        </div>
+      </div>
+      <div class="banner-illustration">
+        {
+          banner?.image && (
+            <Image src={banner?.image} width={768} height={385} alt="" />
+          )
+        }
+      </div>
+    </div>
+  </section>
+  <!-- /End Banner -->
+
+  <div class="section">
+    <div class="container">
+      <div class="row px-3">
+        <div class="mx-auto px-0 lg:col-8">
+          <h1 class="h2 mb-8">
+            Posts related to <span class="text-primary">{category}</span> category
+          </h1>
+          <div class="rounded px-9 py-12 shadow md:p-[60px]">
+            {page.data.map((post) => <Post post={post} />)}
+            <Pagination
+              section={`categories/${category}`}
+              currentPage={page.currentPage}
+              totalPages={page.lastPage}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Base>

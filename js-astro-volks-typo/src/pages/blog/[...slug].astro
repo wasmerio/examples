@@ -1,0 +1,443 @@
+---
+import Layout from '../../components/Layout.astro';
+import TableOfContents from '../../components/TableOfContents.astro';
+import { extractHeadings, filterHeadingsForTOC } from '../../utils/table-of-contents';
+import { calculateReadingTime, extractTextFromMarkdown } from '../../utils/reading-time';
+
+export async function getStaticPaths() {
+  // Support both .md and .mdx files
+  const mdPostsGlob = import.meta.glob('../../content/blog/*.md', { eager: true });
+  const mdxPostsGlob = import.meta.glob('../../content/blog/*.mdx', { eager: true });
+  
+  const allPosts = [...Object.values(mdPostsGlob), ...Object.values(mdxPostsGlob)] as any[];
+  
+  return allPosts.map((post: any) => {
+    // For import.meta.glob, access raw content through compiledContent or body
+    const rawContent = post.body || post.rawContent?.() || '';
+    const plainText = extractTextFromMarkdown(rawContent);
+    const readingTime = calculateReadingTime(plainText);
+    const allHeadings = extractHeadings(rawContent);
+    const tocHeadings = filterHeadingsForTOC(allHeadings);
+    
+    return {
+      params: { slug: post.file.split('/').pop()?.replace(/\.(md|mdx)$/, '') },
+      props: { post, readingTime, tocHeadings }
+    };
+  });
+}
+
+const { post, readingTime, tocHeadings } = Astro.props;
+const { frontmatter, Content } = post as any;
+
+const pageTitle = frontmatter.title;
+const base = import.meta.env.BASE_URL;
+const publishedTime = frontmatter.date ? new Date(frontmatter.date).toISOString() : undefined;
+---
+
+<Layout 
+  title={pageTitle} 
+  description={frontmatter.description || frontmatter.excerpt}
+  type="article"
+  publishedTime={publishedTime}
+>
+  <article class="blog-post">
+    <header class="post-header">
+      <h1 class="post-title">{frontmatter.title}</h1>
+      
+      <div class="post-meta">
+        <time class="post-date" datetime={frontmatter.date}>
+          {new Date(frontmatter.date).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          })}
+        </time>
+        
+        <span class="post-reading-time">{readingTime}</span>
+        
+        {frontmatter.categories && frontmatter.categories.length > 0 && (
+          <div class="post-categories">
+            {frontmatter.categories.map((category: string) => (
+              <a href={`${base}categories/${category.toLowerCase().replace(/[\/\s]+/g, '-')}`} class="category-tag">
+                {category}
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+      
+      {frontmatter.excerpt && (
+        <p class="post-excerpt">{frontmatter.excerpt}</p>
+      )}
+      
+      <!-- Monumental Blood Red Rule -->
+      <hr class="monumental-rule" />
+    </header>
+
+    <TableOfContents headings={tocHeadings} />
+
+    <div class="post-content">
+      <Content />
+    </div>
+
+    <footer class="post-footer">
+      {frontmatter.tags && frontmatter.tags.length > 0 && (
+        <div class="post-tags">
+          <span class="tags-label">Tags:</span>
+          <div class="tag-list">
+            {frontmatter.tags.map((tag: string) => (
+              <span class="tag">{tag}</span>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      <div class="post-navigation">
+        <a href={`${base}blog`} class="back-to-blog">← Back to Blog</a>
+      </div>
+    </footer>
+  </article>
+</Layout>
+
+<style>
+  .blog-post {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .post-header {
+    margin-bottom: calc(var(--grid-unit) * 6);
+  }
+
+  .post-title {
+    font-family: var(--font-heading-primary);
+    font-size: 3rem;
+    font-weight: 900;
+    color: var(--color-accent);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    line-height: 1.1;
+    margin-bottom: calc(var(--grid-unit) * 3);
+  }
+
+  .post-meta {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--grid-unit) * 1.5);
+    margin-bottom: calc(var(--grid-unit) * 3);
+  }
+
+  .post-date {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .post-reading-time {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .post-reading-time::before {
+    content: "•";
+    margin: 0 calc(var(--grid-unit));
+    color: var(--color-border);
+  }
+
+  .post-categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(var(--grid-unit));
+  }
+
+  .category-tag {
+    background-color: var(--color-text-primary);
+    color: white;
+    padding: calc(var(--grid-unit) / 2) calc(var(--grid-unit));
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+  }
+
+  .category-tag:hover,
+  .category-tag:focus {
+    background-color: var(--color-accent);
+    text-decoration: none;
+  }
+
+  /* Dark mode category tag styles */
+  :global([data-theme="dark"]) .category-tag {
+    background-color: var(--color-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+  }
+
+  :global([data-theme="dark"]) .category-tag:hover,
+  :global([data-theme="dark"]) .category-tag:focus {
+    background-color: var(--color-accent);
+    color: white;
+    border-color: var(--color-accent);
+  }
+
+  .post-excerpt {
+    font-size: 1.25rem;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+    font-style: italic;
+    margin: 0;
+  }
+
+  .monumental-rule {
+    height: 6px;
+    background-color: var(--color-accent);
+    border: none;
+    margin: calc(var(--grid-unit) * 4) 0;
+    width: 100%;
+  }
+
+  .post-content {
+    font-size: 1.125rem;
+    line-height: 1.7;
+    margin-bottom: calc(var(--grid-unit) * 6);
+  }
+
+  .post-content :global(h1) {
+    font-family: var(--font-heading-primary);
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-top: calc(var(--grid-unit) * 6);
+    margin-bottom: calc(var(--grid-unit) * 3);
+  }
+
+  .post-content :global(h2) {
+    font-family: var(--font-heading-secondary);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: calc(var(--grid-unit) * 6);
+    margin-bottom: calc(var(--grid-unit) * 3);
+  }
+
+  .post-content :global(h3) {
+    font-family: var(--font-heading-secondary);
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: calc(var(--grid-unit) * 4);
+    margin-bottom: calc(var(--grid-unit) * 2);
+  }
+
+  .post-content :global(p) {
+    margin-bottom: calc(var(--grid-unit) * 3);
+  }
+
+  .post-content :global(blockquote) {
+    border-left: 4px solid var(--color-accent);
+    padding: calc(var(--grid-unit) * 2) calc(var(--grid-unit) * 3);
+    margin: calc(var(--grid-unit) * 4) 0;
+    background-color: var(--color-surface);
+    font-style: italic;
+    font-size: 1.1rem;
+    color: var(--color-text-secondary);
+  }
+
+  .post-content :global(pre) {
+    background-color: #000000;
+    color: #ffffff;
+    padding: calc(var(--grid-unit) * 3);
+    margin: calc(var(--grid-unit) * 4) 0;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .post-content :global(pre code) {
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font-size: inherit;
+  }
+
+  /* Custom Prism syntax highlighting for German flag colors */
+  /* CSS selectors like h1 - use gold */
+  .post-content :global(.token.selector),
+  .post-content :global(.token.tag) {
+    color: #ffd700 !important;
+  }
+
+  /* CSS properties and functions - use red */
+  .post-content :global(.token.property),
+  .post-content :global(.token.class-name),
+  .post-content :global(.token.function) {
+    color: var(--color-accent) !important;
+  }
+
+  .post-content :global(.token.punctuation),
+  .post-content :global(.token.brace),
+  .post-content :global(.token.bracket) {
+    color: #cccccc !important;
+  }
+
+  .post-content :global(.token.string),
+  .post-content :global(.token.attr-value),
+  .post-content :global(.token.url) {
+    color: #ffcc00 !important;
+  }
+
+  .post-content :global(.token.comment) {
+    color: #888888 !important;
+    font-style: italic;
+  }
+
+  .post-content :global(.token.number),
+  .post-content :global(.token.boolean) {
+    color: #66d9ef !important;
+  }
+
+  /* Reset default Prism styles and apply our theme */
+  .post-content :global(pre[class*="language-"]) {
+    background: #000000 !important;
+    color: #ffffff !important;
+  }
+
+  .post-content :global(code[class*="language-"]) {
+    background: #000000 !important;
+    color: #ffffff !important;
+  }
+
+  .post-content :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background-color: var(--color-surface);
+    color: var(--color-accent);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    font-weight: 600;
+  }
+
+  .post-content :global(img) {
+    border: 2px solid var(--color-border);
+    margin: calc(var(--grid-unit) * 4) 0;
+    border-radius: 4px;
+  }
+
+  .post-content :global(ul),
+  .post-content :global(ol) {
+    margin-bottom: calc(var(--grid-unit) * 3);
+    padding-left: calc(var(--grid-unit) * 3);
+  }
+
+  .post-content :global(li) {
+    margin-bottom: calc(var(--grid-unit) / 2);
+  }
+
+  .post-content :global(strong) {
+    font-weight: 600;
+    color: var(--color-text-primary);
+  }
+
+  .post-content :global(em) {
+    font-style: italic;
+  }
+
+  .post-content :global(hr) {
+    height: 2px;
+    background-color: var(--color-accent);
+    border: none;
+    margin: calc(var(--grid-unit) * 4) 0;
+  }
+
+  .post-footer {
+    border-top: 1px solid var(--color-border);
+    padding-top: calc(var(--grid-unit) * 3);
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--grid-unit) * 3);
+  }
+
+  .post-tags {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--grid-unit));
+  }
+
+  .tags-label {
+    font-family: var(--font-heading-secondary);
+    font-weight: 700;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-primary);
+  }
+
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(var(--grid-unit));
+  }
+
+  .tag {
+    background-color: var(--color-text-primary);
+    color: var(--color-surface);
+    padding: calc(var(--grid-unit) / 2) calc(var(--grid-unit));
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: 3px;
+  }
+
+  .back-to-blog {
+    font-family: var(--font-heading-secondary);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-accent);
+    padding: calc(var(--grid-unit)) calc(var(--grid-unit) * 2);
+    border: 2px solid var(--color-accent);
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: inline-block;
+  }
+
+  .back-to-blog:hover,
+  .back-to-blog:focus {
+    background-color: var(--color-accent);
+    color: white;
+    text-decoration: none;
+  }
+
+  @media (max-width: 768px) {
+    .post-title {
+      font-size: 2.25rem;
+    }
+
+    .post-meta {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .post-content {
+      font-size: 1rem;
+    }
+  }
+</style>

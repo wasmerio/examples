@@ -1,0 +1,437 @@
+---
+import siteConfig from '@config/site';
+import {
+  DEFAULT_LOCALE,
+  SUPPORTED_LOCALES,
+  getLocaleDirection,
+  getLocaleFlag,
+  getLocaleLangTag,
+  getLocaleLabel,
+  resolveLocaleDefinition,
+} from '@config/locales';
+import {
+  getEnabledCategoryIds,
+  getPageByTranslationKey,
+  getPagePermalink,
+  getCategoryPathSegment,
+} from '@lib/content';
+import { isDefaultLocale } from '@lib/language';
+import { ensureTrailingSlash } from '@utils/url';
+import { getLangFromUrl, useTranslations, useTranslatedPath } from '@i18n/utils';
+import PageHead from '@components/layout/PageHead.astro';
+import SiteHeader from '@components/layout/SiteHeader.astro';
+import MobileMenu from '@components/layout/MobileMenu.astro';
+
+type AlternateLink = {
+  lang: string;
+  url: string;
+};
+
+type LayoutProps = {
+  title?: string;
+  description?: string;
+  keywords?: string;
+  image?: string;
+  prevPageUrl?: string;
+  nextPageUrl?: string;
+  alternates?: AlternateLink[];
+  ogType?: 'website' | 'article';
+  publishedAt?: string;
+  modifiedAt?: string;
+  authorName?: string;
+  section?: string;
+  enableCodeHighlight?: boolean;
+};
+
+const {
+  title,
+  description,
+  keywords,
+  image,
+  prevPageUrl,
+  nextPageUrl,
+  alternates = [],
+  ogType = 'website',
+  publishedAt,
+  modifiedAt,
+  authorName,
+  section,
+  enableCodeHighlight = false,
+}: LayoutProps = Astro.props;
+
+const requestedLang = getLangFromUrl(Astro.url);
+const currentLocaleDefinition = resolveLocaleDefinition(requestedLang);
+const lang = currentLocaleDefinition.code;
+const t = useTranslations(lang);
+const translatePath = useTranslatedPath(lang);
+
+const pathname = ensureTrailingSlash(Astro.url.pathname);
+const baseDomain = siteConfig.siteUrl;
+const canonicalUrl = new URL(pathname, baseDomain).toString();
+const basePath = import.meta.env.BASE_URL ?? '/';
+
+const categories = getEnabledCategoryIds();
+const categorySegments = Array.from(
+  new Set(
+    categories
+      .map((categoryId) => getCategoryPathSegment(categoryId))
+      .filter((segment): segment is string => Boolean(segment)),
+  ),
+);
+
+const localizedCategoryLabels = categories.reduce<Record<string, string>>((acc, categoryId) => {
+  const segment = getCategoryPathSegment(categoryId);
+  if (!segment) {
+    return acc;
+  }
+
+  const config = siteConfig.categories[categoryId];
+  const label =
+    config?.label?.[lang] ??
+    config?.label?.[DEFAULT_LOCALE] ??
+    categoryId;
+
+  acc[segment] = label;
+  return acc;
+}, {});
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const localePathPattern = SUPPORTED_LOCALES.map(escapeRegExp).join('|');
+
+const parsedAlternates = alternates.map(({ lang, url }) => {
+  try {
+    return { lang, pathname: new URL(url, baseDomain).pathname };
+  } catch {
+    return { lang, pathname: url };
+  }
+});
+
+const normalizeAlternatePath = (value: string): string => {
+  if (!value) {
+    return '/';
+  }
+
+  try {
+    const url = new URL(value, baseDomain);
+    return ensureTrailingSlash(url.pathname);
+  } catch {
+    const prefixed = value.startsWith('/') ? value : `/${value}`;
+    return ensureTrailingSlash(prefixed);
+  }
+};
+
+const alternateCandidates = [{ lang, pathname }, ...parsedAlternates];
+const seenAlternateLangs = new Set<string>();
+const normalizedAlternates = alternateCandidates.reduce<
+  Array<{ lang: string; pathname: string }>
+>((acc, { lang: candidateLang, pathname: candidatePath }) => {
+  const normalizedLang = candidateLang.toLowerCase();
+  if (seenAlternateLangs.has(normalizedLang)) {
+    return acc;
+  }
+
+  seenAlternateLangs.add(normalizedLang);
+  acc.push({
+    lang: candidateLang,
+    pathname: normalizeAlternatePath(candidatePath),
+  });
+  return acc;
+}, []);
+
+const alternateMap = new Map<string, string>();
+
+const registerAlternateVariants = (langKey: string, normalizedPath: string) => {
+  if (!normalizedPath) {
+    return;
+  }
+
+  if (langKey.toLowerCase() === 'x-default') {
+    alternateMap.set('x-default', normalizedPath);
+    return;
+  }
+
+  const definition = resolveLocaleDefinition(langKey);
+  const variants = [
+    langKey,
+    langKey.toLowerCase(),
+    definition.code,
+    definition.code.toLowerCase(),
+    definition.langTag,
+    definition.langTag.toLowerCase(),
+  ].filter(Boolean) as string[];
+
+  variants.forEach((variant) => {
+    alternateMap.set(variant, normalizedPath);
+  });
+};
+
+normalizedAlternates.forEach(({ lang: alternateLang, pathname }) => {
+  registerAlternateVariants(alternateLang, pathname);
+});
+
+const hasXDefaultAlternate = normalizedAlternates.some(
+  ({ lang: alternateLang }) => alternateLang.toLowerCase() === 'x-default',
+);
+
+if (!hasXDefaultAlternate) {
+  const defaultLocaleCodeLower = DEFAULT_LOCALE.toLowerCase();
+  const defaultLocalePath =
+    alternateMap.get(DEFAULT_LOCALE) ??
+    alternateMap.get(defaultLocaleCodeLower) ??
+    null;
+
+  const fallbackPath =
+    defaultLocalePath ?? (normalizedAlternates[0]?.pathname ?? pathname);
+
+  registerAlternateVariants('x-default', fallbackPath);
+  normalizedAlternates.push({
+    lang: 'x-default',
+    pathname: fallbackPath,
+  });
+}
+
+function getLocalePath(targetLang: string): string {
+  const mapped = alternateMap.get(targetLang);
+  if (mapped) {
+    return mapped;
+  }
+
+  const normalizedPath = pathname === '/' ? '' : pathname.replace(/^\//, '');
+  const isCurrentDefault = isDefaultLocale(lang);
+  const contentSlug = isCurrentDefault
+    ? normalizedPath
+    : normalizedPath.replace(new RegExp(`^${escapeRegExp(lang)}/`), '');
+
+  if (targetLang === DEFAULT_LOCALE) {
+    const defaultPath = contentSlug ? `/${contentSlug}` : '/';
+    return ensureTrailingSlash(defaultPath);
+  }
+
+  const candidatePath = contentSlug
+    ? ensureTrailingSlash(`/${targetLang}/${contentSlug}`)
+    : ensureTrailingSlash(`/${targetLang}/`);
+
+  if (pathname === candidatePath) {
+    return candidatePath;
+  }
+
+  return ensureTrailingSlash(`/${targetLang}/`);
+}
+
+const localeOptionKeys = SUPPORTED_LOCALES.map((code) => resolveLocaleDefinition(code));
+const normalizedActiveCode = lang.toLowerCase();
+
+const languageOptions = localeOptionKeys.map((definition) => {
+  const code = definition.code;
+  const langTag = definition.langTag;
+  const codeLower = code.toLowerCase();
+  const langTagLower = langTag.toLowerCase();
+
+  const isActive = codeLower === normalizedActiveCode || langTagLower === normalizedActiveCode;
+  const isAvailable =
+    isActive ||
+    alternateMap.has(code) ||
+    alternateMap.has(codeLower) ||
+    alternateMap.has(langTag) ||
+    alternateMap.has(langTagLower);
+
+  const fallbackHref =
+    code === DEFAULT_LOCALE ? '/' : ensureTrailingSlash(`/${code}/`);
+  const href = isAvailable ? getLocalePath(code) : fallbackHref;
+
+  return {
+    code,
+    label: getLocaleLabel(code),
+    displayLabel: getLocaleFlag(code),
+    href,
+    isActive,
+    isAvailable,
+  };
+});
+
+const htmlLang = getLocaleLangTag(lang);
+const htmlDir = getLocaleDirection(lang);
+
+function isPostListPage(): boolean {
+  const pathname = Astro.url.pathname;
+  const paginatedHome = new RegExp(`^/(?:${localePathPattern}/)?(\\d+/?)?$`);
+  if (pathname === '/' || paginatedHome.test(pathname)) {
+    return true;
+  }
+
+  if (!categories.length) {
+    return false;
+  }
+
+  const categoryPattern = categories.map(escapeRegExp).join('|');
+  const categoryRegex = new RegExp(
+    `^/(?:${localePathPattern}/)?(${categoryPattern})(/\\d+/?)?$`
+  );
+  return categoryRegex.test(pathname);
+}
+
+const showSearch = isPostListPage();
+
+const siteTitleLocalized =
+  siteConfig.title[lang] ?? siteConfig.title[DEFAULT_LOCALE];
+
+const metaTitle = title ?? siteTitleLocalized;
+const metaDescription =
+  description ??
+  siteConfig.description[lang] ??
+  siteConfig.description[DEFAULT_LOCALE];
+const ogImage = image && image.startsWith('http')
+  ? image
+  : `${baseDomain}${image ?? siteConfig.seo.defaultImage}`;
+
+const searchStrings = {
+  resultsHeading: t('ui.search_results_heading'),
+  noResults: t('ui.search_no_results'),
+  allPosts: t('ui.all_posts'),
+};
+
+const astroBasePath = typeof basePath === 'string' && basePath.length ? basePath : '/';
+const localeBootstrap = [
+  `window.__LOCALE_CONFIG__=${JSON.stringify({
+    defaultLanguage: DEFAULT_LOCALE,
+    languages: siteConfig.languages,
+  })};`,
+  `window.__SEARCH_CATEGORY_SEGMENTS__=${JSON.stringify(categorySegments)};`,
+  `window.__ASTRO_BASE_PATH__=${JSON.stringify(astroBasePath)};`,
+  `window.__SEARCH_STRINGS__=${JSON.stringify(searchStrings)};`,
+  `window.__SEARCH_CATEGORY_LABELS__=${JSON.stringify(localizedCategoryLabels)};`,
+].join('');
+
+const twitterHandle = siteConfig.seo.twitterHandle
+  ? `@${siteConfig.seo.twitterHandle.replace(/^@/, '')}`
+  : undefined;
+
+const toAbsolute = (url?: string) =>
+  url ? new URL(ensureTrailingSlash(url), baseDomain).toString() : undefined;
+
+const prevAbsolute = toAbsolute(prevPageUrl);
+const nextAbsolute = toAbsolute(nextPageUrl);
+const fallbackDescription = t('ui.description');
+const homeHref = ensureTrailingSlash(`/${isDefaultLocale(lang) ? '' : lang}`);
+
+type ResolvedNavItem = {
+  id: string;
+  href: string;
+  label: string;
+};
+
+const resolveNavItems = async (): Promise<ResolvedNavItem[]> => {
+  const configs = siteConfig.navigation ?? [];
+  if (!configs.length) {
+    return [];
+  }
+
+  const results = await Promise.all(
+    configs.map(async (item) => {
+      const translatedLabel =
+        (item.labelKey ? t(item.labelKey as any) : null) ?? undefined;
+      const fallbackLabel =
+        item.labelKey ?? item.id;
+      const label =
+        item.label?.[lang] ??
+        item.label?.[DEFAULT_LOCALE] ??
+        translatedLabel ??
+        fallbackLabel;
+
+      if (item.translationKey) {
+        const localizedEntry = await getPageByTranslationKey(item.translationKey, lang);
+        if (localizedEntry) {
+          return {
+            id: item.id,
+            href: getPagePermalink(localizedEntry),
+            label,
+          };
+        }
+
+        const fallbackEntry = await getPageByTranslationKey(
+          item.translationKey,
+          siteConfig.defaultLanguage,
+        );
+
+        if (fallbackEntry) {
+          return {
+            id: item.id,
+            href: getPagePermalink(fallbackEntry),
+            label,
+          };
+        }
+
+        return null;
+      }
+
+      if (item.path) {
+        const normalized = item.path.startsWith('/') ? item.path : `/${item.path}`;
+        return {
+          id: item.id,
+          href: translatePath(normalized),
+          label,
+        };
+      }
+
+      if (item.external) {
+        return {
+          id: item.id,
+          href: item.external,
+          label,
+        };
+      }
+
+      return null;
+    }),
+  );
+
+  return results.filter((value): value is ResolvedNavItem => Boolean(value));
+};
+
+const navItems = await resolveNavItems();
+---
+<!DOCTYPE html>
+<html lang={htmlLang} dir={htmlDir}>
+  <PageHead
+    lang={lang}
+    title={metaTitle}
+    description={metaDescription}
+    keywords={keywords}
+    canonicalUrl={canonicalUrl}
+    alternates={normalizedAlternates}
+    prev={prevAbsolute}
+    next={nextAbsolute}
+    ogImage={ogImage}
+    twitterHandle={twitterHandle}
+    baseDomain={baseDomain}
+    fallbackDescription={fallbackDescription}
+    enableCodeHighlight={enableCodeHighlight}
+    ogType={ogType}
+    publishedAt={publishedAt}
+    modifiedAt={modifiedAt}
+    authorName={authorName}
+    section={section}
+  />
+  <body>
+    <div class="page">
+      <SiteHeader
+        lang={lang}
+        siteTitle={siteTitleLocalized}
+        homeHref={homeHref}
+        navItems={navItems}
+        languageOptions={languageOptions}
+        showSearch={showSearch}
+        enableDarkMode={siteConfig.features.darkMode}
+      />
+
+      <MobileMenu lang={lang} navItems={navItems} languageOptions={languageOptions} />
+
+      <main class="main">
+        <div class="cont">
+          <slot />
+        </div>
+      </main>
+      <script is:inline set:html={localeBootstrap}></script>
+    </div>
+  </body>
+</html>

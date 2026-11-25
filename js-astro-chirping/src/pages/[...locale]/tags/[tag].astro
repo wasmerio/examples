@@ -1,0 +1,51 @@
+---
+import { SITE } from '~/config';
+import BaseLayout from '~/layouts/BaseLayout.astro';
+import PostList from '~/components/PostList.astro';
+import { useTranslations, localizedPath } from '~/i18n/utils';
+import { getPosts, getTagsWithCount, slugify } from '~/utils/posts';
+
+interface Props {
+  tagName: string;
+  locale: any;
+}
+
+export async function getStaticPaths() {
+  let paths = [];
+  for (const locale of SITE.locales) {
+    const tags = await getTagsWithCount(locale);
+    const localeParams = { locale: locale === SITE.defaultLocale ? undefined : locale };
+    paths.push(
+      ...tags.map((tag) => ({
+        params: { ...localeParams, tag: slugify(tag.name) },
+        props: { tagName: tag.name, locale },
+      })),
+    );
+  }
+  return paths;
+}
+
+const { tagName, locale } = Astro.props as Props;
+const { tag } = Astro.params;
+const t = useTranslations(locale);
+const posts = (await getPosts(locale)).filter((p) => p.data.tags.some((tg) => slugify(tg) === tag));
+---
+
+<BaseLayout
+  title={`#${tagName}`}
+  pathWithoutLocale={`/tags/${tag}/`}
+  crumbs={[
+    { label: t('tags.title'), href: localizedPath('/tags/', locale) },
+    { label: `#${tagName}` },
+  ]}
+>
+  <header class="mb-6">
+    <p class="text-base-content/70 text-sm tracking-wide uppercase">{t('list.tagPosts')}</p>
+    <h1 class="text-3xl font-bold tracking-tight">#{tagName}</h1>
+    <p class="text-base-content/70 mt-1 text-sm">
+      {posts.length}
+      {posts.length === 1 ? t('list.totalPostsOne') : t('list.totalPosts')}
+    </p>
+  </header>
+  <PostList posts={posts} locale={locale} />
+</BaseLayout>

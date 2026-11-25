@@ -1,0 +1,226 @@
+---
+import { cn } from '@/utils/cn';
+import type { HTMLAttributes } from 'astro/types';
+
+export interface Props extends HTMLAttributes<'ul'> {
+  label?: string;
+}
+
+const { label = 'Tree navigation', class: className, ...props } = Astro.props;
+
+const classes = cn(
+  'tree',
+  className
+);
+---
+
+<ul class={classes} role="tree" aria-label={label} data-tree {...props}>
+  <slot />
+</ul>
+
+<script>
+  function initTrees() {
+    document.querySelectorAll('[data-tree]').forEach((tree) => {
+      if (tree.hasAttribute('data-initialized')) return;
+      tree.setAttribute('data-initialized', 'true');
+
+      // Calculate and set aria-level, aria-setsize, aria-posinset
+      function setAriaAttributes(container: Element, level: number) {
+        const directItems = Array.from(container.children).filter(
+          child => child.matches('[data-tree-item]')
+        );
+
+        directItems.forEach((item, index) => {
+          item.setAttribute('aria-level', String(level));
+          item.setAttribute('aria-setsize', String(directItems.length));
+          item.setAttribute('aria-posinset', String(index + 1));
+
+          // Process children
+          const childrenContainer = item.querySelector('[data-tree-item-children]');
+          if (childrenContainer) {
+            setAriaAttributes(childrenContainer, level + 1);
+          }
+        });
+      }
+
+      // Set ARIA attributes for the entire tree
+      setAriaAttributes(tree, 1);
+
+      // Find an item's own trigger (not one belonging to a nested item),
+      // shared by state sync and keyboard navigation so they can't disagree
+      const findTrigger = (item: Element): HTMLElement | null =>
+        item.querySelector(
+          ':scope > [data-tree-item-trigger], :scope > * > [data-tree-item-trigger], :scope > * > * > [data-tree-item-trigger]'
+        );
+
+      // Sync initial hidden state with data-state for all items
+      tree.querySelectorAll('[data-tree-item]').forEach((item) => {
+        const children = item.querySelector(':scope > [data-tree-item-children], :scope > * > [data-tree-item-children]') as HTMLElement;
+        const trigger = findTrigger(item);
+        const folderClosed = trigger?.querySelector('[data-folder-closed]') as HTMLElement;
+        const folderOpen = trigger?.querySelector('[data-folder-open]') as HTMLElement;
+        
+        if (children) {
+          const isOpen = item.getAttribute('data-state') === 'open';
+          children.hidden = !isOpen;
+          
+          // Update folder icons
+          if (folderClosed && folderOpen) {
+            if (isOpen) {
+              folderClosed.classList.add('hidden');
+              folderOpen.classList.remove('hidden');
+            } else {
+              folderClosed.classList.remove('hidden');
+              folderOpen.classList.add('hidden');
+            }
+          }
+        }
+      });
+
+      // Get all visible triggers for navigation
+      const getVisibleTriggers = (): HTMLElement[] => {
+        const triggers: HTMLElement[] = [];
+        
+        const processItem = (item: Element) => {
+          const trigger = findTrigger(item);
+          if (trigger) {
+            triggers.push(trigger);
+          }
+          
+          // If item is open, process children
+          if (item.getAttribute('data-state') === 'open') {
+            const children = item.querySelector('[data-tree-item-children]');
+            if (children) {
+              Array.from(children.children).forEach(child => {
+                if (child.matches('[data-tree-item]')) {
+                  processItem(child);
+                }
+              });
+            }
+          }
+        };
+
+        // Process top-level items
+        Array.from(tree.children).forEach(child => {
+          if (child.matches('[data-tree-item]')) {
+            processItem(child);
+          }
+        });
+
+        return triggers;
+      };
+
+      // Helper to update folder icons
+      const updateFolderIcons = (trigger: Element, isOpen: boolean) => {
+        const folderClosed = trigger.querySelector('[data-folder-closed]') as HTMLElement;
+        const folderOpen = trigger.querySelector('[data-folder-open]') as HTMLElement;
+        if (folderClosed && folderOpen) {
+          if (isOpen) {
+            folderClosed.classList.add('hidden');
+            folderOpen.classList.remove('hidden');
+          } else {
+            folderClosed.classList.remove('hidden');
+            folderOpen.classList.add('hidden');
+          }
+        }
+      };
+
+      // Handle all triggers in the tree
+      tree.querySelectorAll('[data-tree-item-trigger]').forEach((trigger) => {
+        trigger.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const item = trigger.closest('[data-tree-item]');
+          if (!item) return;
+
+          const children = item.querySelector('[data-tree-item-children]') as HTMLElement;
+          if (!children) return;
+
+          const isExpanded = item.getAttribute('data-state') === 'open';
+          
+          if (isExpanded) {
+            item.setAttribute('data-state', 'closed');
+            children.hidden = true;
+            trigger.setAttribute('aria-expanded', 'false');
+            updateFolderIcons(trigger, false);
+          } else {
+            item.setAttribute('data-state', 'open');
+            children.hidden = false;
+            trigger.setAttribute('aria-expanded', 'true');
+            updateFolderIcons(trigger, true);
+          }
+        });
+
+        // Keyboard navigation
+        trigger.addEventListener('keydown', (e: Event) => {
+          const key = (e as KeyboardEvent).key;
+          const item = trigger.closest('[data-tree-item]');
+          if (!item) return;
+
+          const visibleTriggers = getVisibleTriggers();
+          const currentIndex = visibleTriggers.indexOf(trigger as HTMLElement);
+
+          switch (key) {
+            case 'ArrowRight': {
+              const children = item.querySelector('[data-tree-item-children]') as HTMLElement;
+              if (children && item.getAttribute('data-state') !== 'open') {
+                item.setAttribute('data-state', 'open');
+                children.hidden = false;
+                trigger.setAttribute('aria-expanded', 'true');
+                updateFolderIcons(trigger, true);
+              } else if (children && item.getAttribute('data-state') === 'open') {
+                // Move to first child
+                const firstChildTrigger = children.querySelector('[data-tree-item-trigger]') as HTMLElement;
+                firstChildTrigger?.focus();
+              }
+              (e as KeyboardEvent).preventDefault();
+              break;
+            }
+            case 'ArrowLeft': {
+              const children = item.querySelector('[data-tree-item-children]') as HTMLElement;
+              if (children && item.getAttribute('data-state') === 'open') {
+                item.setAttribute('data-state', 'closed');
+                children.hidden = true;
+                trigger.setAttribute('aria-expanded', 'false');
+                updateFolderIcons(trigger, false);
+              } else {
+                // Move to parent
+                const parentItem = item.parentElement?.closest('[data-tree-item]');
+                const parentTrigger = parentItem ? findTrigger(parentItem) : null;
+                parentTrigger?.focus();
+              }
+              (e as KeyboardEvent).preventDefault();
+              break;
+            }
+            case 'ArrowDown': {
+              (e as KeyboardEvent).preventDefault();
+              if (currentIndex < visibleTriggers.length - 1) {
+                visibleTriggers[currentIndex + 1].focus();
+              }
+              break;
+            }
+            case 'ArrowUp': {
+              (e as KeyboardEvent).preventDefault();
+              if (currentIndex > 0) {
+                visibleTriggers[currentIndex - 1].focus();
+              }
+              break;
+            }
+            case 'Home': {
+              (e as KeyboardEvent).preventDefault();
+              visibleTriggers[0]?.focus();
+              break;
+            }
+            case 'End': {
+              (e as KeyboardEvent).preventDefault();
+              visibleTriggers[visibleTriggers.length - 1]?.focus();
+              break;
+            }
+          }
+        });
+      });
+    });
+  }
+
+  initTrees();
+  document.addEventListener('astro:page-load', initTrees);
+</script>

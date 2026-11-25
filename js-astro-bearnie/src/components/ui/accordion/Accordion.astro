@@ -1,0 +1,168 @@
+---
+import { cn } from '@/utils/cn';
+import type { HTMLAttributes } from 'astro/types';
+
+export interface Props extends HTMLAttributes<'div'> {
+  type?: 'single' | 'multiple';
+}
+
+const {
+  type = 'single',
+  class: className,
+  ...props
+} = Astro.props;
+
+const classes = cn('w-full', className);
+---
+
+<div class={classes} data-accordion data-type={type} {...props}>
+  <slot />
+</div>
+
+<script>
+  import { generateId } from '@/utils/focus-trap';
+
+  const running = new WeakMap<HTMLElement, Animation>();
+
+  function prefersReducedMotion() {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function openContent(content: HTMLElement) {
+    // If an animation is in flight, continue from its current height
+    const prev = running.get(content);
+    const startHeight = prev ? content.getBoundingClientRect().height : 0;
+    prev?.cancel();
+    content.hidden = false;
+    content.setAttribute('data-state', 'open');
+    if (prefersReducedMotion()) return;
+    const anim = content.animate(
+      [{ height: `${startHeight}px` }, { height: `${content.scrollHeight}px` }],
+      { duration: 200, easing: 'ease-out' },
+    );
+    running.set(content, anim);
+  }
+
+  function closeContent(content: HTMLElement) {
+    const prev = running.get(content);
+    const startHeight = prev
+      ? content.getBoundingClientRect().height
+      : content.scrollHeight;
+    prev?.cancel();
+    content.setAttribute('data-state', 'closed');
+    if (prefersReducedMotion()) {
+      content.hidden = true;
+      return;
+    }
+    const anim = content.animate(
+      [{ height: `${startHeight}px` }, { height: '0px' }],
+      { duration: 200, easing: 'ease-out' },
+    );
+    anim.onfinish = () => {
+      content.hidden = true;
+    };
+    running.set(content, anim);
+  }
+
+  function initAccordions() {
+    document.querySelectorAll('[data-accordion]').forEach((accordion) => {
+      if (accordion.hasAttribute('data-initialized')) return;
+      accordion.setAttribute('data-initialized', 'true');
+
+      const type = accordion.getAttribute('data-type');
+      
+      // Only select direct accordion items (not nested ones)
+      const items = Array.from(accordion.querySelectorAll('[data-accordion-item]')).filter(
+        (item) => item.closest('[data-accordion]') === accordion
+      );
+
+      items.forEach((item) => {
+        const trigger = item.querySelector(':scope > [data-accordion-trigger]') as HTMLElement;
+        const content = item.querySelector(':scope > [data-accordion-content]') as HTMLElement;
+
+        if (!trigger || !content) return;
+
+        // Generate IDs and set aria-controls
+        if (!content.id) {
+          content.id = generateId('accordion-content');
+        }
+        if (!trigger.id) {
+          trigger.id = generateId('accordion-trigger');
+        }
+
+        trigger.setAttribute('aria-controls', content.id);
+        content.setAttribute('aria-labelledby', trigger.id);
+
+        const labels = Array.from(trigger.querySelectorAll('[data-accordion-label]'));
+        labels.forEach((label) => {
+          if (!label.id) label.id = generateId('accordion-label');
+        });
+        const descriptions = Array.from(
+          trigger.querySelectorAll('[data-accordion-description]')
+        );
+        descriptions.forEach((description) => {
+          if (!description.id) description.id = generateId('accordion-description');
+        });
+
+        if (
+          !trigger.hasAttribute('aria-label') &&
+          !trigger.hasAttribute('aria-labelledby') &&
+          labels.length > 0
+        ) {
+          trigger.setAttribute('aria-labelledby', labels.map((label) => label.id).join(' '));
+        }
+
+        if (!trigger.hasAttribute('aria-describedby') && descriptions.length > 0) {
+          trigger.setAttribute(
+            'aria-describedby',
+            descriptions.map((description) => description.id).join(' '),
+          );
+        }
+      });
+
+      // Only select triggers that belong directly to this accordion
+      const triggers = Array.from(accordion.querySelectorAll('[data-accordion-trigger]')).filter(
+        (trigger) => trigger.closest('[data-accordion]') === accordion
+      ) as HTMLElement[];
+
+      triggers.forEach((trigger) => {
+        trigger.addEventListener('click', (e) => {
+          // Prevent event from bubbling to parent accordions
+          e.stopPropagation();
+          
+          const item = trigger.closest('[data-accordion-item]');
+          const content = item?.querySelector(':scope > [data-accordion-content]') as HTMLElement;
+          const isOpen = trigger.getAttribute('data-state') === 'open';
+
+          if (type === 'single') {
+            // Close all other items in THIS accordion only
+            triggers.forEach((t) => {
+              if (t !== trigger) {
+                t.setAttribute('data-state', 'closed');
+                t.setAttribute('aria-expanded', 'false');
+                const otherItem = t.closest('[data-accordion-item]');
+                const otherContent = otherItem?.querySelector(':scope > [data-accordion-content]') as HTMLElement;
+                if (otherContent && !otherContent.hidden) {
+                  closeContent(otherContent);
+                }
+              }
+            });
+          }
+
+          // Toggle current item
+          const newState = isOpen ? 'closed' : 'open';
+          trigger.setAttribute('data-state', newState);
+          trigger.setAttribute('aria-expanded', String(!isOpen));
+
+          if (content) {
+            if (isOpen) closeContent(content);
+            else openContent(content);
+          }
+        });
+      });
+    });
+  }
+
+  initAccordions();
+  document.addEventListener('astro:page-load', initAccordions);
+</script>

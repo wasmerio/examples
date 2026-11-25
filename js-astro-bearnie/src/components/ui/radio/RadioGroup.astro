@@ -1,0 +1,110 @@
+---
+import { cn } from "@/utils/cn";
+import type { HTMLAttributes } from "astro/types";
+
+export interface Props extends HTMLAttributes<"div"> {
+  name: string;
+  defaultValue?: string;
+  disabled?: boolean;
+  required?: boolean;
+  orientation?: "horizontal" | "vertical";
+}
+
+const {
+  name,
+  defaultValue,
+  disabled = false,
+  required = false,
+  orientation = "vertical",
+  class: className,
+  ...props
+} = Astro.props;
+
+const classes = cn(
+  "grid gap-2",
+  orientation === "horizontal" && "grid-flow-col auto-cols-max",
+  className
+);
+---
+
+<div
+  role="radiogroup"
+  aria-required={required}
+  aria-orientation={orientation}
+  data-radio-group
+  data-name={name}
+  data-default-value={defaultValue}
+  data-disabled={disabled ? "true" : undefined}
+  class={classes}
+  {...props}
+>
+  <slot />
+</div>
+
+<script>
+  function initRadioGroups() {
+    document.querySelectorAll('[data-radio-group]').forEach(group => {
+      if (group.hasAttribute('data-initialized')) return;
+      group.setAttribute('data-initialized', 'true');
+      
+      const name = group.getAttribute('data-name');
+      const defaultValue = group.getAttribute('data-default-value');
+      const isDisabled = group.getAttribute('data-disabled') === 'true';
+      
+      const items = group.querySelectorAll('[data-radio-group-item]');
+      
+      items.forEach(item => {
+        const input = item.querySelector('input[type="radio"]') as HTMLInputElement;
+        if (!input) return;
+        
+        // Set name on all inputs
+        input.name = name || '';
+        
+        // Set default checked
+        if (defaultValue && input.value === defaultValue) {
+          input.checked = true;
+        }
+        
+        // Apply disabled state from group
+        if (isDisabled) {
+          input.disabled = true;
+          item.setAttribute('data-disabled', 'true');
+        }
+      });
+      
+      // Keyboard navigation
+      group.addEventListener('keydown', (e) => {
+        const event = e as KeyboardEvent;
+        if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+        
+        const orientation = group.getAttribute('aria-orientation');
+        const isVertical = orientation === 'vertical';
+        const items = Array.from(group.querySelectorAll('[data-radio-group-item]:not([data-disabled])'));
+        const currentIndex = items.findIndex(item => item.contains(document.activeElement));
+        
+        if (currentIndex === -1) return;
+        
+        let nextIndex = currentIndex;
+        
+        if ((isVertical && event.key === 'ArrowDown') || (!isVertical && event.key === 'ArrowRight')) {
+          nextIndex = (currentIndex + 1) % items.length;
+        } else if ((isVertical && event.key === 'ArrowUp') || (!isVertical && event.key === 'ArrowLeft')) {
+          nextIndex = (currentIndex - 1 + items.length) % items.length;
+        }
+        
+        if (nextIndex !== currentIndex) {
+          event.preventDefault();
+          const nextInput = items[nextIndex].querySelector('input[type="radio"]') as HTMLInputElement;
+          if (nextInput) {
+            nextInput.focus();
+            nextInput.checked = true;
+            nextInput.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+      });
+    });
+  }
+  
+  initRadioGroups();
+  document.addEventListener('astro:page-load', initRadioGroups);
+</script>

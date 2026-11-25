@@ -1,0 +1,271 @@
+---
+import "@pagefind/default-ui/css/ui.css";
+---
+
+<div id="search-overlay" class="search-overlay hidden">
+  <div id="search-backdrop" class="search-backdrop"></div>
+  <div class="search-panel-wrapper">
+    <div id="search-panel" class="search-panel">
+      <div class="search-panel-header">
+        <span class="search-title">Search</span>
+        <button id="search-close-btn" class="search-close-btn">Esc</button>
+      </div>
+      <div class="search-panel-content">
+        {
+          import.meta.env.DEV ? (
+            <div class="search-dev-msg">
+              <p>
+                Search is only available in production builds. <br />
+                Try building and previewing the site to test it out locally.
+              </p>
+            </div>
+          ) : (
+            <div id="pagefind__search" />
+          )
+        }
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let searchAbort;
+
+  function setupSearch() {
+    if (searchAbort) searchAbort.abort();
+    searchAbort = new AbortController();
+    const { signal } = searchAbort;
+
+    const overlay = document.getElementById("search-overlay");
+    const backdrop = document.getElementById("search-backdrop");
+    const closeBtn = document.getElementById("search-close-btn");
+    
+    if (!overlay) return;
+
+    function openSearch() {
+      overlay.classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+
+      const searchContainer = document.getElementById("pagefind__search");
+      const needsInit = searchContainer && searchContainer.children.length === 0;
+
+      if (needsInit && !import.meta.env.DEV) {
+        const onIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
+        onIdle(async () => {
+          const { PagefindUI } = await import("@pagefind/default-ui");
+          new PagefindUI({
+            baseUrl: import.meta.env.BASE_URL,
+            bundlePath: import.meta.env.BASE_URL.replace(/\/$/, "") + "/pagefind/",
+            element: "#pagefind__search",
+            showImages: false,
+            showSubResults: true,
+          });
+          const searchInput = overlay.querySelector(".pagefind-ui__search-input");
+          if (searchInput) {
+            searchInput.focus();
+          }
+        });
+      } else {
+        requestAnimationFrame(() => {
+          const searchInput = overlay.querySelector(".pagefind-ui__search-input");
+          if (searchInput) {
+            searchInput.focus();
+          }
+        });
+      }
+    }
+
+    function closeSearch() {
+      overlay.classList.add("hidden");
+      document.body.style.overflow = "";
+    }
+
+    document.addEventListener("open-search", openSearch, { signal });
+
+    backdrop?.addEventListener("click", closeSearch, { signal });
+    closeBtn?.addEventListener("click", closeSearch, { signal });
+
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.key === "Escape" && !overlay.classList.contains("hidden")) {
+          closeSearch();
+          e.preventDefault();
+        }
+        if (e.key === "/" && overlay.classList.contains("hidden")) {
+          const active = document.activeElement;
+          const isInput = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+          if (!isInput) {
+            openSearch();
+            e.preventDefault();
+          }
+        }
+      },
+      { signal }
+    );
+  }
+
+  setupSearch();
+  document.addEventListener("astro:after-swap", setupSearch);
+</script>
+
+<style>
+  .search-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1000;
+  }
+  .search-overlay.hidden {
+    display: none;
+  }
+  .search-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+  .search-panel-wrapper {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding-top: 10vh;
+    padding-left: 1rem;
+    padding-right: 1rem;
+    height: 100%;
+    pointer-events: none;
+  }
+  .search-panel {
+    pointer-events: auto;
+    width: 100%;
+    max-width: 42rem;
+    max-height: 80vh;
+    background-color: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .search-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem 0.5rem;
+  }
+  .search-title {
+    font-size: 0.75rem;
+    font-family: monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-text-muted);
+  }
+  .search-close-btn {
+    cursor: pointer;
+    border-radius: 0.375rem;
+    background-color: var(--color-bg-offset);
+    border: 1px solid var(--color-border);
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    transition: color 0.15s ease, background-color 0.15s ease;
+  }
+  .search-close-btn:hover {
+    color: var(--color-text-main);
+    background-color: var(--color-border);
+  }
+  .search-panel-content {
+    padding: 0.5rem 1.5rem 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+  .search-dev-msg {
+    text-align: center;
+    padding: 2rem 0;
+    color: var(--color-text-muted);
+  }
+
+  /* Pagefind UI overrides */
+  #pagefind__search {
+    --pagefind-ui-primary: var(--color-accent);
+    --pagefind-ui-text: var(--color-text-main);
+    --pagefind-ui-background: var(--color-bg);
+    --pagefind-ui-border: var(--color-border);
+    --pagefind-ui-border-width: 1px;
+    --pagefind-ui-font: var(--font-sans);
+  }
+
+  :global(.pagefind-ui__search-input),
+  :global(.pagefind-ui__button) {
+    background-color: var(--color-bg-offset) !important;
+    color: var(--color-text-main) !important;
+  }
+  
+  :global(#pagefind__search .pagefind-ui__search-input:focus) {
+    outline: none;
+    border-color: var(--color-accent);
+  }
+  
+  :global(#pagefind__search .pagefind-ui__search-clear) {
+    width: calc(60px * var(--pagefind-ui-scale));
+    padding: 0;
+    background-color: transparent;
+    overflow: hidden;
+  }
+  :global(#pagefind__search .pagefind-ui__search-clear:focus) {
+    outline: 1px solid var(--color-accent);
+  }
+  :global(#pagefind__search .pagefind-ui__search-clear::before) {
+    content: "";
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='currentColor' %3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M6 18L18 6M6 6l12 12'%3E%3C/path%3E%3C/svg%3E")
+      center / 60% no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='currentColor' %3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M6 18L18 6M6 6l12 12'%3E%3C/path%3E%3C/svg%3E")
+      center / 60% no-repeat;
+    background-color: var(--color-accent);
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  :global(#pagefind__search .pagefind-ui__result) {
+    border: 0;
+  }
+
+  :global(#pagefind__search .pagefind-ui__result-link) {
+    background-size: 100% 6px;
+    background-position: bottom;
+    background-repeat: repeat-x;
+    background-image: linear-gradient(
+      transparent,
+      transparent 5px,
+      var(--color-text-main) 5px,
+      var(--color-text-main)
+    );
+  }
+
+  :global(#pagefind__search .pagefind-ui__result-link:hover) {
+    text-decoration: none;
+    background-image: linear-gradient(
+      transparent,
+      transparent 4px,
+      var(--color-accent) 4px,
+      var(--color-accent)
+    );
+  }
+
+  :global(#pagefind__search mark) {
+    color: var(--color-bg);
+    background-color: var(--color-accent);
+    font-weight: 600;
+  }
+</style>

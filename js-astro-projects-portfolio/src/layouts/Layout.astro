@@ -1,0 +1,127 @@
+---
+import '../styles/global.css';
+import { site } from '@data/site';
+import SideNav from '../components/SideNav.astro';
+import MobileHeader from '../components/MobileHeader.astro';
+import { ClientRouter } from 'astro:transitions';
+import { SITE_CONFIG } from '../config.ts';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { title = site.meta.title, description = site.meta.description } = Astro.props;
+const canonical = new URL(Astro.url.pathname, site.url).href;
+
+const baseTheme = SITE_CONFIG.baseTheme;
+const defaultTheme = `${baseTheme}-dark`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+    
+    <link rel="preload" href="https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hiJ-Ek-_EeA.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="https://fonts.gstatic.com/s/spacegrotesk/v15/V8mQoQDjQSkFtoMM3T6r8E7mF71Q.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="https://fonts.gstatic.com/s/jetbrainsmono/v18/tDbI2oqRg1oM3QBjjcaDkOr4fQ.woff2" as="font" type="font/woff2" crossorigin>
+    
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <ClientRouter />
+
+    <!-- THEME INITIALIZATION SCRIPT -->
+    <script is:inline define:vars={{ baseTheme, defaultTheme }}>
+      function applyTheme() {
+        const savedTheme = localStorage.getItem('theme');
+
+        if (savedTheme && savedTheme.startsWith(baseTheme)) {
+          document.documentElement.setAttribute('data-theme', savedTheme);
+        } else {
+          document.documentElement.setAttribute('data-theme', defaultTheme);
+          localStorage.setItem('theme', defaultTheme);
+        }
+      }
+
+      // Apply theme on initial load
+      applyTheme();
+
+      // Re-apply theme after navigation (for view transitions)
+      document.addEventListener('astro:page-load', applyTheme);
+    </script>
+  </head>
+  <body class="min-h-screen bg-background text-maintext antialiased selection:bg-accent/30 selection:text-background">
+    <div
+      class="mx-auto flex min-h-screen max-w-6xl flex-col lg:flex-row lg:gap-6 lg:px-12 xl:max-w-7xl xl:gap-0"
+    >
+      <SideNav />
+      <main
+        id="main"
+        class="relative flex min-w-0 flex-1 flex-col px-4 pb-16 pt-12 sm:px-6 md:px-8 lg:py-15 lg:pl-4 lg:pr-0"
+      >
+        <div class="mb-4 flex justify-end lg:absolute lg:right-8 lg:top-8 lg:z-10 xl:right-12">
+          <MobileHeader />
+        </div>
+        <slot />
+      </main>
+    </div>
+    <script is:inline>
+      (function () {
+        const links = Array.from(document.querySelectorAll('[data-section-link]'));
+        const sections = ['about', 'experiences', 'featured-projects']
+          .map((id) => document.getElementById(id))
+          .filter(Boolean);
+
+        if (!links.length || !sections.length) return;
+
+        const setActive = (id) => {
+          links.forEach((link) => {
+            const href = link.getAttribute('href') || '';
+            const isActive = href.endsWith('#' + id);
+            link.classList.toggle('nav-link-active', isActive);
+            if (isActive) link.setAttribute('aria-current', 'true');
+            else link.removeAttribute('aria-current');
+          });
+        };
+
+        const observer = new IntersectionObserver(
+          () => {
+            const scrolledToBottom =
+              window.innerHeight + window.scrollY >= document.body.scrollHeight - 10;
+
+            if (scrolledToBottom) {
+              setActive(sections[sections.length - 1].id);
+              return;
+            }
+
+            if (window.scrollY < 50) {
+              setActive(sections[0].id);
+              return;
+            }
+
+            const active = [...sections]
+              .reverse()
+              .find((s) => s.getBoundingClientRect().top <= window.innerHeight * 0.15);
+
+            if (active) setActive(active.id);
+            else setActive(sections[0].id);
+          },
+          { rootMargin: '0px', threshold: 0 }
+        );
+
+        sections.forEach((section) => observer.observe(section));
+        setActive(sections[0].id);
+      })();
+    </script>
+  </body>
+</html>

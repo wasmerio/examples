@@ -1,0 +1,116 @@
+---
+
+import Card from './Card.astro';
+import { getCollection } from 'astro:content';
+import { withBase } from '../utils/slugify';
+
+interface RawPost {
+    // collection item shape:
+    id?: string;
+    data?: {
+        title?: string;
+        description?: string;
+        heroImage?: any;
+        pubDate?: Date | string;
+    };
+
+    // flattened shape:
+    title?: string;
+    description?: string;
+    heroImage?: any;
+    pubDate?: Date | string;
+
+    // optional link if not a collection item:
+    href?: string;
+}
+
+export interface Props {
+    heading?: string;
+    posts?: RawPost[];
+    limit?: number;
+    viewAllHref?: string;
+    viewAllLabel?: string;
+}
+
+
+let {
+    heading = "Blog",
+    posts = [],
+    limit = 6,
+    viewAllHref,
+    viewAllLabel = "View all posts",
+} = Astro.props as Props;
+
+function getPostData(item: RawPost) {
+    return item && (item as any).data ? (item as any).data : item;
+}
+
+if (posts.length === 0) {
+    console.warn(
+        '[PostList] No posts provided; fetching from "blog" collection.'
+    );
+    posts = posts.concat(await getCollection("blog")).sort(
+        (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+    );
+}
+
+const subpath = import.meta.env.BASE_URL;
+
+const visiblePosts = typeof limit === "number" ? posts.slice(0, limit) : posts;
+
+---
+
+<section class="content-shell">
+    <div>
+        <div
+            class="grid grid-cols-1 gap-y-24 md:grid-cols-3 border-b py-24 border-base-200"
+        >
+            <div class="lg:sticky lg:top-24 lg:z-40 self-start">
+                <h2
+                    class="text-sm 2xl:text-xl text-base-900 font-bold uppercase"
+                >
+                    {heading}
+                </h2>
+            </div>
+
+            <div
+                class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-y-20 gap-x-8"
+            >
+                {
+                    visiblePosts.map((post) => {
+                        const p = getPostData(post) || {};
+                        const id = (post as any).id;
+                        const href = id
+                            ? withBase(`/blog/${id}/`)
+                            : p.href
+                                ? withBase(p.href)
+                                : undefined;
+                        const rawDate = p.pubDate ?? null;
+                        const pubDate = rawDate
+                            ? rawDate instanceof Date
+                                ? rawDate
+                                : new Date(rawDate)
+                            : null;
+
+                        return (
+                            <Card
+                                title={p.title}
+                                href={href}
+                                image={p.heroImage}
+                                imageAlt={p.title}
+                                description={p.description}
+                                date={pubDate}
+                                variant="post"
+                            />
+                        );
+                    })
+                }
+                <Card
+                    title={viewAllLabel}
+                    href={withBase(viewAllHref ?? '/blog/')}
+                    variant="post"
+                />
+            </div>
+        </div>
+    </div>
+</section>

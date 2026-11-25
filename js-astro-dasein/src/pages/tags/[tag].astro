@@ -1,0 +1,75 @@
+---
+import { getCollection } from 'astro:content';
+import Card from '../../components/Card.astro';
+import PageLayout from '../../layouts/PageLayout.astro';
+import { getSite } from '../../utils/consts';
+import { slugify, withBase } from '../../utils/slugify';
+
+const site = await getSite();
+
+export async function getStaticPaths() {
+	const posts = await getCollection('blog');
+	const tags = new Map<string, string>();
+
+	posts.forEach((post) => {
+		(post.data.tags ?? []).forEach((tag) => {
+			tags.set(slugify(tag), tag);
+		});
+	});
+
+	return Array.from(tags.entries()).map(([slug, label]) => ({
+		params: { tag: slug },
+		props: { tagLabel: label },
+	}));
+}
+
+interface Props {
+	tagLabel: string;
+}
+
+const { tagLabel } = Astro.props as Props;
+const tagParam = Astro.params.tag ?? '';
+const posts = (await getCollection('blog')).filter((post) =>
+	(post.data.tags ?? []).some((tag) => slugify(tag) === tagParam),
+);
+
+posts.sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+---
+
+<PageLayout title={`${tagLabel} · Tags · ${site.title}`} description={`Entradas etiquetadas como ${tagLabel}`}>
+	<section class="content-shell py-12 space-y-6">
+		<header class="space-y-2">
+			<p class="text-sm uppercase tracking-[0.3em] text-muted">Etiqueta</p>
+			<h1 class="text-3xl font-semibold text-ink">{tagLabel}</h1>
+			<p class="text-muted">Entradas que incluyen esta etiqueta.</p>
+		</header>
+
+		{posts.length === 0 ? (
+			<p class="text-muted">No hay entradas con esta etiqueta.</p>
+		) : (
+			<div class="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
+				{posts.map((post) => (
+					<Card
+						title={post.data.title}
+						href={withBase(`/blog/${post.id}/`)}
+						description={post.data.description}
+						date={post.data.pubDate}
+						image={post.data.heroImage}
+						imageAlt={post.data.title}
+						variant="post"
+					>
+						{post.data.tags.length > 0 && (
+							<div class="flex flex-wrap gap-2 pt-1 text-sm text-muted">
+								{post.data.tags.map((tag) => (
+									<a class="inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-[color-mix(in_oklab,var(--color-surface)_95%,transparent)] px-3 py-1 hover:text-ink" href={withBase(`/tags/${slugify(tag)}/`)}>
+										{tag}
+									</a>
+								))}
+							</div>
+						)}
+					</Card>
+				))}
+			</div>
+		)}
+	</section>
+</PageLayout>

@@ -1,0 +1,127 @@
+---
+/**
+ * ProjectList.astro
+ *
+ * Reusable Projects section component.
+ *
+ * Props:
+ * - heading?: string (default: "Projects")
+ * - items: Array of project-like objects. Each item may be either:
+ *     - a plain object: { title, description?, link?, image? }
+ *     - a collection item: { data: { title, description?, link?, image? } }
+ * - limit?: number (default: 4) -> how many items to show
+ * - viewAllHref?: string -> optional "View all projects" link
+ * - viewAllLabel?: string (default: "View all projects")
+ *
+ * Slots:
+ * - default: optional slot rendered in the same spot as the "View all" link
+ *
+ * Behavior:
+ * - Renders the same markup/styling as the original index Projects section.
+ * - Link targets to external URLs get `target="_blank"` and `rel="noopener noreferrer"`.
+ */
+import { Image } from "astro:assets";
+import Card from "./Card.astro";
+import { getCollection } from 'astro:content';
+import { withBase } from '../utils/slugify';
+
+interface RawProject {
+    // Either the flattened shape...
+    title?: string;
+    description?: string;
+    link?: string;
+    image?: any;
+
+    // ...or the content collection shape:
+    data?: {
+        title?: string;
+        description?: string;
+        link?: string;
+        image?: any;
+    };
+}
+
+export interface Props {
+    heading?: string;
+    items: RawProject[];
+    limit?: number;
+    viewAllHref?: string;
+    viewAllLabel?: string;
+}
+
+let {
+    heading = "Projects",
+    items = [],
+    limit = 4,
+    viewAllHref,
+    viewAllLabel = "View all projects",
+} = Astro.props as Props;
+
+function getProjectData(item: RawProject) {
+    return item && (item as any).data ? (item as any).data : item;
+}
+
+function isExternal(href?: string) {
+    return typeof href === "string" && /^https?:\/\//i.test(href);
+}
+
+if (items.length === 0) {
+    console.warn('[ProjectList] No items provided; fetching from "projects" collection.');
+    items = items.concat(await getCollection("projects")).sort(
+        (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+    );
+}
+
+const visibleItems = typeof limit === "number" ? items.slice(0, limit) : items;
+
+const baseUrl =
+    !import.meta.env.BASE_URL || import.meta.env.BASE_URL === "/"
+        ? ""
+        : import.meta.env.BASE_URL;
+---
+
+<section>
+    <div class="max-w-[90rem] mx-auto pt-8 px-8">
+        <div
+            class="grid grid-cols-1 gap-y-24 md:grid-cols-3 border-b py-24 border-base-200"
+        >
+            <div class="lg:sticky lg:top-24 lg:z-40 self-start">
+                <h2
+                    class="text-sm 2xl:text-xl text-base-900 font-bold uppercase"
+                >
+                    {heading}
+                </h2>
+            </div>
+
+            <div
+                class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-y-20 gap-x-8"
+            >
+                {
+                    visibleItems.map((item) => {
+                        const p = getProjectData(item) || {};
+                        const id = (item as any).id;
+                        const href = id ? withBase(`/projects/${id}/`) : p.link;
+                        const external = isExternal(href);
+
+                        return (
+                            <Card
+                                title={p.title}
+                                href={href}
+                                image={p.image}
+                                imageAlt={p.title}
+                                description={p.description}
+                                variant="project"
+                                cta="View project →"
+                            />
+                        );
+                    })
+                }
+                <Card
+                    title={viewAllLabel}
+                    href={`${baseUrl + (viewAllHref ?? '/projects/')}`}
+                    variant="project"
+                />
+            </div>
+        </div>
+    </div>
+</section>

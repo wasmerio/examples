@@ -1,0 +1,154 @@
+---
+import { getSite } from "../utils/consts";
+import HeaderLink from "./HeaderLink.astro";
+
+const site = await getSite();
+import SearchModal from "./SearchModal.astro";
+import ThemeToggle from "./ThemeToggle.astro";
+---
+
+<header class="site-header">
+  <nav class="h-full w-full flex items-center justify-end">
+    <button
+      id="nav-toggle"
+      aria-label="Toggle navigation"
+      aria-pressed="false"
+      class="md:hidden text-xs 2xl:text-lg text-base-900 hover:text-base-500 font-bold uppercase"
+    >
+      Menu
+    </button>
+
+    <div
+      class="hidden md:flex items-center gap-2 text-xs 2xl:text-lg text-base-900 hover:text-base-500 font-bold uppercase"
+    >
+      <HeaderLink href="/">Home</HeaderLink>
+      <HeaderLink href="/blog">Blog</HeaderLink>
+      <HeaderLink href="/projects">Projects</HeaderLink>
+      <HeaderLink href="/about">About</HeaderLink>
+
+      <SearchModal class="text-xs 2xl:text-lg text-base-900 hover:text-base-500 font-bold uppercase" />
+
+      <a
+        href="https://github.com/roicort/launchpad"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Visit the GitHub repository"
+      >
+        GitHub
+      </a>
+      <button
+        id="debug-toggle"
+        aria-label="Toggle debug borders"
+        aria-pressed="false"
+        class="text-xs 2xl:text-lg text-base-900 hover:text-base-500 font-bold uppercase"
+      >
+        Debug
+      </button>
+      <ThemeToggle class="text-xs 2xl:text-lg text-base-900 hover:text-base-500 font-bold uppercase" />
+    </div>
+
+    <!-- Mobile modal menu (brutalist, simple) -->
+    <div id="mobile-nav" role="dialog" aria-label="Mobile navigation" aria-hidden="true" style="display:none;" class="fixed inset-0 z-[1000] p-8 overflow-auto bg-[var(--color-paper)] text-[var(--color-ink)]">
+      <button id="mobile-close" aria-label="Close navigation" style="position:absolute;right:1rem;top:1rem;" class="text-xs 2xl:text-lg font-bold uppercase">Close</button>
+      <div class="flex flex-col gap-2 items-start text-xs 2xl:text-lg hover:text-base-500 font-bold uppercase">
+        <HeaderLink href="/">Home</HeaderLink>
+        <HeaderLink href="/blog">Blog</HeaderLink>
+        <HeaderLink href="/projects">Projects</HeaderLink>
+        <HeaderLink href="/about">About</HeaderLink>
+        <SearchModal class="text-xs 2xl:text-lg hover:text-base-500 font-bold uppercase" />
+        <a class="text-xs 2xl:text-lg hover:text-base-500 font-bold uppercase" href="https://github.com/roicort/launchpad" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <button id="mobile-debug" aria-label="Toggle debug borders" class="text-xs 2xl:text-lg hover:text-base-500 font-bold uppercase">Debug</button>
+        <ThemeToggle class="text-xs 2xl:text-lg hover:text-base-500 font-bold uppercase" />
+      </div>
+    </div>
+  </nav>
+</header>
+
+<script is:inline>
+  const DEBUG_KEY = "debug-borders";
+
+  // Cache selectors to avoid repeated DOM queries
+  const navButton = document.getElementById("nav-toggle");
+  const mobileNav = document.getElementById("mobile-nav");
+  const mobileClose = document.getElementById("mobile-close");
+  const debugButton = document.getElementById("debug-toggle");
+  const mobileDebugButton = document.getElementById("mobile-debug");
+  const navElement = document.querySelector("nav");
+
+  const applyDebug = (state) => {
+    const isOn = state === "on";
+    document.documentElement.dataset.debug = isOn ? "on" : "off";
+    if (debugButton) debugButton.setAttribute("aria-pressed", isOn ? "true" : "false");
+    if (mobileDebugButton) mobileDebugButton.setAttribute("aria-pressed", isOn ? "true" : "false");
+  };
+
+  const getPreferredDebug = () => {
+    const stored = localStorage.getItem(DEBUG_KEY);
+    if (stored === "on" || stored === "off") return stored;
+    return "off";
+  };
+
+  const toggleDebug = () => {
+    const current = document.documentElement.dataset.debug === "on" ? "on" : "off";
+    const next = current === "on" ? "off" : "on";
+    localStorage.setItem(DEBUG_KEY, next);
+    applyDebug(next);
+  };
+
+  const applyNav = (state) => {
+    const isOpen = state === "open";
+    document.documentElement.dataset.nav = isOpen ? "open" : "closed";
+    if (navButton) navButton.setAttribute("aria-pressed", isOpen ? "true" : "false");
+
+    if (mobileNav) {
+      mobileNav.style.display = isOpen ? "block" : "none";
+      mobileNav.setAttribute("aria-hidden", isOpen ? "false" : "true");
+
+      if (isOpen) {
+        // focus the first interactive element inside the mobile nav for accessibility
+        const first = mobileNav.querySelector('a, button, [tabindex]:not([tabindex="-1"])');
+        if (first instanceof HTMLElement) first.focus();
+      } else {
+        // restore focus to the toggle button
+        if (navButton instanceof HTMLElement) navButton.focus();
+      }
+    }
+  };
+
+  const toggleNav = () => applyNav(document.documentElement.dataset.nav === "open" ? "closed" : "open");
+  const closeNav = () => applyNav("closed");
+
+  const on = (el, evt, handler) => { if (!el) return; el.addEventListener(evt, handler); };
+
+  applyDebug(getPreferredDebug());
+  applyNav("closed");
+
+  on(debugButton, "click", toggleDebug);
+  on(mobileDebugButton, "click", () => { toggleDebug(); closeNav(); });
+  on(navButton, "click", () => toggleNav());
+  on(mobileClose, "click", closeNav);
+
+  // close nav with Escape
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.documentElement.dataset.nav === 'open') closeNav();
+  });
+
+  // delegate link clicks to the nav container (works for both desktop and mobile)
+  if (navElement) {
+    navElement.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (t.closest && t.closest('a')) closeNav();
+    });
+  }
+
+  // click-away closes the nav (keeps existing behavior)
+  document.addEventListener("click", (event) => {
+    if (document.documentElement.dataset.nav !== "open") return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const clickedToggle = navButton && navButton.contains(target);
+    const clickedNav = navElement && navElement.contains(target);
+    if (!clickedToggle && !clickedNav) closeNav();
+  });
+</script>

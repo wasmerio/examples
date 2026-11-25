@@ -1,0 +1,76 @@
+---
+import { type CollectionEntry, getCollection, render } from "astro:content";
+import License from "@components/widgets/License.astro";
+import PostFilter from "@components/widgets/PostFilter.astro";
+import PostInfo from "@components/widgets/PostInfo.astro";
+import { DATE_FORMAT } from "@config";
+import BaseLayout from "@layouts/BaseLayout.astro";
+import dayjs from "@utils/dayjs";
+import MainCard from "@/components/MainCard.astro";
+import "katex/dist/katex.min.css";
+
+export async function getStaticPaths() {
+  const posts = await getCollection("blog");
+
+  const filteredPosts = import.meta.env.PROD
+    ? posts.filter((post: CollectionEntry<"blog">) => !post.data.draft)
+    : posts;
+
+  return filteredPosts.map((blog: CollectionEntry<"blog">) => ({
+    params: { slug: blog.id },
+    props: { blog },
+  }));
+}
+
+interface Props {
+  blog: CollectionEntry<"blog">;
+}
+
+const { blog } = Astro.props;
+const { Content, remarkPluginFrontmatter, headings } = await render(blog);
+const displayDate = blog.data.pubDate
+  ? dayjs(blog.data.pubDate).format(DATE_FORMAT)
+  : "";
+const image = new URL(`/og/${blog.id}.png`, Astro.site).toString();
+const url = new URL(`/blog/${blog.id}`, Astro.site ?? Astro.url.origin);
+---
+
+<BaseLayout
+  title={blog.data.title}
+  description={blog.data.description}
+  image={image}
+  headings={headings}
+  showTOC={true}
+  ogType="article"
+  pubDate={blog.data.pubDate}
+>
+  <MainCard title={blog.data.title} description={blog.data.description} image={blog.data.image} infoIcon="lucide:info">
+    <PostInfo
+      pubDate={displayDate}
+      badge={blog.data.badge}
+      word={remarkPluginFrontmatter.totalCharCount}
+      time={remarkPluginFrontmatter.readingTime}
+    />
+
+    <div class="mb-6">
+      <PostFilter categories={blog.data.categories} tags={blog.data.tags} />
+    </div>
+
+    <div class="mt-8">
+      <div id="content" class="prose max-w-none prose-headings:scroll-mt-20 prose-img:rounded-xl prose-img:mx-auto">
+        <Content />
+        <License
+          url={url}
+          title={blog.data.title}
+          image={blog.data.image}
+          pubDate={blog.data.pubDate}
+          badge={blog.data.badge}
+          categories={blog.data.categories}
+          tags={blog.data.tags}
+          word={remarkPluginFrontmatter.totalCharCount}
+          time={remarkPluginFrontmatter.readingTime}
+        />
+      </div>
+    </div>
+  </MainCard>
+</BaseLayout>

@@ -1,0 +1,209 @@
+---
+import { ClientRouter } from "astro:transitions";
+import Footer from "@components/Footer.astro";
+import Header from "@components/Header.astro";
+import Navbar from "@components/Navbar.astro";
+import Sidebar from "@components/Sidebar.astro";
+import MobileTOC from "@components/widgets/MobileTOC.astro";
+import {
+  SITE_DESCRIPTION,
+  SITE_FAVICON,
+  SITE_LANGUAGE,
+  SITE_TAB,
+  SITE_THEME,
+  t,
+  USER_NAME,
+  USER_SITE,
+} from "@config";
+import ElementCrossing from "astro-vtbot/components/ElementCrossing.astro";
+import PointerOnNavigation from "astro-vtbot/components/PointerOnNavigation.astro";
+
+const {
+  title,
+  image,
+  description = SITE_DESCRIPTION,
+  headings = [],
+  showTOC = false,
+  isIndexed = true,
+  ogType = "website",
+  pubDate,
+} = Astro.props;
+
+const pageUrl = new URL(Astro.url.pathname, Astro.site).toString();
+const jsonLd =
+  ogType === "article"
+    ? {
+        "@context": "https://schema.org",
+        "@type": "BlogPosting",
+        headline: title,
+        description,
+        image,
+        url: pageUrl,
+        datePublished: pubDate?.toISOString(),
+        author: {
+          "@type": "Person",
+          name: USER_NAME,
+        },
+      }
+    : {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        name: SITE_TAB,
+        url: USER_SITE,
+        description: SITE_DESCRIPTION,
+      };
+---
+
+<!doctype html>
+<html lang={SITE_LANGUAGE} class="bg-base-300" data-theme={SITE_THEME.light} data-theme-type="light">
+  <head>
+    <ClientRouter />
+    <ElementCrossing />
+    <PointerOnNavigation />
+    <Header
+      title={title}
+      description={description}
+      favicon={SITE_FAVICON}
+      image={image}
+      ogType={ogType}
+    />
+    <title>{`${title} - ${SITE_TAB}`}</title>
+    <script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />
+
+    <script define:vars={{ SITE_THEME }} is:inline>
+      (function () {
+        const allowedThemes = [SITE_THEME.light, SITE_THEME.dark];
+        const storedTheme = localStorage.getItem("theme");
+        // Ignore values saved when a different theme was configured. Applying a
+        // theme that no longer exists would leave every daisyUI variable unset.
+        const isStoredThemeValid = storedTheme !== null && allowedThemes.includes(storedTheme);
+        if (storedTheme !== null && !isStoredThemeValid) {
+          localStorage.removeItem("theme");
+        }
+        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = isStoredThemeValid
+          ? storedTheme
+          : prefersDark
+            ? SITE_THEME.dark
+            : SITE_THEME.light;
+        document.documentElement.setAttribute("data-theme", theme);
+        const themeType = theme === SITE_THEME.dark ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme-type", themeType);
+        window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+          if (!localStorage.getItem("theme")) {
+            const newTheme = e.matches ? SITE_THEME.dark : SITE_THEME.light;
+            document.documentElement.setAttribute("data-theme", newTheme);
+            const newThemeType = e.matches ? "dark" : "light";
+            document.documentElement.setAttribute("data-theme-type", newThemeType);
+          }
+        });
+      })();
+    </script>
+  </head>
+
+  <body class="flex flex-col min-h-screen" {...isIndexed ? { "data-pagefind-body": true } : {}}>
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[100] focus:btn focus:btn-primary"
+    >
+      {t("label.skipToContent")}
+    </a>
+
+    <Navbar />
+
+    <div class="max-w-6xl mx-auto w-full flex-grow">
+      <div class="grid grid-cols-1 md:grid-cols-5 lg:grid-cols-4 gap-4 p-4 h-full">
+        <main
+          id="main-content"
+          tabindex="-1"
+          class="col-span-1 md:col-span-4 lg:col-span-3 bg-transparent order-1 md:order-2 mt-16 md:mt-0 flex flex-col gap-4"
+        >
+          <div class="flex-grow flex flex-col gap-4">
+            <slot />
+          </div>
+          <Footer />
+        </main>
+        <aside class="col-span-1 bg-transparent order-2 md:order-1 md:top-4">
+          <Sidebar headings={headings} showTOC={showTOC} />
+          <slot name="sidebar" />
+        </aside>
+      </div>
+    </div>
+
+    <MobileTOC headings={headings} showTOC={showTOC} />
+
+    <script define:vars={{ SITE_THEME }} is:inline>
+      document.addEventListener("astro:after-swap", () => {
+        // Restore the theme after a view-transition navigation. When the user
+        // has never toggled the theme, fall back to the system preference
+        // instead of the light theme baked into the server-rendered <html>.
+        // Values saved under a previously configured theme are ignored.
+        const allowedThemes = [SITE_THEME.light, SITE_THEME.dark];
+        const storedTheme = localStorage.getItem("theme");
+        const isStoredThemeValid = storedTheme !== null && allowedThemes.includes(storedTheme);
+        if (storedTheme !== null && !isStoredThemeValid) {
+          localStorage.removeItem("theme");
+        }
+        const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const theme = isStoredThemeValid
+          ? storedTheme
+          : prefersDark
+            ? SITE_THEME.dark
+            : SITE_THEME.light;
+        const themeType = theme === SITE_THEME.dark ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", theme);
+        document.documentElement.setAttribute("data-theme-type", themeType);
+      });
+    </script>
+
+    <script is:inline>
+      document.addEventListener("astro:page-load", () => {
+        document.querySelectorAll(".btn-copy").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const codeBlock = button.closest(".frosti-code");
+            const code = codeBlock.querySelector("code").textContent;
+            const copyIcon = button.querySelector(".frosti-code-toolbar-copy-icon");
+            const successIcon = button.querySelector(".frosti-code-toolbar-copy-success");
+            try {
+              await navigator.clipboard.writeText(code);
+              copyIcon.classList.add("hidden");
+              successIcon.classList.remove("hidden");
+              button.classList.add("copy-success");
+              setTimeout(() => {
+                copyIcon.classList.remove("hidden");
+                successIcon.classList.add("hidden");
+                button.classList.remove("copy-success");
+              }, 2000);
+            } catch (err) {
+              console.error("Failed to copy:", err);
+            }
+          });
+        });
+      });
+    </script>
+
+    <style is:inline>
+      .btn-copy {
+        position: relative;
+        overflow: hidden;
+      }
+      .copy-success {
+        animation: pulse 0.5s ease-in-out;
+      }
+      .frosti-code-toolbar-copy-success svg {
+        color: #10b981;
+      }
+      @keyframes pulse {
+        0% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.1);
+        }
+        100% {
+          transform: scale(1);
+        }
+      }
+    </style>
+  </body>
+</html>

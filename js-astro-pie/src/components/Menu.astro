@@ -1,0 +1,187 @@
+---
+import { getCollection } from "astro:content";
+import type { CollectionEntry } from "astro:content";
+import { siteLang, siteCurrency } from "~/data/config";
+const plates = await getCollection("plates");
+const siteLangFormat = siteLang.replace("_", "-");
+---
+
+<!-- Quick Nav -->
+<div id="plate-nav-wrapper" class="mb-20 sticky top-8 z-10">
+	<nav class="bg-brand-green text-white sm:rounded-full max-w-5xl mx-auto">
+		<div class="swiper-plates w-auto overflow-hidden">
+			<ul id="plate-nav" class="px-2.5 py-3 swiper-wrapper">
+				{
+					plates.map((plate) => (
+						<li class="swiper-slide !w-auto last:mr-5">
+							<a
+								href={`#${plate.data.slug}`}
+								class="rounded-full px-2 py-1 transition font-medium select-none"
+								data-category-link={plate.data.slug}
+							>
+								{plate.data.prettyName}
+							</a>
+						</li>
+					))
+				}
+			</ul>
+		</div>
+	</nav>
+</div>
+
+<div class="grid grid-cols-1 gap-y-32">
+	{
+		plates.map((plate) => (
+			<div id={plate.data.slug} class="space-y-16 scroll-mt-20" data-category-section={plate.data.slug}>
+				<div class="flex flex-col items-center gap-2 max-w-lg mx-auto text-balance text-center">
+					<h3 class="h4 text-brand-green/70">{plate.data.prettyName}</h3>
+					<p>{plate.data.description}</p>
+				</div>
+
+				<dl class="max-w-5xl mx-auto">
+					<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-x-16 xl:gap-x-32">
+						{plate.data.plates.map((item: CollectionEntry<"plates">["data"]["plates"][number]) => (
+							<div>
+								<dt>
+									<div class="flex justify-between items-center">
+										<span class="font-bold text-2xl tracking-wide">{item.name}</span>
+										<span class="font-medium text-lg">
+											{new Intl.NumberFormat(siteLangFormat, {
+												style: "currency",
+												currency: siteCurrency,
+											}).format(item.price)}
+										</span>
+									</div>
+								</dt>
+								<dd>
+									<p class="mt-2 text-gray-500 tracking-wide leading-normal text-balance">
+										{item.description}
+									</p>
+								</dd>
+							</div>
+						))}
+					</div>
+				</dl>
+			</div>
+		))
+	}
+</div>
+
+<style>
+	@media screen and (min-width: 0px) and (max-width: 640px) {
+		#plate-nav-wrapper {
+			/* position: relative; */
+			right: 0;
+			left: 0;
+			top: 0;
+			margin-left: -50vw;
+			margin-right: -50vw;
+			max-width: 100vw;
+			width: 100vw;
+		}
+	}
+</style>
+
+<script>
+	import Swiper from "swiper";
+	import "swiper/css";
+
+	document.addEventListener("astro:page-load", () => {
+		const swiperPlates = document.querySelector(".swiper-plates") as HTMLElement;
+		const swiper = new Swiper(swiperPlates, {
+			loop: false,
+			spaceBetween: 32,
+			slidesPerView: "auto",
+		});
+
+		// Setup category highlighting
+		const categoryLinks = document.querySelectorAll("[data-category-link]");
+		const categorySections = document.querySelectorAll("[data-category-section]");
+		let activeLink: Element | null = null;
+		let isNavigatingByClick = false; // Flag to track click-based navigation
+
+		// Add hover effect to all links initially
+		categoryLinks.forEach((link) => {
+			link.classList.add("hover:bg-white/10");
+		});
+
+		// Function to set active category
+		function setActiveCategory(id: string) {
+			// Remove active classes and restore hover effect to all links
+			categoryLinks.forEach((link) => {
+				link.classList.remove("bg-white", "text-brand-green");
+				link.classList.add("hover:bg-white/10");
+			});
+
+			// Add active classes to current link and remove hover effect
+			const currentLink = document.querySelector(`[data-category-link="${id}"]`);
+			if (currentLink) {
+				currentLink.classList.add("bg-white", "text-brand-green");
+				currentLink.classList.remove("hover:bg-white/10");
+				activeLink = currentLink;
+
+				// Slide to make the active link visible if needed
+				const linkIndex = Array.from(categoryLinks).indexOf(currentLink);
+				if (linkIndex !== -1) {
+					swiper.slideTo(linkIndex);
+				}
+			}
+		}
+
+		// Set active category on click
+		categoryLinks.forEach((link) => {
+			link.addEventListener("click", (e) => {
+				const targetId = (link as HTMLElement).dataset.categoryLink;
+				if (targetId) {
+					// Set flag to ignore intersection events during programmatic scrolling
+					isNavigatingByClick = true;
+					setActiveCategory(targetId);
+
+					// Reset flag after scrolling animation completes
+					setTimeout(() => {
+						isNavigatingByClick = false;
+					}, 1000); // Adjust timeout based on your scroll duration
+				}
+			});
+		});
+
+		// Set active category on scroll
+		const observer = new IntersectionObserver(
+			(entries) => {
+				// Skip processing if we're navigating via click
+				if (isNavigatingByClick) return;
+
+				entries.forEach((entry) => {
+					if (entry.isIntersecting) {
+						const sectionId = (entry.target as HTMLElement).dataset.categorySection;
+						if (sectionId) {
+							setActiveCategory(sectionId);
+						}
+					}
+				});
+			},
+			{ rootMargin: "-20% 0px -60% 0px", threshold: 0 },
+		);
+
+		// Observe all category sections
+		categorySections.forEach((section) => {
+			observer.observe(section);
+		});
+
+		// Set initial active category based on hash or first category
+		const setInitialActiveCategory = () => {
+			if (window.location.hash) {
+				const id = window.location.hash.substring(1);
+				setActiveCategory(id);
+			} else if (categorySections.length > 0) {
+				const firstSectionId = (categorySections[0] as HTMLElement).dataset.categorySection;
+				if (firstSectionId) {
+					setActiveCategory(firstSectionId);
+				}
+			}
+		};
+
+		// Set initial active category
+		setInitialActiveCategory();
+	});
+</script>

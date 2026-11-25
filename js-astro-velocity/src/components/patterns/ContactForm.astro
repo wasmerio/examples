@@ -1,0 +1,179 @@
+---
+/**
+ * ContactForm — submits to the `contact` Astro Action (or a custom endpoint).
+ * Labels, status messages and validation errors follow the page's locale.
+ */
+import Input from '@/components/ui/form/Input/Input.astro';
+import Textarea from '@/components/ui/form/Textarea/Textarea.astro';
+import Button from '@/components/ui/form/Button/Button.astro';
+import { cn } from '@/lib/cn';
+import { actions, getActionPath } from 'astro:actions';
+import { getLocale, useTranslations } from '@/i18n';
+import { formErrorKeys } from '@/lib/forms';
+
+type Field = 'name' | 'email' | 'subject' | 'message';
+
+interface Props {
+  /** External endpoint (e.g. Formspree). Defaults to the `contact` Astro Action. */
+  action?: string;
+  successMessage?: string;
+  submitLabel?: string;
+  labels?: Partial<Record<Field, string>>;
+  placeholders?: Partial<Record<Field, string>>;
+  class?: string;
+}
+
+const t = useTranslations(getLocale(Astro));
+
+const {
+  action,
+  successMessage = t('form.sent'),
+  submitLabel = t('form.submit'),
+  labels = {},
+  placeholders = {},
+  class: className,
+} = Astro.props;
+
+// Strings the client script needs, in this page's language
+const messages = JSON.stringify({
+  success: successMessage,
+  sending: t('form.sending'),
+  failed: t('form.sendFailed'),
+  generic: t('form.genericError'),
+  errors: Object.fromEntries(formErrorKeys.map((key) => [key, t(key)])),
+});
+---
+
+<form
+  id="contact-form"
+  action={action ?? getActionPath(actions.contact)}
+  method="POST"
+  class={cn('space-y-6', className)}
+  data-endpoint={action}
+  data-messages={messages}
+>
+  <Input
+    label={labels.name ?? t('form.name')}
+    name="name"
+    type="text"
+    placeholder={placeholders.name}
+    required
+    minlength={2}
+    maxlength={100}
+    autocomplete="name"
+  />
+
+  <Input
+    label={labels.email ?? t('form.email')}
+    name="email"
+    type="email"
+    placeholder={placeholders.email}
+    required
+    autocomplete="email"
+  />
+
+  <Input
+    label={labels.subject ?? t('form.subject')}
+    name="subject"
+    type="text"
+    placeholder={placeholders.subject}
+    maxlength={200}
+  />
+
+  <Textarea
+    label={labels.message ?? t('form.message')}
+    name="message"
+    placeholder={placeholders.message}
+    required
+    minlength={10}
+    maxlength={5000}
+    rows={5}
+  />
+
+  <!-- Honeypot field for spam protection -->
+  <div class="hidden" aria-hidden="true">
+    <input type="text" name="honeypot" tabindex="-1" autocomplete="off" />
+  </div>
+
+  <div id="form-message" class="hidden text-sm" role="status" aria-live="polite"></div>
+
+  <Button type="submit" fullWidth id="submit-button">
+    <slot name="icon" />
+    <span data-label>{submitLabel}</span>
+  </Button>
+</form>
+
+<script>
+  import { actions, isInputError } from 'astro:actions';
+
+  type Messages = {
+    success: string;
+    sending: string;
+    failed: string;
+    generic: string;
+    errors: Record<string, string>;
+  };
+
+  function initContactForm() {
+    const form = document.getElementById('contact-form') as HTMLFormElement | null;
+    const button = document.getElementById('submit-button') as HTMLButtonElement | null;
+    const message = document.getElementById('form-message') as HTMLDivElement | null;
+
+    if (!form || !button || !message || form.dataset.init) return;
+    form.dataset.init = 'true';
+
+    const msg = JSON.parse(form.dataset.messages ?? '{}') as Messages;
+    const translate = (text: string) => msg.errors[text] ?? text;
+    const label = button.querySelector<HTMLElement>('[data-label]') ?? button;
+    const submitLabel = label.textContent;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      button.disabled = true;
+      label.textContent = msg.sending;
+      message.classList.add('hidden');
+
+      try {
+        const formData = new FormData(form);
+        let errorText: string | null = null;
+
+        if (form.dataset.endpoint) {
+          // Custom endpoint: expects JSON { success, errors? }
+          const response = await fetch(form.dataset.endpoint, { method: 'POST', body: formData });
+          const data = await response.json();
+          if (!data.success) {
+            errorText = data.errors ? Object.values(data.errors).flat().join(', ') : msg.generic;
+          }
+        } else {
+          const { error } = await actions.contact(formData);
+          if (error) {
+            errorText = isInputError(error)
+              ? Object.values(error.fields).flat().map((m) => translate(String(m))).join(', ')
+              : msg.generic;
+          }
+        }
+
+        if (!errorText) {
+          message.textContent = msg.success;
+          message.className = 'text-sm text-success';
+          form.reset();
+        } else {
+          message.textContent = errorText;
+          message.className = 'text-sm text-destructive';
+        }
+      } catch {
+        message.textContent = msg.failed;
+        message.className = 'text-sm text-destructive';
+      } finally {
+        button.disabled = false;
+        label.textContent = submitLabel;
+        message.classList.remove('hidden');
+      }
+    });
+  }
+
+  initContactForm();
+  // Guarded against double init; keeps working if <ClientRouter /> is added back.
+  document.addEventListener('astro:after-swap', initContactForm);
+</script>

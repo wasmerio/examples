@@ -1,0 +1,86 @@
+---
+/**
+ * A small panel anchored to a button: extra detail, a few actions, a share
+ * menu. Built on the native popover attribute, so opening, closing on Escape or
+ * an outside click, and keyboard focus need no script. CSS anchor positioning
+ * keeps it next to its button (flipping at the viewport edge), with a few lines
+ * of script where that isn't supported yet.
+ *
+ * Put the button's content in the `trigger` slot and the panel in the default slot.
+ *
+ *   <Popover label="Plan details">
+ *     <Fragment slot="trigger"><Icon name="info" size="sm" /> Details</Fragment>
+ *     <p>Billed yearly. Cancel any time.</p>
+ *   </Popover>
+ */
+import { cn } from '@/lib/cn';
+
+interface Props {
+  /** Accessible name for the panel */
+  label: string;
+  /** Which side of the button the panel opens on */
+  placement?: 'bottom' | 'top';
+  align?: 'start' | 'end';
+  /** Classes for the trigger button */
+  triggerClass?: string;
+  class?: string;
+}
+
+const { label, placement = 'bottom', align = 'start', triggerClass, class: className } = Astro.props;
+const id = `popover-${Math.random().toString(36).slice(2, 9)}`;
+---
+
+<span class="inline-flex">
+  <button
+    type="button"
+    popovertarget={id}
+    class={cn(
+      'text-foreground hover:bg-secondary focus-visible:ring-ring inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium focus-visible:ring-2 focus-visible:outline-none',
+      triggerClass
+    )}
+    data-popover-trigger
+  >
+    <slot name="trigger" />
+  </button>
+  <div
+    id={id}
+    popover="auto"
+    role="dialog"
+    aria-label={label}
+    data-popover
+    data-placement={placement}
+    data-align={align}
+    class={cn(
+      'bg-card text-foreground border-border m-0 w-max max-w-[min(20rem,calc(100vw-2rem))] rounded-[var(--theme-radius-lg)] border p-4 text-sm shadow-lg',
+      className
+    )}
+  >
+    <slot />
+  </div>
+</span>
+
+<script>
+  import { anchorPopover } from '@/lib/anchor';
+
+  function initPopovers() {
+    document.querySelectorAll<HTMLElement>('[data-popover]').forEach((panel) => {
+      if (panel.dataset.popoverInit) return;
+      panel.dataset.popoverInit = 'true';
+      let stop = () => {};
+      panel.addEventListener('toggle', (event) => {
+        const trigger = document.querySelector<HTMLElement>(`[popovertarget="${panel.id}"]`);
+        if ((event as ToggleEvent).newState === 'open' && trigger) {
+          stop = anchorPopover(panel, trigger, {
+            placement: panel.dataset.placement === 'top' ? 'top' : 'bottom',
+            align: panel.dataset.align === 'end' ? 'end' : 'start',
+          });
+        } else {
+          stop();
+        }
+      });
+    });
+  }
+
+  initPopovers();
+  document.addEventListener('astro:after-swap', initPopovers);
+</script>

@@ -1,0 +1,157 @@
+---
+import type { ImageMetadata } from 'astro';
+import BaseLayout from './BaseLayout.astro';
+import SiteHeader from '@/components/site/SiteHeader.astro';
+import SiteFooter from '@/components/site/SiteFooter.astro';
+import Breadcrumbs from '@/components/seo/Breadcrumbs.astro';
+import JsonLd from '@/components/seo/JsonLd.astro';
+import ArticleHero from '@/components/blog/ArticleHero.astro';
+import ShareButtons from '@/components/blog/ShareButtons.astro';
+import RelatedPosts from '@/components/blog/RelatedPosts.astro';
+import { getLocale, localizeRoute, useTranslations, type Locale } from '@/i18n';
+import { createBlogPostSchema } from '@/lib/schema';
+
+interface Props {
+  title: string;
+  description: string;
+  publishedAt: Date;
+  updatedAt?: Date;
+  author?: string;
+  image?: ImageMetadata;
+  imageAlt?: string;
+  tags?: string[];
+  slug?: string;
+  readingTime?: number;
+  /** hreflang alternates (translations of this post) */
+  alternates?: { locale: Locale; href: string }[];
+}
+
+const {
+  title,
+  readingTime,
+  description,
+  publishedAt,
+  updatedAt,
+  author = 'Team',
+  image,
+  imageAlt,
+  tags = [],
+  slug = '',
+  alternates,
+} = Astro.props;
+
+const locale = getLocale(Astro);
+const t = useTranslations(locale);
+const blogHref = localizeRoute('blog', locale);
+
+// A post image becomes the social preview; otherwise SEO.astro uses the generated /og/<path>.png
+const ogImage = image?.src;
+
+const breadcrumbs = [
+  { label: t('nav.home'), href: localizeRoute('home', locale) },
+  { label: t('nav.blog'), href: blogHref },
+  { label: title },
+];
+
+// Get full URL for sharing
+const fullUrl = new URL(Astro.url.pathname, Astro.site).toString();
+
+// The post as structured data. Its image is the post's own, or the share card
+// generated for this page (the same address SEO.astro uses for og:image).
+const sharePath = Astro.url.pathname.replace(/^\/|\/$/g, '');
+const postSchema = createBlogPostSchema({
+  title,
+  description,
+  url: fullUrl,
+  image: new URL(ogImage ?? `/og/${sharePath}.png`, Astro.site).toString(),
+  datePublished: publishedAt,
+  dateModified: updatedAt,
+  author: { name: author },
+});
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  image={ogImage}
+  imageAlt={imageAlt || title}
+  alternates={alternates}
+  article={{
+    publishedTime: publishedAt,
+    modifiedTime: updatedAt,
+    authors: [author],
+    tags,
+  }}
+>
+  <SiteHeader slot="header" alternates={alternates} />
+
+  <JsonLd schema={postSchema} />
+
+  <!-- Article Hero -->
+  <ArticleHero
+    title={title}
+    description={description}
+    publishedAt={publishedAt}
+    updatedAt={updatedAt}
+    author={author}
+    tags={tags}
+    image={image}
+    imageAlt={imageAlt}
+    readingTime={readingTime}
+  />
+
+  <article class={`py-12 ${image ? 'pt-24' : ''}`}>
+    <div class="mx-auto max-w-4xl px-6">
+      <!-- Breadcrumbs -->
+      <Breadcrumbs items={breadcrumbs} class="mb-8" />
+
+      <!-- Article Content (indexed by Pagefind) -->
+      <div
+        data-pagefind-body
+        data-pagefind-meta={`title:${title}`}
+        class="prose prose-lg prose-headings:font-display prose-headings:font-bold prose-a:text-brand-600 hover:prose-a:text-brand-500 prose-code:before:content-none prose-code:after:content-none [&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-brand-50 [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-medium [&_:not(pre)>code]:text-brand-700 prose-pre:border prose-pre:border-border dark:prose-invert dark:prose-a:text-brand-400 dark:hover:prose-a:text-brand-300 dark:[&_:not(pre)>code]:bg-brand-900/30 dark:[&_:not(pre)>code]:text-brand-300 max-w-none"
+      >
+        <slot />
+      </div>
+
+      <!-- Article Footer -->
+      <footer class="border-border mt-12 border-t pt-8">
+        <div class="flex flex-col gap-6 sm:flex-row sm:items-center sm:justify-between">
+          <!-- Back link -->
+          <a
+            href={blogHref}
+            class="text-brand-600 hover:text-brand-500 dark:text-brand-400 dark:hover:text-brand-300 inline-flex items-center gap-2 text-sm font-medium transition-colors"
+          >
+            <svg
+              class="h-4 w-4"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"
+              ></path>
+            </svg>
+            {t('blog.backToBlog')}
+          </a>
+
+          <!-- Share buttons -->
+          <ShareButtons title={title} url={fullUrl} />
+        </div>
+      </footer>
+    </div>
+  </article>
+
+  <!-- Related Posts -->
+  {
+    tags.length > 0 && (
+      <div class="mx-auto max-w-6xl px-6 pb-16">
+        <RelatedPosts currentSlug={slug} tags={tags} locale={locale} maxPosts={3} />
+      </div>
+    )
+  }
+
+  <SiteFooter slot="footer" background="secondary" showCopyright={false} />
+</BaseLayout>

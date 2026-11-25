@@ -1,0 +1,345 @@
+import nodePath from 'node:path';
+import { readFileSync } from 'node:fs';
+import { expect, test } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+
+import { createHash } from 'node:crypto';
+import { ALL_PAGES, LOCALIZED_PAGES, PAGES, hasRoute } from './site';
+
+const VIEWPORTS = {
+  desktop: { width: 1280, height: 800 },
+  mobile: { width: 390, height: 844 },
+};
+
+for (const path of PAGES) {
+  test.describe(path, () => {
+    test('renders without console errors', async ({ page }) => {
+      const errors: string[] = [];
+      page.on('pageerror', (err) => errors.push(err.message));
+      page.on('console', (msg) => msg.type() === 'error' && errors.push(msg.text()));
+
+      const response = await page.goto(path);
+      expect(response?.status()).toBe(200);
+      await expect(page.locator('main#main-content')).toBeVisible();
+      expect(errors).toEqual([]);
+    });
+
+    test('has a single <main> landmark', async ({ page }) => {
+      await page.goto(path);
+      await expect(page.locator('main')).toHaveCount(1);
+    });
+
+    // Text size changes with the viewport, and contrast rules depend on text size
+    for (const [device, viewport] of Object.entries(VIEWPORTS)) {
+      test(`has no serious accessibility violations on ${device}`, async ({ page }) => {
+        await page.setViewportSize(viewport);
+        // Entrance animations fade content in; with reduced motion they finish
+        // instantly, so axe measures final colours rather than mid-fade ones.
+        await page.emulateMedia({ reducedMotion: 'reduce' });
+        await page.goto(path);
+        const { violations } = await new AxeBuilder({ page })
+          .withTags(['wcag2a', 'wcag2aa'])
+          .exclude('astro-dev-toolbar')
+          .analyze();
+        const serious = violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+        expect(serious.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+      });
+    }
+  });
+}
+
+// Sections recolour text and buttons inside invert and brand bands, so check
+// contrast in both colour schemes. Only the sections block is scanned: the rest
+// of the showcase is demo chrome.
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`sections have no serious accessibility violations in ${colorScheme} mode`, async ({ page }) => {
+    test.skip(!hasRoute('components'), 'no component showcase in this project');
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme });
+    await page.goto('/components');
+    const { violations } = await new AxeBuilder({ page })
+      .include('#sections')
+      .withTags(['wcag2a', 'wcag2aa'])
+      .analyze();
+    const serious = violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
+    expect(serious.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
+  });
+}
+
+test('accordion chevron rotates when an item opens', async ({ page }) => {
+  test.skip(!hasRoute('components'), 'no component showcase in this project');
+  await page.goto('/components');
+  const item = page.locator('details:has(.accordion-icon)').first();
+  await item.evaluate((el: HTMLDetailsElement) => (el.open = true));
+  await expect(item.locator('.accordion-icon')).not.toHaveCSS('transform', 'none');
+});
+
+test('every inline script has a hash in the CSP', async ({ page }) => {
+  // Position in the document must not be what lets a script run
+  await page.goto('/');
+  const csp = await page.locator('meta[http-equiv="content-security-policy"]').getAttribute('content');
+  const scripts = await page
+    .locator('script:not([src]):not([type="application/json"]):not([type="application/ld+json"])')
+    .evaluateAll((els) => els.map((el) => el.textContent ?? ''));
+  expect(scripts.length).toBeGreaterThan(0);
+  for (const code of scripts) {
+    const hash = createHash('sha256').update(code).digest('base64');
+    expect(csp, code.slice(0, 60)).toContain(`sha256-${hash}`);
+  }
+});
+
+test('component showcase dialog opens and closes under the CSP', async ({ page }) => {
+  test.skip(!hasRoute('components'), 'no component showcase in this project');
+  await page.goto('/components');
+  await page.locator('[data-dialog-open="demo-dialog"]').click();
+  const cancel = page.locator('[data-dialog-close="demo-dialog"]').first();
+  await expect(cancel).toBeVisible();
+  await cancel.click();
+  await expect(cancel).toBeHidden();
+});
+
+test('only the Latin font is preloaded, and other scripts have a font', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('link[rel="preload"][as="font"]')).toHaveCount(1);
+  const ranges = await page.evaluate(() => {
+    const unquote = (name: string) => name.replace(/["']/g, '').trim();
+    const body = unquote(getComputedStyle(document.body).fontFamily.split(',')[0]);
+    return [...document.fonts].filter((f) => unquote(f.family) === body).map((f) => f.unicodeRange);
+  });
+  expect(ranges.join(',')).toMatch(/U\+4[0-9A-F]{2}/i); // Cyrillic
+});
+
+test('search pages are out of the sitemap but readable by crawlers', async ({ request }) => {
+  const robots = await (await request.get('/robots.txt')).text();
+  expect(robots).not.toMatch(/Disallow: \/search/);
+  const sitemap = await (await request.get('/sitemap-0.xml')).text();
+  expect(sitemap).toContain('<loc>');
+  expect(sitemap).not.toMatch(/\/search\/</);
+});
+
+test('every route loads in every locale', async ({ request }) => {
+  for (const path of LOCALIZED_PAGES) {
+    expect((await request.get(path, { maxRedirects: 0 })).status(), path).toBe(200);
+  }
+});
+
+test('404 page returns 404', async ({ page }) => {
+  const response = await page.goto('/does-not-exist');
+  expect(response?.status()).toBe(404);
+});
+
+test('fonts are self-hosted and the body font is preloaded', async ({ page }) => {
+  await page.goto('/');
+  const preloads = page.locator('link[rel="preload"][as="font"]');
+  await expect(preloads.first()).toHaveAttribute('href', /^\/_astro\/fonts\/.+\.woff2$/);
+  const selfHosted = await page.evaluate(() => {
+    const unquote = (name: string) => name.replace(/["']/g, '').trim();
+    const body = unquote(getComputedStyle(document.body).fontFamily.split(',')[0]);
+    return [...document.fonts].some((f) => unquote(f.family) === body);
+  });
+  expect(selfHosted).toBe(true);
+});
+
+test.describe('Content Security Policy', () => {
+  for (const path of ALL_PAGES) {
+    test(`${path} ships a hash-based CSP with no violations`, async ({ page }) => {
+      const violations: string[] = [];
+      await page.exposeFunction('reportCspViolation', (v: string) => violations.push(v));
+      await page.addInitScript(() => {
+        document.addEventListener('securitypolicyviolation', (e) => {
+          (window as unknown as { reportCspViolation: (v: string) => void }).reportCspViolation(
+            `${e.violatedDirective} blocked ${e.blockedURI || 'inline'}`,
+          );
+        });
+      });
+
+      await page.goto(path);
+      const csp = await page.locator('meta[http-equiv="content-security-policy"]').getAttribute('content');
+      expect(csp).toMatch(/script-src 'self'[^;]* 'sha256-/);
+      expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+      expect(csp).toContain("style-src-attr 'unsafe-inline'");
+
+      // Exercise interactive islands (theme toggle) before checking.
+      await page.getByRole('button', { name: /toggle theme/i }).first().click();
+      expect(violations).toEqual([]);
+    });
+  }
+});
+
+test('navigations prefetch internal links on hover', async ({ page }) => {
+  await page.goto('/');
+  const link = page.locator('nav[aria-label="Main navigation"] a[href^="/"]:not([href*="#"])').first();
+  const href = (await link.getAttribute('href')) ?? '';
+  const prefetched = page.waitForRequest((r) => new URL(r.url()).pathname.startsWith(href));
+  await link.hover();
+  await prefetched;
+});
+
+test.describe('social previews', () => {
+  for (const path of PAGES) {
+    test(`${path} og:image resolves`, async ({ page, request }) => {
+      await page.goto(path);
+      const og = await page.locator('meta[property="og:image"]').getAttribute('content');
+      expect(og).toBeTruthy();
+      // og:image is absolute on the production domain; check the same path locally
+      const response = await request.get(new URL(og!).pathname);
+      expect(response.status(), og!).toBe(200);
+      expect(response.headers()['content-type']).toContain('image/png');
+    });
+  }
+});
+
+// The showcase's primitives added in 2.6.2, scanned on their own (the older demos
+// on the page have known issues tracked separately), plus Sheet and Popover open.
+const NEW_PRIMITIVES = [
+  '[data-carousel]',
+  '[data-video-embed]',
+  '[data-announcement]',
+  '[data-popover-trigger]',
+  'fieldset:has(input[name="demo-billing"])',
+  'kbd',
+  '[role="status"]',
+  '[data-sheet-open]',
+];
+const seriousOnly = (violations: { id: string; impact?: string | null }[]) =>
+  violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => v.id);
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`showcase primitives have no serious accessibility violations in ${colorScheme} mode`, async ({ page }) => {
+    test.skip(!hasRoute('components'), 'no component showcase in this project');
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme });
+    await page.goto('/components');
+    let builder = new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']);
+    for (const selector of NEW_PRIMITIVES) builder = builder.include(selector);
+    expect(seriousOnly((await builder.analyze()).violations)).toEqual([]);
+  });
+}
+
+test('sheet and popover open, pass axe and close with Escape', async ({ page }) => {
+  test.skip(!hasRoute('components'), 'no component showcase in this project');
+  await page.goto('/components');
+  await page.locator('[data-sheet-open="demo-sheet-right"]').click();
+  await expect(page.locator('#demo-sheet-right')).toBeVisible();
+  expect(seriousOnly((await new AxeBuilder({ page }).include('#demo-sheet-right').analyze()).violations)).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#demo-sheet-right')).toBeHidden();
+  await page.locator('[data-popover-trigger]').first().click();
+  await expect(page.locator('[data-popover]').first()).toBeVisible();
+  expect(seriousOnly((await new AxeBuilder({ page }).include('[data-popover]').analyze()).violations)).toEqual([]);
+});
+
+test('dialog is a native modal: Escape closes it and focus returns to its opener', async ({ page }) => {
+  test.skip(!hasRoute('components'), 'no component showcase in this project');
+  await page.goto('/components');
+  const opener = page.locator('[data-dialog-open="demo-dialog"]');
+  await opener.click();
+  const dialog = page.locator('dialog#demo-dialog');
+  await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate((el: HTMLDialogElement) => el.matches(':modal'))).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+});
+
+test('dropdown opens in the top layer and moves through items with the arrow keys', async ({ page }) => {
+  test.skip(!hasRoute('components'), 'no component showcase in this project');
+  await page.goto('/components');
+  const menu = page.locator('[data-dropdown-menu]').first();
+  const trigger = page.locator(`[popovertarget="${await menu.getAttribute('id')}"]`);
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  await trigger.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(menu).toBeVisible();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  const items = menu.locator('[role="menuitem"]:not([aria-disabled="true"])');
+  await expect(items.first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(items.nth(1)).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(trigger).toBeFocused();
+});
+
+test('theme toggle sets color-scheme and only stores a choice that differs from the default', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.goto('/');
+  const html = page.locator('html');
+  const fallback = (await html.getAttribute('data-default-theme')) ?? 'system';
+  const startDark = fallback === 'dark';
+  const scheme = () => html.evaluate((el) => getComputedStyle(el).colorScheme);
+  const stored = () => page.evaluate(() => localStorage.getItem('theme'));
+  expect(await scheme()).toBe(startDark ? 'dark' : 'light');
+
+  const toggle = page.locator('[data-theme-toggle]:visible').first();
+  await toggle.click();
+  expect(await scheme()).toBe(startDark ? 'light' : 'dark');
+  expect(await stored()).toBe(startDark ? 'light' : 'dark');
+
+  // Back to what the default shows: the stored value goes instead of pinning it
+  await toggle.click();
+  expect(await scheme()).toBe(startDark ? 'dark' : 'light');
+  expect(await stored()).toBeNull();
+
+  if (fallback === 'system') {
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await expect(html).toHaveClass(/\bdark\b/);
+  }
+});
+
+test('carousel steps one slide at a time and marks the current position', async ({ page }) => {
+  test.skip(!hasRoute('components'), 'no component showcase in this project');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/components');
+  const carousel = page.locator('[data-carousel]').first();
+  await carousel.scrollIntoViewIfNeeded();
+  const markers = carousel.locator('[data-carousel-markers] button');
+  await expect(markers.first()).toHaveAttribute('aria-current', 'true');
+  await expect(carousel.locator('[data-carousel-prev]')).toBeDisabled();
+  await carousel.locator('[data-carousel-next]').click();
+  await expect(markers.nth(1)).toHaveAttribute('aria-current', 'true');
+  await expect(carousel.locator('[data-carousel-status]')).toHaveText(/2/);
+  await expect(carousel.locator('[aria-roledescription="slide"]').first()).toHaveAttribute('aria-label', /1/);
+});
+
+for (const colorScheme of ['light', 'dark'] as const) {
+  test(`destructive buttons and field errors meet contrast in ${colorScheme} mode`, async ({ page }) => {
+    test.skip(!hasRoute('components') || !hasRoute('contact'), 'needs the showcase and contact page');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.addInitScript((scheme) => localStorage.setItem('theme', scheme), colorScheme);
+    await page.goto('/components');
+    const buttons = await new AxeBuilder({ page }).include('button[class*="destructive"]').withTags(['wcag2aa']).analyze();
+    expect(seriousOnly(buttons.violations)).toEqual([]);
+
+    await page.goto('/contact');
+    const message = page.locator('#contact-form').getByLabel('Message');
+    await message.fill('short');
+    await message.blur();
+    await expect(page.locator('[data-field-error]:not([hidden])')).toHaveCount(1);
+    const form = await new AxeBuilder({ page }).include('#contact-form').withTags(['wcag2a', 'wcag2aa']).analyze();
+    expect(seriousOnly(form.violations)).toEqual([]);
+  });
+}
+
+test('without native closedby, a backdrop click still closes the dialog', async ({ page }) => {
+  test.skip(!hasRoute('components'), 'no component showcase in this project');
+  // Simulate Safari, which has no closedby yet, so the fallback script runs.
+  await page.addInitScript(() => {
+    delete (HTMLDialogElement.prototype as unknown as Record<string, unknown>).closedBy;
+  });
+  await page.goto('/components');
+  await page.locator('[data-dialog-open="demo-dialog"]').click();
+  const dialog = page.locator('dialog#demo-dialog');
+  await expect(dialog).toBeVisible();
+  // A click inside the panel does not close it
+  await dialog.locator('p').first().click();
+  await expect(dialog).toBeVisible();
+  // A click on the backdrop does
+  await page.mouse.click(5, 5);
+  await expect(dialog).toBeHidden();
+});
+
+test('speculation rules ship only when site.config opts in', async ({ page }) => {
+  const config = readFileSync(nodePath.join(process.cwd(), 'src/config/site.config.ts'), 'utf8');
+  const optedIn = /^\s*speculation:\s*'prerender'/m.test(config);
+  await page.goto('/');
+  await expect(page.locator('script[type="speculationrules"]')).toHaveCount(optedIn ? 1 : 0);
+});

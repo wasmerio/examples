@@ -1,0 +1,139 @@
+---
+import '@/styles/global.css';
+import SEO from '@/components/seo/SEO.astro';
+import JsonLd from '@/components/seo/JsonLd.astro';
+import Analytics from '@/components/layout/Analytics.astro';
+import ConsentBanner from '@/components/ui/overlay/ConsentBanner';
+import { Font } from 'astro:assets';
+import { createWebsiteSchema, createOrganizationSchema } from '@/lib/schema';
+import type { WebSite, Organization, WithContext } from 'schema-dts';
+import siteConfig from '@/config/site.config';
+import InlineScript from '@/components/seo/InlineScript.astro';
+import themeScript from './theme-script.js?raw';
+import speculationRules from './speculation-rules.json?raw';
+import { fontData } from 'astro:assets';
+import { withTrailingSlash, defaultLocale, getAlternates, getLocale, getLocaleTag, useTranslations, type Locale } from '@/i18n';
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+  imageAlt?: string;
+  article?: {
+    publishedTime?: Date;
+    modifiedTime?: Date;
+    authors?: string[];
+    tags?: string[];
+  };
+  noindex?: boolean;
+  nofollow?: boolean;
+  includeOrgSchema?: boolean;
+  /** hreflang alternates. Defaults to the matching route in every enabled locale. */
+  alternates?: { locale: Locale; href: string }[];
+}
+
+const {
+  title,
+  description,
+  image,
+  imageAlt,
+  article,
+  noindex = false,
+  nofollow = false,
+  includeOrgSchema = false,
+  alternates = getAlternates(Astro.url.pathname),
+} = Astro.props;
+
+const locale = getLocale(Astro);
+const t = useTranslations(locale);
+// Every family registered in astro.config.mjs. The first one is preloaded as the body font.
+const fontVariables = Object.keys(fontData) as (keyof typeof fontData)[];
+const bodyFont = fontVariables[0] && fontData[fontVariables[0]]?.[0]?.src[0]?.url;
+const xDefault = alternates.find((a) => a.locale === defaultLocale);
+
+// Build JSON-LD schemas
+const schemas: Array<WithContext<WebSite> | WithContext<Organization>> = [createWebsiteSchema()];
+if (includeOrgSchema) {
+  schemas.push(createOrganizationSchema());
+}
+
+// Read loosely: projects created before defaultTheme existed have no such field in their SiteConfig type.
+const configuredTheme = (siteConfig as { defaultTheme?: string }).defaultTheme;
+const defaultTheme = configuredTheme === 'light' || configuredTheme === 'dark' ? configuredTheme : 'system';
+// Opt-in: projects created before speculation existed have no such field, so read loosely.
+const prerenderLinks = (siteConfig as { speculation?: string }).speculation === 'prerender';
+---
+
+<!doctype html>
+<html lang={getLocaleTag(locale)} class="scroll-smooth" data-default-theme={defaultTheme}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Fonts (Astro Fonts API: self-hosted, preloaded, metric-matched fallbacks) -->
+    {/* Preload only the Latin face. Other subsets load when a page needs them. */}
+    {bodyFont && <link rel="preload" href={bodyFont} as="font" type="font/woff2" crossorigin />}
+    {fontVariables.map((cssVariable) => <Font cssVariable={cssVariable} />)}
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href={siteConfig.branding.favicon.svg} />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content={siteConfig.branding.colors.themeColor} />
+
+    <!-- SEO -->
+    <SEO
+      title={title}
+      description={description}
+      image={image}
+      imageAlt={imageAlt}
+      article={article}
+      noindex={noindex}
+      nofollow={nofollow}
+    />
+
+    <!-- Alternate languages (only when more than one locale is enabled) -->
+    {alternates.map((alt) => (
+      <link rel="alternate" hreflang={getLocaleTag(alt.locale)} href={new URL(withTrailingSlash(alt.href), Astro.site)} />
+    ))}
+    {xDefault && <link rel="alternate" hreflang="x-default" href={new URL(withTrailingSlash(xDefault.href), Astro.site)} />}
+
+    <!-- RSS Feed -->
+    <link rel="alternate" type="application/rss+xml" title={`${siteConfig.name} RSS Feed`} href="/rss.xml" />
+
+    <!-- JSON-LD Structured Data -->
+    <JsonLd schema={schemas} />
+
+    <!-- Analytics (loads if PUBLIC_GA_MEASUREMENT_ID or PUBLIC_GTM_ID is set) -->
+    <Analytics />
+
+    <!-- Theme script (runs before render to prevent flash) -->
+    <InlineScript code={themeScript} />
+
+    <!-- Speculation rules (opt-in: speculation: 'prerender' in site.config.ts):
+         Chromium prerenders a same-site page when a link is hovered or pressed,
+         so it opens instantly. Other browsers ignore this and keep Astro's hover
+         prefetch. Mark a link with data-no-prerender to leave it out. -->
+    {prerenderLinks && <InlineScript type="speculationrules" code={speculationRules} />}
+  </head>
+
+  <body class="min-h-screen bg-background text-foreground antialiased">
+    <!-- Skip to content link -->
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
+    >
+      {t('a11y.skipToContent')}
+    </a>
+
+    <slot name="header" />
+
+    <main id="main-content" class="flex-1">
+      <slot />
+    </main>
+
+    <slot name="footer" />
+
+    <ConsentBanner />
+  </body>
+</html>

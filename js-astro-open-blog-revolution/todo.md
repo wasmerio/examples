@@ -1,0 +1,1 @@
+Add guard against no blogrolls content collection in blogroll components

@@ -1,0 +1,62 @@
+import {defineCollection,} from 'astro:content';
+import {file, glob} from 'astro/loaders';
+import {z} from 'astro/zod'
+
+const tagSchema = z.string()
+    .trim()
+    .min(1, "Tags must not be empty")
+    .refine(tag => !tag.includes('/'), "Tags must not contain /")
+    .refine(tag => tag !== '.' && tag !== '..', "Tags must not be . or ..")
+
+export const postSchema = z.object({
+    title: z.string(),
+    description: z.string(),
+    pubDate: z.coerce.date(),
+    isDraft: z.boolean().optional(),
+    pinned: z.boolean().optional().default(false),
+    tags: z.array(tagSchema).optional().default([]),
+    lang: z.string()
+        .regex(/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{1,8})*$/, "lang must be a BCP 47 language tag such as zh or en-US")
+        .optional(),
+})
+
+const posts = defineCollection({
+    loader: glob({pattern: "**/*.{md,mdx}", base: "./src/content/posts"}),
+    schema: postSchema,
+});
+
+export const pageSchema = z.object({
+    title: z.string(),
+    description: z.string().optional(),
+    comments: z.boolean().optional().default(false),
+})
+
+const pages = defineCollection({
+    loader: glob({pattern: "**/*.{md,mdx}", base: "./src/content/pages"}),
+    schema: pageSchema,
+})
+
+const linkSchema = z.object({
+    title: z.string(),
+    url: z.string(),
+    description: z.string(),
+    avatar: z.string(),
+})
+
+const links = defineCollection({
+    loader: file("src/content/data/links.json"),
+    schema: linkSchema,
+})
+
+const projectSchema = z.object({
+    title: z.string(),
+    repo: z.string(),
+    description: z.string(),
+})
+
+const projects = defineCollection({
+    loader: file("src/content/data/projects.json"),
+    schema: projectSchema,
+})
+
+export const collections = {posts, pages, links, projects};

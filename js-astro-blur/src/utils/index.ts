@@ -1,0 +1,48 @@
+import {siteConfig} from "../config.ts";
+import type {CollectionEntry} from 'astro:content';
+
+export function debounce<T extends (...args: Parameters<T>) => ReturnType<T>>(fn: T, delay: number = 100) {
+    let timeoutId: ReturnType<typeof setTimeout>;
+    return function (...args: Parameters<T>) {
+        clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+            fn(...args);
+        }, delay);
+    };
+}
+
+/**
+ * 序列化 JSON-LD；转义 `<`，避免标题等内容中的 `</script>` 提前结束脚本标签
+ */
+export function serializeJsonLd(data: unknown): string {
+    return JSON.stringify(data).replace(/</g, '\\u003c')
+}
+
+/**
+ * 目录只收录 h2（顶层）与 h3（子级）
+ */
+export function getTocHeadings<T extends {depth: number}>(headings: T[]): T[] {
+    return headings.filter(h => h.depth === 2 || h.depth === 3);
+}
+
+export function getTitle(title: string) {
+    return title + ' - ' + siteConfig.title
+}
+
+/**
+ * 文章时间线：按发布日期升序（同日按 id 保证稳定），不受置顶影响
+ */
+export function getTimeline(posts: CollectionEntry<'posts'>[]): CollectionEntry<'posts'>[] {
+    return [...posts].sort((a, b) =>
+        a.data.pubDate.valueOf() - b.data.pubDate.valueOf() || a.id.localeCompare(b.id));
+}
+
+/**
+ * 列表排序：置顶优先，再按日期降序（原地排序并返回）
+ */
+export function sortPosts(posts: CollectionEntry<'posts'>[]): CollectionEntry<'posts'>[] {
+    return posts.sort((a, b) => {
+        if (a.data.pinned !== b.data.pinned) return a.data.pinned ? -1 : 1;
+        return b.data.pubDate.valueOf() - a.data.pubDate.valueOf();
+    });
+}

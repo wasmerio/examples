@@ -1,0 +1,94 @@
+---
+import Icon from '@/components/Icon.astro'
+import { defaultLang, type Lang, localePath, useTranslations } from '@/i18n/ui'
+import { mdiRss, mdiSitemap } from '@/lib/icons'
+import { siteConfig } from '@/lib/mergedSiteConfig'
+import { getPublishedPosts } from '@/lib/posts'
+
+interface Props {
+  lang?: Lang
+}
+
+const { lang = defaultLang } = Astro.props
+const t = useTranslations(lang)
+const currentYear = new Date().getUTCFullYear()
+
+const publishedPosts = await getPublishedPosts()
+const earliest = publishedPosts.reduce<Date | null>(
+  (min, p) => (min === null || p.data.published < min ? p.data.published : min),
+  null,
+)
+function breakdown(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  return {
+    days: Math.floor(total / 86400),
+    hours: Math.floor((total % 86400) / 3600),
+    minutes: Math.floor((total % 3600) / 60),
+    seconds: total % 60,
+  }
+}
+const buildUnits = earliest ? breakdown(Date.now() - earliest.valueOf()) : null
+---
+
+<footer
+  id="site-footer"
+  class="wp-glass mx-auto mt-4 w-full max-w-[832px] rounded-[8px] px-4 py-6 text-center text-[0.82rem] text-ink-3"
+>
+  <p class="my-1">
+    © {currentYear} <a href={siteConfig.url} target="_blank" rel="noopener noreferrer" class="hover:text-accent"> {siteConfig.author}</a> All rights reserved
+  </p>
+  <p>Powered by <a href="https://astro.build" target="_blank" rel="noopener noreferrer" class="hover:text-accent">Astro</a> & <a href="https://github.com/rightdoor/citrus-grid" target="_blank" rel="noopener noreferrer" class="hover:text-accent">CitrusGrid</a>
+  </p>
+  <p class="my-1 flex items-center justify-center gap-3">
+    <a href={localePath(lang, '/rss.xml')} class="inline-flex items-center gap-1 hover:text-accent">
+      <Icon d={mdiRss} class="text-sm" />
+      {t('footer.rss')}
+    </a>
+    <span class="text-line">|</span>
+    <a href="/sitemap-index.xml" class="inline-flex items-center gap-1 hover:text-accent">
+      <Icon d={mdiSitemap} class="text-sm" />
+      {t('footer.sitemap')}
+    </a>
+  </p>
+  {earliest && (
+    <p
+      class="my-1"
+      data-running-days
+      data-earliest={earliest.toISOString()}
+      data-template={t('footer.running')}
+    >
+      {buildUnits && t('footer.running', buildUnits)}
+    </p>
+  )}
+</footer>
+
+<script>
+  function breakdown(ms: number) {
+    const total = Math.max(0, Math.floor(ms / 1000))
+    return {
+      days: Math.floor(total / 86400),
+      hours: Math.floor((total % 86400) / 3600),
+      minutes: Math.floor((total % 3600) / 60),
+      seconds: total % 60,
+    }
+  }
+  function updateRunningTime() {
+    document.querySelectorAll<HTMLElement>('[data-running-days]').forEach((el) => {
+      const iso = el.dataset.earliest
+      const template = el.dataset.template
+      if (!iso || !template) return
+      const u = breakdown(Date.now() - new Date(iso).getTime())
+      const text = template
+        .replaceAll('{days}', String(u.days))
+        .replaceAll('{hours}', String(u.hours))
+        .replaceAll('{minutes}', String(u.minutes))
+        .replaceAll('{seconds}', String(u.seconds))
+      if (el.textContent !== text) el.textContent = text
+    })
+  }
+  updateRunningTime()
+  document.addEventListener('astro:page-load', updateRunningTime)
+  if (!('__runningTimeTimer' in window)) {
+    ;(window as any).__runningTimeTimer = setInterval(updateRunningTime, 1000)
+  }
+</script>

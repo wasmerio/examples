@@ -1,0 +1,243 @@
+---
+import Icon from '@/components/Icon.astro'
+import { defaultLang, type Lang, useTranslations } from '@/i18n/ui'
+import { mdiClose, mdiCloseCircle, mdiMagnify } from '@/lib/icons'
+
+interface Props {
+  lang?: Lang
+}
+
+const { lang = defaultLang } = Astro.props
+const t = useTranslations(lang)
+---
+
+<div
+  id="search-modal"
+  class="wp-overlay fixed inset-0 z-[1500] hidden items-center justify-center bg-black/40 p-4"
+  role="dialog"
+  aria-modal="true"
+  aria-label={t('search.title')}
+  data-more-hits={t('search.moreHits')}
+>
+  <div class="wp-modal-panel flex max-h-[85vh] w-full flex-col rounded-[8px] border border-line-light bg-surface shadow-card" style="max-width: 520px">
+    <div class="flex items-center justify-between border-b border-line-light px-5 py-3.5">
+      <h3 class="font-bold text-ink">{t('search.title')}</h3>
+      <button id="search-close" class="rounded p-1 text-ink-3 transition hover:bg-surface-hover hover:text-ink" type="button">
+        <Icon d={mdiClose} class="text-lg" />
+      </button>
+    </div>
+    <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <div class="flex items-center gap-2 rounded-[8px] border border-line-light bg-paper px-3 py-2 transition focus-within:border-accent">
+        <Icon d={mdiMagnify} class="text-ink-3" />
+        <input
+          id="search-input"
+          type="text"
+          placeholder={t('search.placeholder')}
+          class="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-3"
+        />
+        <button id="search-clear" type="button" class="hidden text-ink-3 hover:text-ink">
+          <Icon d={mdiCloseCircle} class="text-sm" />
+        </button>
+      </div>
+
+      <div id="search-failed" class="hidden py-6 text-center text-sm text-ink-3">{t('search.failed')}</div>
+      <div id="search-results" class="mt-4 hidden flex-col gap-2"></div>
+      <div id="search-empty" class="hidden py-6 text-center text-sm text-ink-3">{t('search.empty')}</div>
+      <div id="search-hint" class="mt-4 text-sm text-ink-3">{t('search.hint')}</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { trapFocus, type FocusTrap } from '@/lib/focusTrap'
+
+  const modal = document.getElementById('search-modal')!
+  const input = document.getElementById('search-input') as HTMLInputElement
+  const resultsEl = document.getElementById('search-results')!
+  const emptyEl = document.getElementById('search-empty')!
+  const failedEl = document.getElementById('search-failed')!
+  const hintEl = document.getElementById('search-hint')!
+  const clearBtn = document.getElementById('search-clear')!
+  const moreHitsTemplate = modal.dataset.moreHits || ''
+
+  let pagefind: any = null
+  let searchSeq = 0
+  let closeTimer: number | undefined
+  let searchDebounce: number | undefined
+  let activeTrap: FocusTrap | null = null
+
+  function escapeHtml(value: string) {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  }
+
+  async function loadPagefind() {
+    if (pagefind) return pagefind
+    try {
+      const pagefindUrl = '/pagefind/pagefind.js'
+      pagefind = await import(/* @vite-ignore */ pagefindUrl)
+    } catch {
+      failedEl.classList.remove('hidden')
+    }
+    return pagefind
+  }
+
+  const MAX_SUB_RESULTS = 3
+
+  function renderSubResults(item: any) {
+    const subs: any[] = Array.isArray(item.sub_results) ? item.sub_results : []
+    if (subs.length === 0) return ''
+    const anchored = subs.filter((sub) => sub?.anchor?.id)
+    const seen = new Set<string>()
+    const rows: string[] = []
+    for (const sub of anchored) {
+      const id = String(sub.anchor.id)
+      if (seen.has(id)) continue
+      seen.add(id)
+      if (rows.length >= MAX_SUB_RESULTS) continue
+      const title = escapeHtml(sub.title || sub.anchor.text || id)
+      rows.push(`
+        <button type="button" data-href="${escapeHtml(sub.url)}"
+          class="w-full rounded-md px-2.5 py-1.5 text-left transition hover:bg-surface-hover">
+          <div class="text-xs font-medium text-ink-2"># ${title}</div>
+          <div class="mt-0.5 text-xs text-ink-3 [&_mark]:rounded-sm [&_mark]:bg-accent/20 [&_mark]:px-0.5 [&_mark]:text-ink">${sub.excerpt}</div>
+        </button>`)
+    }
+    const more = anchored.length - seen.size
+    return `
+      <div class="mt-2 flex flex-col gap-0.5 border-t border-line-light pt-2">
+        ${rows.join('')}
+        ${more > 0 ? `<div class="px-2.5 pt-1 text-xs text-ink-3">${escapeHtml(moreHitsTemplate.replace('{n}', String(more)))}</div>` : ''}
+      </div>`
+  }
+
+  function renderResults(list: any[]) {
+    const markCls = '[&_mark]:rounded-sm [&_mark]:bg-accent/20 [&_mark]:px-0.5 [&_mark]:text-ink'
+    resultsEl.innerHTML = list
+      .map((item) => {
+        const subs = renderSubResults(item)
+        return `
+        <div class="rounded-[8px] border border-line-light bg-surface px-4 py-3 transition hover:border-accent">
+          <button type="button" data-href="${escapeHtml(item.url)}" class="block w-full text-left">
+            <div class="font-serif font-bold text-ink">${escapeHtml(item.meta?.title || item.url)}</div>
+          </button>
+          ${subs || `<div class="mt-1 text-xs text-ink-3 ${markCls}">${item.excerpt}</div>`}
+        </div>`
+      })
+      .join('')
+    resultsEl.classList.toggle('hidden', list.length === 0)
+    resultsEl.classList.toggle('flex', list.length > 0)
+  }
+
+  function updateChrome() {
+    const q = input.value.trim()
+    clearBtn.classList.toggle('hidden', !input.value)
+    hintEl.classList.toggle('hidden', !!q)
+    if (!q) {
+      emptyEl.classList.add('hidden')
+      renderResults([])
+    }
+  }
+
+  async function runSearch() {
+    updateChrome()
+    const q = input.value.trim()
+    if (!q) return
+    const seq = ++searchSeq
+    const pf = await loadPagefind()
+    if (!pf || seq !== searchSeq) return
+    try {
+      const res = await pf.search(q)
+      const data = await Promise.all(res.results.slice(0, 20).map((r: any) => r.data()))
+      if (seq !== searchSeq) return
+      renderResults(data)
+      emptyEl.classList.toggle('hidden', data.length > 0)
+    } catch {
+      if (seq === searchSeq) emptyEl.classList.remove('hidden')
+    }
+  }
+
+  function open() {
+    window.clearTimeout(closeTimer)
+    window.clearTimeout(searchDebounce)
+    modal.classList.remove('wp-closing')
+    modal.classList.remove('hidden')
+    modal.classList.add('flex')
+    input.value = ''
+    failedEl.classList.add('hidden')
+    updateChrome()
+    activeTrap = trapFocus(modal)
+    input.focus()
+    loadPagefind()
+  }
+
+  function close(animated = true) {
+    if (modal.classList.contains('hidden')) return
+    window.clearTimeout(closeTimer)
+    window.clearTimeout(searchDebounce)
+    activeTrap?.release()
+    activeTrap = null
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const done = () => {
+      modal.classList.add('hidden')
+      modal.classList.remove('flex', 'wp-closing')
+    }
+    if (!animated || reduce) return done()
+    modal.classList.add('wp-closing')
+    closeTimer = window.setTimeout(done, 160)
+  }
+
+  const stripSlash = (p: string) => p.replace(/\/+$/, '') || '/'
+
+  function go(rawUrl: string) {
+    close(false)
+    let url: URL
+    try {
+      url = new URL(rawUrl, window.location.href)
+    } catch {
+      window.location.assign(rawUrl)
+      return
+    }
+    const hash = url.hash ? url.hash.slice(1) : ''
+    const scrollToHash = (window as any).__scrollToHeadingAnchor as ((id: string) => void) | undefined
+
+    if (hash && stripSlash(url.pathname) === stripSlash(window.location.pathname)) {
+      if (typeof scrollToHash === 'function') scrollToHash(hash)
+      history.replaceState(history.state, '', `${window.location.pathname}${window.location.search}#${hash}`)
+      return
+    }
+
+    if (hash) (window as any).__pendingScrollHash = hash
+    const swup = (window as any).swup
+    if (swup?.navigate) {
+      swup.navigate(`${url.origin}${url.pathname}${url.search}`)
+    } else {
+      window.location.assign(rawUrl)
+    }
+  }
+
+  document.addEventListener('open-search', open)
+  document.addEventListener('astro:after-swap', () => close(false))
+  document.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Escape') close()
+  })
+  document.getElementById('search-close')!.addEventListener('click', () => close())
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) close()
+  })
+  // 输入防抖：searchSeq 只防过期渲染，不防频度；每个按键都全量搜索浪费明显
+  input.addEventListener('input', () => {
+    window.clearTimeout(searchDebounce)
+    searchDebounce = window.setTimeout(runSearch, 150)
+  })
+  clearBtn.addEventListener('click', () => {
+    input.value = ''
+    window.clearTimeout(searchDebounce)
+    runSearch()
+    input.focus()
+  })
+  resultsEl.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement)?.closest<HTMLButtonElement>('button[data-href]')
+    if (!btn) return
+    go(btn.dataset.href!)
+  })
+</script>

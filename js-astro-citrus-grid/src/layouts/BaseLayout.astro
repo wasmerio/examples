@@ -1,0 +1,150 @@
+---
+import '@/styles/main.css'
+import MusicPlayer from '@/components/MusicPlayer.astro'
+import Pet from '@/components/Pet.astro'
+import ProfileCard from '@/components/ProfileCard.astro'
+import ScrollControls from '@/components/ScrollControls.astro'
+import SearchModal from '@/components/SearchModal.astro'
+import SiteFooter from '@/components/SiteFooter.astro'
+import SiteHeader from '@/components/SiteHeader.astro'
+import { defaultLang, type Lang } from '@/i18n/ui'
+import { siteConfig } from '@/lib/mergedSiteConfig'
+
+interface Props {
+  title?: string
+  description?: string
+  lang?: Lang
+  showTocButton?: boolean
+  seoType?: 'website' | 'article'
+  publishedTime?: string
+  modifiedTime?: string
+  seoImage?: string
+}
+
+const {
+  title,
+  description = siteConfig.description,
+  lang = defaultLang,
+  showTocButton = false,
+  seoType = 'website',
+  publishedTime,
+  modifiedTime,
+  seoImage,
+} = Astro.props
+const pageTitle = title
+  ? `${siteConfig.title} - ${title}`
+  : `${siteConfig.title} - ${siteConfig.subtitle}`
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site)
+const ogImageURL = new URL(seoImage || siteConfig.logo, Astro.site)
+
+const isHomePage = (() => {
+  const p = Astro.url.pathname.replace(/\/+$/, '') || '/'
+  // /404 会命中纯数字分页正则，但它不是分页页，不能显示个人名片
+  return p !== '/404' && (p === '/' || /^\/\d+$/.test(p))
+})()
+
+const ogLocale = ({ zh: 'zh_CN', ja: 'ja_JP', en: 'en_US' } as const)[lang]
+
+const jsonLd =
+  seoType === 'article' && title
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: title,
+        description,
+        image: ogImageURL.href,
+        ...(publishedTime ? { datePublished: publishedTime } : {}),
+        ...(modifiedTime || publishedTime ? { dateModified: modifiedTime || publishedTime } : {}),
+        author: { '@type': 'Person', name: siteConfig.author },
+        publisher: {
+          '@type': 'Organization',
+          name: siteConfig.title,
+          logo: { '@type': 'ImageObject', url: new URL(siteConfig.logo, Astro.site).href },
+        },
+        mainEntityOfPage: canonicalURL.href,
+      }
+    : null
+---
+
+<!doctype html>
+<html
+  lang={lang}
+  data-default-theme={siteConfig.defaultTheme}
+  data-stats-script={(siteConfig.statsScript && import.meta.env.PROD ? siteConfig.statsScript : undefined)}
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/webp" href="/logo.webp" />
+    <link rel="canonical" href={canonicalURL.href} />
+    <meta property="og:site_name" content={siteConfig.title} />
+    <meta property="og:type" content={seoType} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalURL.href} />
+    <meta property="og:image" content={ogImageURL.href} />
+    <meta property="og:locale" content={ogLocale} />
+    {seoType === 'article' && publishedTime && <meta property="article:published_time" content={publishedTime} />}
+    {seoType === 'article' && modifiedTime && <meta property="article:modified_time" content={modifiedTime} />}
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageURL.href} />
+    {jsonLd && <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd).replace(/</g, '\\u003c')} />}
+    <title>{pageTitle}</title>
+    <script is:inline define:vars={{ defaultTheme: siteConfig.defaultTheme }}>
+      ;(function () {
+        var stored = localStorage.getItem('themeMode')
+        var mode = stored === 'light' || stored === 'dark' ? stored : defaultTheme
+        if (mode !== 'light' && mode !== 'dark') {
+          mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        }
+        var root = document.documentElement
+        root.classList.toggle('dark', mode === 'dark')
+        root.style.colorScheme = mode
+      })()
+    </script>
+    <script is:inline>
+      if (location.hash) {
+        window.__pendingScrollHash = location.hash.slice(1)
+        history.replaceState(history.state, '', location.pathname + location.search)
+      }
+    </script>
+  </head>
+  <body>
+    <div id="grid-trail" aria-hidden="true"></div>
+    <div class="flex min-h-screen flex-col">
+      <SiteHeader lang={lang} />
+      <div
+        id="profile-card-root"
+        class="wp-glass mx-auto mt-2 w-full max-w-[832px] rounded-[8px] px-4 py-2 max-md:px-4 max-md:pt-6"
+        hidden={!isHomePage}
+      >
+        <ProfileCard lang={lang} />
+      </div>
+      <div id="swup-container" class="transition-swup-fade flex flex-1 flex-col">
+        <main
+          class="wp-glass mx-auto w-full max-w-[832px] mt-2 flex-1 rounded-[8px] px-4 py-2 max-md:px-4 max-md:py-6"
+        >
+          <slot />
+        </main>
+      </div>
+      <SiteFooter lang={lang} />
+      <SearchModal lang={lang} />
+      <ScrollControls lang={lang} showTocButton={showTocButton} showReadingToggle={seoType === 'article'} />
+      <MusicPlayer lang={lang} />
+      <Pet lang={lang} />
+    </div>
+
+    {siteConfig.statsScript && import.meta.env.PROD && (
+      <script>import '@/stats/client'</script>
+    )}
+
+    <script>
+      import '@/lib/client'
+    </script>
+  </body>
+</html>

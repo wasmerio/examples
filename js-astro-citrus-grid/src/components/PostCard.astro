@@ -1,0 +1,136 @@
+---
+import '@/styles/PostCard.css'
+import Icon from '@/components/Icon.astro'
+import { defaultLang, type Lang, localePath, useTranslations } from '@/i18n/ui'
+import { mdiAccountOutline, mdiCalendarOutline, mdiEye, mdiLayers, mdiUpdate } from '@/lib/icons'
+import { siteConfig } from '@/lib/mergedSiteConfig'
+import { excerptOf, formatDate, type Post, readMinutes, seriesOf, wordCount } from '@/lib/posts'
+
+interface Props {
+  lang?: Lang
+  post: Post
+}
+
+const { lang = defaultLang, post } = Astro.props
+const t = useTranslations(lang)
+
+const title = post.data.title
+const date = formatDate(post.data.published)
+const words = wordCount(post)
+const mins = readMinutes(post)
+const excerpt = excerptOf(post)
+const category = post.data.category
+const tags = post.data.tags
+const pinned = post.data.index > 0
+const postUrl = localePath(lang, `/posts/${post.id}`)
+const categoryUrl = localePath(lang, `/categories/${encodeURIComponent(category)}`)
+const tagUrl = (tag: string) => localePath(lang, `/tags/${encodeURIComponent(tag)}`)
+const seriesName = seriesOf(post)
+const seriesUrl = seriesName ? localePath(lang, `/series/${encodeURIComponent(seriesName)}`) : ''
+const seriesPart = post.data.series_order
+const statsEnabled = Boolean(siteConfig.statsScript)
+---
+
+<article
+  data-post-card
+  class="relative mt-3 rounded-[12px] border border-line-light bg-surface px-6 py-5 shadow-card max-md:px-4 max-md:py-4"
+>
+  <div class="card-preview" data-card-preview aria-hidden="true"></div>
+  {pinned && <span class="card-badge card-badge-left">{t('list.pinned')}</span>}
+  <a href={categoryUrl} class="card-badge card-badge-right">{category}</a>
+
+  <h2 class="mt-2.5 mb-1.5 font-serif text-[1.3rem] leading-snug font-bold">
+    <a href={postUrl} class="text-ink transition hover:text-accent" data-hover="title">{title}</a>
+  </h2>
+
+  {
+    seriesName && (
+      <div class="mb-1.5 flex items-center gap-1.5">
+        <Icon d={mdiLayers} class="text-sm text-accent" />
+        <a
+          href={seriesUrl}
+          class="inline-flex items-center gap-1.5 rounded-[4px] border border-line-light bg-paper px-2 py-0.5 text-[0.78rem] text-ink-2 transition hover:border-accent hover:text-accent"
+          data-hover="series"
+        >
+          {seriesName}
+          {seriesPart != null && (
+            <span class="tabular-nums text-accent-deep dark:text-accent">{t('series.part', { n: seriesPart })}</span>
+          )}
+        </a>
+      </div>
+    )
+  }
+
+  <div class="flex items-center gap-2 text-[0.82rem] text-ink-3">
+    <span class="inline-flex items-center gap-1">
+      <Icon d={mdiCalendarOutline} class="text-sm" />
+      {date}
+    </span>
+    <span class="text-line">·</span>
+    <span>{words}
+    {t('post.words')}</span>
+    <span class="text-line">·</span>
+    <span>{mins}
+    {t('post.minutes')}</span>
+  </div>
+
+  {excerpt && <p class="mt-1.5 truncate text-[0.92rem] text-ink-2">{excerpt}</p>}
+
+  {
+    tags.length > 0 && (
+      <div class="mt-2 mb-4 flex flex-wrap gap-2">
+        {tags.map((tag) => (
+          <a
+            href={tagUrl(tag)}
+            class="rounded-[4px] bg-paper px-2 py-0.5 text-[0.75rem] text-ink-3 transition hover:bg-surface-hover hover:text-accent"
+            data-hover="tag"
+          >
+            #{tag}
+          </a>
+        ))}
+      </div>
+    )
+  }
+
+  <div class="card-actions">
+    {
+      statsEnabled && (
+        <span
+          class="card-badge card-btn-adjacent"
+          data-stats-path={`/posts/${post.id}`}
+        >
+          <Icon d={mdiEye} class="mr-1 text-[11px]" />
+          <span data-stats="article-pv">-</span>
+          <Icon d={mdiAccountOutline} class="ml-2 mr-1 text-[11px]" />
+          <span data-stats="article-uv">-</span>
+        </span>
+      )
+    }
+    <a href={postUrl} class="card-badge card-btn">{t('list.readMore')}</a>
+  </div>
+  {post.data.updated && <span class="card-badge card-btn-left"><Icon d={mdiUpdate} class="mr-1 text-[11px]" />{formatDate(post.data.updated)}</span>}
+</article>
+
+<script>
+  import { onPageLoad } from '@/lib/pageLifecycle'
+  import { attachPointerPreview } from '@/lib/pointerPreview'
+
+  const hoverSel = '[data-hover]'
+
+  onPageLoad(() => {
+    document.querySelectorAll<HTMLElement>('article[data-post-card]').forEach((card) => {
+      if (card.dataset.previewInit) return
+      card.dataset.previewInit = '1'
+      attachPointerPreview(card, {
+        prepareClone: (clone) => {
+          clone.removeAttribute('data-post-card')
+          for (const node of clone.querySelectorAll('[data-card-preview]')) node.remove()
+          for (const node of clone.querySelectorAll('.card-badge, .card-actions')) node.remove()
+        },
+        resetOnDetach: true,
+        hover: { selector: hoverSel, className: 'preview-hover' },
+      })
+    })
+  })
+</script>
+

@@ -1,0 +1,215 @@
+---
+import { defaultLang, type Lang } from '@/i18n/ui'
+
+interface Props {
+  lang?: Lang
+}
+
+const { lang = defaultLang } = Astro.props
+
+const numberLocale = { zh: 'zh-CN', ja: 'ja-JP', en: 'en-US' }[lang]
+
+const segments = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+const clockSlots = ['h1', 'h2', ':', 'm1', 'm2', ':', 's1', 's2']
+---
+
+<div class="clock-layer" data-clock-layer data-locale={numberLocale} aria-hidden="true">
+  <span class="clock-tz" data-clock-tz></span>
+  <div class="clock-time">
+    {
+      clockSlots.map((slot) =>
+        slot === ':' ? (
+          <span class="clock-colon">
+            <i></i>
+            <i></i>
+          </span>
+        ) : (
+          <span class="seg-digit">
+            {segments.map((seg) => (
+              <i data-seg={seg}></i>
+            ))}
+          </span>
+        ),
+      )
+    }
+  </div>
+  <span class="clock-date" data-clock-date></span>
+</div>
+
+<script>
+  import { iconSvg } from '@/lib/icons'
+
+  const STRIP_W = 28
+  const STAGGER = 25
+  const STRIP_DUR = 480
+
+  const DIGIT_SEGS: Record<string, string> = {
+    0: 'abcdef',
+    1: 'bc',
+    2: 'abdeg',
+    3: 'abcdg',
+    4: 'bcfg',
+    5: 'acdfg',
+    6: 'acdefg',
+    7: 'abc',
+    8: 'abcdefg',
+    9: 'abcdfg',
+  }
+
+  const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v)
+  const pad2 = (n: number) => String(n).padStart(2, '0')
+
+  function initDigitalClock() {
+    const root = document.querySelector<HTMLElement>('.profile-card')
+    const card = root?.querySelector<HTMLElement>('.card')
+    const layer = card?.querySelector<HTMLElement>('[data-clock-layer]')
+    const btn = root?.querySelector<HTMLButtonElement>('[data-clock-toggle]')
+    const tzEl = layer?.querySelector<HTMLElement>('[data-clock-tz]')
+    const dateEl = layer?.querySelector<HTMLElement>('[data-clock-date]')
+    if (!card || !layer || !btn || !tzEl || !dateEl) return
+
+    const digits = Array.from(layer.querySelectorAll<HTMLElement>('.seg-digit'))
+    const locale = layer.dataset.locale || 'zh-CN'
+    const dateFmt = new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      weekday: 'short',
+    })
+
+    let timer = 0
+    let lastText = ''
+    let lastTz = ''
+    const painted: string[] = []
+    // 名片位于 swup 容器外，元素身份稳定；非首页时整块被 hidden
+    const profileRoot = document.getElementById('profile-card-root')
+
+    const paintDigit = (el: HTMLElement, ch: string) => {
+      const on = DIGIT_SEGS[ch] ?? ''
+      for (const seg of el.querySelectorAll<HTMLElement>('i')) {
+        seg.classList.toggle('on', on.includes(seg.dataset.seg || ''))
+      }
+    }
+
+    const tzLabel = (now: Date) => {
+      const iana = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local'
+      const offset = -now.getTimezoneOffset()
+      const sign = offset < 0 ? '-' : '+'
+      const abs = Math.abs(offset)
+      const mins = abs % 60
+      return `${iana} · UTC${sign}${Math.floor(abs / 60)}${mins ? `:${pad2(mins)}` : ''}`
+    }
+
+    const tick = () => {
+      window.clearTimeout(timer)
+      // 名片被隐藏（非首页）或页面不可见时跳过绘制，只保留自排程；
+      // 恢复可见后的第一次 tick 会因文本差异重绘，无需额外唤醒逻辑
+      if (!document.hidden && !(profileRoot?.hidden ?? false)) {
+        const now = new Date()
+        const text = `${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`
+        if (text !== lastText) {
+          lastText = text
+          for (let i = 0; i < digits.length; i++) {
+            if (painted[i] !== text[i]) {
+              painted[i] = text[i]
+              paintDigit(digits[i], text[i])
+            }
+          }
+          const date = dateFmt.format(now)
+          if (dateEl.textContent !== date) dateEl.textContent = date
+          const tz = tzLabel(now)
+          if (tz !== lastTz) {
+            lastTz = tz
+            tzEl.textContent = tz
+          }
+        }
+      }
+      timer = window.setTimeout(tick, 1000 - (Date.now() % 1000) + 20)
+    }
+    tick()
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) tick()
+    })
+
+    function polygonAt(count: number, w: number, h: number, progress: number[]) {
+      const pts = [`0px 0px`, `${w}px 0px`]
+      for (let i = count - 1; i >= 0; i--) {
+        const y = h * progress[i]
+        pts.push(`${(w * (i + 1)) / count}px ${y}px`, `${(w * i) / count}px ${y}px`)
+      }
+      return `polygon(${pts.join(', ')})`
+    }
+
+    function buildFrames(count: number, w: number, h: number, reverse: boolean) {
+      const total = STRIP_DUR + (count - 1) * STAGGER
+      const times = new Set<number>([0, total])
+      for (let i = 0; i < count; i++) {
+        times.add(Math.min(total, i * STAGGER))
+        times.add(Math.min(total, i * STAGGER + STRIP_DUR))
+      }
+      const frames = Array.from(times)
+        .sort((a, b) => a - b)
+        .map((t) => ({
+          offset: t / total,
+          clipPath: polygonAt(
+            count,
+            w,
+            h,
+            Array.from({ length: count }, (_, i) => clamp01((t - i * STAGGER) / STRIP_DUR)),
+          ),
+        }))
+      return reverse
+        ? frames
+            .slice()
+            .reverse()
+            .map((f) => ({ offset: 1 - f.offset, clipPath: f.clipPath }))
+        : frames
+    }
+
+    let clockShown = false
+    let anim: Animation | null = null
+
+    const syncButton = () => {
+      const label = (clockShown ? btn.dataset.labelProfile : btn.dataset.labelClock) || ''
+      btn.setAttribute('aria-pressed', String(clockShown))
+      btn.setAttribute('aria-label', label)
+      btn.setAttribute('title', label)
+      btn.innerHTML = iconSvg(clockShown ? 'mdi-account-outline' : 'mdi-clock-outline')
+    }
+
+    btn.addEventListener('click', () => {
+      if (anim) return
+      clockShown = !clockShown
+      syncButton()
+      if (!clockShown) card.classList.remove('is-clock')
+
+      const settle = () => {
+        layer.classList.toggle('is-on', clockShown)
+        card.classList.toggle('is-clock', clockShown)
+      }
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        settle()
+        return
+      }
+      const w = layer.offsetWidth
+      const h = layer.offsetHeight
+      const count = Math.max(1, Math.round(w / STRIP_W))
+      const frames = buildFrames(count, w, h, !clockShown)
+      const options = { duration: STRIP_DUR + (count - 1) * STAGGER, fill: 'both' as const }
+      const running = layer.animate(frames, options)
+      const mirrored = [...card.querySelectorAll<HTMLElement>('.clock-layer')]
+        .filter((el) => el !== layer)
+        .map((el) => el.animate(frames, options))
+      anim = running
+      running.onfinish = () => {
+        settle()
+        running.cancel()
+        for (const m of mirrored) m.cancel()
+        card.dispatchEvent(new CustomEvent('profile-card-clock-settle'))
+        anim = null
+      }
+    })
+  }
+
+  initDigitalClock()
+</script>

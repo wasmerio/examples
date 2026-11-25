@@ -1,0 +1,85 @@
+---
+import PostPage from '@/components/views/PostPage.astro'
+import { defaultLang } from '@/i18n/ui'
+import BaseLayout from '@/layouts/BaseLayout.astro'
+import { loadBacklinks, resolveBacklinks } from '@/lib/backlinks'
+import { resolveContentImage } from '@/lib/contentImages'
+import { siteConfig } from '@/lib/mergedSiteConfig'
+import { getPublishedPosts, type Post, seriesOf, sortSeriesPosts } from '@/lib/posts'
+import { relatedPostsOf } from '@/lib/relatedPosts'
+
+export async function getStaticPaths() {
+  const posts = await getPublishedPosts()
+  const relatedEnabled = siteConfig.relatedPosts?.enabled !== false
+  const backlinksEnabled = siteConfig.backlinks?.enabled !== false
+  const backlinkMap = relatedEnabled || backlinksEnabled ? loadBacklinks() : {}
+  const backlinkIndex = backlinksEnabled ? resolveBacklinks(backlinkMap, posts) : null
+  return posts.map((post: Post, idx: number) => {
+    const seriesName = seriesOf(post)
+    const seriesPosts = seriesName
+      ? sortSeriesPosts(posts.filter((p) => seriesOf(p) === seriesName))
+      : []
+    const seriesIdx = seriesPosts.findIndex((p) => p.id === post.id)
+    return {
+      params: { slug: post.id },
+      props: {
+        post,
+        prevPost: idx > 0 ? posts[idx - 1] : null,
+        nextPost: idx < posts.length - 1 ? posts[idx + 1] : null,
+        seriesPosts,
+        seriesIdx,
+        backlinks: backlinkIndex?.get(post.id) ?? [],
+        related: relatedEnabled ? relatedPostsOf(post, posts, { backlinks: backlinkMap }) : [],
+      },
+    }
+  })
+}
+
+const lang = defaultLang
+const {
+  post,
+  prevPost,
+  nextPost,
+  seriesPosts = [],
+  seriesIdx = -1,
+  backlinks = [],
+  related = [],
+} = Astro.props
+
+// 首图用于 og:image：需走 rehypeImages 同款重写，否则相对路径会解析到站点根而 404
+function firstImageSrcOf(body: string): string | null {
+  const stripped = body.replace(/^(`{3,}|~{3,})[^\n]*\n[\s\S]*?^\1[^\S\n]*(?:\n|$)/gm, '')
+  return stripped.match(/!\[[^\]]*\]\(([^)\s]+)/)?.[1] ?? null
+}
+
+const firstImageRaw = post.body ? firstImageSrcOf(post.body) : null
+let firstImage: string | undefined
+if (firstImageRaw) {
+  const rewritten = post.filePath ? resolveContentImage(firstImageRaw, post.filePath) : null
+  firstImage =
+    rewritten ||
+    (/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/i.test(firstImageRaw) ? firstImageRaw : undefined)
+}
+---
+
+<BaseLayout
+  lang={lang}
+  title={post.data.title}
+  description={post.data.description}
+  showTocButton
+  seoType="article"
+  publishedTime={post.data.published.toISOString()}
+  modifiedTime={post.data.updated?.toISOString()}
+  seoImage={firstImage}
+>
+  <PostPage
+    lang={lang}
+    post={post}
+    prevPost={prevPost}
+    nextPost={nextPost}
+    seriesPosts={seriesPosts}
+    seriesIdx={seriesIdx}
+    backlinks={backlinks}
+    related={related}
+  />
+</BaseLayout>

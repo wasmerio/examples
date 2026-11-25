@@ -1,0 +1,430 @@
+---
+import { render } from 'astro:content'
+import '@/styles/PostPage.css'
+import Comments from '@/components/Comments.astro'
+import Icon from '@/components/Icon.astro'
+import PostNav from '@/components/PostNav.astro'
+import SeriesToc from '@/components/SeriesToc.astro'
+import { defaultLang, type Lang, localePath, useTranslations } from '@/i18n/ui'
+import {
+  iconSvg,
+  mdiAccountOutline,
+  mdiCalendarOutline,
+  mdiChevronRight,
+  mdiClockOutline,
+  mdiClose,
+  mdiEye,
+  mdiFileLinkOutline,
+  mdiFolderOutline,
+  mdiLayers,
+  mdiLinkVariant,
+  mdiTableOfContents,
+  mdiTextRecognition,
+  mdiUpdate,
+} from '@/lib/icons'
+import { siteConfig } from '@/lib/mergedSiteConfig'
+import { formatDate, type Post, readMinutes, seriesOf, wordCount } from '@/lib/posts'
+
+interface Props {
+  lang?: Lang
+  post: Post
+  prevPost?: Post | null
+  nextPost?: Post | null
+  seriesPosts?: Post[]
+  seriesIdx?: number
+  backlinks?: Post[]
+  related?: Post[]
+}
+
+const {
+  lang = defaultLang,
+  post,
+  prevPost = null,
+  nextPost = null,
+  seriesPosts = [],
+  seriesIdx = -1,
+  backlinks = [],
+  related = [],
+} = Astro.props
+const t = useTranslations(lang)
+
+const date = formatDate(post.data.published)
+const updated = post.data.updated ? formatDate(post.data.updated) : ''
+const words = wordCount(post)
+const mins = readMinutes(post)
+const category = post.data.category
+const tags = post.data.tags
+
+const seriesName = seriesOf(post)
+const hasSeries = seriesPosts.length > 0 && seriesName !== null
+const inSeries = hasSeries && seriesIdx >= 0 && seriesIdx < seriesPosts.length
+const seriesPrev = inSeries && seriesIdx > 0 ? seriesPosts[seriesIdx - 1] : null
+const seriesNext =
+  inSeries && seriesIdx < seriesPosts.length - 1 ? seriesPosts[seriesIdx + 1] : null
+const seriesUrl =
+  hasSeries && seriesName !== null
+    ? localePath(lang, `/series/${encodeURIComponent(seriesName)}`)
+    : ''
+const navPrev = hasSeries ? seriesPrev : prevPost
+const navNext = hasSeries ? seriesNext : nextPost
+
+const statsEnabled = Boolean(siteConfig.statsScript)
+const statsPath = `/posts/${post.id}`
+
+const copyIdleHtml = `${iconSvg('mdi-content-copy')}<span>${t('post.copy')}</span>`
+const copyDoneHtml = `${iconSvg('mdi-check')}<span>${t('post.copied')}</span>`
+const tableLabels = {
+  wrap: t('post.tableWrap'),
+  scroll: t('post.tableScroll'),
+  aria: t('post.tableToggleAria'),
+}
+const codeWrapLabels = {
+  wrap: t('post.codeWrap'),
+  unwrap: t('post.codeUnwrap'),
+  aria: t('post.codeWrapAria'),
+}
+const visitorsUnit = t('post.visitorsUnit')
+const { Content, headings } = await render(post)
+const hasToc = headings.length > 0
+const tocMinLevel = hasToc ? Math.min(...headings.map((h) => h.depth)) : 2
+const postUrl = (p: Post) => localePath(lang, `/posts/${p.id}`)
+const categoryUrl = localePath(lang, `/categories/${encodeURIComponent(category)}`)
+const tagUrl = (tag: string) => localePath(lang, `/tags/${encodeURIComponent(tag)}`)
+const postPageUrl = new URL(postUrl(post), Astro.site).href
+const licenseDeedUrl = `https://creativecommons.org/licenses/by-nc-sa/4.0/deed.${lang}`
+const [licensePre = '', licensePost = ''] = t('post.copyright.licenseText').split('{link}')
+const postYear = post.data.published.getUTCFullYear()
+---
+
+<div>
+  <header class="mx-auto mb-8 mt-8 max-w-[800px] text-center">
+    <h1 class="mb-3 font-serif text-[2rem] leading-snug font-bold tracking-tight text-ink max-md:text-2xl">
+      {post.data.title}
+    </h1>
+    <div class="space-y-1 text-[0.88rem] text-ink-3">
+      <div class="flex flex-wrap items-center justify-center gap-3">
+        <span class="inline-flex items-center gap-1">
+          <Icon d={mdiCalendarOutline} class="text-sm" />
+          {date}
+        </span>
+        <span class="text-line">|</span>
+        <a href={categoryUrl} class="inline-flex items-center gap-1 transition hover:text-accent">
+          <Icon d={mdiFolderOutline} class="text-sm" />
+          {category}
+        </a>
+      </div>
+      <div class="flex flex-wrap items-center justify-center gap-3">
+        <span class="inline-flex items-center gap-1">
+          <Icon d={mdiTextRecognition} class="text-sm" />
+          {words}
+          {t('post.words')}
+        </span>
+        <span class="text-line">|</span>
+        <span class="inline-flex items-center gap-1">
+          <Icon d={mdiClockOutline} class="text-sm" />
+          {mins}
+          {t('post.minutes')}
+        </span>
+        {
+          statsEnabled && (
+            <>
+              <span class="text-line">|</span>
+              <span
+                class="inline-flex items-center gap-1"
+                data-stats-path={statsPath}
+              >
+                <Icon d={mdiEye} class="text-sm" />
+                <span data-stats="article-pv">-</span>
+                {visitorsUnit}
+              </span>
+              <span class="text-line">|</span>
+              <span
+                class="inline-flex items-center gap-1"
+                data-stats-path={statsPath}
+              >
+                <Icon d={mdiAccountOutline} class="text-sm" />
+                <span data-stats="article-uv">-</span>
+                {visitorsUnit}
+              </span>
+            </>
+          )
+        }
+      </div>
+      {
+        updated && (
+          <div class="flex flex-wrap items-center justify-center gap-3">
+            <span class="inline-flex items-center gap-1">
+              <Icon d={mdiUpdate} class="text-sm" />
+              {t('post.updated')} {updated}
+            </span>
+          </div>
+        )
+      }
+    </div>
+    {
+      hasSeries && (
+        <div class="mt-3 flex flex-wrap items-center justify-center gap-2">
+          <a
+            href={seriesUrl}
+            class="inline-flex min-w-0 items-center gap-1.5 rounded-[4px] border border-line-light bg-paper px-2.5 py-0.5 text-[0.82rem] text-ink-2 transition hover:border-accent hover:text-accent"
+          >
+            <Icon d={mdiLayers} class="shrink-0 text-sm text-accent" />
+            <span class="truncate">{seriesName}</span>
+            {inSeries && (
+              <span class="shrink-0 tabular-nums text-accent-deep dark:text-accent">
+                {t('series.progress', { current: seriesIdx + 1, total: seriesPosts.length })}
+              </span>
+            )}
+          </a>
+        </div>
+      )
+    }
+    {
+      post.data.description && (
+        <p class="mx-auto mt-4 max-w-[640px] text-[0.92rem] leading-relaxed text-ink-3">
+          {post.data.description}
+        </p>
+      )
+    }
+  </header>
+
+  {
+    hasSeries && <SeriesToc lang={lang} seriesPosts={seriesPosts} postId={post.id} />
+  }
+
+  <div class="relative mx-auto max-w-[800px]">
+    <div class="post-content" data-pagefind-body>
+      <Content />
+    </div>
+  </div>
+
+  <footer class="mx-auto mt-12 max-w-[800px] border-t border-line-light pt-6">
+    {
+      tags.length > 0 && (
+        <div class="mb-5 flex flex-wrap gap-2">
+          {tags.map((tag) => (
+            <a
+              href={tagUrl(tag)}
+              class="rounded-[4px] border border-line-light bg-surface px-2.5 py-0.5 text-[0.82rem] text-ink-3 transition hover:border-accent hover:text-accent"
+              data-pagefind-filter="tag"
+            >
+              #{tag}
+            </a>
+          ))}
+        </div>
+      )
+    }
+    <div class="copyright mb-5 rounded-[8px] border border-line-light bg-surface px-4 py-4 text-[0.82rem] leading-relaxed text-ink-3 shadow-card">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span>
+          <strong class="font-semibold text-ink">{siteConfig.author}</strong> {t('post.copyright.author', { year: postYear })}
+        </span>
+        <span class="flex items-center gap-2">
+          <span class="rounded-[4px] border border-line bg-paper px-3 py-0.5 font-mono text-[0.7rem] font-bold tracking-wider text-accent-deep uppercase dark:text-accent">
+            CC BY-NC-SA 4.0
+          </span>
+          <span class="text-[0.75rem]">{t('post.copyright.licenseLabel')}</span>
+        </span>
+      </div>
+      <p class="mt-2.5">
+        {licensePre}
+        <a href={licenseDeedUrl} target="_blank" rel="external nofollow noopener" class="text-accent transition hover:text-accent-hover">
+          {t('post.copyright.licenseName')}
+        </a>
+        {licensePost}
+      </p>
+      <ul class="mt-2.5 list-disc pl-5 text-[0.78rem]">
+        <li class="mb-0.5">
+          <strong class="font-semibold text-ink-2">{t('post.copyright.mayTitle')}</strong>{t('post.copyright.mayText')}
+        </li>
+        <li class="mb-0.5">
+          <strong class="font-semibold text-ink-2">{t('post.copyright.mustTitle')}</strong>{t('post.copyright.mustText')}
+        </li>
+        <li>
+          <strong class="font-semibold text-ink-2">{t('post.copyright.originalLink')}</strong>
+          <a href={postPageUrl} class="break-all text-accent transition hover:text-accent-hover">{postPageUrl}</a>
+        </li>
+      </ul>
+      <div class="mt-3.5 border-t border-line-light pt-3.5 text-[0.75rem]">
+        {t('post.copyright.disclaimer')}
+      </div>
+    </div>
+    {
+      related.length > 0 && (
+        <div class="mb-5 rounded-[8px] border border-line-light bg-surface px-4 py-3.5 text-[0.85rem] shadow-card">
+          <div class="mb-2 flex items-center gap-1.5 text-[0.78rem] font-semibold tracking-[0.06em] text-ink-3">
+            <Icon d={mdiFileLinkOutline} class="text-sm" />
+            <span>{t('post.related')}</span>
+          </div>
+          <ul class="m-0 list-none space-y-1.5 p-0">
+            {related.map((item) => (
+              <li>
+                <a href={postUrl(item)} class="text-accent transition hover:text-accent-hover">
+                  {item.data.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )
+    }
+    {
+      backlinks.length > 0 && (
+        <div class="mb-5 rounded-[8px] border border-line-light bg-surface px-4 py-3.5 text-[0.85rem] shadow-card">
+          <div class="mb-2 flex items-center gap-1.5 text-[0.78rem] font-semibold tracking-[0.06em] text-ink-3">
+            <Icon d={mdiLinkVariant} class="text-sm" />
+            <span>{t('post.backlinks', { count: backlinks.length })}</span>
+          </div>
+          <ul class="m-0 list-none space-y-1.5 p-0">
+            {backlinks.map((ref) => (
+              <li>
+                <a href={postUrl(ref)} class="text-accent transition hover:text-accent-hover">
+                  {ref.data.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )
+    }
+    <PostNav lang={lang} prev={navPrev} next={navNext} />
+  </footer>
+  <Comments />
+
+  {
+    hasToc && (
+      <aside id="toc-affix" class="hidden opacity-0 transition-opacity duration-200 xl:block">
+        <div class="toc-affix fixed z-40 w-52">
+          <div class="mb-3 flex shrink-0 items-center justify-between gap-2 text-[0.78rem] font-semibold tracking-[0.08em] uppercase text-ink-3">
+            <span>{t('post.tableOfContents')}</span>
+            <button
+              type="button"
+              id="toc-collapse"
+              class="toc-collapse-btn"
+              title={t('post.collapseToc')}
+              aria-label={t('post.collapseToc')}
+              aria-expanded="true"
+            >
+              <Icon d={mdiChevronRight} class="text-sm" />
+            </button>
+          </div>
+          <ul class="toc-affix-list m-0 list-none p-0">
+            {headings.map((h) => (
+              <li>
+                <a
+                  href={`#${h.slug}`}
+                  class="toc-link"
+                  data-toc-target={h.slug}
+                  style={`padding-left: ${12 + (h.depth - tocMinLevel) * 14}px`}
+                >
+                  {h.text}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <button
+          type="button"
+          id="toc-expand"
+          class="scroll-control-btn toc-expand-fab"
+          title={t('post.toc')}
+          aria-label={t('post.toc')}
+          aria-expanded="false"
+          hidden
+        >
+          <Icon d={mdiTableOfContents} class="text-lg" />
+        </button>
+      </aside>
+    )
+  }
+
+  {
+    hasToc && (
+      <div
+        id="toc-modal"
+        class="wp-overlay fixed inset-0 z-[1500] hidden items-center justify-center bg-black/40 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('post.toc')}
+      >
+        <div class="wp-modal-panel flex max-h-[85vh] w-full flex-col rounded-[8px] border border-line-light bg-surface shadow-card" style="max-width: 520px">
+          <div class="flex items-center justify-between border-b border-line-light px-5 py-3.5">
+            <h3 class="font-bold text-ink">{t('post.toc')}</h3>
+            <button id="toc-close" class="rounded p-1 text-ink-3 transition hover:bg-surface-hover hover:text-ink" type="button">
+              <Icon d={mdiClose} class="text-lg" />
+            </button>
+          </div>
+          <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <ul class="m-0 list-none p-0">
+              {headings.map((h) => (
+                <li>
+                  <a
+                    href={`#${h.slug}`}
+                    class="toc-link py-2! text-[0.9rem]!"
+                    style={`padding-left: ${12 + (h.depth - tocMinLevel) * 14}px; padding-right: 12px;`}
+                    data-toc-target={h.slug}
+                  >
+                    {h.text}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    )
+  }
+</div>
+
+<script is:inline define:vars={{ copyIdleHtml, copyDoneHtml, tableLabels, codeWrapLabels }}>
+  window.__blogCopyIdleHtml = copyIdleHtml
+  window.__blogCopyDoneHtml = copyDoneHtml
+  window.__blogTableLabels = tableLabels
+  window.__blogCodeWrapLabels = codeWrapLabels
+</script>
+<script>
+  import { onPageLoad } from '@/lib/pageLifecycle'
+  import { initPhotoswipe } from '@/lib/photoswipe'
+  import { bindCodeWrapLabels, bindCopyCode, bindPostBodyAnchors } from '@/lib/postActions'
+  import { initImageFrames, bindTableModes, initReadingReveal } from '@/lib/postContent'
+  import { initToc } from '@/lib/postToc'
+
+  bindCopyCode()
+
+  async function loadKatexStyles() {
+    if (!document.querySelector('.katex')) return
+    if (document.querySelector('style[data-katex-css]')) return
+    const { default: css } = await import('katex/dist/katex.min.css?inline')
+    const style = document.createElement('style')
+    style.dataset.katexCss = '1'
+    style.textContent = css
+    document.head.appendChild(style)
+  }
+
+  function scheduleIdle(fn: () => void) {
+    const g = window as unknown as { requestIdleCallback?: (cb: () => void, opt: { timeout: number }) => void }
+    if (g.requestIdleCallback) {
+      g.requestIdleCallback(fn, { timeout: 1000 })
+    } else {
+      requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(fn, 0)))
+    }
+  }
+
+  function initPage() {
+    loadKatexStyles().catch(() => {})
+    bindTableModes()
+    bindCodeWrapLabels()
+    initToc()
+
+    const postBody = document.querySelector<HTMLElement>('.post-content')
+    if (postBody) bindPostBodyAnchors(postBody)
+
+    scheduleIdle(() => {
+      initImageFrames()
+      initReadingReveal()
+      initPhotoswipe().catch(() => {})
+    })
+  }
+
+  onPageLoad(initPage)
+</script>

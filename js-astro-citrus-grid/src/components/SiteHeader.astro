@@ -1,0 +1,258 @@
+---
+import Icon from '@/components/Icon.astro'
+import { defaultLang, type Lang, localePath, type MessageKey, useTranslations } from '@/i18n/ui'
+import {
+  mdiAccountGroupOutline,
+  mdiAccountOutline,
+  mdiArchiveOutline,
+  mdiFolderOutline,
+  mdiHomeOutline,
+  mdiLayers,
+  mdiMenu,
+  mdiTagOutline,
+} from '@/lib/icons'
+import { siteConfig } from '@/lib/mergedSiteConfig'
+
+interface Props {
+  lang?: Lang
+}
+
+const { lang = defaultLang } = Astro.props
+const t = useTranslations(lang)
+
+const NAV_DEFS: Record<string, { key: MessageKey; icon: string }> = {
+  '/archive': { key: 'nav.archive', icon: mdiArchiveOutline },
+  '/categories': { key: 'nav.categories', icon: mdiFolderOutline },
+  '/tags': { key: 'nav.tags', icon: mdiTagOutline },
+  '/series': { key: 'nav.series', icon: mdiLayers },
+  '/friends': { key: 'nav.friends', icon: mdiAccountGroupOutline },
+  '/about': { key: 'nav.about', icon: mdiAccountOutline },
+}
+
+const navConfig = siteConfig.nav ?? []
+
+const navItems = [
+  { path: '/', label: t('nav.home'), icon: mdiHomeOutline },
+  ...[...new Set(Array.isArray(navConfig) ? navConfig : [])]
+    .filter((path) => path !== '/' && path in NAV_DEFS)
+    .map((path) => ({ path, label: t(NAV_DEFS[path].key), icon: NAV_DEFS[path].icon })),
+]
+
+const currentPath = Astro.url.pathname
+const isHomePaged = /^\/\d+(\/|$)/.test(currentPath)
+function isActive(path: string): boolean {
+  const full = localePath(lang, path)
+  if (path === '/') return currentPath === full || currentPath === `${full}/` || isHomePaged
+  return currentPath.startsWith(full)
+}
+---
+
+<header
+  id="site-header"
+  class="sticky top-0 z-[100] border-b border-line-light"
+  style="background-color: var(--wp-header-bg); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);"
+>
+  <div
+    class="relative mx-auto flex h-[60px] max-w-[1200px] items-center justify-between px-6 max-md:h-[52px] max-md:px-4"
+  >
+    <a
+      href={localePath(lang, '/')}
+      class="flex items-center gap-2 font-serif text-xl font-bold tracking-tight"
+    >
+      <img class="h-7 w-7" src={siteConfig.logo} alt="Logo" width="28" height="28" />
+      <span>{siteConfig.title}</span>
+    </a>
+
+    <nav class="absolute left-1/2 top-0 flex h-full -translate-x-1/2 items-stretch max-md:hidden">
+      {
+        navItems.map((item) => (
+          <a
+            href={localePath(lang, item.path)}
+            data-nav-path={localePath(lang, item.path)}
+            class:list={[
+              'nav-item relative flex items-center text-[0.9rem] font-medium transition',
+              isActive(item.path) ? 'text-accent' : 'text-ink-2',
+            ]}
+          >
+            <span class="nav-clip" aria-hidden="true">
+              <span class="nav-board" />
+            </span>
+            <span class="nav-content">
+              <span class="nav-icon">
+                <Icon d={item.icon} />
+              </span>
+              <span class="nav-label">{item.label}</span>
+            </span>
+          </a>
+        ))
+      }
+      <a
+        data-nav-path="__fallback__"
+        aria-hidden="true"
+        tabindex="-1"
+        class="hidden text-accent"
+      ></a>
+    </nav>
+
+    <div class="hidden max-md:block">
+      <details class="group relative">
+        <summary
+          class="flex cursor-pointer list-none items-center rounded-[8px] p-1 text-ink transition hover:bg-surface-hover [&::-webkit-details-marker]:hidden"
+          aria-label={t('header.menu')}
+        >
+          <Icon d={mdiMenu} class="text-xl" />
+        </summary>
+        <div
+          class="absolute top-full right-0 z-[110] mt-2 w-44 rounded-[8px] border border-line-light bg-surface py-1 shadow-card"
+        >
+          {
+            navItems.map((item) => (
+              <a
+                href={localePath(lang, item.path)}
+                data-nav-path={localePath(lang, item.path)}
+                data-nav-mobile
+                class:list={[
+                  'block px-4 py-2 text-[0.9rem] transition hover:bg-surface-hover hover:text-accent',
+                  isActive(item.path) ? 'bg-surface-hover text-accent' : 'text-ink-2',
+                ]}
+              >
+                {item.label}
+              </a>
+            ))
+          }
+        </div>
+      </details>
+    </div>
+  </div>
+</header>
+
+<script>
+  document.addEventListener('click', (e) => {
+    const details = document.querySelector<HTMLDetailsElement>('header details')
+    if (details?.open && !details.contains(e.target as Node)) details.removeAttribute('open')
+  })
+
+  function fitNavLabels() {
+    const MIN_FONT_SIZE = 10
+    const labels = [...document.querySelectorAll<HTMLElement>('header nav .nav-label')]
+    for (const el of labels) {
+      el.style.fontSize = ''
+      el.closest('.nav-item')?.classList.remove('nav-compact')
+    }
+    if (labels.length === 0) return
+    const navWindow = parseFloat(getComputedStyle(labels[0]).getPropertyValue('--nav-window'))
+    const MAX_LABEL_WIDTH = (Number.isFinite(navWindow) ? navWindow : 60) - 4
+    const base = parseFloat(getComputedStyle(labels[0]).fontSize)
+    const maxWidth = Math.max(...labels.map((el) => el.getBoundingClientRect().width))
+    if (maxWidth > MAX_LABEL_WIDTH) {
+      const size = `${Math.max(MIN_FONT_SIZE, (base * MAX_LABEL_WIDTH) / maxWidth)}px`
+      for (const el of labels) {
+        el.style.fontSize = size
+        el.closest('.nav-item')?.classList.add('nav-compact')
+      }
+    }
+  }
+  fitNavLabels()
+  document.fonts?.ready.then(fitNavLabels)
+</script>
+
+<style>
+  .nav-item {
+    --nav-ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --nav-window: 60px;
+  }
+
+  .nav-clip {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: var(--nav-window);
+    height: var(--nav-window);
+    overflow: hidden;
+    transform: translateX(-50%);
+  }
+
+  .nav-board {
+    position: absolute;
+    inset: 0;
+    background-color: var(--wp-accent);
+    transform: translateY(-101%);
+    transition: transform 0.5s var(--nav-ease);
+  }
+
+  .nav-content {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.9rem;
+  }
+
+  .nav-item.nav-compact .nav-content {
+    width: var(--nav-window);
+    padding: 0;
+  }
+
+  .nav-icon {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: flex;
+    font-size: 1.2rem;
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    transition:
+      opacity 0.2s ease 0.16s,
+      transform 0.2s var(--nav-ease) 0.16s;
+  }
+
+  .nav-label {
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+      opacity 0.16s ease,
+      transform 0.16s var(--nav-ease);
+  }
+
+  .nav-item:hover,
+  .nav-item:focus-visible,
+  .nav-item.text-accent {
+    color: #fff;
+  }
+
+  .nav-item:hover .nav-board,
+  .nav-item:focus-visible .nav-board,
+  .nav-item.text-accent .nav-board {
+    transform: translateY(0);
+  }
+
+  .nav-item:hover .nav-icon,
+  .nav-item:focus-visible .nav-icon,
+  .nav-item.text-accent .nav-icon {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(6px);
+    transition:
+      opacity 0.16s ease,
+      transform 0.16s var(--nav-ease);
+  }
+
+  .nav-item:hover .nav-label,
+  .nav-item:focus-visible .nav-label,
+  .nav-item.text-accent .nav-label {
+    opacity: 1;
+    transform: translateY(0);
+    transition:
+      opacity 0.2s ease 0.16s,
+      transform 0.2s var(--nav-ease) 0.16s;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav-board,
+    .nav-icon,
+    .nav-label {
+      transition-duration: 0.01ms;
+      transition-delay: 0ms;
+    }
+  }
+</style>

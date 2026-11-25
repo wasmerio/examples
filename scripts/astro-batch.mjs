@@ -210,6 +210,7 @@ export function classifyLicense(text) {
     [/free and unencumbered software released into the public domain/i, 'Unlicense'],
     [/CC0 1\.0|creativecommons\.org\/publicdomain\/zero/i, 'CC0-1.0'],
     [/Attribution 4\.0 International|creativecommons\.org\/licenses\/by\/4\.0/i, 'CC-BY-4.0'],
+    [/Creative Commons Attribution 3\.0|creativecommons\.org\/licenses\/by\/3\.0/i, 'CC-BY-3.0'],
     [/DO WHAT THE FUCK YOU WANT/i, 'WTFPL'],
     [/Eclipse Public License/i, 'EPL'],
   ];
@@ -279,6 +280,13 @@ export function removeAdapter(configText) {
     text = text.slice(0, imp.index) + text.slice(imp.index + imp[0].length);
   }
   return text.replace(/(output\s*:\s*)['"](hybrid|server)['"]/, "$1'static'");
+}
+
+// A GitHub Pages sub-path (`base: '/<repo name>'`) makes every asset 404 at the root of a Wasmer app.
+export function removeRepoBase(configText, repo) {
+  const name = String(repo || '').split('/').pop().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`^([ \\t]*)base\\s*:\\s*(['"\`])\\/${name}\\/?\\2\\s*,?[ \\t]*\\r?\\n`, 'im');
+  return re.test(configText) ? configText.replace(re, '') : configText;
 }
 
 export function swapToNode(configText) {
@@ -984,6 +992,11 @@ async function processRow(row, plan, ctx) {
       if (!configText.includes(find)) throw new Error(`config fix does not apply: ${find}`);
       configText = configText.replace(find, replace);
       info.wasmerChanges.push(fix.note || `Changed \`${find}\` to \`${replace}\` in ${configName}.`);
+    }
+    const unbased = removeRepoBase(configText, row.repo);
+    if (unbased !== configText) {
+      configText = unbased;
+      info.wasmerChanges.push(`Removed the GitHub Pages sub-path \`base: '/${String(row.repo).split('/').pop()}'\` from ${configName}, so assets load at the root of the Wasmer app.`);
     }
     const plan2 = adapterPlan(configText, sourceTexts(dest, true), sourceTexts(dest, false));
     let addNode = '';

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   assignSlugs, themeSlugBase, planRow, adapterPlan, removeAdapter, swapToNode, classifyLicense, checkFolder,
-  copyTheme, nodeAdapterVersion, archiveTopOk, linkProblems, catalogFor, nameKey, withWasmerSection, installCommand,
+  copyTheme, nodeAdapterVersion, removeRepoBase, archiveTopOk, linkProblems, catalogFor, nameKey, withWasmerSection, installCommand,
 } from './astro-batch.mjs';
 
 const COMMIT = '0123456789abcdef0123456789abcdef01234567';
@@ -238,4 +238,14 @@ test('local installs run the same commands as Anybuild', () => {
   assert.deepEqual(installCommand('pnpm'), ['npx', ['-y', 'pnpm@10.34.9', 'install', '--no-frozen-lockfile']]);
   assert.deepEqual(installCommand('bun'), ['bun', ['install']]);
   assert.deepEqual(installCommand('npm', true), ['npm', ['ci', '--no-audit', '--no-fund']]);
+});
+
+test('a GitHub Pages base equal to the repo name is removed, other bases stay', () => {
+  const config = "export default defineConfig({\n  site: 'https://me.github.io',\n  base: '/blog-template/',\n  integrations: [],\n});\n";
+  assert.equal(removeRepoBase(config, 'flo-bit/blog-template'), "export default defineConfig({\n  site: 'https://me.github.io',\n  integrations: [],\n});\n");
+  assert.equal(removeRepoBase("  base: '/docs',\n", 'flo-bit/blog-template'), "  base: '/docs',\n");
+});
+
+test('CC BY 3.0 grants redistribution', () => {
+  assert.equal(classifyLicense('Creative Commons Attribution 3.0 Unported').decision, 'ok');
 });

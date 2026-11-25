@@ -1,0 +1,736 @@
+---
+
+---
+
+<div id="dynamic-background-container" transition:persist={true}>
+  <svg id="dynamic-background-svg" width="100%" height="100%"></svg>
+</div>
+
+<script>
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svgContainer = document.getElementById(
+    "dynamic-background-svg"
+  ) as SVGElement | null;
+
+  if (svgContainer) {
+    const isMobileDevice =
+      ("maxTouchPoints" in navigator && navigator.maxTouchPoints > 0) ||
+      window.innerWidth < 1024;
+    const config = {
+      numBlobs: isMobileDevice ? 3 : 4,
+      baseLargeMinBlobSize: 1000,
+      baseLargeMaxBlobSize: 1600,
+      baseSmallMinBlobSize: 600,
+      baseSmallMaxBlobSize: 1000,
+      referenceWidth: 1440,
+      minScaleFactor: 0.5,
+      maxScaleFactor: 1.5,
+      speedMultiplier: isMobileDevice ? 0.5 : 1,
+      mouseInfluenceRadius: 580,
+      mouseForce: -800,
+      opacity: 0.8,
+      enableShapeChanging: false,
+      enableCollisionDetection: true,
+      enableMouseInteraction: true,
+    };
+
+    interface Vector {
+      x: number;
+      y: number;
+    }
+
+    interface HSLColor {
+      h: number;
+      s: number;
+      l: number;
+    }
+
+    interface BlobShape {
+      id: number;
+      pathElement: SVGPathElement;
+      position: Vector;
+      velocity: Vector;
+      radius: number;
+      color: string;
+      hsl: HSLColor;
+      points: Vector[];
+      angle: number;
+      angularVelocity: number;
+      baseAngles: number[];
+      baseRadii: number[];
+      deformationTime: number;
+      deformationSpeed: number;
+      deformationAmplitude: number;
+      update: (
+        mousePos: Vector | null,
+        allBlobs: BlobShape[],
+        containerWidth: number,
+        containerHeight: number
+      ) => void;
+    }
+
+    let blobs: BlobShape[] = [];
+    let mousePos: Vector | null = null;
+    let svgGroup: SVGGElement | null = null;
+    const targetOffset: Vector = { x: 0, y: 0 };
+    const currentOffset: Vector = { x: 0, y: 0 };
+    const offsetLerpFactor = 0.05;
+    const offsetScale = -0.03;
+
+    let cachedContainerRect = { width: 0, height: 0, left: 0, top: 0 };
+    let needsRectUpdate = true;
+
+    function updateCachedRect() {
+      if (svgContainer && needsRectUpdate) {
+        const rect = svgContainer.getBoundingClientRect();
+        cachedContainerRect = {
+          width: rect.width,
+          height: rect.height,
+          left: rect.left,
+          top: rect.top,
+        };
+        needsRectUpdate = false;
+      }
+    }
+
+    const initialLevel = isMobileDevice ? 1 : 3;
+    let currentPerformanceLevel = initialLevel;
+    const fpsHistory: number[] = [];
+    const maxFpsHistoryLength = 60;
+    let lastTimestamp = performance.now();
+    let lastLogicExecutionTime = performance.now();
+    const targetFrameInterval = 1000 / 60;
+    const level1_MaxFps = 30;
+    const level1_RecoveryFps = 35;
+    const level2_MaxFps = 40;
+    const level2_RecoveryFps = 45;
+    const level3_MaxFps = 55;
+    const level4_MinFps = 55;
+    const level4_DegradeFps = 50;
+
+    let framesInCurrentRange = 0;
+    const requiredFramesForSwitch = 30;
+
+    function updatePerformanceLevel(newLevel: number) {
+      if (isMobileDevice) return;
+      if (newLevel === currentPerformanceLevel) return;
+      if (newLevel < 1 || newLevel > 4) return;
+
+      console.log(
+        `%cFPS Monitor: Switching to Performance Level ${newLevel}.`,
+        "color: orange; font-weight: bold;"
+      );
+      currentPerformanceLevel = newLevel;
+
+      config.enableShapeChanging = newLevel === 4;
+      config.enableMouseInteraction = newLevel >= 2;
+      config.enableCollisionDetection = newLevel >= 3;
+    }
+
+    svgContainer.classList.add("css-hue-shift-active");
+
+    interface ColorScheme {
+      [key: string]: string[];
+    }
+    const colorScheme: ColorScheme = {
+      reds: ["#FF6B6B", "#FFD93D", "#F2bF47", "#F2B707", "#F28706", "#F26430"],
+      oranges: ["#FFa700", "#FF9B58", "#F27149", "#F9c443", "#faD93D"],
+      yellows: ["#FFD700", "#FFDB58", "#F2E109", "#F9D423", "#caD93D"],
+      greens: ["#90EE90", "#6BCB77", "#3CB371", "#32CD32", "#a0e9c4"],
+      cyans: ["#40E0D0", "#AFEEEE", "#7FFFD4", "#B3E0F2", "#9EfDF2"],
+      blues: ["#87CEEB", "#64f5ED", "#7De6FF", "#42d5FF", "#7299f9"],
+      forest: ["#64f5ED", "#F2E109", "#32CD32", "#32CD32", "#a0e9c4"],
+      purples: ["#996BcB", "#c2aFF7", "#8267d7", "#FF55ff", "#e264d0"],
+      browns: ["#8B4513", "#A0522D", "#D2691E", "#DAA520", "#8B3030"],
+      winter: ["#87CEEB", "#64f5ED", "#7De6FF", "#cccccc", "#ffffff"],
+    };
+
+    function random(min: number, max: number): number {
+      return Math.random() * (max - min) + min;
+    }
+
+    interface BlobGeometry {
+      points: Vector[];
+      angles: number[];
+      radii: number[];
+    }
+    function createBlobPoints(
+      centerX: number,
+      centerY: number,
+      avgRadius: number,
+      irregularity: number,
+      spikyness: number,
+      numPoints: number
+    ): BlobGeometry {
+      const points: Vector[] = [];
+      const angles: number[] = [];
+      const radii: number[] = [];
+      const angleStep = (Math.PI * 2) / numPoints;
+
+      for (let i = 0; i < numPoints; i++) {
+        const angle = i * angleStep;
+        angles.push(angle);
+
+        let radius =
+          avgRadius + random(-irregularity, irregularity) * avgRadius;
+        radius += random(0, spikyness) * avgRadius;
+        radius = Math.max(avgRadius * 0.2, radius);
+        radii.push(radius);
+
+        points.push({
+          x: centerX + Math.cos(angle) * radius,
+          y: centerY + Math.sin(angle) * radius,
+        });
+      }
+      return { points, angles, radii };
+    }
+
+    function createPathString(points: Vector[]): string {
+      if (points.length < 3) return "";
+
+      let d = `M ${points[0].x} ${points[0].y}`;
+      const n = points.length;
+
+      for (let i = 0; i < n; i++) {
+        const p0 = points[(i - 1 + n) % n];
+        const p1 = points[i];
+        const p2 = points[(i + 1) % n];
+        const p3 = points[(i + 2) % n];
+
+        const cp1x = p1.x + (p2.x - p0.x) / 6;
+        const cp1y = p1.y + (p2.y - p0.y) / 6;
+        const cp2x = p2.x - (p3.x - p1.x) / 6;
+        const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+        d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+      }
+      d += " Z";
+      return d;
+    }
+
+    function hexToHsl(hex: string): HSLColor | null {
+      hex = hex.replace(/^#/, "");
+      if (hex.length === 3) {
+        hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+      }
+      if (hex.length !== 6) {
+        return null;
+      }
+      const r = parseInt(hex.substring(0, 2), 16) / 255;
+      const g = parseInt(hex.substring(2, 4), 16) / 255;
+      const b = parseInt(hex.substring(4, 6), 16) / 255;
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      let h = 0;
+      let s = 0;
+      const l = (max + min) / 2;
+      if (max === min) {
+        h = s = 0;
+      } else {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+          case r:
+            h = (g - b) / d + (g < b ? 6 : 0);
+            break;
+          case g:
+            h = (b - r) / d + 2;
+            break;
+          case b:
+            h = (r - g) / d + 4;
+            break;
+        }
+        h /= 6;
+      }
+      return {
+        h: Math.round(h * 360),
+        s: Math.round(s * 100),
+        l: Math.round(l * 100),
+      };
+    }
+
+    function shuffleArray<T>(array: T[]): T[] {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    function initBlobs() {
+      blobs = [];
+      svgContainer!.innerHTML = "";
+      svgGroup = document.createElementNS(svgNS, "g");
+      svgContainer!.appendChild(svgGroup);
+
+      const { width: containerWidth, height: containerHeight } =
+        svgContainer!.getBoundingClientRect();
+      const windowWidth = window.innerWidth;
+
+      const scaleFactor = Math.max(
+        config.minScaleFactor,
+        Math.min(config.maxScaleFactor, windowWidth / config.referenceWidth)
+      );
+      const currentLargeMinSize = config.baseLargeMinBlobSize * scaleFactor;
+      const currentLargeMaxSize = config.baseLargeMaxBlobSize * scaleFactor;
+      const currentSmallMinSize = config.baseSmallMinBlobSize * scaleFactor;
+      const currentSmallMaxSize = config.baseSmallMaxBlobSize * scaleFactor;
+
+      let initialBlobColorsHex: string[] = [];
+
+      const schemeNames = Object.keys(colorScheme);
+      if (schemeNames.length === 0) {
+        console.error("No color Scheme defined! Using fallback.");
+        initialBlobColorsHex = [
+          "#90EE90",
+          "#6BCB77",
+          "#3CB371",
+          "#32CD32",
+          "#a0e9c4",
+        ];
+      } else {
+        const selectedSchemeName =
+          schemeNames[Math.floor(Math.random() * schemeNames.length)];
+        console.log(`Using scheme: ${selectedSchemeName}`);
+
+        const availableColors = colorScheme[selectedSchemeName]
+          ? [...colorScheme[selectedSchemeName]]
+          : [];
+
+        if (availableColors.length === 0) {
+          console.error(
+            `Selected scheme '${selectedSchemeName}' is empty. Using fallback.`
+          );
+          initialBlobColorsHex = [
+            "#90EE90",
+            "#6BCB77",
+            "#3CB371",
+            "#32CD32",
+            "#a0e9c4",
+          ];
+        } else {
+          const shuffledColors = shuffleArray(availableColors);
+          initialBlobColorsHex = [];
+          for (let i = 0; i < config.numBlobs; i++) {
+            initialBlobColorsHex.push(
+              shuffledColors[i % shuffledColors.length]
+            );
+          }
+
+          if (shuffledColors.length < config.numBlobs) {
+            console.warn(
+              `Scheme '${selectedSchemeName}' has only ${shuffledColors.length} colors. Repeating colors for ${config.numBlobs} blobs.`
+            );
+          }
+        }
+      }
+
+      const largeBlobCount = Math.ceil(config.numBlobs / 2);
+      for (let i = 0; i < largeBlobCount; i++) {
+        createSingleBlob(
+          i,
+          currentLargeMinSize,
+          currentLargeMaxSize,
+          initialBlobColorsHex[i],
+          containerWidth,
+          containerHeight
+        );
+      }
+
+      for (let i = largeBlobCount; i < config.numBlobs; i++) {
+        createSingleBlob(
+          i,
+          currentSmallMinSize,
+          currentSmallMaxSize,
+          initialBlobColorsHex[i % initialBlobColorsHex.length],
+          containerWidth,
+          containerHeight
+        );
+      }
+    }
+
+    function createSingleBlob(
+      blobIndex: number,
+      minSize: number,
+      maxSize: number,
+      initialHex: string,
+      containerWidth: number,
+      containerHeight: number
+    ) {
+      const radius = random(minSize / 2, maxSize / 2);
+
+      const position: Vector = {
+        x: random(radius, containerWidth - radius),
+        y: random(radius, containerHeight - radius),
+      };
+
+      const initialHsl = hexToHsl(initialHex);
+      if (!initialHsl) {
+        console.error(
+          `Invalid initial hex color: ${initialHex}. Skipping blob ${blobIndex}.`
+        );
+      }
+
+      const initialGeometry = createBlobPoints(0, 0, radius, 0.3, 0.2, 8);
+      const pathData = createPathString(initialGeometry.points);
+      const velocity: Vector = {
+        x: random(-1, 1) * config.speedMultiplier,
+        y: random(-1, 1) * config.speedMultiplier,
+      };
+      const initialAngle = random(0, 360);
+      const angularVelocity = random(-0.15, 0.15);
+
+      const pathElement = document.createElementNS(svgNS, "path");
+      pathElement.setAttribute("d", pathData);
+      if (initialHsl) {
+        pathElement.setAttribute("fill", initialHex);
+      } else {
+        pathElement.setAttribute("fill", "#808080");
+      }
+      pathElement.setAttribute(
+        "transform",
+        `translate(${position.x}, ${position.y}) rotate(${initialAngle})`
+      );
+      pathElement.style.opacity = String(config.opacity);
+      svgGroup!.appendChild(pathElement);
+
+      const blob: BlobShape = {
+        id: blobIndex,
+        pathElement,
+        position: position,
+        velocity,
+        radius,
+        color: initialHex,
+        hsl: initialHsl || { h: 0, s: 0, l: 50 },
+        points: initialGeometry.points,
+        angle: initialAngle,
+        angularVelocity: angularVelocity,
+        baseAngles: initialGeometry.angles,
+        baseRadii: initialGeometry.radii,
+        deformationTime: 0,
+        deformationSpeed: random(0.005, 0.015),
+        deformationAmplitude: radius * random(0.05, 0.15),
+        update: function (
+          mousePos: Vector | null,
+          allBlobs: BlobShape[],
+          containerWidth: number,
+          containerHeight: number
+        ) {
+          this.deformationTime += 1;
+
+          const prevX = this.position.x;
+          const prevY = this.position.y;
+          const prevAngle = this.angle;
+
+          if (config.enableShapeChanging) {
+            const currentPoints: Vector[] = [];
+            const numBasePoints = this.baseAngles.length;
+            for (let j = 0; j < numBasePoints; j++) {
+              const angle = this.baseAngles[j];
+              const baseRadius = this.baseRadii[j];
+              const radiusOffset =
+                Math.sin(
+                  this.deformationTime * this.deformationSpeed + angle * 3
+                ) * this.deformationAmplitude;
+              const currentRadius = Math.max(
+                baseRadius * 0.3,
+                baseRadius + radiusOffset
+              );
+              const x = Math.cos(angle) * currentRadius;
+              const y = Math.sin(angle) * currentRadius;
+              currentPoints.push({ x, y });
+            }
+            const newPathData = createPathString(currentPoints);
+            this.pathElement.setAttribute("d", newPathData);
+          }
+
+          this.position.x += this.velocity.x;
+          this.position.y += this.velocity.y;
+
+          this.angle += this.angularVelocity;
+
+          if (config.enableMouseInteraction && mousePos) {
+            const dx = this.position.x - mousePos.x;
+            const dy = this.position.y - mousePos.y;
+            const distSquared = dx * dx + dy * dy;
+            const influenceDist =
+              config.mouseInfluenceRadius + this.radius * 1.2;
+            const influenceDistSquared = influenceDist * influenceDist;
+
+            if (distSquared < influenceDistSquared && distSquared > 0) {
+              const dist = Math.sqrt(distSquared);
+              const force = ((influenceDist - dist) / influenceDist) ** 1.5;
+              const angle = Math.atan2(dy, dx);
+              this.velocity.x +=
+                Math.cos(angle) *
+                force *
+                config.mouseForce *
+                config.speedMultiplier *
+                5;
+              this.velocity.y +=
+                Math.sin(angle) *
+                force *
+                config.mouseForce *
+                config.speedMultiplier *
+                5;
+            }
+          }
+
+          const speed = Math.sqrt(this.velocity.x ** 2 + this.velocity.y ** 2);
+          const maxSpeed = 1.5 * config.speedMultiplier;
+          if (speed > maxSpeed) {
+            this.velocity.x *= maxSpeed / speed;
+            this.velocity.y *= maxSpeed / speed;
+          }
+          this.velocity.x *= 0.99;
+          this.velocity.y *= 0.99;
+
+          if (config.enableCollisionDetection) {
+            const collisionPushForce = 0.01;
+            for (const otherBlob of allBlobs) {
+              if (this.id === otherBlob.id) continue;
+
+              const dx = otherBlob.position.x - this.position.x;
+              const dy = otherBlob.position.y - this.position.y;
+              const distSquared = dx * dx + dy * dy;
+              const minDist = (this.radius + otherBlob.radius) * 0.5;
+              const minDistSquared = minDist * minDist;
+
+              if (distSquared < minDistSquared && distSquared > 0) {
+                const dist = Math.sqrt(distSquared);
+                const overlap = minDist - dist;
+                const angle = Math.atan2(dy, dx);
+                const pushX = Math.cos(angle) * overlap * collisionPushForce;
+                const pushY = Math.sin(angle) * overlap * collisionPushForce;
+                this.velocity.x -= pushX;
+                this.velocity.y -= pushY;
+              }
+            }
+          }
+
+          const width = containerWidth;
+          const height = containerHeight;
+          const pushForce = 0.05 * config.speedMultiplier;
+          if (this.position.x < this.radius) {
+            this.velocity.x += pushForce;
+          }
+          if (this.position.x > width - this.radius) {
+            this.velocity.x -= pushForce;
+          }
+          if (this.position.y < this.radius) {
+            this.velocity.y += pushForce;
+          }
+          if (this.position.y > height - this.radius) {
+            this.velocity.y -= pushForce;
+          }
+          this.position.x = Math.max(
+            this.radius / 2,
+            Math.min(width - this.radius / 2, this.position.x)
+          );
+          this.position.y = Math.max(
+            this.radius / 2,
+            Math.min(height - this.radius / 2, this.position.y)
+          );
+
+          const staticThreshold = 0.01;
+          const isStatic =
+            Math.abs(this.velocity.x) < staticThreshold &&
+            Math.abs(this.velocity.y) < staticThreshold &&
+            Math.abs(this.angularVelocity) < staticThreshold;
+
+          const positionChanged =
+            Math.abs(this.position.x - prevX) > 0.1 ||
+            Math.abs(this.position.y - prevY) > 0.1;
+          const angleChanged = Math.abs(this.angle - prevAngle) > 0.01;
+
+          if (!isStatic && (positionChanged || angleChanged)) {
+            this.pathElement.setAttribute(
+              "transform",
+              `translate(${this.position.x}, ${this.position.y}) rotate(${this.angle})`
+            );
+          }
+        },
+      };
+      blobs.push(blob);
+    }
+
+    function animate(timestamp: number) {
+      requestAnimationFrame(animate);
+
+      const elapsedSinceLastExecution = timestamp - lastLogicExecutionTime;
+      if (elapsedSinceLastExecution < targetFrameInterval) {
+        return;
+      }
+      lastLogicExecutionTime =
+        timestamp - (elapsedSinceLastExecution % targetFrameInterval);
+
+      const deltaTime = timestamp - lastTimestamp;
+      lastTimestamp = timestamp;
+
+      if (!isMobileDevice && deltaTime > 0) {
+        const currentFps = 1000 / deltaTime;
+        fpsHistory.push(currentFps);
+        if (fpsHistory.length > maxFpsHistoryLength) {
+          fpsHistory.shift();
+        }
+
+        if (fpsHistory.length === maxFpsHistoryLength) {
+          const avgFps =
+            fpsHistory.reduce((a, b) => a + b, 0) / maxFpsHistoryLength;
+          let targetLevel = currentPerformanceLevel;
+
+          if (avgFps < level1_MaxFps) targetLevel = 1;
+          else if (avgFps < level2_MaxFps) targetLevel = 2;
+          else if (avgFps < level3_MaxFps) targetLevel = 3;
+          else targetLevel = 4;
+
+          if (targetLevel === currentPerformanceLevel) {
+            framesInCurrentRange = 0;
+          } else {
+            let shouldSwitch = false;
+            if (targetLevel > currentPerformanceLevel) {
+              if (currentPerformanceLevel === 1 && avgFps >= level1_RecoveryFps)
+                shouldSwitch = true;
+              else if (
+                currentPerformanceLevel === 2 &&
+                avgFps >= level2_RecoveryFps
+              )
+                shouldSwitch = true;
+              else if (currentPerformanceLevel === 3 && avgFps >= level4_MinFps)
+                shouldSwitch = true;
+            } else {
+              if (currentPerformanceLevel === 4 && avgFps < level4_DegradeFps)
+                shouldSwitch = true;
+              else if (currentPerformanceLevel === 3 && avgFps < level2_MaxFps)
+                shouldSwitch = true;
+              else if (currentPerformanceLevel === 2 && avgFps < level1_MaxFps)
+                shouldSwitch = true;
+            }
+
+            if (shouldSwitch) {
+              framesInCurrentRange++;
+              if (framesInCurrentRange >= requiredFramesForSwitch) {
+                updatePerformanceLevel(targetLevel);
+                framesInCurrentRange = 0;
+              }
+            } else {
+              framesInCurrentRange = 0;
+            }
+          }
+        }
+      }
+
+      updateCachedRect();
+      const containerWidth = cachedContainerRect.width;
+      const containerHeight = cachedContainerRect.height;
+
+      if (svgGroup) {
+        currentOffset.x +=
+          (targetOffset.x - currentOffset.x) * offsetLerpFactor;
+        currentOffset.y +=
+          (targetOffset.y - currentOffset.y) * offsetLerpFactor;
+        svgGroup.setAttribute(
+          "transform",
+          `translate(${currentOffset.x}, ${currentOffset.y})`
+        );
+      }
+
+      blobs.forEach((blob) =>
+        blob.update(mousePos, blobs, containerWidth, containerHeight)
+      );
+    }
+
+    let mouseThrottleTimeout: number | null = null;
+
+    window.addEventListener("resize", () => {
+      needsRectUpdate = true;
+    });
+
+    window.addEventListener("mousemove", (event) => {
+      if (config.enableMouseInteraction) {
+        if (mouseThrottleTimeout) {
+          cancelAnimationFrame(mouseThrottleTimeout);
+        }
+        mouseThrottleTimeout = requestAnimationFrame(() => {
+          updateCachedRect();
+          const mouseX = event.clientX;
+          const mouseY = event.clientY;
+          mousePos = {
+            x: mouseX - cachedContainerRect.left,
+            y: mouseY - cachedContainerRect.top,
+          };
+          const centerX = window.innerWidth / 2;
+          const centerY = window.innerHeight / 2;
+          targetOffset.x = (mouseX - centerX) * offsetScale;
+          targetOffset.y = (mouseY - centerY) * offsetScale;
+        });
+      }
+    });
+
+    window.addEventListener("mouseleave", () => {
+      mousePos = null;
+      targetOffset.x = 0;
+      targetOffset.y = 0;
+    });
+
+    initBlobs();
+    requestAnimationFrame(animate);
+
+    function cleanup() {
+      if (mouseThrottleTimeout) {
+        cancelAnimationFrame(mouseThrottleTimeout);
+        mouseThrottleTimeout = null;
+      }
+      blobs.length = 0;
+      mousePos = null;
+    }
+
+    document.addEventListener("astro:before-preparation", cleanup);
+    document.addEventListener("beforeunload", cleanup);
+  } else {
+    console.error("Dynamic background SVG container not found.");
+  }
+</script>
+
+<style>
+  #dynamic-background-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    filter: blur(30px);
+    opacity: var(--dynamic-bg-opacity);
+    transition: filter 0.3s ease;
+  }
+
+  @media (min-width: 768px) {
+    #dynamic-background-container {
+      filter: blur(50px);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    #dynamic-background-container {
+      filter: blur(80px);
+    }
+  }
+
+  #dynamic-background-svg {
+    display: block;
+  }
+
+  @keyframes hue-rotate-anim {
+    from {
+      filter: hue-rotate(0deg);
+    }
+    to {
+      filter: hue-rotate(360deg);
+    }
+  }
+
+  #dynamic-background-svg.css-hue-shift-active {
+    animation: hue-rotate-anim 50s linear infinite;
+  }
+</style>

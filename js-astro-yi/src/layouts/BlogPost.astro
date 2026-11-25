@@ -1,0 +1,135 @@
+---
+import type { MarkdownHeading } from 'astro';
+import BaseHead from '@/components/BaseHead.astro';
+import Header from '@/components/Header.astro';
+import Footer from '@/components/Footer.astro';
+import Profile from '@/components/Profile.astro';
+import Comment from '@/components/Comment.astro';
+import Toc from '@/components/Toc.astro';
+import { comment, config } from '@/consts';
+import ScrollToTop from '@/components/ScrollToTop.astro';
+import { t } from '@/i18n/utils';
+
+interface Props {
+  frontmatter: {
+    title: string;
+    description?: string;
+    comment?: boolean;
+    donate?: boolean;
+    toc?: boolean;
+    mathjax?: boolean;
+    mermaid?: boolean;
+    ogImage?: string;
+  };
+  headings: MarkdownHeading[];
+}
+
+const {
+  frontmatter = {
+    title: '',
+    comment: false,
+    donate: false,
+    toc: false,
+    mathjax: false,
+    mermaid: false,
+  },
+  headings,
+} = Astro.props;
+---
+
+<html lang={config.lang}>
+  <BaseHead
+    title={frontmatter.title}
+    description={frontmatter.description}
+    mathjax={frontmatter.mathjax}
+    mermaid={frontmatter.mermaid}
+    ogImage={frontmatter.ogImage}
+  />
+
+  <body class="bg-skin-secondary flex flex-col min-h-screen">
+    <Header />
+    <main
+      class="container relative p-4 pb-32 text-skin-base flex-1"
+      id="app"
+    >
+      <div class="grid grid-cols-4 gap-8">
+        <div class="col-span-4 space-y-4 xl:col-span-3 first:space-y-2">
+          <button
+            class="flex items-center outline-hidden cursor-pointer text-md hover:text-skin-active"
+            style="background-color: inherit;"
+            onclick="history.back()"
+          >
+            <i class="mr-2 ri-arrow-left-line"></i>
+            <span>{t('home.goBack')}</span>
+          </button>
+          <slot />
+          {frontmatter.comment && comment.enable && <Comment />}
+        </div>
+        <div class="relative hidden col-span-1 xl:block">
+          <Profile />
+          {frontmatter.toc && <Toc headings={headings} />}
+        </div>
+        <ScrollToTop />
+      </div>
+      <Footer />
+    </main>
+  </body>
+</html>
+
+<script>
+  import { Fancybox } from '@fancyapps/ui';
+  import '@fancyapps/ui/dist/fancybox/fancybox.css';
+
+  // Fancybox.bind uses event delegation — binding once is enough and survives
+  // ClientRouter navigations (it covers [data-fancybox] elements added later).
+  Fancybox.bind('[data-fancybox]');
+
+  // The per-article work below operates on `.markdown-body`, which is re-rendered
+  // on every navigation — so re-run it on astro:page-load (fires on first load
+  // + each navigation). Otherwise images won't lazy-load / open in the lightbox
+  // and links won't open in a new tab on the second blog post you visit.
+  function bindBlogPost() {
+    const markdownBody = document.querySelector('.markdown-body');
+    if (!markdownBody) return;
+
+    let images = markdownBody.querySelectorAll('img');
+    const callback = (entries: IntersectionObserverEntry[]) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const image = entry.target;
+          const data_src = image.getAttribute('data-src');
+          const data_alt = image.getAttribute('data-alt');
+          image.setAttribute('data-fancybox', 'gallery');
+          if (data_src) {
+            image.setAttribute('src', data_src);
+          }
+          if (data_alt) {
+            image.setAttribute('alt', data_alt);
+          }
+          observer.unobserve(image);
+        }
+      });
+    };
+
+    const observer = new IntersectionObserver(callback);
+    images.forEach((image) => {
+      observer.observe(image);
+    });
+
+    var links = markdownBody.querySelectorAll('a');
+    // 循环遍历链接标签
+    for (var i = 0; i < links.length; i++) {
+      // 给每个链接标签添加 target 属性
+      let names = links[i].getAttributeNames();
+      if (
+        !names.includes('data-footnote-backref') &&
+        !names.includes('data-footnote-ref')
+      ) {
+        links[i].setAttribute('target', '_blank');
+        links[i].setAttribute('rel', 'nofollow noreferrer');
+      }
+    }
+  }
+
+  document.addEventListener('astro:page-load', bindBlogPost);
+</script>

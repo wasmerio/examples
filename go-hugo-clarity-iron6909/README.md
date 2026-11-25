@@ -2,7 +2,7 @@
 
 ## Demo
 
-https://hugo-clarity.wasmer.app
+https://hugo-clarity-iron6909.wasmer.app
 
 ## About the theme
 

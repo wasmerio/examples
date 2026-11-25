@@ -1,0 +1,71 @@
+---
+// ⚠️ 这里不 import overlayscrollbars 的样式表：由 Layout.astro 以 `?url` 按开关挂 <link>，
+// 且必须用 scriptingenabled 版本，否则禁用 JS 的访客会拿到没有滚动条的页面
+
+import { siteConfig } from '@/config';
+const osConfig = siteConfig.theme.overlayScrollbars;
+---
+
+<!--
+  整页（主滚动容器）的 OverlayScrollbars：viewport 是 <html>、content 是 body，
+  window.scrollY / scrollIntoView 等原生 API 照常有效。
+  ⚠️ 滚动锁定锁 documentElement（见 @utils/scrollLock），解锁后要让 OS 重新量尺寸。
+-->
+<div id="os-root" hidden data-auto-hide={osConfig.autoHide}></div>
+
+<script>
+  import { OverlayScrollbars } from 'overlayscrollbars';
+  import { bindScrollLockNotifier } from '@utils/scrollLock';
+
+  const root = document.getElementById('os-root');
+  const autoHide = (root?.dataset.autoHide || 'leave') as
+    | 'never' | 'scroll' | 'move' | 'leave';
+
+  // 模块表去重 ⇒ 换页不会重跑；再用 window 上的实例做幂等守卫
+  if (!window.__momoOs) {
+    window.__momoOs = OverlayScrollbars(document.body, {
+      // 主题类名在 styles/scrollbar.css 里，颜色复用 --scrollbar-* 变量，切换深色模式无需重新初始化
+      scrollbars: {
+        theme: 'os-theme-momo',
+        autoHide,
+        autoHideDelay: 600,
+        // 点击轨道跳转一屏（不开则点轨道无反应）
+        clickScroll: true,
+      },
+      // ⚠️ 必须显式写死：OS 的 CSS 值 → 选项值只认 hidden / visible，读到 scroll 会兜底成
+      // hidden，视口一旦不可滚动，window.scrollY 恒为 0（吸顶 / 阅读进度 / 目录一起静默失效）
+      overflow: {
+        x: 'hidden',
+        y: 'scroll',
+      },
+    });
+
+    // 锁 / 解锁会改变视口的滚动能力，解锁后让 OS 重新量一次，否则手柄长度会停在旧高度
+    bindScrollLockNotifier(() => window.__momoOs?.update(true));
+
+    // swup 换页后 DOM 就位的瞬间先同步量一次，避免新页面刚出现时手柄长度是错的
+    document.addEventListener('astro:after-swap', () => {
+      window.__momoOs?.update(true);
+    });
+
+    // ---- 内层滚动容器：只接搜索结果列表 ----
+    //
+    // ⚠️ 不要全局接满：Expressive Code 的 pre 是 display: flex，接上会失去横向滚动能力；
+    // 内层容器多在 swup 容器内、每页重建，得逐个 destroy() 再重建，否则监听器会累积。
+    // 搜索结果列表在 swup 容器外、元素常驻，所以实例只建一次，之后交给 OS 的 observer 更新。
+    const searchResults = document.getElementById('search-results');
+    if (searchResults) {
+      window.__momoOsInner = {
+        ...window.__momoOsInner,
+        search: OverlayScrollbars(searchResults, {
+          scrollbars: {
+            theme: 'os-theme-momo',
+            autoHide,
+            autoHideDelay: 600,
+            clickScroll: true,
+          },
+        }),
+      };
+    }
+  }
+</script>

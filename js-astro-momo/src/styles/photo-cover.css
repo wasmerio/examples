@@ -1,0 +1,276 @@
+/*
+ * 全站照片背景（siteConfig.theme.photoCover）：故意不放进组件，因为照片层每页都渲染，
+ * 由 Layout.astro 用 ?url 取出、按开关用 <link> 挂载，关掉开关就一点都不加载。
+ * 滚动进度写在 <html> 的 --photo-p（0 → 1，脚本已做 smoothstep 缓动），其余效果都由它派生。
+ */
+
+/* ==================== 固定的照片层（所有页面） ==================== */
+.photo-cover-layer {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    /* 整段滚动里只改 opacity，合成层不会重排 */
+    opacity: calc(1 - var(--photo-p, 1) * (1 - var(--photo-rest, 0.12)));
+    /* 图片还没到位时的兜底底色，跟随明暗主题 */
+    background-color: color-mix(in srgb, var(--text-color) 16%, transparent);
+}
+
+/* 模糊预览图：构建期由 PhotoCover.astro 缩成几十像素的 webp 并以 data URI 内联；
+   public/ 下同目录的 preview/ 可手工覆盖。用 background-image，路径写错也不会出现裂图图标。 */
+.photo-cover-preview {
+    position: absolute;
+    inset: 0;
+    background-image: var(--photo-preview);
+    background-size: cover;
+    background-position: center;
+    /* 放大一点，避免模糊后边缘露白 */
+    transform: scale(1.1);
+    filter: blur(38px);
+}
+
+.photo-cover-media {
+    position: absolute;
+    inset: 0;
+}
+
+/* 黑色蒙版：上浓下淡的竖向渐变。整张照片都压住（不只是顶部），白字才在亮调照片上也读得清 */
+.photo-cover-mask {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg,
+        rgb(0 0 0 / var(--photo-mask, 0.5)),
+        rgb(0 0 0 / calc(var(--photo-mask, 0.5) * 0.72)) 30%,
+        rgb(0 0 0 / calc(var(--photo-mask, 0.5) * 0.88)) 66%,
+        rgb(0 0 0 / var(--photo-mask, 0.5)));
+    opacity: calc(1 - var(--photo-p, 1));
+}
+
+/* ==================== 以下只在脚本可用时生效 ====================
+   禁用 JS 时进度变量不存在 → var() 兜底值为 1（落位后的样子），占位块由 display:none 撤掉 */
+@media (scripting: enabled) {
+    /* 首页才把进度归零：内页这两个变量都不存在，一律按 1（淡背景）渲染。
+       --photo-p 是缓动进度（淡出 / 字号 / 颜色），--photo-pos 是线性进度（位置）。 */
+    html:has(.photo-cover-copy) {
+        --photo-p: 0;
+        --photo-pos: 0;
+        --photo-k: calc(1 - var(--photo-p, 1));
+        /* 白色保持到进度过半才往下掉，避免过渡中段「中灰字压在亮照片上」 */
+        --photo-ink: min(calc(var(--photo-k) * 2), 1);
+    }
+
+    /* 标题的包含块：绝对定位的标题以它为基准，纵向只靠 transform 走
+       （字号随滚动变化 → 高度一直在变，留在文档流里会把下面的卡片推着抖） */
+    .photo-cover-hero {
+        position: relative;
+        /* 占位高度：整屏 + 标题在终态字号下的高度，由脚本量出写进 --photo-copy-h */
+        height: calc(100svh + var(--photo-copy-h, 0px));
+        /* 标题在两个端点的纵向位置：起始 = 视口正中，终点 = 占位末尾（它本来的位置） */
+        --copy-y0: calc(50svh - var(--photo-header, 0px) + var(--copy-bias, 0px));
+        --copy-y1: calc(100svh + var(--photo-copy-h, 0px) / 2);
+        /* 上下留白不等（pt 1.25rem / pb 2.5rem）：translate(-50%) 居中的是 padding 盒子，
+           整组会比目标高 0.625rem，靠它补回来。
+           ⚠️ 必须与 --copy-y0 写在同一条规则里：var() 只向上查找继承值，放到子元素上 --copy-y0 取不到 */
+        --copy-bias: 0.625rem;
+    }
+
+    /* 整屏占位（向下箭头放在里面，自然贴着首屏底部） */
+    .photo-cover-spacer {
+        position: relative;
+        height: 100svh;
+    }
+
+    /* 向下箭头：没有描边、没有底色，52px 方块是看不见的点击热区，视觉上只有里面的 svg */
+    .photo-cover-arrow {
+        /* 唯一的尺寸旋钮：只影响箭头，热区不变。⚠️ 量的是 svg 盒子而非箭头本身：
+           viewBox 24×24 且路径只占中间一块，可见宽度 ≈ 这个值 × 0.65 */
+        --arrow-size: 34px;
+        position: absolute;
+        left: 50%;
+        /* 占位块排在顶栏之后（桌面端顶栏在文档流里），要补回顶栏高度才落在首屏真正的底部 */
+        bottom: calc(clamp(22px, 5svh, 44px) + var(--photo-header, 0px));
+        z-index: 1;
+        display: grid;
+        place-items: center;
+        width: 52px;
+        height: 52px;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: #fff;
+        cursor: pointer;
+        /* 自身居中用 translate 属性、不用 transform：transform 留给 hover 的 scale */
+        translate: -50% 0;
+        /* 滚动一开始就退场 */
+        opacity: max(0, calc(1 - var(--photo-p, 1) * 2));
+        /* ⚠️ 故意不写 opacity 过渡：淡出逐帧跟着 --photo-p 走，加了过渡会拖在滚动后面 */
+        transition: scale 0.25s ease, filter 0.25s ease;
+    }
+
+    /* 呼吸动画挂在 svg 上（按钮的 scale 要留给 hover）；2.4s 一轮，45% / 55% 停一下再回来 */
+    .photo-cover-arrow svg {
+        width: var(--arrow-size);
+        height: var(--arrow-size);
+        /* 亮调照片上给一点暗底影，白箭头才立得住 */
+        filter: drop-shadow(0 2px 5px rgb(0 0 0 / 0.45));
+        animation: photo-arrow-breathe 2.4s ease-in-out infinite;
+    }
+
+    @keyframes photo-arrow-breathe {
+        0%,
+        100% {
+            translate: 0 0;
+            scale: 1;
+            opacity: 0.82;
+        }
+
+        45%,
+        55% {
+            translate: 0 5px;
+            scale: 1.07;
+            opacity: 1;
+        }
+    }
+
+    /* hover：没有底色可以变，改成「放大 + 发白光」，呼吸不停 */
+    .photo-cover-arrow:hover {
+        scale: 1.16;
+        filter: drop-shadow(0 0 8px rgb(255 255 255 / 0.7));
+    }
+
+    .photo-cover-arrow:active {
+        scale: 0.94;
+    }
+
+    .photo-cover-arrow:focus-visible {
+        /* 圆角只为把焦点圈画成圆形（按钮本体已经看不见了） */
+        border-radius: 999px;
+        outline: 2px solid #fff;
+        outline-offset: 2px;
+    }
+
+    /* 标题：p = 0 时中心落在视口正中，p = 1 时落在占位末尾（它本来的位置）。
+       ⚠️ 位置必须用线性的 --photo-pos 而不是缓动的 --photo-p：页面本来就在以 1px/px 把标题往上带，
+       位移再走缓动会在中段互相抵消，标题会「钉」在屏幕中间几百像素 */
+    .photo-cover-copy {
+        /* photo 模式自己控制上下留白，落位后与普通 Cover 完全一致 */
+        padding-top: 1.25rem;
+        padding-bottom: 2.5rem;
+        position: absolute;
+        top: 0;
+        left: 50%;
+        width: var(--page-width);
+        max-width: none;
+        margin-inline: 0;
+        transform: translate(-50%, calc(-50% + var(--copy-y0) + var(--photo-pos, 1) * (var(--copy-y1) - var(--copy-y0))));
+        will-change: transform;
+    }
+
+    /* 字号上限 4.5rem：中文长标题在 96px 下会折成很难看的两行 */
+    .photo-cover-copy h1 {
+        font-size: calc(clamp(2.5rem, 6vw, 4.5rem) * var(--photo-k) + 1.875rem * var(--photo-p, 1));
+        line-height: 1.18;
+        letter-spacing: -0.025em;
+        color: color-mix(in srgb, #fff calc(var(--photo-ink) * 100%), var(--text-color));
+        /* 近处一层紧、远处一层散：亮调照片上白字靠它才立得住 */
+        text-shadow: 0 1px 3px rgb(0 0 0 / calc(0.45 * var(--photo-ink))),
+            0 2px 22px rgb(0 0 0 / calc(0.55 * var(--photo-ink)));
+        animation: photo-rise 1.1s 0.1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    }
+
+    .photo-cover-copy p {
+        margin-top: 0.65em;
+        font-size: calc(clamp(1.15rem, 2.4vw, 1.5rem) * var(--photo-k) + 1rem * var(--photo-p, 1));
+        line-height: 1.5;
+        color: color-mix(in srgb, rgb(255 255 255 / 0.9) calc(var(--photo-ink) * 100%), var(--text-color-70));
+        text-shadow: 0 1px 3px rgb(0 0 0 / calc(0.4 * var(--photo-ink))),
+            0 2px 16px rgb(0 0 0 / calc(0.5 * var(--photo-ink)));
+        animation: photo-rise 1.1s 0.22s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+    }
+
+    @keyframes photo-rise {
+        from {
+            opacity: 0;
+            translate: 0 18px;
+        }
+
+        to {
+            opacity: 1;
+            translate: 0 0;
+        }
+    }
+
+    /* 照片上的顶栏：只改 #header-bar（logo + 工具按钮）与 #nav-bar（桌面端导航）；
+       移动端抽屉也在 #main-header 里，但它有自己的不透明底色，不能跟着变白。
+       文字色 / 描边跟着 --photo-ink 插值回主题色，与 Cover 标题是同一条曲线 */
+    html:has(.photo-cover-copy) #header-bar {
+        color: color-mix(in srgb, #fff calc(var(--photo-ink, 1) * 100%), var(--text-color));
+    }
+
+    html:has(.photo-cover-copy) #header-bar button {
+        /* .momo-btn 自带表面色与文字色，这里改回继承 #header-bar 的插值色，否则是一排实心按钮 */
+        background-color: transparent;
+        color: inherit;
+        border-color: color-mix(in srgb, rgb(255 255 255 / 0.4) calc(var(--photo-ink) * 100%), var(--button-border-color));
+    }
+
+    /* 照片上悬停给一点白色底，滚回主题色后自动落回普通的 surface-hover */
+    html:has(.photo-cover-copy) #header-bar button:hover {
+        background-color: color-mix(in srgb, #fff calc(var(--photo-ink) * 18%), var(--surface-color-hover));
+    }
+
+    /* ---- 桌面端导航胶囊：整颗跟着滚动进度插值 ----
+       --nav-chrome（外壳：描边 / 底色 / 阴影 / 模糊）取 --photo-p，顶部完全透明，滚满一屏后与其它页面一致；
+       --nav-ink（文字 / 色块的白色成分）比 --photo-ink 提前收窄（p 0.15 → 0.4）：导航只有 11px，
+       扛不住「半灰」阶段。⚠️ 这条覆盖的特异性（1,2,1）必须高过 Header 里的 #nav-bar.nav-scrolled（1,1,0） */
+    html:has(.photo-cover-copy) #nav-bar {
+        --nav-chrome: var(--photo-p, 1);
+        --nav-ink: clamp(0, calc((0.4 - var(--photo-p, 0)) * 4), 1);
+        /* 描边浓度：顶部 0.45 让白字在亮照片上立得住，过渡中段再补一层，两端落回 0 */
+        --nav-halo: calc(0.45 * var(--nav-ink) + 0.5 * min(var(--nav-ink), calc(1 - var(--nav-ink))));
+        color: color-mix(in srgb, #fff calc(var(--nav-ink) * 100%), var(--text-color));
+    }
+
+    html:has(.photo-cover-copy) #nav-bar-list a {
+        text-shadow: 0 1px 3px rgb(0 0 0 / var(--nav-halo)),
+            0 2px 12px rgb(0 0 0 / calc(var(--nav-halo) * 0.7));
+    }
+
+    /* ⚠️ 外壳是逐帧插值的，必须关掉 transition：否则每帧都重起一段 150ms 过渡，会明显拖在滚动后面 */
+    html:has(.photo-cover-copy) #nav-bar-list {
+        transition: none;
+    }
+
+    /* 选中色块：照片上是半透明白，滚下来后变回主题的浅灰底 */
+    html:has(.photo-cover-copy) #nav-indicator {
+        background-color: color-mix(in srgb, rgb(255 255 255 / 0.28) calc(var(--nav-ink) * 100%), var(--button-hover-color));
+    }
+
+    /* ⚠️ 当前页导航项不能单独钉成主题色：否则首页会出现「首页是黑字、其它是白字」 */
+
+    @media (max-width: 776px) {
+        /* 移动端顶栏自己的半透明底色不动，额外叠一层黑色并随进度淡出 */
+        html:has(.photo-cover-copy) #main-header {
+            background-image: linear-gradient(rgb(0 0 0 / calc(0.35 * var(--photo-ink, 0))),
+                rgb(0 0 0 / calc(0.35 * var(--photo-ink, 0))));
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .photo-cover-copy h1,
+        .photo-cover-copy p,
+        /* svg 也要列进来：呼吸动画挂在它身上，只关按钮等于没关 */
+        .photo-cover-arrow,
+        .photo-cover-arrow svg {
+            animation: none;
+            transition: none;
+        }
+    }
+}
+
+@media (scripting: none) {
+    .photo-cover-spacer {
+        display: none;
+    }
+}

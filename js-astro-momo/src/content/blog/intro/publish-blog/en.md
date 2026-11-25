@@ -1,0 +1,63 @@
+---
+title: Article Publishing Guide
+pubDate: 2025-09-29
+description: Website Configuration
+category: Instruction
+image: ""
+draft: false
+slugId: momo/intro/publish
+---
+
+## Creating Article Files
+
+:::tip
+Creating posts from the command line is recommended: `pnpm momo new [path]` creates the folder and the language file with a spec-compliant frontmatter block (omit the path to get a date based one, e.g. `pnpm momo new`).
+You can also create and edit posts visually in the CMS started by `pnpm cms`.
+:::
+
+First, create a new folder under the `src/content/blog/` directory. You can create it directly within this directory or nest it within subdirectories.
+
+For example, create a folder named `src/content/blog/my-first-post/`, or create `src/content/blog/posts/my-first-post/` within a subdirectory. Your article will be published to the corresponding route based on the file's relative path (relative to `src/content/`), such as `/blog/my-first-post`.
+
+For internationalization, use `<language>.md` naming conventions to distinguish articles in different languages. For example, `src/content/blog/my-first-post/zh-cn.md` and `src/content/blog/my-first-post/en.md` represent the Chinese and English versions of an article, respectively.
+
+:::important
+* A default language version must exist. When generating pages, if a language version is missing for the current article, the default language version will be used as the article content.
+* The languages used must be listed in `i18nConfig.supportedLanguages` in `src/config.ts` (`astro.config.mjs` reads it automatically).
+:::
+
+## Writing Article Metadata
+
+Each article requires a metadata section (frontmatter) using YAML format, enclosed by `---` as shown below:
+
+```yaml
+---
+title: Article Title
+pubDate: 2025-01-01
+description: Brief article description
+category: Category
+image: ""
+draft: false
+slugId: intro/publish
+pinTop: 2
+---
+```
+
+| Name | Function | 
+| :--- | :--- | 
+| `title` | Article title | 
+| `pubDate` | Publication date, formatted as `YYYY-MM-DD` |
+| `description` | Article description |
+| `category` | Article category, if undefined, the article will be categorized as `Uncategorized` |
+| `image` | Cover image, using relative paths relative to the current file, e.g., `./images/cover.png` |
+| `draft` | Draft status; articles in draft mode won't appear on the blog homepage when published |
+| `slugId` | Article ID, used for generating routes. Each article must be unique. It is recommended to use article paths, such as `intro/publish`. |
+| `pinTop` | Whether to pin to the top; leaving this unset or setting it to a number less than 1 means not to pin; the higher the number, the higher the item appears in the layout |
+
+## Writing Article Content
+
+Article content can be written using Markdown format, supporting specific syntax. Refer to other sample articles for details.
+
+## Special Pages
+
+For example, the About page is stored in the `src/content/spec/about/` folder. Similar to articles, it supports multiple languages and is written in Markdown. It will be rendered according to Markdown formatting and published to the `/about` route.

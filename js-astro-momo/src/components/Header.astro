@@ -1,0 +1,834 @@
+---
+import "@styles/global.css"
+import { Icon } from "astro-icon/components"
+import { profileConfig, siteConfig } from "@/config"
+import ThemeIcon from "./control/ThemeIcon.astro"
+
+import { i18n } from "astro:config/client";
+import i18nit from '@i18n/translation'
+import { getRelativeLocaleUrl } from '@utils/urlUtils';
+import { getBlogEntrySort } from '@utils/contentUtils';
+
+const currentLang = Astro.currentLocale || i18n!.defaultLocale;
+const t = i18nit(currentLang);
+const showLanguageSwitcher = (i18n?.locales?.length ?? 0) > 1;
+
+// 移动端侧边栏的分类（含未分类）
+const blogPosts = await getBlogEntrySort(currentLang);
+const categories = [...new Set(blogPosts.map(post => post.data.category || 'undefined'))].sort();
+
+
+const getLocalePath = (path: string, targetLocale: string) => {
+  const currentPath = Astro.url.pathname;
+  const defaultLocale = i18n?.defaultLocale || "zh-cn";
+  
+  let basePath = currentPath;
+  if (currentLang && currentLang !== defaultLocale) {
+    basePath = currentPath.replace(`/${currentLang}`, "") || "/";
+  }
+  
+  if (targetLocale && targetLocale !== defaultLocale) {
+    return `/${targetLocale}${basePath}`;
+  }
+  
+  return basePath;
+};
+
+const indexPage = getRelativeLocaleUrl(currentLang, "/");
+const archivesPage = getRelativeLocaleUrl(currentLang, "/archives/");
+const friendsPage = getRelativeLocaleUrl(currentLang, "/friends/");
+const aboutPage = getRelativeLocaleUrl(currentLang, "/about/");
+
+// 顶栏在 swup 容器之外、换页不重建：这里先把每种语言的文案渲染进 data 属性，由 syncPersistedHeader 按当前语言重算
+const localeCodes: string[] = (i18n?.locales ?? [currentLang]).map((l) =>
+  typeof l === 'string' ? l : l.path,
+);
+/** 生成「语言 -> 文案」映射，供 data-i18n-labels 使用 */
+const i18nLabels = (key: string) =>
+  Object.fromEntries(localeCodes.map((code) => [code, i18nit(code)(key)]));
+
+// 同样把每种语言的 aria-label 渲染进 data 属性，由 syncPersistedHeader 换页后按当前地址挑一份
+const i18nAria = (key: string) =>
+  Object.fromEntries(localeCodes.map((code) => [code, i18nit(code)(key)]));
+
+// 比较路径时忽略末尾斜杠：/archives 与 /archives/ 视为同一页
+const normalizePath = (path: string) => {
+    const value = String(path || "/");
+    return value.length > 1 ? value.replace(/\/+$/, "") : value;
+};
+const currentPath = normalizePath(Astro.url.pathname);
+const isCurrentPage = (path: string) => normalizePath(path) === currentPath;
+
+// 桌面端导航链接公共样式：当前页底色由 #nav-indicator 负责，链接不带 bg-*；
+// relative z-10 让链接画在色块之上（色块绝对定位且 DOM 在前）。悬停见 #nav-bar-list a 规则
+const navLinkClass = "relative z-10 transition-colors rounded-lg px-3 py-1 mx-1";
+
+const mobileNavLinkClass = (path: string) =>
+    `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors active:bg-[var(--button-hover-color)] active:text-[var(--link-color)] ${
+        isCurrentPage(path)
+            ? "bg-[var(--button-hover-color)] text-[var(--link-color)]"
+            : "hover:bg-[var(--button-hover-color)] hover:text-[var(--link-color)]"
+    }`;
+
+let introPage : string;
+
+if (profileConfig.indexPage) {
+    introPage = profileConfig.indexPage;
+} else {
+    introPage = import.meta.env.BASE_URL;
+}
+---
+
+<div id="main-header" class="fixed top-0 left-0 right-0 z-50 transition-transform duration-300 ease-in-out md:relative md:translate-y-0">
+<!-- id="header-bar"：logo + 工具按钮这一条；照片封面时由 PhotoCover.astro 整条切白，是稳定钩子 -->
+<div id="header-bar" class="flex items-center pt-2 md:py-4 text-[var(--text-color)] max-w-[var(--header-width)] mx-auto">
+    <div class="pr-4 py-2 z-30 header-logo">
+        <a href={ indexPage } >
+            <span class="text-3xl font-bold hover:opacity-60 transition-opacity">{ siteConfig.title }</span>
+        </a>
+    </div>
+    
+    <div class="ml-auto flex gap-2 pl-4 py-2 justify-end z-30">
+        <button id="search-button" class="press momo-btn momo-icon-btn" aria-label={t("search.label")} data-i18n-aria={JSON.stringify(i18nAria("search.label"))}>
+            <Icon name="fa6-solid:magnifying-glass" class="w-4 h-4" />
+        </button>
+        <ThemeIcon class="press momo-btn momo-icon-btn"/>
+        {showLanguageSwitcher && <div class="relative">
+            <button id="language-button" class="press momo-btn momo-icon-btn" aria-label={t("a11y.languageSwitcher")} data-i18n-aria={JSON.stringify(i18nAria("a11y.languageSwitcher"))}>
+                <Icon name="fa6-solid:globe" class="w-4 h-4" />
+            </button>
+            
+          <div id="language-menu" data-default-locale={i18n?.defaultLocale || 'zh-cn'} class="momo-menu hidden absolute right-0 mt-2 w-30 z-50">
+              <div class="py-1 text-right">
+                  <a data-lang="zh-cn" href={getLocalePath("/", "zh-cn")} class={`lang-option block mx-2 my-1 p-2 text-sm rounded ${
+                    currentLang === "zh-cn" ? "bg-[var(--button-hover-color)]" : "hover:bg-[var(--button-hover-color)]"}`}>
+                    <span class={`lang-dot mr-2 ${currentLang === "zh-cn" ? "" : "hidden"}`}><Icon name="fa6-solid:circle" class="w-2 h-2 inline" /></span>
+                    简体中文
+                  </a>
+                  <a data-lang="en" href={getLocalePath("/", "en")} class={`lang-option block mx-2 my-1 p-2 text-sm rounded ${
+                    currentLang === "en" ? "bg-[var(--button-hover-color)]" : "hover:bg-[var(--button-hover-color)]"}`}>
+                    <span class={`lang-dot mr-2 ${currentLang === "en" ? "" : "hidden"}`}><Icon name="fa6-solid:circle" class="w-2 h-2 inline" /></span>
+                    English
+                  </a>
+              </div>
+          </div>
+        </div>}
+        <div class="relative md:hidden">
+          <button id="mobile-menu-button" class="press momo-btn momo-icon-btn" aria-label={t("a11y.mobileMenu")} aria-expanded="false" aria-controls="mobile-menu-drawer" data-i18n-aria={JSON.stringify(i18nAria("a11y.mobileMenu"))}>
+              <Icon name="fa6-solid:align-justify" class="w-5 h-5" />
+          </button>
+              
+        </div>
+    </div>
+</div>
+</div>
+
+    <div id="nav-bar" class="hidden md:flex absolute left-1/2 top-0 transform -translate-x-1/2  justify-center items-center text-lg font-bold my-5 z-100">
+        <!-- 顶部没有描边、没有底色，只有文字与当前页色块；border 宽度一直保留 1px，只把颜色设透明 -->
+        <div id="nav-bar-list" class="transition relative z-10 flex max-w-max flex-1 items-center justify-center rounded-xl p-2 border">
+          <!-- 当前页底色块：纯装饰（aria-hidden），位置与尺寸由 moveNavIndicator 写入 -->
+          <div id="nav-indicator" aria-hidden="true"></div>
+          <a href={ indexPage } data-i18n-path="/" data-i18n-labels={JSON.stringify(i18nLabels("header.home"))} aria-current={isCurrentPage(indexPage) ? 'page' : undefined} class={navLinkClass}>
+              <span data-i18n-text>{t("header.home")}</span>
+          </a>
+          <a href={ archivesPage } data-i18n-path="/archives/" data-i18n-labels={JSON.stringify(i18nLabels("header.archive"))} aria-current={isCurrentPage(archivesPage) ? 'page' : undefined} class={navLinkClass}>
+              <span data-i18n-text>{t("header.archive")}</span>
+          </a>
+          <a href={ aboutPage } data-i18n-path="/about/" data-i18n-labels={JSON.stringify(i18nLabels("header.about"))} aria-current={isCurrentPage(aboutPage) ? 'page' : undefined} class={navLinkClass}>
+              <span data-i18n-text>{t("header.about")}</span>
+          </a>
+          <a href={ friendsPage } data-i18n-path="/friends/" data-i18n-labels={JSON.stringify(i18nLabels("header.friends"))} aria-current={isCurrentPage(friendsPage) ? 'page' : undefined} class={navLinkClass}>
+              <span data-i18n-text>{t("header.friends")}</span>
+          </a>
+        </div>
+    </div>
+<!-- 层级：必须高于右下角 FabMenu，否则抽屉的遮罩盖不住浮动按钮 -->
+<div id="mobile-menu-container" class="fixed inset-0 z-[var(--momo-z-drawer)] hidden" inert aria-hidden="true">
+    <div id="mobile-menu-overlay" class="absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0"></div>
+    
+    <div id="mobile-menu-drawer" class="absolute top-0 left-0 bottom-0 w-[70%] max-w-[300px] bg-[var(--bg-color)] shadow-2xl transform -translate-x-full flex flex-col">
+        
+        <div class="flex items-center justify-between p-5 border-b border-[var(--button-border-color)]">
+            <span class="text-xl font-bold header-logo">{ siteConfig.title }</span>
+            <button id="mobile-menu-close" class="momo-btn momo-btn--ghost momo-icon-btn" aria-label={t("a11y.closeMenu")} data-i18n-aria={JSON.stringify(i18nAria("a11y.closeMenu"))}>
+                <Icon name="fa6-solid:xmark" class="w-5 h-5" />
+            </button>
+        </div>
+
+        <nav class="flex flex-col py-4 px-2">
+            <a href={ indexPage } data-i18n-path="/" data-i18n-labels={JSON.stringify(i18nLabels("header.home"))} class={mobileNavLinkClass(indexPage)}>
+                <Icon name="fa6-solid:house" class="w-4 h-4 opacity-70" />
+                <span data-i18n-text>{t("header.home")}</span>
+            </a>
+            <a href={ archivesPage } data-i18n-path="/archives/" data-i18n-labels={JSON.stringify(i18nLabels("header.archive"))} class={mobileNavLinkClass(archivesPage)}>
+                <Icon name="fa6-solid:book-bookmark" class="w-4 h-4 opacity-70" />
+                <span data-i18n-text>{t("header.archive")}</span>
+            </a>
+            <a href={ aboutPage } data-i18n-path="/about/" data-i18n-labels={JSON.stringify(i18nLabels("header.about"))} class={mobileNavLinkClass(aboutPage)}>
+                <Icon name="fa6-solid:user" class="w-4 h-4 opacity-70" />
+                <span data-i18n-text>{t("header.about")}</span>
+            </a>
+            <a href={ friendsPage } data-i18n-path="/friends/" data-i18n-labels={JSON.stringify(i18nLabels("header.friends"))} class={mobileNavLinkClass(friendsPage)}>
+                <Icon name="fa6-solid:link" class="w-4 h-4 opacity-70" />
+                <span data-i18n-text>{t("header.friends")}</span>
+            </a>
+        </nav>
+
+        {categories.length > 0 && (
+        <div class="mt-2">
+        <div class="w-[90%] mx-auto border-t border-[var(--button-border-color)]"></div>
+        <div class="px-2 pt-1 pb-3">
+            <button id="mobile-category-toggle" aria-expanded="false" data-i18n-labels={JSON.stringify(i18nLabels("category"))} class="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg hover:bg-[var(--button-hover-color)] transition-colors">
+                <span class="flex items-center gap-3 text-[var(--text-color)]">
+                    <Icon name="fa6-solid:tags" class="w-4 h-4 opacity-70" />
+                    <span data-i18n-text>{t("category")}</span>
+                </span>
+                <Icon id="mobile-category-chevron" name="fa6-solid:chevron-down" class="w-4 h-4 opacity-70 transition-transform duration-300" />
+            </button>
+
+            <!-- data-archives：同步脚本用它拼「取消筛选」的链接（带当前语言前缀） -->
+            <div id="mobile-category-list" data-archives={archivesPage} class="overflow-hidden transition-[max-height] duration-300 ease-in-out" style="max-height: 0px">
+                <ul class="flex flex-wrap gap-2 px-3 pt-3 pb-1">
+                    {categories.map(cat => {
+                        const value = cat === 'undefined' ? 'undefined' : cat;
+                        return (
+                        <li>
+                            <a
+                                data-category={value}
+                                aria-current="false"
+                                href={getRelativeLocaleUrl(currentLang, `/archives/?category=${encodeURIComponent(value)}`)}
+                                data-i18n-labels={value === 'undefined' ? JSON.stringify(i18nLabels("pagecard.uncategorized")) : undefined}
+                                class="momo-chip"
+                            >
+                                <span data-i18n-text>{cat === 'undefined' ? t("pagecard.uncategorized") : cat}</span>
+                            </a>
+                        </li>
+                        );
+                    })}
+                </ul>
+            </div>
+        </div>
+        </div>
+        )}
+
+        <div class="mt-auto p-5 border-t border-[var(--button-border-color)] flex gap-1 text-sm opacity-70">
+             © {profileConfig.startYear} - {new Date().getFullYear()} <a class="link-line" target="_self" href={introPage}>{profileConfig.name}</a>.
+        </div>
+    </div>
+</div>
+
+<style is:global>
+.header-logo {
+  font-family: "EB Garamond", cursive;
+  letter-spacing: 1px;
+}
+
+/* 移动端顶栏上滑隐藏：不过冲的快收尾 */
+#main-header {
+  transition: transform 250ms var(--momo-ease-out);
+}
+
+/* 移动端抽屉：快起慢收（--momo-ease-sheet）；遮罩比抽屉短，收起时先暗下去 */
+#mobile-menu-overlay {
+  transition: opacity 260ms var(--momo-ease-out);
+}
+#mobile-menu-drawer {
+  /* ⚠️ Tailwind v4 的 -translate-x-full 写的是 translate 属性，两条都要过渡，否则没有动画 */
+  transition: translate 380ms var(--momo-ease-sheet),
+              transform 380ms var(--momo-ease-sheet);
+}
+  /* 移动端 (小于 776px) 的毛玻璃和阴影 */
+  @media (max-width: 776px) {
+    #main-header {
+      background-color: color-mix(in srgb, var(--bg-color) 40%, transparent);
+      /* ⚠️ 标准 backdrop-filter 必须单独放进 @supports：压缩器会与 -webkit- 版合并、只留后写的 */
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid color-mix(in srgb, var(--button-border-color) 10%, transparent);
+    }
+    @supports (backdrop-filter: blur(1px)) {
+      #main-header {
+        backdrop-filter: blur(12px);
+      }
+    }
+
+    /* 降低透明效果时退回纯色背景 */
+    @media (prefers-reduced-transparency: reduce) {
+      #main-header {
+        background-color: var(--bg-color);
+        -webkit-backdrop-filter: none;
+        backdrop-filter: none;
+      }
+    }
+  }
+
+  /* 桌面端导航胶囊（#nav-bar-list）外壳（描边 / 底色 / 阴影 / 模糊）由 --nav-chrome 驱动：
+     0 = 只有文字与当前页色块，1 = 完整毛玻璃。照片封面页由 photo-cover.css 换成 --photo-p 插值。
+     ⚠️ 默认值必须是 1：禁用 JS 时没有 nav-scrolled 也没有滚动脚本，只有脚本可用才归 0 */
+  #nav-bar { --nav-chrome: 1; }
+  @media (scripting: enabled) {
+    #nav-bar { --nav-chrome: 0; }
+  }
+  /* 吸顶 */
+  #nav-bar.nav-scrolled { --nav-chrome: 1; }
+
+  #nav-bar-list {
+    /* border-color 透明 ≠ 没有边框：宽度仍在，不跳 1px（moveNavIndicator 减的也是这 1px） */
+    border-color: color-mix(in srgb, var(--button-border-color) calc(var(--nav-chrome, 1) * 100%), transparent);
+    /* ⚠️ 15% 是毛玻璃的实心程度：0% = 只剩模糊 / 描边 / 阴影，100% = 实心底（同 reduced-transparency 回退） */
+    background-color: color-mix(in srgb, var(--bg-color) calc(var(--nav-chrome, 1) * 15%), transparent);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--shadow-color) calc(var(--nav-chrome, 1) * 100%), transparent);
+    /* ⚠️ 同 #main-header：标准属性必须单独放进 @supports */
+    -webkit-backdrop-filter: blur(calc(12px * var(--nav-chrome, 1)));
+  }
+  @supports (backdrop-filter: blur(1px)) {
+    #nav-bar-list {
+      backdrop-filter: blur(calc(12px * var(--nav-chrome, 1)));
+    }
+  }
+
+  /* 降低透明效果时退回纯色背景（同 #main-header） */
+  @media (prefers-reduced-transparency: reduce) {
+    #nav-bar-list {
+      background-color: color-mix(in srgb, var(--bg-color) calc(var(--nav-chrome, 1) * 100%), transparent);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  /* 当前页底色块：独立绝对定位元素，位置 / 尺寸由 moveNavIndicator 写入，切页时平移过去 */
+  #nav-indicator {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    border-radius: 0.5rem;
+    background-color: var(--button-hover-color);
+    pointer-events: none;
+    opacity: 0;
+    transition:
+      /* 位移与宽度用带轻微过冲的曲线 */
+      transform 380ms var(--momo-ease-pop),
+      width 380ms var(--momo-ease-pop),
+      /* 高度不能用过冲曲线 */
+      height 220ms var(--momo-ease-out);
+  }
+
+  /* 减弱动画时直接就位 */
+  @media (prefers-reduced-motion: reduce) {
+    #nav-indicator {
+      transition: none;
+    }
+  }
+
+  /* 悬停只变色：底色归色块，当前页不再跳色 */
+  #nav-bar-list a[data-i18n-path]:hover {
+    color: var(--link-color);
+  }
+
+  #nav-bar-list a[aria-current="page"]:hover {
+    color: inherit;
+  }
+
+  /* 移动端分类选中态（同归档页）：蓝底 + --accent-fg。
+     ⚠️ 底色必须用 --accent-bg 而不是 --link-color（深色下亮蓝压白字只有 2.48:1）；
+     写在这里才能压过 hover / active 的 utilities。 */
+  #mobile-category-list a[aria-current="true"] {
+    background-color: var(--accent-bg);
+    color: var(--accent-fg);
+    border-color: var(--accent-bg);
+  }
+
+  /* 手指上滑时由 JS 加上，隐藏顶栏 */
+  .header-hidden {
+    transform: translateY(-100%);
+  }
+</style>
+
+<script>
+import { registerPageInit } from '@utils/pageInit';
+import { lockPageScroll, unlockPageScroll } from '@utils/scrollLock';
+import { currentLangFromUrl, DEFAULT_LOCALE, LOCALES, syncDocumentLang } from '@utils/locale';
+import { getRelativeLocaleUrl } from '@utils/urlUtils';
+import { subscribeScroll } from '@utils/scrollBus';
+
+// 换页时脚本只执行一次（Astro 产出带 src 的 module，模块表去重），但每次换页都要重新初始化：
+// 统一挂在 registerPageInit（首屏 + 每次 astro:page-load）。元素级监听用 onclick = 赋值保证幂等，
+// window / document 上的监听存进全局注册表，初始化时先解绑旧的，避免监听器成倍累积。
+function initMobileNav() {
+  const menuButton = document.getElementById('mobile-menu-button');
+  const closeButton = document.getElementById('mobile-menu-close');
+  const container = document.getElementById('mobile-menu-container');
+  const overlay = document.getElementById('mobile-menu-overlay');
+  const drawer = document.getElementById('mobile-menu-drawer');
+  const navBar = document.getElementById('nav-bar');
+  const navBarList = document.getElementById('nav-bar-list');
+
+  if (!menuButton || !container) return;
+
+  window.__momoMobileNav?.cleanup?.();
+
+  let closeTimer = null;
+  // 抽屉的滚动锁是计数式的（@utils/scrollLock），只在「状态真的翻转」时加减，
+  // 否则连续点两次会多锁一层、解不开
+  let menuScrollLocked = false;
+
+  /** 抽屉里可以 Tab 到的元素（保持 DOM 顺序，首尾循环用） */
+  function focusables() {
+    if (!container) return [];
+    return Array.from(
+      container.querySelectorAll(
+        'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((el) => el instanceof HTMLElement && el.offsetParent !== null);
+  }
+
+  // 焦点陷阱：抽屉打开时 Tab 不能跑到背后的页面；Esc 关闭并把焦点还给汉堡按钮
+  const onDrawerKeydown = (event) => {
+    if (!container || container.classList.contains('hidden')) return;
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeMenu(true);
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const items = focusables();
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+
+    if (event.shiftKey && (active === first || !container.contains(active))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  function openMenu() {
+    clearTimeout(closeTimer);
+    container.classList.remove('hidden');
+    // 关闭态是 inert + aria-hidden，打开时先放开
+    container.removeAttribute('inert');
+    container.setAttribute('aria-hidden', 'false');
+    menuButton?.setAttribute('aria-expanded', 'true');
+
+    requestAnimationFrame(() => {
+      overlay?.classList.add('opacity-100');
+      drawer?.classList.remove('-translate-x-full');
+      // 焦点移进抽屉，优先关闭按钮
+      (closeButton || focusables()[0])?.focus();
+    });
+    if (!menuScrollLocked) {
+      menuScrollLocked = true;
+      lockPageScroll(); // 禁止页面滚动（锁 <html>，见 @utils/scrollLock）
+    }
+  }
+
+  function closeMenu(restoreFocus = false) {
+    overlay?.classList.remove('opacity-100');
+    drawer?.classList.add('-translate-x-full');
+    menuButton?.setAttribute('aria-expanded', 'false');
+
+    closeTimer = setTimeout(() => {
+      container.classList.add('hidden');
+      // 移出无障碍树与 Tab 顺序
+      container.setAttribute('inert', '');
+      container.setAttribute('aria-hidden', 'true');
+      if (menuScrollLocked) {
+        menuScrollLocked = false;
+        unlockPageScroll();
+      }
+      if (restoreFocus) menuButton?.focus();
+    }, 300);
+  }
+
+  // 菜单按钮在 swup 容器外不重建，用 onclick 赋值避免重复绑定
+  menuButton.onclick = openMenu;
+  if (closeButton) closeButton.onclick = () => closeMenu(true);
+  if (overlay) overlay.onclick = () => closeMenu(true);
+  container.addEventListener('keydown', onDrawerKeydown);
+
+  drawer?.querySelectorAll('a').forEach(link => {
+    link.onclick = () => closeMenu(false);
+  });
+
+  // 顶部导航条吸顶：class 由滚动位置推导（滚动走 @utils/scrollBus）
+  let lastScrollY = -1;
+
+  function updateNavBar(y) {
+    if (y === lastScrollY) return;
+    lastScrollY = y;
+    if (!navBar || !navBarList) return;
+    const scrolled = y > 0;
+    navBar.classList.toggle('fixed', scrolled);
+    // 外壳由 --nav-chrome 派生，这里只翻状态：0 = 顶部，1 = 吸顶毛玻璃。
+    // photo-cover.css 会把照片封面页的该变量换成滚动进度 --photo-p，状态类仍要照常维护；
+    // 打在两层上：#nav-bar 供 photo-cover.css 覆盖，#nav-bar-list 是外壳本身。
+    navBar.classList.toggle('nav-scrolled', scrolled);
+    navBarList.classList.toggle('nav-scrolled', scrolled);
+  }
+
+  const unsubscribeScroll = subscribeScroll(updateNavBar);
+
+  // 首屏与每次换页都对齐一次（DOM 上的 class 可能还停在上一页的状态）
+  updateNavBar(window.scrollY);
+
+  // 换页开始时收掉抽屉，否则 body 的滚动锁会被带到新页面
+  const onVisitStart = () => closeMenu();
+  document.addEventListener('swup:visit:start', onVisitStart);
+
+  window.__momoMobileNav = {
+    cleanup() {
+      clearTimeout(closeTimer);
+      unsubscribeScroll();
+      document.removeEventListener('swup:visit:start', onVisitStart);
+      container.removeEventListener('keydown', onDrawerKeydown);
+    },
+  };
+}
+
+// 顶栏在 swup 容器外不重建：首屏 + 每次换页都要重新绑定（registerPageInit）
+registerPageInit(initMobileNav);
+
+function initCategoryAccordion() {
+  const toggle = document.getElementById('mobile-category-toggle');
+  const list = document.getElementById('mobile-category-list');
+  const chevron = document.getElementById('mobile-category-chevron');
+
+  if (!toggle || !list) return;
+  if (toggle.dataset.bound === 'true') return;
+  toggle.dataset.bound = 'true';
+
+  toggle.onclick = () => {
+    // 用 max-height 过渡，避免 grid-template-rows 反复重排卡顿
+    const collapsed = list.style.maxHeight === '0px' || list.style.maxHeight === '0rem' || list.style.maxHeight === '0';
+    list.style.maxHeight = collapsed ? '20rem' : '0px';
+    chevron?.classList.toggle('rotate-180', collapsed);
+    toggle.setAttribute('aria-expanded', String(collapsed));
+  };
+}
+registerPageInit(initCategoryAccordion);
+
+/**
+ * 移动端侧边栏的分类筛选：与归档页地址参数同步，一次只筛一个分类，
+ * 唯一选中的分类再点一次 = 取消筛选（链接指向不带参数的归档页）。
+ * 静态构建拿不到查询参数，选中态只能在这里按 location.search 重算。
+ */
+function syncMobileCategoryFilter() {
+  const list = document.getElementById('mobile-category-list');
+  if (!list) return;
+
+  // 归档页地址按当前地址的语言重算：data-archives 是落地页语言下服务端渲染的
+  const archives = getRelativeLocaleUrl(currentLangFromUrl(), '/archives/');
+  list.dataset.archives = archives;
+  const selected = (new URLSearchParams(window.location.search).get('category') ?? '')
+    .split(',')
+    .filter(Boolean);
+
+  list.querySelectorAll('a[data-category]').forEach((chip) => {
+    const value = chip.dataset.category ?? '';
+    const isSelected = selected.includes(value);
+    chip.setAttribute('aria-current', isSelected ? 'true' : 'false');
+    chip.setAttribute(
+      'href',
+      isSelected && selected.length === 1
+        ? archives
+        : `${archives}?category=${encodeURIComponent(value)}`,
+    );
+  });
+}
+
+function initMobileCategoryFilter() {
+  // 监听要先解绑，避免换页后成倍累积
+  window.__momoMobileCategory?.cleanup?.();
+
+  const onResize = () => syncMobileCategoryFilter();
+  window.addEventListener('resize', onResize);
+  window.__momoMobileCategory = {
+    cleanup() {
+      window.removeEventListener('resize', onResize);
+    },
+  };
+
+  syncMobileCategoryFilter();
+}
+registerPageInit(initMobileCategoryFilter);
+
+/** 去掉语言前缀，得到与语言无关的路径（/en/friends/ -> /friends/） */
+function withoutLocalePrefix(pathname) {
+  const matched = LOCALES
+    .filter((code) => code !== DEFAULT_LOCALE)
+    .find((code) => pathname === `/${code}` || pathname.startsWith(`/${code}/`));
+  // ⚠️ 前缀长度要算上开头那个斜杠（slice(matched.length + 1)），否则会落到 /n/... 这种 404
+  const rest = matched ? pathname.slice(matched.length + 1) : pathname;
+  return rest.startsWith('/') ? rest : `/${rest}`;
+}
+
+/** 比较路径时忽略末尾斜杠：/archives 与 /archives/ 视为同一页 */
+const normalizePath = (path) => {
+  const value = String(path || '/');
+  return value.length > 1 ? value.replace(/\/+$/, '') : value;
+};
+
+/* 桌面端顶栏的「当前页」底色块（#nav-indicator）：独立绝对定位元素，
+   位置一律现量 —— 点击导航时先乐观滑过去，换页后由 syncPersistedHeader 按地址重算，
+   换页取消时回弹。 */
+
+/** 当前页对应的导航链接（桌面端顶栏，移动端抽屉不算） */
+function activeNavLink() {
+  return document.querySelector('#nav-bar-list a[data-i18n-path][aria-current="page"]');
+}
+
+/**
+ * 把色块移到指定链接上（不传则隐藏）。尺寸由两次 getBoundingClientRect 相减得到，
+ * 再减去导航条自身边框宽度（绝对定位的包含块是 padding box，rect 量的是 border box）。
+ */
+function moveNavIndicator(link) {
+  const indicator = document.getElementById('nav-indicator');
+  const list = document.getElementById('nav-bar-list');
+  if (!indicator || !list) return;
+
+  // 移动端导航 hidden（量不到宽度）或没有当前页（文章详情等）时藏起来
+  if (!link || !list.offsetWidth) {
+    indicator.style.opacity = '0';
+    return;
+  }
+
+  const listRect = list.getBoundingClientRect();
+  const linkRect = link.getBoundingClientRect();
+  const style = window.getComputedStyle(list);
+  const x = linkRect.left - listRect.left - (parseFloat(style.borderLeftWidth) || 0);
+  const y = linkRect.top - listRect.top - (parseFloat(style.borderTopWidth) || 0);
+
+  // top / height 实际是常量（链接同字号同内边距），只需过渡水平位移与宽度
+  indicator.style.top = `${y}px`;
+  indicator.style.height = `${linkRect.height}px`;
+  indicator.style.width = `${linkRect.width}px`;
+  indicator.style.transform = `translateX(${x}px)`;
+  indicator.style.opacity = '1';
+}
+
+/** 按当前地址把色块放回正确的位置（切页后 / 回弹时调用） */
+function syncNavIndicator() {
+  moveNavIndicator(activeNavLink());
+}
+
+function initNavIndicator() {
+  const list = document.getElementById('nav-bar-list');
+  if (!list) return;
+
+  window.__momoNavIndicator?.cleanup?.();
+
+  // 点击先乐观滑过去（换页后由 syncPersistedHeader 校正）；只响应普通左键，中键 / Ctrl 会开新标签页
+  const onClick = (event) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const link = event.target instanceof Element
+      ? event.target.closest('#nav-bar-list a[data-i18n-path]')
+      : null;
+    if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
+    moveNavIndicator(link);
+  };
+  list.addEventListener('click', onClick);
+
+  // 导航条尺寸变化时重量（视口缩放 / 字体到位 / 换语言）；色块绝对定位，改它不会自激 ResizeObserver
+  let raf = 0;
+  const observer = new ResizeObserver(() => {
+    cancelAnimationFrame(raf);
+    raf = window.requestAnimationFrame(syncNavIndicator);
+  });
+  observer.observe(list);
+
+  // 换页被取消时弹回真实的当前页
+  const onVisitCancel = () => syncNavIndicator();
+  document.addEventListener('swup:visit:cancel', onVisitCancel);
+
+  window.__momoNavIndicator = {
+    cleanup() {
+      list.removeEventListener('click', onClick);
+      document.removeEventListener('swup:visit:cancel', onVisitCancel);
+      observer.disconnect();
+      cancelAnimationFrame(raf);
+    },
+  };
+}
+
+registerPageInit(initNavIndicator);
+
+/**
+ * 顶栏在 swup 容器外、换页与换语言都不重建，凡是跟着当前地址变的东西都在这里重算：
+ * 语言菜单 / logo / 导航链接与文案 / 选中态 / aria-label / 分类筛选 / 色块位置。
+ * 由 registerPageInit 注册，首屏也要跑一次（swup 下首屏没有 astro:page-load）。
+ */
+function syncPersistedHeader() {
+  const pathname = window.location.pathname;
+  const currentLang = currentLangFromUrl(pathname);
+  // <html lang> 与地址不一致时以地址为准
+  syncDocumentLang();
+
+  // 语言菜单：指向当前页对应的语言版本并高亮当前语言
+  const menu = document.getElementById('language-menu');
+  if (menu) {
+    const basePath = withoutLocalePrefix(pathname);
+    menu.querySelectorAll('.lang-option').forEach((link) => {
+      const lang = link.dataset.lang;
+      link.setAttribute('href', getRelativeLocaleUrl(lang, basePath));
+      const isActive = lang === currentLang;
+      link.classList.toggle('bg-[var(--button-hover-color)]', isActive);
+      link.classList.toggle('hover:bg-[var(--button-hover-color)]', !isActive);
+      link.querySelector('.lang-dot')?.classList.toggle('hidden', !isActive);
+    });
+  }
+
+  // logo 指向当前语言的首页
+  document
+    .querySelector('#main-header .header-logo a')
+    ?.setAttribute('href', getRelativeLocaleUrl(currentLang, '/'));
+
+  // 导航链接 / 文案 / 选中态一次遍历解决：先写 href 与文案，再判选中（选中态依赖写好的 href）
+  const here = normalizePath(pathname);
+  const isActiveHref = (href) =>
+    normalizePath(new URL(href, window.location.origin).pathname) === here;
+
+  const applyLabel = (el) => {
+    const raw = el.getAttribute('data-i18n-labels');
+    if (!raw) return;
+    let labels;
+    try {
+      labels = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    const text = labels?.[currentLang];
+    if (typeof text === 'string') {
+      el.querySelector('[data-i18n-text]')?.replaceChildren(document.createTextNode(text));
+    }
+  };
+
+  document.querySelectorAll('[data-i18n-path]').forEach((link) => {
+    link.setAttribute('href', getRelativeLocaleUrl(currentLang, link.getAttribute('data-i18n-path') || '/'));
+    applyLabel(link);
+
+    const active = isActiveHref(link.getAttribute('href'));
+    // 桌面端：选中态只记在 aria-current 上，底色交给 #nav-indicator
+    if (link.closest('#nav-bar')) {
+      if (active) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+      return;
+    }
+    // 移动端抽屉：底色 + 主题色文字（与 mobileNavLinkClass 保持一致）
+    if (link.closest('#mobile-menu-drawer')) {
+      link.classList.toggle('bg-[var(--button-hover-color)]', active);
+      link.classList.toggle('text-[var(--link-color)]', active);
+      link.classList.toggle('hover:bg-[var(--button-hover-color)]', !active);
+      link.classList.toggle('hover:text-[var(--link-color)]', !active);
+    }
+  });
+
+  // 只有文案、没有 href 的节点（分类折叠按钮、未分类胶囊等）
+  document.querySelectorAll('[data-i18n-labels]:not([data-i18n-path])').forEach(applyLabel);
+
+  // aria-label 同样按地址语言重算；data-i18n-title 表示 title 与 aria-label 共用一句（主题按钮）
+  document.querySelectorAll('[data-i18n-aria]').forEach((el) => {
+    const raw = el.getAttribute('data-i18n-aria');
+    if (!raw) return;
+    let labels;
+    try {
+      labels = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    const text = labels?.[currentLang];
+    if (typeof text !== 'string') return;
+    el.setAttribute('aria-label', text);
+    if (el.hasAttribute('data-i18n-title')) el.setAttribute('title', text);
+  });
+
+  // 移动端分类筛选的选中态与链接（含当前语言前缀）
+  syncMobileCategoryFilter();
+
+  // 色块必须最后算：上面刚改过 href 与文案，链接宽度变了才量得准
+  syncNavIndicator();
+}
+
+registerPageInit(syncPersistedHeader);
+
+function initLanguageMenu() {
+  const languageButton = document.getElementById('language-button');
+  const languageMenu = document.getElementById('language-menu');
+
+  if (!languageButton || !languageMenu) return;
+
+  window.__momoLanguageMenu?.cleanup?.();
+
+  // 顶栏在容器外不会重建，同一元素会被多次初始化，必须用 onclick 赋值
+  languageButton.onclick = (e) => {
+    e.stopPropagation();
+    languageMenu.classList.toggle('hidden');
+  };
+
+  const onDocumentClick = (event) => {
+    const target = event.target;
+    if (target instanceof Node && !languageButton.contains(target) && !languageMenu.contains(target)) {
+      languageMenu.classList.add('hidden');
+    }
+  };
+  document.addEventListener('click', onDocumentClick);
+
+  // 换页开始时收掉语言菜单
+  const onVisitStart = () => languageMenu.classList.add('hidden');
+  document.addEventListener('swup:visit:start', onVisitStart);
+
+  window.__momoLanguageMenu = {
+    cleanup() {
+      document.removeEventListener('click', onDocumentClick);
+      document.removeEventListener('swup:visit:start', onVisitStart);
+    },
+  };
+}
+registerPageInit(initLanguageMenu);
+
+function initHeaderScroll() {
+  const header = document.getElementById('main-header');
+  if (!header) return;
+
+  // 初始化会反复执行，必须先解绑上一次的滚动回调
+  window.__momoHeaderScroll?.cleanup?.();
+
+  let lastScrollY = window.scrollY;
+
+  function updateHeader(currentScrollY) {
+    const scrollDelta = currentScrollY - lastScrollY;
+
+    if (window.innerWidth < 776) {
+      if (currentScrollY <= 50) {
+        header?.classList.remove('header-hidden');
+      } 
+      else if (scrollDelta > 0 && currentScrollY > 100) {
+        header?.classList.add('header-hidden');
+      } 
+      else if (scrollDelta < 0) {
+        header?.classList.remove('header-hidden');
+      }
+    } else {
+      header?.classList.remove('header-hidden');
+    }
+    lastScrollY = currentScrollY;
+  }
+
+  const unsubscribeScroll = subscribeScroll(updateHeader);
+
+  window.__momoHeaderScroll = {
+    cleanup() {
+      unsubscribeScroll();
+    },
+  };
+}
+
+registerPageInit(initHeaderScroll);
+</script>

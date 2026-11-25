@@ -1,0 +1,198 @@
+---
+import '@styles/global.css'
+import { siteConfig, licenseConfig } from '@/config'
+import MainPageLayout from '@layouts/MainPageLayout.astro'
+import Markdown from '@components/misc/Markdown.astro'
+import ImageModule from '@components/misc/ImageModule.astro'
+import ReadingProgress from '@components/control/ReadingProgress.astro'
+import FabMenu from '@components/control/FabMenu.astro'
+import TOC from '@components/TOC.svelte'
+import LicenseCard from '@components/misc/LicenseCard.astro'
+import Comments from '@components/comment/Comments.svelte'
+import Twikoo from '@components/comment/thirdparty/twikoo.astro'
+import BlogNavi from '@components/control/BlogNavi.astro'
+
+import { render } from 'astro:content'
+import { i18n } from "astro:config/client";
+import i18nit from '@i18n/translation'
+import { Icon } from "astro-icon/components";
+
+import { blogCoverUrl, getRelativeLocaleUrl } from '@utils/urlUtils'
+import { formatFullDate } from '@/utils/time'
+import { getBlogEntrySort } from '@utils/contentUtils'
+import { CONTENT_COVER } from '@utils/coverImage'
+import { coverPreload } from '@utils/imagePreload'
+import { absoluteUrl, articleBreadcrumbJsonLd, articleJsonLd, coverShareImage, normalizePath } from '@utils/seo';
+
+
+const currentLang = Astro.currentLocale || i18n!.defaultLocale;
+const t = i18nit(currentLang);
+
+export async function getStaticPaths() {
+    
+    const locales = i18n?.locales || [i18n?.defaultLocale];
+    
+    const paths = [];
+    
+    for (const locale of locales) {
+        const blogEntries = await getBlogEntrySort(locale);
+
+        for (let i = 0; i < blogEntries.length; i++) {
+            const entry = blogEntries[i];
+            const next = i > 0 ? blogEntries[i - 1] : null;
+            const prev = i < blogEntries.length - 1 ? blogEntries[i + 1] : null;
+
+            paths.push({
+                params: {
+                    locale: locale === i18n?.defaultLocale ? undefined : locale,
+                    id: entry.id
+                },
+                props: { 
+                    entry,
+                    prev,
+                    next
+                }
+            });
+        }
+    }
+    
+    return paths;
+}
+const { entry, prev, next } = Astro.props;
+// 只 render 一次：正文 / 标题锚点 / reading-time 都在这一次里拿到
+const { Content, headings, remarkPluginFrontmatter } = await render(entry);
+
+const pageTitle = entry.data.title + ' - ' + siteConfig.title;
+const image = blogCoverUrl(entry.data.image, entry.id);
+
+// ---- SEO：分享图（构建期转成 jpg）与文章结构化数据 ----
+const shareImage = await coverShareImage(entry.data.image, entry.id);
+const pageUrl = absoluteUrl(normalizePath(Astro.url.pathname));
+const postJsonLd = [
+    articleJsonLd({
+        title: entry.data.title,
+        description: entry.data.description,
+        url: pageUrl,
+        image: shareImage,
+        lang: currentLang,
+        pubDate: entry.data.pubDate,
+        category: entry.data.category,
+        words: remarkPluginFrontmatter.words,
+        minutes: remarkPluginFrontmatter.minutes,
+    }),
+    // 面包屑：首页 › 文章标题
+    articleBreadcrumbJsonLd({ title: entry.data.title, url: pageUrl, lang: currentLang }),
+];
+
+// 首屏 LCP 预加载：封面存在时按与 <Picture> 完全相同的档位生成 imagesrcset
+const preloadImage = image ? await coverPreload(image, CONTENT_COVER) : undefined;
+// KaTeX 样式表只在真的含公式的文章加载（remark-has-math 写的 frontmatter 标记）
+const mathStyles = remarkPluginFrontmatter.hasMath === true;
+---
+<MainPageLayout
+    title={pageTitle}
+    lang={currentLang}
+    description={entry.data.description}
+    image={shareImage}
+    type="article"
+    publishedTime={entry.data.pubDate}
+    section={entry.data.category}
+    keywords={entry.data.category ? [entry.data.category] : []}
+    noindex={entry.data.draft}
+    structuredData={postJsonLd}
+    markdownFont={true}
+    mathStyles={mathStyles}
+    preloadImage={preloadImage}
+>
+    <div class="mx-auto w-full max-w-[var(--page-width)] py-8 md:mt-0 mt-18">
+        <div class="mb-18 text-center">
+            <h1 class="font-bold text-3xl mb-2 pt-10 text-[var(--text-color)]">{ entry.data.title }</h1>
+            <p class="flex flex-wrap items-center justify-center font-bold text-[var(--text-color-70)] mt-6">
+                <Icon name="fa6-solid:calendar-days" class="mr-2"></Icon>
+                <span> { formatFullDate(entry.data.pubDate, currentLang) }</span>
+            </p>
+            <div class="flex justify-center">
+                <div class="flex flex-wrap items-center justify-center text-sm text-[var(--text-color-70)] mt-2 gap-2">
+                    <p class="flex items-center whitespace-nowrap mr-2">
+                        <Icon name="fa6-solid:pen-nib" class="mr-1"></Icon> 
+                        <span class="py-1 px-1">{remarkPluginFrontmatter.words || 0} {t("pagecard.words")}</span>
+                    </p>
+                    <p class="flex items-center whitespace-nowrap mr-2">
+                        <Icon name="fa6-solid:clock" class="mr-1"></Icon> 
+                        <span class="py-1 px-1">{remarkPluginFrontmatter.minutes || 0} {t("pagecard.minutes")}</span>
+                    </p>
+                    <p class="flex items-center whitespace-nowrap mr-2">
+                        <Icon name="fa6-solid:hashtag" class="mr-1"></Icon> 
+                        <a href={getRelativeLocaleUrl(currentLang, `/archives/?category=${entry.data.category}`)} class="category-tag">{entry.data.category || t("pagecard.uncategorized")}</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+        {image && (
+            <div class="cover overflow-hidden">
+                {/* 封面通常就是本页的 LCP 元素：优先加载 */}
+                <ImageModule src={image} alt={entry.data.title} class="w-full h-full object-cover" priority width={1080} widths={CONTENT_COVER.widths} sizes={CONTENT_COVER.sizes} quality={CONTENT_COVER.quality} formats={['avif', 'webp']} />
+            </div>
+        )}
+        {/* 页面级状态条：圆角 8px 比提示块的 6px 大一档，是规范里的有意例外 */}
+        {entry.data.draft && (
+        <div class="my-8 flex items-start gap-3 rounded-[var(--momo-radius-md)] border border-[var(--error-color)] bg-[var(--error-bg-color)] p-4 text-sm text-[var(--error-text-color)] transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mt-0.5 shrink-0 opacity-80">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            
+            <div>
+                <p class="leading-relaxed">
+                    <span class="font-semibold">{t("draftNote.warning")}</span>
+                    {t("draftNote.description")}
+                </p>
+            </div>
+        </div>
+        )}
+        {entry.isFallback && (
+        <div class="my-8 flex items-start gap-3 rounded-[var(--momo-radius-md)] border border-[var(--warning-color)] bg-[var(--warning-bg-color)] p-4 text-sm text-[var(--warning-text-color)] transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mt-0.5 shrink-0 opacity-80">
+            <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
+            </svg>
+            
+            <div>
+            <p class="leading-relaxed">
+                <span class="font-semibold">{t("langNote.note")}</span> 
+                {t("langNote.description")}
+            </p>
+            </div>
+        </div>
+        )}
+        <Markdown class="mb-6 mt-10 markdown-content">
+            <Content />
+        </Markdown>
+        {licenseConfig.enable &&
+        <LicenseCard title={entry.data.title} pubDate={entry.data.pubDate}/>
+        }
+        {
+            siteConfig.blogNavi.enable &&
+            <BlogNavi prev={prev} next={next}/>
+        }
+        {
+            (siteConfig.comments.enable && siteConfig.comments.platform === "default") &&
+            <Comments postSlug={entry.data.slugId} language={currentLang} postTitle={entry.data.title} client:visible/>
+        }
+        {
+            (siteConfig.comments.enable && siteConfig.comments.platform === "twikoo") &&
+            <Twikoo postSlug={entry.data.slugId} language={currentLang} envId={siteConfig.comments.backendUrl}/>
+        }
+    </div>
+    <!-- fixed 浮层：留在 swup 容器内，但在淡入淡出元素之外（见 MainPageLayout）。
+         普通 div 不建立包含块，所以不影响内部 fixed 定位。 -->
+    <div slot="overlay">
+        {/* 进度条是 fixed 元素，必须在淡入淡出元素之外（opacity < 1 会改包含块） */}
+        {siteConfig.theme.readingProgress && <ReadingProgress />}
+        {
+            siteConfig.toc.enable &&
+            <TOC headings={headings} language={currentLang} client:idle/>
+        }
+        <FabMenu headings={headings} showComment={siteConfig.comments.enable} showBackBottom={!siteConfig.comments.enable}/>
+    </div>
+</MainPageLayout>

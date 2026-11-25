@@ -1,0 +1,166 @@
+@import "tailwindcss";
+@import "./variables.css";
+@import "./components.css";
+@import "./special.css";
+@import "./scrollbar.css";
+@import "./comment.css";
+
+@layer base {
+
+  :root {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+  }
+
+  body {
+    @apply bg-[--bg-color] text-[--text-color];
+    font-family: var(--momo-font-serif);
+    overflow-y: scroll;
+  }
+
+  html[data-overlayscrollbars] body {
+    overflow: visible;
+  }
+  
+
+  ::selection {
+    background-color: var(--selection-bg-color);
+    color: var(--selection-text-color);
+  }
+  
+  ::-moz-selection {
+    background-color: var(--selection-bg-color);
+    color: var(--selection-text-color);
+  }
+
+}
+
+/* ---------------- 动效：通用按压反馈 ----------------
+ * 按下 90ms 缩到 0.96，松手用 --momo-ease-pop 弹回。
+ * 写在 @layer 外，才能稳定压过 Tailwind 的 active:scale-* 工具类。
+ */
+.press {
+  transition:
+    transform var(--momo-t-base) var(--momo-ease-pop),
+    background-color var(--momo-t-fast) var(--momo-ease-out),
+    color var(--momo-t-fast) var(--momo-ease-out),
+    border-color var(--momo-t-fast) var(--momo-ease-out),
+    opacity var(--momo-t-fast) var(--momo-ease-out);
+}
+
+.press:active {
+  transform: scale(0.96);
+  transition-duration: var(--momo-t-press);
+}
+
+/* ---------------- 动效：入场（自研，替代 AOS） ----------------
+ * 元素在 HTML 里声明 data-reveal="pop" | "rise"，src/utils/reveal.ts 只负责加 .is-revealed。
+ * 三层闸门，少一层都会出事：html[data-reveal-on]（siteConfig.theme.AOS）、
+ * @media (scripting: enabled)、prefers-reduced-motion。
+ */
+@media (scripting: enabled) {
+  html[data-reveal-on] [data-reveal] {
+    transition-property: opacity, transform;
+    transition-duration: var(--momo-t-reveal);
+    transition-delay: var(--reveal-delay, 0ms);
+    transition-timing-function: var(--momo-ease-out);
+  }
+
+  /* 隐藏 / 位移只在「还没入场」时声明，落位后不声明 transform，组件自己的 hover 位移才不被钉死 */
+  html[data-reveal-on] [data-reveal]:not(.is-revealed) {
+    opacity: 0;
+  }
+
+  /* pop：有体积的卡片，多一层轻微缩放，落下来时有重量感 */
+  html[data-reveal-on] [data-reveal='pop']:not(.is-revealed) {
+    transform: translate3d(0, var(--momo-rise-card), 0) scale(0.96);
+    transition-timing-function: var(--momo-ease-pop);
+  }
+
+  /* rise：正文块只做减速、不回弹（文字回弹显廉价），行程用 --momo-rise-prose */
+  html[data-reveal-on] [data-reveal='rise']:not(.is-revealed) {
+    transform: translate3d(0, var(--momo-rise-prose), 0);
+  }
+
+  html[data-reveal-on] [data-reveal].is-revealed {
+    opacity: 1;
+  }
+
+  /* 正文块不打属性（靠 JS 事后打标记会先闪一下再藏起来），直接按结构隐藏；
+     列表与图片拼图例外，动画交给下面的「逐行」规则。
+     ⚠️ 这条规则的时长 / 延迟必须走同一条 transition：组件自己的 transition 特异性低，
+     会被整条盖掉（卡片 hover 的描边 / 阴影就是这样变成「瞬变」的）。需要 hover 过渡的
+     组件写一条 --reveal-transition 把自己的属性一起声明进来即可（见 markdown.css 的卡片）。 */
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > *:not(ul):not(ol):not(.image-collage) {
+    transition: var(
+      --reveal-transition,
+      opacity var(--momo-t-reveal) var(--momo-ease-out) var(--reveal-delay, 0ms),
+      transform var(--momo-t-reveal) var(--momo-ease-out) var(--reveal-delay, 0ms)
+    );
+  }
+
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > *:not(ul):not(ol):not(.image-collage):not(.is-revealed) {
+    opacity: 0;
+    transform: translate3d(0, var(--momo-rise-prose), 0);
+  }
+
+  /* 列表逐行 / 拼图逐行：一「行」是一个顶层 li 或一个 collage-item，同一网格行同时入场。
+     行高只有一行文字，行程用 --momo-rise-card、时长用更短的 --momo-t-reveal-row。 */
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > ul > li,
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > ol > li,
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > .image-collage > .collage-item {
+    /* 清掉父级按 nth-child 继承下来的错峰延迟，逐行入场由 reveal.ts 内联写 --reveal-delay */
+    --reveal-delay: 0ms;
+    transition-property: opacity, transform;
+    transition-duration: var(--momo-t-reveal-row);
+    transition-delay: var(--reveal-delay, 0ms);
+    transition-timing-function: var(--momo-ease-out);
+  }
+
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > ul > li:not(.is-revealed),
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > ol > li:not(.is-revealed),
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > .image-collage > .collage-item:not(.is-revealed) {
+    opacity: 0;
+    transform: translate3d(0, var(--momo-rise-card), 0);
+  }
+
+  /* 每 5 个一组错峰（第一个不等，依次 +50ms），与旧实现一致 */
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > *:nth-child(5n + 2) {
+    --reveal-delay: 50ms;
+  }
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > *:nth-child(5n + 3) {
+    --reveal-delay: 100ms;
+  }
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > *:nth-child(5n + 4) {
+    --reveal-delay: 150ms;
+  }
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > *:nth-child(5n + 5) {
+    --reveal-delay: 200ms;
+  }
+
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > .is-revealed {
+    opacity: 1;
+  }
+}
+
+/* 用户要求减弱动画时：时长归零，入场直接到位（swup 的 0.01ms 规则单独保留） */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --momo-t-fast: 1ms;
+    --momo-t-base: 1ms;
+    --momo-t-slow: 1ms;
+    --momo-t-reveal: 1ms;
+    --momo-t-reveal-row: 1ms;
+  }
+
+  [data-reveal],
+  [data-reveal].is-revealed,
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > *,
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > ul > li,
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > ol > li,
+  html[data-reveal-on] .markdown-content:not([data-no-reveal]) > .image-collage > .collage-item {
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

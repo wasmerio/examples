@@ -1,0 +1,722 @@
+---
+import { siteConfig, profileConfig } from '@/config';
+import "@styles/global.css"
+import OverlayScrollbars from '@components/control/OverlayScrollbars.astro';
+import "@styles/swup-transition.css"
+import '@fontsource/eb-garamond';
+import notoSerifSc400 from '@fontsource/noto-serif-sc/400.css?url';
+import notoSerifSc700 from '@fontsource/noto-serif-sc/700.css?url';
+import lxgwBrightCss from '@chinese-fonts/lxgwwenkaibright/dist/LXGWBright-Medium/result.css?url';
+import osCss from 'overlayscrollbars/styles/overlayscrollbars.scriptingenabled.css?url';
+import photoCoverCss from '@styles/photo-cover.css?url';
+import katexCss from 'katex/dist/katex.min.css?url';
+import { i18n } from "astro:config/client";
+import { getSiteTitle } from '@utils/siteTitle';
+import { photoCoverEnabled } from '@utils/photoCover';
+import { getRelativeLocaleUrl, withTrailingSlash } from '@utils/urlUtils';
+import i18nit from '@i18n/translation';
+import {
+  absoluteUrl,
+  bcp47,
+  defaultLocaleUrl,
+  localeAlternates,
+  normalizePath,
+  pageDescription,
+  toIsoDate,
+  websiteJsonLd,
+} from '@utils/seo';
+
+interface Props {
+  title: string;
+  lang?: string;
+  description?: string;
+  /** 社交分享图：绝对地址、站内路径或文章目录内的相对图片都可以 */
+  image?: string;
+  type?: 'website' | 'article';
+  /** 发布时间 / 修改时间（type="article" 时输出 article:* meta） */
+  publishedTime?: Date | string;
+  modifiedTime?: Date | string;
+  /** 文章分类：article:section 与结构化数据的 section */
+  section?: string;
+  keywords?: string[];
+  /** 不希望被索引的页面（如 404、草稿） */
+  noindex?: boolean;
+  /** 额外 JSON-LD，与站点级 WebSite 一起输出 */
+  structuredData?: Record<string, unknown> | Record<string, unknown>[];
+  /** 是否渲染 Markdown 正文：决定是否加载引用块专用的 LXGW 字体 */
+  markdownFont?: boolean;
+  /** 正文是否含公式：决定是否挂 KaTeX 样式表（由 remark-has-math 写入 frontmatter） */
+  mathStyles?: boolean;
+  /** 首屏 LCP 图片预加载（由 @utils/imagePreload 生成）：输出一条 imagesrcset 预加载 */
+  preloadImage?: {
+    href: string;
+    srcset?: string;
+    sizes?: string;
+    type?: string;
+  };
+  /** 分页序列：输出 <link rel="prev/next"> */
+  pagination?: { prev?: string; next?: string };
+}
+const {
+  title,
+  lang,
+  description,
+  image,
+  type = 'website',
+  publishedTime,
+  modifiedTime,
+  section,
+  keywords = [],
+  noindex = false,
+  structuredData,
+  markdownFont = false,
+  mathStyles = false,
+  preloadImage,
+  pagination,
+} = Astro.props;
+
+const pageTitle = title;
+const pageLang = bcp47(lang || i18n?.defaultLocale || 'zh-cn');
+/** 当前页面语言的界面文案（skip-link 等极少量的布局级文案用） */
+const t = i18nit(lang || i18n?.defaultLocale || 'zh-cn');
+
+const canonical = absoluteUrl(normalizePath(Astro.url.pathname));
+const alternates = localeAlternates(Astro.url.pathname);
+const descriptionText = pageDescription(description, lang || i18n?.defaultLocale);
+const shareImage = image ? absoluteUrl(image) : '';
+const ogLocale = pageLang.replace('-', '_');
+const alternateLocales = alternates
+  .filter((a) => a.lang !== (lang || i18n?.defaultLocale))
+  .map((a) => bcp47(a.lang).replace('-', '_'));
+const publishedIso = toIsoDate(publishedTime);
+const modifiedIso = toIsoDate(modifiedTime) || publishedIso;
+
+const schemas = [
+  websiteJsonLd(lang || i18n?.defaultLocale),
+  ...(Array.isArray(structuredData) ? structuredData : structuredData ? [structuredData] : []),
+];
+// 转义 < 防止正文里的 </script> 提前闭合标签
+const jsonLd = JSON.stringify(schemas).replace(/</g, '\\u003c');
+
+const umamiScript = 'https://umami.motues.top/script.js';
+function originOf(value?: string) {
+  if (!value) return '';
+  try {
+    return new URL(value).origin;
+  } catch {
+    return ''; // 例如 twikoo 的 envId 不是 URL
+  }
+}
+const commentOrigin =
+  type === 'article' && siteConfig.comments.enable
+    ? originOf(siteConfig.comments.backendUrl)
+    : '';
+
+// 只在 <html> 上打闸门标记，组件里的 data-reveal 可以写死：关掉开关就完全不隐藏内容
+const revealAttrs = siteConfig.theme.AOS ? { 'data-reveal-on': '' } : {};
+
+// ⚠️ 样式必须用 ?url 取出后自己挂 <link>，静态 import 会被 Vite 无条件合并进页面样式表、关掉
+// 开关也省不下；且必须用 scriptingenabled 版本并阻塞加载，否则禁用 JS 的访客没有滚动条。
+const osConfig = siteConfig.theme.overlayScrollbars;
+const osEnabled = osConfig?.enable !== false;
+// 桥接属性：OS 初始化期间先藏掉原生滚动条；只在开关打开时输出，否则会留下没有滚动条的页面
+const osAttrs = osEnabled ? { 'data-overlayscrollbars-initialize': '' } : {};
+// 滚动条粗细走 CSS 变量（见 styles/scrollbar.css 的 .os-theme-momo），改配置即时生效
+const osStyle = osEnabled ? `--os-momo-size: ${osConfig?.size ?? 8}px` : undefined;
+
+// 照片封面样式同样用 ?url + 条件 <link>：照片层每页都有，所以这条 <link> 全站生效
+const photoCoverOn = photoCoverEnabled();
+---
+
+<!DOCTYPE html>
+<html lang={pageLang} class="h-full" style={osStyle} {...osAttrs} {...revealAttrs}>
+<head>
+    <meta charset="UTF-8">
+    <!-- data-swup-ignore-script：swup 每次换页会重放内联脚本，主题初始化只该跑一次 -->
+    <script is:inline data-swup-ignore-script>
+        (function() {
+        const savedTheme = localStorage.getItem('theme');
+        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        let theme;
+        if ( savedTheme === 'system') {
+          theme = systemTheme;
+        } else {
+          theme = savedTheme || 'light';
+        }
+        localStorage.setItem('theme', savedTheme || theme);
+        document.documentElement.setAttribute('data-theme', theme);
+
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+        })();
+    </script>
+    {siteConfig.theme.AOS && <script is:inline data-swup-ignore-script>
+        // 兜底：入场脚本没起来（被拦 / 加载失败 / 初始化抛错）就摘掉闸门，正文绝不能在 opacity: 0
+        // 停住；计时从 load 后开始。data-swup-ignore-script：只该跑一次。
+        window.addEventListener('load', function () {
+            setTimeout(function () {
+                if (!window.__momoReveal) {
+                    document.documentElement.removeAttribute('data-reveal-on');
+                }
+            }, 2000);
+        }, { once: true });
+    </script>}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content={descriptionText}>
+    {keywords.length > 0 && <meta name="keywords" content={keywords.join(', ')}>}
+    <meta name="author" content={profileConfig.name}>
+    <meta name="robots" content={noindex
+        ? "noindex, follow"
+        : "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"}>
+    <link rel="canonical" href={canonical}>
+    {alternates.map((a) => <link rel="alternate" hreflang={bcp47(a.lang)} href={a.url}>)}
+    <link rel="alternate" hreflang="x-default" href={defaultLocaleUrl(Astro.url.pathname)}>
+
+    <meta property="og:type" content={type}>
+    <meta property="og:site_name" content={siteConfig.title}>
+    <meta property="og:title" content={title}>
+    <meta property="og:description" content={descriptionText}>
+    <meta property="og:url" content={canonical}>
+    <meta property="og:locale" content={ogLocale}>
+    {alternateLocales.map((l) => <meta property="og:locale:alternate" content={l}>)}
+    {shareImage && <meta property="og:image" content={shareImage}>}
+    {shareImage && <meta property="og:image:alt" content={title}>}
+    {type === 'article' && publishedIso && <meta property="article:published_time" content={publishedIso}>}
+    {type === 'article' && modifiedIso && <meta property="article:modified_time" content={modifiedIso}>}
+    {type === 'article' && section && <meta property="article:section" content={section}>}
+
+    <meta name="twitter:card" content={shareImage ? "summary_large_image" : "summary"}>
+    <meta name="twitter:title" content={title}>
+    <meta name="twitter:description" content={descriptionText}>
+    {shareImage && <meta name="twitter:image" content={shareImage}>}
+
+    {pagination?.prev && <link rel="prev" href={pagination.prev}>}
+    {pagination?.next && <link rel="next" href={pagination.next}>}
+
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfbfb">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0a">
+    <!-- 订阅源按语言分开：/rss.xml 是默认语言，/<lang>/rss.xml 是其它语言 -->
+    <link rel="alternate" type="application/rss+xml" title={getSiteTitle()} href={absoluteUrl(withTrailingSlash(getRelativeLocaleUrl(lang || i18n?.defaultLocale || 'zh-cn', '/rss.xml')))} >
+    <link rel="icon" href={siteConfig.favicon} type="image/x-icon">
+
+    <!-- OverlayScrollbars 样式：必须阻塞，桥接属性要在首屏前藏掉原生滚动条 -->
+    {osEnabled && <link rel="stylesheet" href={osCss}>}
+
+    <!-- 照片封面：同样必须阻塞，首屏的居中标题 / 蒙版 / 淡出都靠它 -->
+    {photoCoverOn && <link rel="stylesheet" href={photoCoverCss}>}
+
+    <!-- 正文字体（Noto Serif SC 400 / 700）：非阻塞加载，前面的 preload 让请求提前发出。
+         ⚠️ data-swup-theme 必须留着，否则换页时标签被移除重插，始终可见的顶栏会闪字体；
+         只给每页都有的字体加，LXGW 与 KaTeX 不能加，否则换页后永远插不进来。 -->
+    <link rel="preload" as="style" href={notoSerifSc400}>
+    <link rel="preload" as="style" href={notoSerifSc700}>
+    <link rel="stylesheet" data-swup-theme href={notoSerifSc400} media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href={notoSerifSc400}></noscript>
+    <link rel="stylesheet" data-swup-theme href={notoSerifSc700} media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href={notoSerifSc700}></noscript>
+
+    <!-- 引用块字体（LXGW Bright Medium）：只有渲染正文的页面才需要，非阻塞 -->
+    {markdownFont && <link rel="stylesheet" href={lxgwBrightCss} media="print" onload="this.media='all'">}
+    {markdownFont && <noscript><link rel="stylesheet" href={lxgwBrightCss}></noscript>}
+
+    <!-- KaTeX：只给含公式的页面（remark-has-math 标记）；必须阻塞，晚到会先闪裸 HTML -->
+    {mathStyles && <link rel="stylesheet" href={katexCss}>}
+
+    <!-- 首屏 LCP 图片预加载：imagesrcset / imagesizes 必须与正文 srcset 逐字一致，否则会多下一份；
+         type 让不支持 AVIF 的浏览器忽略这条预加载、走 <picture> 的回退链。 -->
+    {preloadImage && <link
+        rel="preload"
+        as="image"
+        href={preloadImage.href}
+        imagesrcset={preloadImage.srcset}
+        imagesizes={preloadImage.sizes}
+        type={preloadImage.type}
+        fetchpriority="high"
+    >}
+
+    <!-- 第三方域名连接预热：统计域名 + 文章页的评论后端 -->
+    <link rel="dns-prefetch" href={originOf(umamiScript)}>
+    <link rel="preconnect" href={originOf(umamiScript)} crossorigin>
+    {commentOrigin && <link rel="dns-prefetch" href={commentOrigin}>}
+    {commentOrigin && <link rel="preconnect" href={commentOrigin} crossorigin>}
+
+    <!-- data-swup-ignore-script：umami 只加载一次，换页 PV 由内联脚本在 astro:page-load 上报 -->
+    <script defer src={umamiScript} data-hash is:inline data-swup-ignore-script></script>
+    <title>{pageTitle}</title>
+    <script type="application/ld+json" set:html={jsonLd}></script>
+    <script is:inline data-swup-ignore-script>
+        // 换页相关的内联脚本合并成一个，减少解析 / 执行；data-swup-ignore-script 必须保留，否则监听器成倍累积
+        document.addEventListener('astro:before-swap', (e) => {
+            const theme = document.documentElement.getAttribute('data-theme');
+            const sysTheme = document.documentElement.classList.contains('system-theme');
+            // ClientRouter 会给 e.newDocument，swup 下 <html> 持久、没有新文档，回退到当前文档
+            const target = (e && e.newDocument ? e.newDocument : document).documentElement;
+            if (theme) {
+                target.setAttribute('data-theme', theme);
+            }
+            if (sysTheme) {
+                target.classList.add('system-theme');
+            }
+            // 临时切成 auto：否则浏览器换页 / 前后退时的滚动恢复会被 scroll-behavior: smooth 拖成动画
+            document.documentElement.style.scrollBehavior = 'auto';
+            target.style.scrollBehavior = 'auto';
+        });
+
+        // 前进 / 后退的滚动位置自己接管：swup 在 popstate 时不做滚动，浏览器原生恢复时文档里
+        // 还是旧页面、位置会被旧高度截断；所以按历史条目记一份，内容就位后再恢复。
+        if ('scrollRestoration' in window.history) {
+            window.history.scrollRestoration = 'manual';
+        }
+
+        /** 把当前滚动位置写进当前历史条目（保留 swup 自己的 state 标记） */
+        function rememberScrollPosition() {
+            const state = window.history.state;
+            if (!state || typeof state !== 'object') return;
+            const y = Math.round(window.scrollY);
+            if (state.scrollY === y) return;
+            window.history.replaceState({ ...state, scrollY: y }, '');
+        }
+
+        // 滚动中节流写；真正离开当前条目之前（点链接）再补一次
+        let scrollWriteTimer;
+        window.addEventListener('scroll', () => {
+            clearTimeout(scrollWriteTimer);
+            scrollWriteTimer = setTimeout(rememberScrollPosition, 150);
+        }, { passive: true });
+
+        document.addEventListener('swup:visit:start', (event) => {
+            // popstate 时位置可能已经被浏览器截断，写了反而会污染目标条目的记录
+            if (event.detail && event.detail.visit && event.detail.visit.history.popstate) return;
+            clearTimeout(scrollWriteTimer);
+            rememberScrollPosition();
+        });
+
+        // 待恢复位置：取自 popstate 的 state（不受截断影响）
+        let pendingScrollY = null;
+        window.addEventListener('popstate', (event) => {
+            const y = event.state && typeof event.state.scrollY === 'number' ? event.state.scrollY : null;
+            pendingScrollY = y;
+        });
+
+        // 锚点落位：正文块入场带 translateY，直接 scrollIntoView 量到的是位移后的位置，
+        // 动画结束会跳到固定顶栏后面；所以跳转前先把目标切成已落位并临时关掉过渡。
+        const REVEAL_TARGET_SELECTOR =
+            '.markdown-content > *, .markdown-content > ul > li, .markdown-content > ol > li';
+
+        const settleRevealForHash = (hash) => {
+            if (!hash) return null;
+            let id = hash.replace(/^#/, '');
+            try {
+                id = decodeURIComponent(id);
+            } catch {
+                // 保留原样：非法百分号编码时按字面 id 找
+            }
+            const target = id ? document.getElementById(id) : null;
+            if (!target) return null;
+
+            // 顶层块自带入场位移；块内目标（脚注 li 等）由外层块带着位移，落位的是外层
+            let reveal = target;
+            if (!target.matches(REVEAL_TARGET_SELECTOR)) {
+                const block = target.closest('.markdown-content > *');
+                if (!block) return null;
+                reveal = block;
+            }
+
+            reveal.style.transition = 'none';
+            reveal.classList.add('is-revealed');
+            void reveal.offsetHeight;
+            requestAnimationFrame(() => {
+                reveal.style.transition = '';
+            });
+            return target;
+        };
+
+        /** 把目标滚到视口中心；目标高于视口 75% 时退化为「顶栏下方」，从块首开始读 */
+        const alignHashTarget = (hash, behavior = 'instant') => {
+            const target = settleRevealForHash(hash);
+            if (!target) return null;
+
+            const rect = target.getBoundingClientRect();
+            const viewport = window.innerHeight;
+            const documentTop = window.scrollY + rect.top;
+            const maxScroll = Math.max(0, document.documentElement.scrollHeight - viewport);
+
+            let expected;
+            if (rect.height > viewport * 0.75) {
+                let margin = parseFloat(getComputedStyle(target).scrollMarginTop);
+                if (!Number.isFinite(margin) || margin <= 0) {
+                    margin = window.innerWidth <= 776 ? 88 : 96;
+                }
+                expected = documentTop - margin;
+            } else {
+                expected = documentTop + rect.height / 2 - viewport / 2;
+            }
+
+            expected = Math.min(Math.max(0, expected), maxScroll);
+            if (Math.abs(window.scrollY - expected) > 2) {
+                // 校正 / 落位必须 instant：auto 会跟随 CSS 的 scroll-behavior: smooth，
+                // 跟随校正会变成追不上的动画；只有用户点击同页锚点时才传 smooth
+                window.scrollTo({ top: expected, behavior });
+            }
+            return target;
+        };
+
+        // swup 用 pushState 改 hash 时浏览器不会重算 :target，闪烁高亮必须由脚本补 class
+        let flashTimer;
+        const flashHashTarget = (target) => {
+            document.querySelectorAll('.is-search-target').forEach((el) => {
+                el.classList.remove('is-search-target');
+            });
+            target.classList.add('is-search-target');
+            clearTimeout(flashTimer);
+            flashTimer = setTimeout(() => target.classList.remove('is-search-target'), 2400);
+        };
+
+        // 锚点跟随：图片 / 卡片 / 字体晚到会改变目标上方高度，跳转后 3 秒内持续对齐，
+        // 用户一滚动（滚轮 / 触摸 / 拖滚动条 / 键盘）立刻停
+        let activeHashFollow = null;
+
+        const stopHashFollow = () => {
+            if (!activeHashFollow) return;
+            const stop = activeHashFollow;
+            activeHashFollow = null;
+            stop();
+        };
+
+        // 用户要求减弱动画时不做平滑滚动（与 CSS 那边 prefers-reduced-motion 的口径一致）
+        const prefersReducedMotion = () =>
+            window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
+        // smooth 只给「用户点击同页锚点」（脚注、搜索结果、标题 #）：首屏带 hash 与换页落位必须 instant
+        const followHash = (hash, { smooth = false } = {}) => {
+            stopHashFollow();
+            if (!hash) return;
+
+            const scrollingSmooth = smooth && !prefersReducedMotion();
+            let stopped = false;
+            let flashed = false;
+            let intervalId;
+            let timeoutId;
+            let settleRaf;
+            let settleTimer;
+            let correcting = false;
+
+            const stop = () => {
+                if (stopped) return;
+                stopped = true;
+                clearInterval(intervalId);
+                clearTimeout(timeoutId);
+                clearTimeout(settleTimer);
+                cancelAnimationFrame(settleRaf);
+                window.removeEventListener('wheel', stop);
+                window.removeEventListener('touchmove', stop);
+                window.removeEventListener('pointerdown', stop);
+                window.removeEventListener('keydown', onKeyDown);
+                if (activeHashFollow === stop) activeHashFollow = null;
+            };
+            const onKeyDown = (event) => {
+                if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+                    stop();
+                }
+            };
+            const tick = (behavior = 'instant', flashNow = true) => {
+                if (stopped) return false;
+                const target = alignHashTarget(hash, behavior);
+                if (!target) {
+                    stop();
+                    return false;
+                }
+                // 平滑滚动时把高亮推迟到落位那一刻再闪（否则 2s 的淡出大半消耗在路上）
+                if (flashNow && !flashed) {
+                    flashHashTarget(target);
+                    flashed = true;
+                }
+                return true;
+            };
+
+            // 平滑滚动停下来之后才开始校正：滚动中途做 instant 对齐会把动画掐成一跳
+            const startCorrections = () => {
+                if (correcting || stopped) return;
+                correcting = true;
+                clearTimeout(settleTimer);
+                cancelAnimationFrame(settleRaf);
+
+                let lastY = window.scrollY;
+                const correct = () => {
+                    if (stopped) return;
+                    // 位置还在变（平滑滚动没走完 / 用户自己在滚）就先不动，下一轮再看
+                    if (Math.abs(window.scrollY - lastY) < 1) tick();
+                    lastY = window.scrollY;
+                };
+                correct();
+                intervalId = setInterval(correct, 300);
+                timeoutId = setTimeout(stop, 3000);
+            };
+
+            activeHashFollow = stop;
+
+            if (scrollingSmooth) {
+                if (tick('smooth', false)) {
+                    // 连续 3 帧位置不变即视为滚完；1200ms 兜底（后台标签页里 rAF 会停摆）
+                    let lastY = window.scrollY;
+                    let still = 0;
+                    const watch = () => {
+                        if (stopped) return;
+                        const y = window.scrollY;
+                        still = Math.abs(y - lastY) < 1 ? still + 1 : 0;
+                        lastY = y;
+                        if (still >= 3) {
+                            startCorrections();
+                            return;
+                        }
+                        settleRaf = requestAnimationFrame(watch);
+                    };
+                    settleRaf = requestAnimationFrame(watch);
+                    settleTimer = setTimeout(startCorrections, 1200);
+                }
+            } else {
+                tick();
+                intervalId = setInterval(tick, 300);
+                timeoutId = setTimeout(stop, 3000);
+            }
+
+            window.addEventListener('wheel', stop, { passive: true });
+            window.addEventListener('touchmove', stop, { passive: true });
+            window.addEventListener('pointerdown', stop, { passive: true });
+            window.addEventListener('keydown', onKeyDown);
+            // ⚠️ 不能把 tick 直接当监听器：事件对象会被当成 behavior 传进 scrollTo
+            const lateTick = () => {
+                // 平滑滚动还没走完时先不动，落位后的校正会补上
+                if (scrollingSmooth && !correcting) return;
+                tick();
+            };
+            window.addEventListener('load', lateTick, { once: true });
+            document.fonts?.ready.then(lateTick).catch(() => {});
+        };
+
+        // 同页锚点（搜索结果 / 目录 / 脚注回跳）：先在 capture 阶段落位，再用平滑滚动跳过去
+        document.addEventListener('click', (event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            const node = event.target instanceof Element ? event.target : null;
+            const link = node?.closest('a[href]');
+            if (!link) return;
+
+            let url;
+            try {
+                url = new URL(link.href, window.location.href);
+            } catch {
+                return;
+            }
+            if (url.origin !== window.location.origin || url.pathname !== window.location.pathname || !url.hash) return;
+            settleRevealForHash(url.hash);
+            // 平滑滚动要等默认锚点行为跑完再接管，否则会被原生跳转盖掉
+            setTimeout(() => followHash(url.hash, { smooth: true }), 0);
+        }, true);
+
+        // 首屏带锚点：原生滚动发生在入场样式生效期间，DOM 就绪后再跟随校正
+        const settleInitialHash = () => {
+            const hash = window.location.hash;
+            if (!hash) return;
+            settleRevealForHash(hash);
+            followHash(hash);
+        };
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', settleInitialHash, { once: true });
+        } else {
+            settleInitialHash();
+        }
+
+        document.addEventListener('astro:after-swap', () => {
+            // 先让目标落位，再让 swup 的 content:scroll 量位置；page-load 时再补一次精确偏移
+            settleRevealForHash(window.location.hash);
+            if (pendingScrollY === null) return;
+            document.documentElement.style.scrollBehavior = 'auto';
+            window.scrollTo(0, pendingScrollY);
+        });
+
+        let loaderTimeout;
+
+        const hideLoadingOverlay = () => {
+            clearTimeout(loaderTimeout);
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) overlay.style.display = 'none';
+        };
+
+        // 加载遮罩：visit:start 后 500ms 才显示；换页完成（astro:after-swap = content:replace）
+        // 或 page-load 时收起
+        document.addEventListener('swup:visit:start', () => {
+            stopHashFollow();
+            loaderTimeout = setTimeout(() => {
+                const overlay = document.getElementById('loading-overlay');
+                if (overlay) overlay.style.display = 'flex';
+            }, 500);
+        });
+
+        document.addEventListener('astro:after-swap', hideLoadingOverlay);
+
+        document.addEventListener('astro:page-load', () => {
+            hideLoadingOverlay();
+            // 内容变高后（图片等）再补一次：after-swap 那一刻可能还没到目标位置
+            const restored = pendingScrollY !== null;
+            if (restored) {
+                const y = pendingScrollY;
+                pendingScrollY = null;
+                if (Math.abs(window.scrollY - y) > 4) window.scrollTo(0, y);
+            } else {
+                followHash(window.location.hash);
+            }
+            // ⚠️ 交还 scroll-behavior 必须晚两帧：swup 的 ScrollPlugin 用 rAF 延后回顶部，
+            // 同帧同步复位会让那次 scrollTo(0, 0) 带着 smooth 执行成一段动画。
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                document.documentElement.style.scrollBehavior = '';
+            }));
+        });
+
+        // 统计：swup 不整页刷新，umami 的自动 PV 不会触发，这里补一次；page-load 首屏不派发，不会重复计数
+        document.addEventListener('astro:page-load', () => {
+            const url = window.location.pathname + window.location.search;
+            if (window.__momoUmamiUrl === url) return;
+            window.__momoUmamiUrl = url;
+            window.umami?.track?.();
+        });
+
+        // 设计规范页（/design）的交互必须放在这个只跑一次的全局脚本里：页面自己的 <script>
+        // 在 swup 容器之外，从站内跳进来时不会执行
+        document.addEventListener('click', (event) => {
+            const node = event.target instanceof Element ? event.target : null;
+            if (!node) return;
+            const trigger = node.closest('[data-ds-replay]') || node.closest('.ds-motion-demo');
+            if (!trigger) return;
+            const id = trigger.getAttribute('data-ds-replay') || trigger.id;
+            const target = id ? document.getElementById(id) : null;
+            if (!target) return;
+            // 先移除、强制回流、再加回，动画才会从头播放
+            target.classList.remove('is-playing');
+            void target.offsetWidth;
+            target.classList.add('is-playing');
+        });
+
+        function setupDesignToc() {
+            const links = Array.from(document.querySelectorAll('.ds-toc a'));
+            if (!links.length) return;
+            if (window.__dsTocObserver) window.__dsTocObserver.disconnect();
+            const sections = links
+                .map((link) => document.querySelector(link.getAttribute('href')))
+                .filter(Boolean);
+            const observer = new IntersectionObserver((entries) => {
+                for (const entry of entries) {
+                    if (!entry.isIntersecting) continue;
+                    const id = '#' + entry.target.id;
+                    for (const link of links) {
+                        link.classList.toggle('is-active', link.getAttribute('href') === id);
+                    }
+                }
+            }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+            sections.forEach((section) => observer.observe(section));
+            window.__dsTocObserver = observer;
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupDesignToc, { once: true });
+        } else {
+            setupDesignToc();
+        }
+        document.addEventListener('astro:page-load', setupDesignToc);
+    </script>
+</head>
+<body class="h-full bg-[var(--bg-color)]" {...osAttrs}>
+    
+    <!-- 键盘用户的第一个可聚焦元素；目标 main#swup-container 必须带 tabindex="-1"，焦点才会一起移过去 -->
+    <a href="#swup-container" class="skip-link">{t("a11y.skipToContent")}</a>
+
+    {osEnabled && <OverlayScrollbars />}
+
+    <div id="loading-overlay" aria-hidden="true">
+      <div class="spinner"></div>
+    </div>
+
+    <slot />
+    
+</body>
+</html>
+
+<style is:global>
+  /* 跳到正文：平时移出视口，键盘聚焦时从左上角滑下来 */
+  .skip-link {
+    position: fixed;
+    top: var(--momo-space-2);
+    left: var(--momo-space-2);
+    z-index: var(--momo-z-toast);
+    padding: var(--momo-space-2) var(--momo-space-4);
+    border-radius: var(--momo-radius-md);
+    border: 1px solid var(--border-color-strong);
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    font-size: var(--momo-font-size-sm);
+    box-shadow: var(--momo-shadow-md);
+    transform: translateY(calc(-100% - var(--momo-space-4)));
+    transition: transform var(--momo-t-fast) var(--momo-ease-out);
+  }
+
+  .skip-link:focus-visible {
+    transform: translateY(0);
+    outline: 2px solid var(--link-color);
+    outline-offset: 2px;
+  }
+
+  #loading-overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.7);
+    z-index: 9999;
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  [data-theme="dark"] #loading-overlay {
+    background-color: rgba(0, 0, 0, 0.7);
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid var(--button-hover-color);
+    border-top: 4px solid var(--link-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* 页内锚点（脚注、目录）依赖这里的平滑滚动；换页时由 before-swap 临时切成 auto */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* 减弱动画的访客直接落位，不做平滑滚动 */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+</style>
+
+{ siteConfig.theme.AOS &&
+<script>
+  import { initReveal } from '@utils/reveal';
+  initReveal();
+</script>
+}

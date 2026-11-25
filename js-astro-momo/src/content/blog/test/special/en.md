@@ -1,0 +1,249 @@
+---
+title: Testing Special Markdown
+pubDate: 2026-01-12
+description: Article functionality test
+category: Test
+image: ""
+draft: false
+slugId: momo/test/special
+---
+
+## Tets Quote
+
+### Normal Quote
+
+:::quote
+
+The universe is a dark forest. Every civilization is an armed hunter stalking through the trees like a ghost, gently pushing aside branches that block the path and trying to tread without sound. Even breathing is done with care. The hunter has to be careful, because everywhere in the forest are stealthy hunters like him. If he finds other life—another hunter, an angel or a demon, a delicate infant or a tottering old man, a fairy or a demigod—there’s only one thing he can do: open fire and eliminate them.
+
+<br><right>——*The Dark Forest*</right>
+:::
+
+### Math Quote
+
+:::quote
+$E = mc^2$
+:::
+
+## Card Testing
+
+### Music Card
+
+::music{id="30431366"}
+
+### Github Card
+
+::github{repo="Motues/Momo"}
+
+## Special Syntax
+
+### Blur Effect
+
+Here is a !!blur!! effect. 
+
+On desktop, hovering removes the blur, and clicking keeps it clear for 3 seconds. On mobile, clicking removes the blur, but it only becomes blurry again after 3 seconds have passed since the click and the page has been scrolled.
+
+### Pinyin
+
+Below words will show pinyin:
+
+{拼音}(pīn|yīn)，{君の名は}(きみ||な|)
+
+### Rainbow Text
+
+This is an ==rainbow== text effect.
+
+### Nested Effect
+
+The above styles can be nested, such as:
+
+!!==Do you like the movie {君の名は}(きみ||な|)==!!
+
+### Link Jump
+
+Content links open in the current tab by default. Put an attribute block `{target="_blank"}` **immediately after** a link to open it in a new tab, with a small arrow icon appended after the link text:
+
+```markdown
+Welcome to Motues' [Blog](https://motues.top){target="_blank"}!
+```
+
+Result:
+
+Welcome to Motues' [Blog](https://motues.top){target="_blank"}!
+
+Only `target`, `rel` and `class` are recognised inside the attribute block; anything else makes the whole block stay in the text as-is. `rel` always keeps `noopener` and `noreferrer`. Links holding only an image get no icon, so the arrow never sits on top of the image:
+
+```markdown
+[![Cover](./cover.jpg)](https://motues.top "Click to enlarge"){target="_blank"}
+```
+
+> It works for in-site pages too, e.g. `[Markdown Basics](/en/blog/markdown){target="_blank"}`.
+
+## Footnotes
+
+This is a sentence in the article; I need to add a superscript reference [^1] here.
+
+This is another sentence that cites a different source [^2].
+
+## Typst Testing
+
+Typst rendering based on [Typst.ts](https://myriad-dreamin.github.io/typst.ts/).
+
+Images may not display optimally in dark mode.
+
+```typst
+#set page(width: auto, height: auto, margin: 10pt)
+#set text(fill: rgb("#2f61eb"), size: 20pt)
+
+$ cal(A) = pi r^2 $
+
+Hello from *Typst*!
+```
+
+```typst *Waves*
+// Code from https://github.com/typst/packages/blob/main/packages/preview/cetz/0.4.2/gallery/waves.typ
+#import "@preview/cetz:0.4.2": canvas, draw, vector, matrix
+
+#set page(width: auto, height: auto, margin: .5cm)
+
+#canvas({
+  import draw: *
+
+  ortho(y: -30deg, x: 30deg, {
+    on-xz({
+      grid((0,-2), (8,2), stroke: gray + .5pt)
+    })
+
+    // Draw a sine wave on the xy plane
+    let wave(amplitude: 1, fill: none, phases: 2, scale: 8, samples: 100) = {
+      line(..(for x in range(0, samples + 1) {
+        let x = x / samples
+        let p = (2 * phases * calc.pi) * x
+        ((x * scale, calc.sin(p) * amplitude),)
+      }), fill: fill)
+
+      let subdivs = 8
+      for phase in range(0, phases) {
+        let x = phase / phases
+        for div in range(1, subdivs + 1) {
+          let p = 2 * calc.pi * (div / subdivs)
+          let y = calc.sin(p) * amplitude
+          let x = x * scale + div / subdivs * scale / phases
+          line((x, 0), (x, y), stroke: rgb(0, 0, 0, 150) + .5pt)
+        }
+      }
+    }
+
+    on-xy({
+      wave(amplitude: 1.6, fill: rgb(84, 219, 219, 80))
+    })
+    on-xz({
+      wave(amplitude: 1, fill: rgb(216, 219, 90, 80))
+    })
+  })
+})
+```
+
+## Alert Component Testing
+
+### Single-Line Content Testing
+
+:::note
+This is a note.
+:::
+
+:::tip
+This is a tip.
+:::
+
+:::important
+This is an important note.
+:::
+
+:::warning
+This is a warning.
+:::
+
+:::caution
+This is a cautionary note.
+:::
+
+
+### Multi-Line Content Testing
+
+:::tip
+This is a tip box containing multiple lines of content.
+
+- Supports list items
+- Can contain multiple paragraphs
+
+**Key Feature**: Also supports bold text and other Markdown elements.
+:::
+
+### Nested Content Testing
+
+:::warning
+Tip boxes can contain other elements like code blocks.
+
+```javascript
+console.log(‘Hello World’);
+```
+:::
+
+### Custom Header Test
+
+:::important[Custom Header]
+This is a tip box with a custom header. The header displays as "Custom Header" instead of the default “IMPORTANT”.
+:::
+
+
+## Expressive Code Testing
+
+Code blocks are rendered by [Expressive Code](https://expressive-code.com/); append the options after the language (see the [Markdown Basics](/en/blog/markdown) article for the full list):
+
+````
+```js title="src/app.js" {3} ins={4} del={5} showLineNumbers
+function greet(name) {
+  // Highlights line 3
+  console.log(`Hello, ${name}!`)
+  return true // Added
+  return false // Removed
+}
+```
+````
+
+Result:
+
+```js title="src/app.js" {3} ins={4} del={5} showLineNumbers
+function greet(name) {
+  // Highlights line 3
+  console.log(`Hello, ${name}!`)
+  return true // Added
+  return false // Removed
+}
+```
+
+### Terminal Frame and Collapsed Lines
+
+`frame="terminal"` shows a terminal window (three dots), `collapse={3-6}` folds the given lines, and clicking the collapsed-lines summary expands them:
+
+```bash frame="terminal" collapse={3-6}
+pnpm install
+pnpm build
+# The lines below are collapsed
+echo "hello"
+echo "world"
+echo "again"
+echo "more"
+```
+
+### Word Wrap and No Title Bar
+
+`wrap` wraps long lines and `frame="none"` hides the title bar:
+
+```text wrap frame="none"
+The universe is a dark forest. Every civilization is an armed hunter stalking through the trees like a ghost, trying to tread without sound.
+```
+
+[^1]: This is the text of the first reference; click the arrow before it to return to the main text.
+[^2]: This is the text of the second reference; [links](#) are supported.

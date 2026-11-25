@@ -1,0 +1,71 @@
+---
+interface Props {
+  envId: string; 
+  language?: string | 'zh-CN';
+  postSlug: string;
+}
+
+const { envId, postSlug, language } = Astro.props;
+---
+
+<div id="twikoo-comment"></div>
+
+<script is:inline define:vars={{ envId, postSlug, language }}>
+  // 用 define:vars 注入文章参数，所以这个脚本必须是 is:inline
+  window.__momoTwikoo = window.__momoTwikoo || { loading: null };
+
+  /** 评论库整个会话只加载一次（重复 append <script src> 会重复执行整个库） */
+  function loadTwikooLib() {
+    if (window.twikoo) return Promise.resolve(window.twikoo);
+    const state = window.__momoTwikoo;
+    if (!state.loading) {
+      state.loading = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/twikoo@1.7.7/dist/twikoo.min.js';
+        script.async = true;
+        script.onload = () => resolve(window.twikoo);
+        script.onerror = () => {
+          state.loading = null; // 允许下一篇文章重试
+          reject(new Error('twikoo 脚本加载失败'));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return state.loading;
+  }
+
+  async function initTwikoo() {
+    const el = document.getElementById('twikoo-comment');
+    if (!el) return;
+    // 脚本可能执行两次（swup 重放 + 兜底），用 dataset 守卫
+    if (el.dataset.twikooInit === '1') return;
+    el.dataset.twikooInit = '1';
+
+    try {
+      const twikoo = await loadTwikooLib();
+      if (!twikoo) return;
+      // 旧实例挂在已移除的节点上，能销毁就销毁（各版本 API 不保证有 destroy）
+      try {
+        twikoo.destroy?.();
+      } catch (error) {
+        /* 忽略：销毁失败不影响新实例 */
+      }
+      // 异步加载期间可能已换页，节点不在文档里就别再初始化
+      if (!el.isConnected) return;
+      twikoo.init({
+        envId: envId,
+        el: '#twikoo-comment',
+        path: postSlug,
+        lang: language
+      });
+    } catch (error) {
+      console.warn('[twikoo] 评论初始化失败:', error);
+    }
+  }
+
+  initTwikoo();
+</script>
+
+<style>
+
+</style>

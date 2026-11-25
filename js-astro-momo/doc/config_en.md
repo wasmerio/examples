@@ -1,0 +1,92 @@
+# Momo Configuration Guide
+
+## Configuration files at a glance
+
+| File | Purpose |
+| --- | --- |
+| `src/config.ts` | **Main entry point**: site information, theme switches, profile, license, friend links, languages and the Cover text of every page |
+| `src/content.config.ts` | Schema of the article frontmatter (only needs changes when fields are added or modified) |
+| `src/i18n/` | UI translations (everything except the Cover text) |
+| `src/types/` | TypeScript types for the configuration above |
+
+## `src/config.ts`
+
+### `siteConfig`
+
+* `title`: Site title
+* `subTitle`: Site subtitle; **when left empty, the browser tab title (and the RSS title) shows `title` only**, without a dangling ` - ` separator
+* `description`: Site description used as the fallback meta description / og:description. It can be a single string (shared by all languages) or a per-language map (`{ "zh-cn": "...", en: "..." }`) — the map is recommended, otherwise English pages inherit the Chinese sentence
+* `rootSiteUrl`: Root URL of the site, used to generate absolute links for SEO and social sharing; `astro.config.mjs` uses it as `site`
+* `favicon`: Site icon
+* `pageSize`: Number of articles per page
+* `toc`
+    * `enable`: Enable table of contents
+    * `depth`: Table of contents depth
+* `blogNavi`
+    * `enable`: Enable page navigation at the bottom of the blog
+* `comments`
+    * `enable`: Enable comment feature
+    * `platform`: Comment platform, `default` uses Momo-backend, `twikoo` is also supported
+    * `backendUrl`: Url of the backend
+* `theme`
+    * `AOS`: Enable entrance animations (scroll reveal, built in)
+    * `LQIP`: Enable LQIP (low-quality image placeholder)
+    * `PhotoSwipe`: Enable PhotoSwipe
+    * `readingProgress`: Show the 2px reading progress bar at the top of article pages (updates with the scroll position; no transition under `prefers-reduced-motion`)
+    * `imageCollage.enable`: Enable automatic image collage (consecutive images in the content are arranged into a grid)
+    * `imageCollage.maxColumns`: Max images per row in a collage (2 - 6, default 4); the actual number per row is chosen automatically from the image count, and the images of the last row always fill the whole row
+    * `postCard.imageMode`: Cover style of the article cards on the home page, `top` puts the image above the content, `background` uses it as the card background
+    * `photoCover.enable`: Enable the photo cover (first page of the home page: a full-screen photo as the background, with `Cover.title` and `Cover.subTitle` centered and enlarged on top of a black mask; scrolling down smoothly moves the title back to its own place, shrinks it to its normal size and returns it to the theme color. **Every other page** — later pagination pages, archive / about / friends and posts — gets a very faint version of the photo as its page background)
+    * `photoCover.image`: Path of the photo, relative to `public/` when it starts with `/`, otherwise relative to `src/` (e.g. `assets/cover.jpg`); an empty value is treated as disabled. **You don't need to prepare the blurred placeholder**: the build generates a tiny 32px-wide version of the photo and shows it while the full photo loads.
+    * `photoCover.mask`: Opacity of the black mask over the photo (0 - 1, default 0.5), keeps the white title readable and fades away as you scroll down; raise it to 0.6 - 0.7 for very bright photos (sunrises, skies)
+    * `overlayScrollbars.enable`: Replace the browser's default page scrollbar with [OverlayScrollbars](https://kingsora.github.io/OverlayScrollbars/) (overlay style, can auto-hide); when disabled the blog falls back to the native scrollbar styles in `scrollbar.css`
+    * `overlayScrollbars.autoHide`: When the scrollbar hides: `never` always visible, `scroll` only while scrolling, `move` while the pointer is over the page or the user scrolls, `leave` (default) hidden once the pointer leaves and scrolling stops
+    * `overlayScrollbars.size`: Scrollbar thickness in pixels (default 8); written to an inline CSS variable on `<html>`, so changing it takes effect immediately
+    * > Covered: the **page scrollbar and the search result list**. Code blocks, the TOC panel and the mobile nav strip keep the native scrollbar (styled in `src/styles/scrollbar.css`, hand-aligned to look like the overlay one)
+* `expressiveCode`
+    * `enable`: Enable [Expressive Code](https://expressive-code.com/) 
+    * `theme`: Shiki theme name of code blocks, e.g. `one-dark-pro` (default), `github-dark`, `vitesse-dark`; the same theme is used in light and dark mode
+
+:::tip
+For the backend project, refer to [Momo-backend](https://github.com/Motues/Momo-Backend). Ensure all configurations are completed as specified, particularly for cross-domain domains.
+:::
+
+### `profileConfig`
+
+* `avatar`: Profile picture, relative to the `src/` directory; relative to `public/` when it starts with `/`
+* `name`: Name, shown in the footer
+* `description`: Description, used in SEO
+* `indexPage`: Profile homepage, shown in the footer
+* `startYear`: Year the site was created, used for the copyright year range in the footer
+
+### `licenseConfig`
+
+* `enable`: Enable license display at the end of articles
+* `name`: License name
+* `url`: License URL
+
+### `friendLinkConfig`
+
+* `name`: Friend link name
+* `avatar`: Friend link icon
+* `url`: Friend link URL
+* `description`: Friend link description, set to an empty string if not needed
+
+### `i18nConfig`
+
+* `defaultLanguage`: Default language, also used as `defaultLocale` in `astro.config.mjs` (the default language is not prefixed in URLs)
+* `supportedLanguages`: List of supported languages, also used as `locales` in `astro.config.mjs`
+* `translations`: **Cover text** for each language
+    * `translations["zh-cn"].Cover` / `translations["en"].Cover`
+    * `Cover.title`: Large title of each page — `home`, `archive`, `about`, `friends`
+    * `Cover.subTitle`: Subtitle of each page, same keys as above; `archive` supports the `{count}` placeholder, which is replaced with the total number of articles
+
+## Internationalization (i18n)
+
+The i18n files live in `src/i18n/`:
+
+* `key.ts`: the `Translation` interface, the single source of truth for the translation structure
+* `language/zh-cn.ts`, `language/en.ts`: UI copy for each language; fields must match `Translation` one to one
+* `translation.ts`: `i18nit(lang)` returns a `t(key, params)` function with `{name}` style parameter substitution and a fallback to the default language
+
+**The Cover text of each page (`cover.title` / `cover.subTitle`) has moved into `i18nConfig.translations` in `src/config.ts`.** The files under `src/i18n/language/` simply reference it, so to change the title or subtitle of the home, archive, about or friends page, edit `src/config.ts` instead of the language files.

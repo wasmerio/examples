@@ -1,0 +1,106 @@
+---
+import MainPageLayout from '@layouts/MainPageLayout.astro';
+import Cover from '@components/Cover.astro';
+import PostPage from '@components/PostPage.astro';
+import Navi from '@components/control/Navi.astro';
+import FabMenu from '@components/control/FabMenu.astro';
+
+import { getBlogEntrySort } from '@utils/contentUtils'
+import { getSiteTitle } from '@utils/siteTitle';
+import { siteConfig } from '@/config';
+import { i18n } from "astro:config/client";
+import type { CollectionEntry } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+import { blogCoverUrl, getRelativeLocaleUrl, withTrailingSlash } from '@utils/urlUtils';
+import { photoCoverEnabled } from '@utils/photoCover';
+import { CONTENT_COVER } from '@utils/coverImage';
+import { coverPreload } from '@utils/imagePreload';
+
+import i18nit from '@i18n/translation'
+
+// 所有分页数据都在 "page" 参数中传递
+const { page } = Astro.props;
+const { locale = i18n!.defaultLocale } = Astro.params;
+
+const currentLang = Astro.currentLocale || i18n!.defaultLocale;
+const t = i18nit(currentLang);
+
+export const getStaticPaths = (async ({ paginate }) => {
+
+  function createPinTopSort() {
+    return (a: CollectionEntry<'blog'>, b: CollectionEntry<'blog'>) => {
+      const pinTopA = a.data.pinTop ?? 0;
+      const pinTopB = b.data.pinTop ?? 0;
+      
+      if (pinTopA > 0 && pinTopB > 0) {
+        return pinTopB - pinTopA;
+      }
+      
+      if (pinTopA > 0) return -1;
+      if (pinTopB > 0) return 1;
+      
+      return b.data.pubDate.valueOf() - a.data.pubDate.valueOf();
+    };
+  }
+
+  // 每个语言环境各生成一套分页路径
+  const paths = [];
+  for (const locale of i18n.locales) {
+    const localeCode = typeof locale === 'string' ? locale : locale.path;
+    const localeParam = localeCode === i18n.defaultLocale ? undefined : localeCode;
+    const blogEntries = await getBlogEntrySort(localeParam, undefined, createPinTopSort());
+    const paginatedPaths = paginate(blogEntries, { 
+      pageSize: siteConfig.pageSize,
+      params: { locale: localeParam }
+    });
+    
+    paths.push(...paginatedPaths);
+  }
+  
+  return paths;
+}) satisfies GetStaticPaths
+
+
+
+const indexPage = getRelativeLocaleUrl(locale, '/');
+// 分页页追加页码，避免第 2 页起的标题完全重复
+const pageTitle = page.currentPage > 1
+    ? `${getSiteTitle()} (${page.currentPage})`
+    : getSiteTitle();
+
+// 照片封面只在首页第 1 页启用；内页的淡照片背景由 MainPageLayout 的 PhotoCover 提供
+const usePhotoCover = page.currentPage === 1 && photoCoverEnabled();
+// 分享图直接用这张照片；src/ 下的图片构建后地址不可知，只在站内 / 绝对地址时生效
+const coverImage = siteConfig.theme.photoCover.image;
+const shareImage = usePhotoCover && (coverImage.startsWith('/') || /^https?:\/\//.test(coverImage))
+    ? coverImage
+    : undefined;
+
+// ---- 分页序列（<link rel="prev/next">）----
+const listUrl = (p: number) =>
+    withTrailingSlash(getRelativeLocaleUrl(locale, p === 1 ? '/' : `/${p}/`));
+const pagination = {
+    prev: page.currentPage > 1 ? listUrl(page.currentPage - 1) : undefined,
+    next: page.currentPage < page.lastPage ? listUrl(page.currentPage + 1) : undefined,
+};
+
+// ---- 首屏 LCP 预加载：照片封面优先，否则预加载第一张卡片的封面 ----
+const firstEntry = page.data[0] as CollectionEntry<'blog'> | undefined;
+const firstCover = firstEntry ? blogCoverUrl(firstEntry.data.image, firstEntry.id) : '';
+const preloadImage = usePhotoCover
+    ? await coverPreload(coverImage)
+    : firstCover
+        ? await coverPreload(firstCover, CONTENT_COVER)
+        : undefined;
+
+---
+
+<MainPageLayout title={pageTitle} lang={currentLang} image={shareImage} photoCover={usePhotoCover} pagination={pagination} preloadImage={preloadImage}>
+    <Cover title={t("cover.title.home")} subTitle={t("cover.subTitle.home")} photo={usePhotoCover} />
+    <PostPage page={page} />
+    <Navi page={page} />
+    <!-- fixed 浮层：在 swup 容器内、淡入淡出元素之外 -->
+    <div slot="overlay">
+        <FabMenu showBackBottom={true} />
+    </div>
+</MainPageLayout>

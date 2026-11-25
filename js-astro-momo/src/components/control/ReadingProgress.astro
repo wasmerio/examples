@@ -1,0 +1,99 @@
+---
+/**
+ * 文章页顶部 2px 阅读进度条，只在 article 页由 `siteConfig.theme.readingProgress` 控制开关。
+ * fixed 元素，必须挂在页面 overlay 插槽（不能待在淡入淡出容器内）。
+ */
+---
+
+<div
+  id="reading-progress"
+  class="reading-progress"
+  aria-hidden="true"
+>
+  <div class="reading-progress-bar"></div>
+</div>
+
+<script>
+  import { registerPageInit } from '@utils/pageInit';
+  import { subscribeScroll } from '@utils/scrollBus';
+
+  /** 进度 = 已滚动距离 / 可滚动距离，每帧只写一次 transform 的 scaleX（合成层，不触发布局） */
+  function initReadingProgress() {
+    const scope = window as Window & {
+      __momoReadingProgress?: { cleanup?: () => void };
+    };
+    scope.__momoReadingProgress?.cleanup?.();
+
+    const root = document.getElementById('reading-progress');
+    if (!root) return;
+
+    const bar = root.querySelector('.reading-progress-bar');
+
+    let maxScroll = 0;
+    let lastPercent = -1;
+
+    function measure() {
+      maxScroll = Math.max(0, document.documentElement.scrollHeight - document.documentElement.clientHeight);
+    }
+
+    function update(y) {
+      const percent = maxScroll > 0 ? Math.min(1, Math.max(0, y / maxScroll)) : 0;
+      // 变化小于 0.2% 不写样式，避免滚动到底部时逐帧触碰 DOM
+      if (Math.abs(percent - lastPercent) >= 0.002 || (percent === 1 && lastPercent !== 1)) {
+        lastPercent = percent;
+        // ⚠️ 用 scaleX 而不是 width：宽度变化会逐帧重排
+        if (bar) bar.style.transform = `scaleX(${percent.toFixed(4)})`;
+      }
+    }
+
+    const unsubscribe = subscribeScroll(update);
+
+    const onResize = () => {
+      measure();
+      update(window.scrollY);
+    };
+    window.addEventListener('resize', onResize, { passive: true });
+
+    measure();
+    update(window.scrollY);
+
+    scope.__momoReadingProgress = {
+      cleanup() {
+        unsubscribe();
+        window.removeEventListener('resize', onResize);
+      },
+    };
+  }
+
+  registerPageInit(initReadingProgress);
+</script>
+
+<style>
+  .reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    /* 高于顶栏（z-50）与导航胶囊（z-100），低于 FAB（z-1000）与弹窗 */
+    z-index: var(--momo-z-sticky);
+    height: 2px;
+    pointer-events: none;
+  }
+
+  .reading-progress-bar {
+    height: 100%;
+    width: 100%;
+    background-color: var(--link-color);
+    transform: scaleX(0);
+    transform-origin: left center;
+    /* 进度跟滚动 1:1，没有过渡；will-change 只为避免换页回来时整条闪一下 */
+    will-change: transform;
+  }
+
+  /* 减少动画偏好下不再保留合成层提示 */
+  @media (prefers-reduced-motion: reduce) {
+    .reading-progress-bar {
+      will-change: auto;
+    }
+  }
+</style>

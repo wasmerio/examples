@@ -1,0 +1,236 @@
+---
+import { Icon } from "astro-icon/components";
+import { i18n } from "astro:config/client";
+import i18nit from '@i18n/translation'
+
+const currentLang = Astro.currentLocale || i18n!.defaultLocale;
+const t = i18nit(currentLang);
+
+const translations = {
+  light: t("themeInfo.light"),
+  dark: t("themeInfo.dark"),
+  system: t("themeInfo.system")
+};
+
+// 顶栏在 swup 容器外、换页不重建：各语言的 aria-label / title 一并渲染进 data 属性，
+// 由 Header 的 syncPersistedHeader 换掉。
+const localeCodes: string[] = (i18n?.locales ?? [currentLang]).map((l) =>
+  typeof l === 'string' ? l : l.path,
+);
+const ariaLabels = Object.fromEntries(
+  localeCodes.map((code) => [code, i18nit(code)("button.switchDarkMode")]),
+);
+
+const className = Astro.props.class;
+---
+
+<button 
+  id="themeToggle" title={t("button.switchDarkMode")} class={className}
+  aria-label={t("button.switchDarkMode")}
+  data-i18n-aria={JSON.stringify(ariaLabels)}
+  data-i18n-title
+  data-t-light={translations.light}
+  data-t-dark={translations.dark}
+  data-t-system={translations.system}
+>
+    <Icon name="material-symbols:dark-mode-outline-rounded" class="moon w-5 h-5"/>
+    <Icon name="material-symbols:wb-sunny-outline-rounded" class="sun w-5 h-5"/>
+    <Icon name="material-symbols:radio-button-partial-outline" class="system w-5 h-5"/>
+</button>
+
+
+<script>
+import { registerPageInit } from '@utils/pageInit';
+
+if (typeof window !== 'undefined') {
+  
+  // 统一放在 window 上：顶栏在 swup 容器外不会重建，但初始化每次换页都会重跑，
+  // 用块级变量会丢掉上一次的定时器与监听器引用。
+  window.__momoTheme = window.__momoTheme || { toastTimer: null };
+
+  function initThemeToggle() {
+    const htmlRoot = document.querySelector('html');
+    const themeToggle = document.getElementById('themeToggle');
+    if (!htmlRoot || !themeToggle) return;
+
+    const getTheme = () => {
+      const localStorageTheme = localStorage?.getItem("theme") ?? '';
+      if (['dark', 'light', 'system'].includes(localStorageTheme)) {
+        return localStorageTheme;
+      }
+      return 'system';
+    };
+
+    // 从 DOM 属性实时获取翻译
+    const translations = {
+      light: themeToggle.dataset.tLight,
+      dark: themeToggle.dataset.tDark,
+      system: themeToggle.dataset.tSystem
+    };
+
+    function showThemeToast(themeName) {
+      let toast = document.getElementById('theme-toast') || (() => {
+        const t = document.createElement('div');
+        t.id = 'theme-toast';
+        document.body.appendChild(t);
+        return t;
+      })();
+
+      toast.textContent = translations[themeName] || translations['system'];
+      
+      clearTimeout(window.__momoTheme.toastTimer);
+      toast.classList.remove('show');
+      void toast.offsetWidth; 
+      toast.classList.add('show');
+
+      window.__momoTheme.toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    const setTheme = (themeSet, isFirstLoad = false) => { 
+      if (themeSet === 'dark') {
+        htmlRoot.setAttribute('data-theme', 'dark');
+        htmlRoot.classList.remove('system-theme');
+      } else if (themeSet === 'light') {
+        htmlRoot.removeAttribute('data-theme');
+        htmlRoot.classList.remove('system-theme');
+      } else {
+        htmlRoot.classList.add('system-theme');
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          htmlRoot.setAttribute('data-theme', 'dark');
+        } else {
+          htmlRoot.removeAttribute('data-theme');
+        }
+      }
+      window.localStorage.setItem('theme', themeSet);
+
+      // 非首次加载才显示弹窗
+      if (!isFirstLoad) {
+        showThemeToast(themeSet);
+      }
+    };
+
+    const handleSystemThemeChange = (e) => {
+      if (htmlRoot.classList.contains('system-theme')) {
+        if (e.matches) {
+          htmlRoot.setAttribute('data-theme', 'dark');
+        } else {
+          htmlRoot.removeAttribute('data-theme');
+        }
+      }
+    };
+
+    // 顶栏不重建、本函数会反复调用：必须用上一次保存的函数引用解绑，否则 removeEventListener 不生效
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    if (window.__momoTheme.mediaQuery && window.__momoTheme.onSystemThemeChange) {
+      window.__momoTheme.mediaQuery.removeEventListener('change', window.__momoTheme.onSystemThemeChange);
+    }
+    mediaQuery.addEventListener('change', handleSystemThemeChange);
+    window.__momoTheme.mediaQuery = mediaQuery;
+    window.__momoTheme.onSystemThemeChange = handleSystemThemeChange;
+
+    const handleToggleClick = () => {
+      const currentTheme = localStorage.getItem('theme') || 'system';
+      let nextTheme;
+      if (currentTheme === 'light') nextTheme = 'dark';
+      else if (currentTheme === 'dark') nextTheme = 'system';
+      else nextTheme = 'light';
+      setTheme(nextTheme, false);
+    };
+
+    // 用 onclick 赋值（而不是 addEventListener），天然幂等
+    themeToggle.onclick = handleToggleClick;
+
+    setTheme(getTheme(), true);
+  }
+
+  // 首屏 + 每次换页（swup 下首屏不会有 astro:page-load，见 @utils/pageInit）
+  registerPageInit(initThemeToggle);
+}
+</script>
+
+
+<style>
+    #themeToggle .moon {
+        display: none;
+    }
+    
+    #themeToggle .sun {
+        display: none;
+    }
+    
+    #themeToggle .system {
+        display: none;
+    }
+    
+    #themeToggle .sun {
+        display: inline-block;
+    }
+    
+    html[data-theme="dark"] #themeToggle .moon {
+        display: inline-block;
+    }
+    
+    html[data-theme="dark"] #themeToggle .sun {
+        display: none;
+    }
+    
+    html.system-theme #themeToggle .system {
+        display: inline-block;
+    }
+    
+    html.system-theme #themeToggle .sun,
+    html.system-theme #themeToggle .moon {
+        display: none;
+    }
+
+    /* 毛玻璃弹窗基础样式 */
+  :global(#theme-toast) {
+    position: fixed;
+    bottom: 10%;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    
+    background-color: rgba(255, 255, 255, 0.7);
+    -webkit-backdrop-filter: blur(10px);
+    
+    color: #1a1a1a;
+    padding: 10px 20px;
+    border-radius: 12px;
+    border: 1px solid var(--button-border-color);
+    font-size: 0.9rem;
+    font-weight: 500;
+    z-index: 10000;
+    
+    /* 只过渡真正会变化的属性 */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--momo-t-slow) var(--momo-ease-out),
+                transform var(--momo-t-slow) var(--momo-ease-out),
+                visibility var(--momo-t-slow);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  /* ⚠️ 标准 backdrop-filter 必须与 -webkit- 前缀版分开写并放进 @supports：
+     构建压缩器会把两者当同一属性合并、只保留后写的，标准版会被删掉 */
+  @supports (backdrop-filter: blur(1px)) {
+    :global(#theme-toast) {
+      backdrop-filter: blur(10px);
+    }
+  }
+
+  :global(#theme-toast.show) {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  :global(html[data-theme="dark"] #theme-toast) {
+    background-color: rgba(30, 30, 30, 0.7);
+    border: 1px solid var(--button-border-color);
+    color: #eeeeee;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+    
+</style>

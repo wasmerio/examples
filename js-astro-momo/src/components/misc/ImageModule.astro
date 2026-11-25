@@ -1,0 +1,187 @@
+---
+// ImageModule 对应的 CSS 需要设置为 is::global 才能被正确应用
+
+import { siteConfig } from '@/config';
+import { Image } from "astro:assets";
+import { getLocalImage } from "@utils/localImages";
+import { buildPicture } from "@utils/responsiveImage";
+import { getLqipGradient } from "@utils/getLqipColors";
+
+interface Props {
+    src: string;
+    alt?: string;
+    id?: string;
+    class?: string;
+    width?: number;
+    height?: number;
+    /** 首屏关键图片（文章封面 / 首张卡片封面）：eager + 高优先级，避免被 lazy 拖成 LCP */
+    priority?: boolean;
+    /** 响应式宽度档位（只对 src/ 下的本地图片生效）；不传就退化成一张原图 */
+    widths?: number[];
+    /** 配合 widths 的 sizes，决定浏览器挑哪一档 */
+    sizes?: string;
+    /** 输出质量，默认交给 Astro/sharp */
+    quality?: number;
+    /** 多格式输出（如 ['avif', 'webp']）：渲染成 <picture>；只对 src/ 下的本地图片生效 */
+    formats?: ('avif' | 'webp')[];
+}
+
+const { src, alt, id, width, height, priority = false, widths, sizes, quality, formats } = Astro.props;
+const className = Astro.props.class;
+
+const loadingAttrs = priority
+    ? { loading: 'eager' as const, fetchpriority: 'high' as const, decoding: 'async' as const }
+    : { loading: 'lazy' as const, decoding: 'async' as const };
+
+const isLocal = !(
+    src.startsWith("/") ||
+    src.startsWith("http")
+);
+
+let imageLoad;
+let lqipGradient = "";
+const enableLQIP = siteConfig.theme.LQIP;
+
+if (isLocal) {
+  // glob 与解析统一走 @utils/localImages（预加载必须用同一份）；caseSensitive: false 只影响「发现」阶段，
+  // 查找仍严格区分大小写，写错大小写会走下面的「找不到文件」分支。
+  imageLoad = await getLocalImage(src);
+
+  if (!imageLoad) {
+    console.error(`\n[ERROR] Image file not found: ${src}`);
+  } else if (enableLQIP) {
+    lqipGradient = await getLqipGradient(imageLoad.fsPath);
+  }
+}
+
+// 超过原图宽度的档位要去掉（sharp 不会放大，描述符会标错宽度）；过滤后为空就退回单张，不要传空数组
+const filteredWidths =
+  widths && imageLoad ? widths.filter((w) => w <= imageLoad.width) : widths;
+const safeWidths = filteredWidths && filteredWidths.length > 0 ? filteredWidths : undefined;
+
+// 多格式：手工拼 <picture>，AVIF 单独用 AVIF_QUALITY（见 @utils/responsiveImage）；
+// 预加载用同一个函数，srcset 逐字一致。
+const picture = formats && formats.length > 0 && imageLoad
+  ? await buildPicture(imageLoad, { widths: safeWidths, quality })
+  : null;
+const pictureSources = picture
+  ? picture.sources.filter((source) => formats!.includes(source.type.replace('image/', '') as 'avif' | 'webp'))
+  : [];
+---
+<div 
+  class:list={["image-wrapper", className]} 
+  style={{ "--lqip": lqipGradient }}
+  data-lqip-enabled={enableLQIP}
+>
+    <div class="lqip-bg"></div>
+    {
+        isLocal && imageLoad && (
+            picture ? (
+                <picture>
+                    {pictureSources.map((source) => (
+                        <source type={source.type} srcset={source.srcset} sizes={sizes} />
+                    ))}
+                    <img
+                        src={picture.src}
+                        alt={alt || ""}
+                        id={id}
+                        width={picture.width ?? width}
+                        height={picture.height ?? height}
+                        {...loadingAttrs}
+                        onload="this.closest('.image-wrapper').dataset.loaded = 'true'"
+                    />
+                </picture>
+            ) : (
+                <Image
+                    src={imageLoad}
+                    alt={alt || ""}
+                    id={id}
+                    width={width}
+                    height={height}
+                    widths={safeWidths}
+                    sizes={sizes}
+                    quality={quality}
+                    class=""
+                    {...loadingAttrs}
+                    onload="this.parentElement.dataset.loaded = 'true'"
+                />
+            )
+        )
+    }
+  
+    {
+        !isLocal && (
+        <img 
+            src={src} 
+            alt={alt || ""} 
+            id={id} 
+            width={width} 
+            height={height} 
+            {...loadingAttrs}
+            class=""
+            onload="this.parentElement.dataset.loaded = 'true'" 
+        />
+        )
+    }
+</div>
+
+<style>
+.image-wrapper {
+    position: relative;
+    overflow: hidden;
+    background-color: transparent;
+    display: block;
+}
+
+/* <picture> 是行内元素：不显式撑满的话，内部 img 的 100% 高度会失去参照 */
+.image-wrapper picture {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.lqip-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--lqip);
+    z-index: 0;
+    /* LQIP 淡出：用标尺里最长的一档 t-slow */
+    transition: opacity var(--momo-t-slow) var(--momo-ease-out);
+}
+
+.image-wrapper img {
+    position: relative;
+    z-index: 1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    opacity: 0;
+    transition: opacity var(--momo-t-slow) var(--momo-ease-out);
+}
+
+.image-wrapper[data-loaded="true"] img {
+    opacity: 1;
+}
+
+.image-wrapper[data-loaded="true"][data-lqip-enabled="true"] .lqip-bg {
+    opacity: 0;
+    /* 淡出结束后移出合成树：visibility 延迟一个 t-slow 再翻 */
+    visibility: hidden;
+    transition:
+        opacity var(--momo-t-slow) var(--momo-ease-out),
+        visibility 0s var(--momo-t-slow);
+}
+
+.image-wrapper[data-lqip-enabled="false"] .lqip-bg {
+    display: none;
+}
+
+.image-wrapper[data-lqip-enabled="false"] img {
+    opacity: 1;
+}
+</style>

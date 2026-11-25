@@ -1,0 +1,97 @@
+---
+import Layout from '@layouts/Layout.astro';
+import Header from '@components/Header.astro';
+import Footer from '@components/Footer.astro';
+import Search from '@components/misc/Search.astro';
+import PhotoCover from '@components/PhotoCover.astro';
+
+
+interface Props {
+  title: string;
+  lang: string;
+  description?: string;
+  image?: string;
+  type?: 'website' | 'article';
+  publishedTime?: Date | string;
+  modifiedTime?: Date | string;
+  section?: string;
+  keywords?: string[];
+  noindex?: boolean;
+  structuredData?: Record<string, unknown> | Record<string, unknown>[];
+  /** 页面是否渲染 Markdown 正文（透传给 Layout，用于异步加载引用块字体） */
+  markdownFont?: boolean;
+  /** 正文是否含数学公式（透传给 Layout，用于按需加载 KaTeX 样式） */
+  mathStyles?: boolean;
+  /** 首屏 LCP 图片预加载信息（透传给 Layout） */
+  preloadImage?: { href: string; srcset?: string; sizes?: string; type?: string };
+  /** 分页序列（透传给 Layout，输出 rel=prev/next） */
+  pagination?: { prev?: string; next?: string };
+  /** 首页 hero 模式的照片封面；不传就是内页那种淡淡的背景（见 @components/PhotoCover） */
+  photoCover?: boolean;
+}
+const {
+  title,
+  lang,
+  description,
+  image,
+  type,
+  publishedTime,
+  modifiedTime,
+  section,
+  keywords,
+  noindex,
+  structuredData,
+  markdownFont,
+  mathStyles,
+  preloadImage,
+  pagination,
+  photoCover = false,
+} = Astro.props;
+
+---
+
+<Layout
+  title={title}
+  lang={lang}
+  description={description}
+  image={image}
+  type={type}
+  publishedTime={publishedTime}
+  modifiedTime={modifiedTime}
+  section={section}
+  keywords={keywords}
+  noindex={noindex}
+  structuredData={structuredData}
+  markdownFont={markdownFont}
+  mathStyles={mathStyles}
+  preloadImage={preloadImage}
+  pagination={pagination}
+>
+  <!-- isolate：给固定的照片层建立层叠上下文。
+       它用 z-index:-1 落在正文之下，而负 z-index 的绘制早于 body 的背景色，不隔离会被盖住。
+       放在 swup 容器（main）之外：换页不替换照片层，也不会重新请求图片。 -->
+  <div class="relative isolate flex flex-col min-h-screen">
+    <PhotoCover hero={photoCover} />
+
+    <!-- 顶栏在 swup 容器之外：换页时不重建（替代 transition:persist）；
+         语言菜单 / logo / 导航链接由 Header 的 syncPersistedHeader() 在每次换页后按当前地址重算。 -->
+    <div>
+      <Header />
+    </div>
+
+    <!-- swup 的替换容器：换页时整段换成新文档里的 main#swup-container。
+         ⚠️ .transition-swup-fade 只包住正文，不能加在 main 上：opacity < 1 会让内部 fixed 后代
+         改以它为包含块，TOC 与 FabMenu 在过渡的 200ms 里会跳位。
+         这两块走 overlay 插槽：仍在容器内（每页重建），但在淡入淡出元素之外。 -->
+    <main id="swup-container" class="flex-grow" tabindex="-1">
+      <div class="transition-swup-fade">
+        <slot />
+      </div>
+      <slot name="overlay" />
+    </main>
+
+    <!-- 容器外：页脚与搜索弹窗保持存活（搜索索引只建一次） -->
+    <Footer />
+    <Search />
+  </div>
+</Layout>

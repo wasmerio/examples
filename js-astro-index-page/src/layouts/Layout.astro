@@ -1,0 +1,597 @@
+---
+import { siteConfig, profileConfig } from '@/config';
+import { url } from '@utils/url-utils';
+import ThemeIcon from '@components/control/ThemeIcon.astro';
+import SiteNavi from '@components/control/SiteNavi.astro';
+import Footer from '@components/Footer.astro';
+import { ClientRouter } from "astro:transitions";
+
+const pageTitle = `${siteConfig.title} - ${siteConfig.subTitle}`;
+const backgroundImageEnabled = siteConfig.backgroundImage.enabled;
+const backgroundImageUrl = url(siteConfig.backgroundImage.url);
+
+
+---
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <script is:inline>
+        (function() {
+        const savedTheme = localStorage.getItem('theme');
+        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        let theme;
+        if ( savedTheme === 'system') {
+          theme = systemTheme;
+        } else {
+          theme = savedTheme || 'light';
+        }
+        localStorage.setItem('theme', savedTheme || theme);
+        document.documentElement.setAttribute('data-theme', theme);
+
+        if (theme === 'dark') {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+        })();
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content={`${profileConfig.description}. This is a ${profileConfig.name} site, which is built with Astro.`}>
+    <meta name="author" content={profileConfig.name}>
+    <link rel="icon" href={url(siteConfig.favicon)} type="image/x-icon">
+    <!-- <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Delius+Swash+Caps"> -->
+    <!-- <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Delius"> -->
+    <!-- <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap" rel="stylesheet"> -->
+    <title>{pageTitle}</title>
+    <ClientRouter />
+    <script defer src="https://umami.motues.top/script.js" data-hash is:inline></script>
+</head>
+<body class="layout-body">
+    <!-- 流体墨迹背景：一片全屏 WebGL 画布，用域扭曲噪声模拟墨水在水中的扩散 -->
+    <canvas id="ink-bg" class="ink-bg" transition:persist aria-hidden="true"></canvas>
+    <script is:inline>
+        /* 墨水扩散背景：单个全屏 fragment shader（域扭曲 fBm）。
+           渲染分辨率刻意低于显示分辨率（墨迹本来就是低频的），
+           再叠加限帧 + 自适应降质，保证低端设备也顺滑。 */
+        (function () {
+            var canvas = document.getElementById('ink-bg');
+            if (!canvas || canvas.dataset.inkBound === '1') return;
+            canvas.dataset.inkBound = '1';
+
+            /* ------------------------------------------------------------
+               随机种子
+               每次进入页面抽一个新种子，墨迹就是另一片；
+               想固定看某一张（比如分享给别人的链接），用 ?seed=12345
+               ------------------------------------------------------------ */
+            var seed = (function () {
+                var m = /[?&]seed=(\d+)/.exec(window.location.search);
+                return m ? (parseInt(m[1], 10) >>> 0)
+                         : (Math.random() * 4294967296) >>> 0;
+            })();
+
+            /* mulberry32：够随机，而且同一个种子永远得到同一张图 */
+            var rng = (function (a) {
+                return function () {
+                    a = (a + 0x6D2B79F5) | 0;
+                    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+                    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+                };
+            })(seed);
+
+            var inkSeed = {
+                off: [rng() * 64, rng() * 64],   /* 噪声场平移 */
+                ph: [rng(), rng()],              /* 慢速对流相位 */
+                zoom: 0.80 + rng() * 0.45,       /* 墨团大小 */
+                time: rng() * 300                /* 动画起始时刻 */
+            };
+            canvas.dataset.inkSeed = String(seed);
+
+            /* CSS 兜底渐变也换个落点：加载第一帧之前、没有 WebGL 的时候用得到 */
+            (function () {
+                var spots = [[22, 26], [78, 30], [60, 82], [16, 84]];
+                for (var i = spots.length - 1; i > 0; i--) {
+                    var j = Math.floor(rng() * (i + 1));
+                    var tmp = spots[i]; spots[i] = spots[j]; spots[j] = tmp;
+                }
+                var root = document.documentElement.style;
+                for (var k = 0; k < 4; k++) {
+                    root.setProperty('--ink-p' + (k + 1),
+                        (spots[k][0] + rng() * 16 - 8).toFixed(1) + '% ' +
+                        (spots[k][1] + rng() * 16 - 8).toFixed(1) + '%');
+                }
+            })();
+
+            var gl = null;
+            try {
+                gl = canvas.getContext('webgl', {
+                    alpha: true,          // 第一帧之前保持透明，露出 CSS 兜底渐变
+                    antialias: false,
+                    depth: false,
+                    stencil: false,
+                    premultipliedAlpha: true
+                });
+            } catch (e) { gl = null; }
+            if (!gl) return;              // 没有 WebGL：canvas 留空，直接显示 CSS 渐变
+
+            var VERT = [
+                'attribute vec2 aPos;',
+                'void main() { gl_Position = vec4(aPos, 0.0, 1.0); }'
+            ].join('\n');
+
+            var FRAG = [
+                '#ifdef GL_FRAGMENT_PRECISION_HIGH',
+                'precision highp float;',
+                '#else',
+                'precision mediump float;',
+                '#endif',
+                '',
+                'uniform vec2  uRes;',
+                'uniform float uTime;',
+                'uniform vec3  uBase;',
+                'uniform vec3  uInkA;',
+                'uniform vec3  uInkB;',
+                'uniform vec3  uInkC;',
+                'uniform vec3  uGlow;',
+                'uniform float uVignette;',
+                '/* 每次进入页面随机一次的种子（见 JS 里的 inkSeed） */',
+                'uniform vec2  uSeedOff;   /* 噪声场平移：换一片墨迹区域 */',
+                'uniform vec2  uSeedPh;    /* 慢速对流 / 漂移的起始相位 */',
+                'uniform float uSeedZoom;  /* 墨团大小 */',
+                '',
+                'float hash21(vec2 p) {',
+                '    p = fract(p * vec2(123.34, 456.21));',
+                '    p += dot(p, p + 45.32);',
+                '    return fract(p.x * p.y);',
+                '}',
+                '',
+                'float vnoise(vec2 p) {',
+                '    vec2 i = floor(p);',
+                '    vec2 f = fract(p);',
+                '    vec2 u = f * f * (3.0 - 2.0 * f);',
+                '    float a = hash21(i);',
+                '    float b = hash21(i + vec2(1.0, 0.0));',
+                '    float c = hash21(i + vec2(0.0, 1.0));',
+                '    float d = hash21(i + vec2(1.0, 1.0));',
+                '    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);',
+                '}',
+                '',
+                'float fbm(vec2 p) {',
+                '    float v = 0.0;',
+                '    float a = 0.5;',
+                '    for (int i = 0; i < 4; i++) {',
+                '        v += a * vnoise(p);',
+                '        p = mat2(0.80, 0.60, -0.60, 0.80) * p * 2.03;',
+                '        a *= 0.5;',
+                '    }',
+                '    return v;',
+                '}',
+                '',
+                '/* 连续色带：所有颜色沿同一条平滑曲线过渡，',
+                '   避免多层 mix 造成的“色块 / 迷彩”拼接感 */',
+                'vec3 ramp(float u) {',
+                '    u = clamp(u, 0.0, 1.0);',
+                '    vec3 c = uBase;',
+                '    c = mix(c, uInkA, smoothstep(0.02, 0.42, u));',
+                '    c = mix(c, uInkB, smoothstep(0.30, 0.68, u));',
+                '    c = mix(c, uInkC, smoothstep(0.56, 0.86, u));',
+                '    c = mix(c, uGlow, smoothstep(0.78, 1.00, u));',
+                '    return c;',
+                '}',
+                '',
+                'void main() {',
+                '    vec2 frag = gl_FragCoord.xy;',
+                '    vec2 sp = (frag - 0.5 * uRes) / min(uRes.x, uRes.y);  /* 屏幕坐标，不随流体旋转 */',
+                '    vec2 p = sp;',
+                '    float t = uTime;',
+                '',
+                '    /* 种子只作用在「取样位置」和「慢速相位」上：旋转、墨心、暗角这些',
+                '       决定构图的东西保持原样，换种子只是换一片墨迹，画面不会失手 */',
+                '    float tau = 6.2831853;',
+                '    float z0 = 0.90 * uSeedZoom;',
+                '    float z1 = 1.20 * uSeedZoom;',
+                '    float z2 = 1.00 * uSeedZoom;',
+                '',
+                '    /* 整幅画面极慢地旋转 + 呼吸，模拟水体的对流 */',
+                '    float ang = 0.14 * sin(t * 0.0155 + tau * uSeedPh.x)',
+                '              + 0.06 * sin(t * 0.0058 + 2.3 + tau * uSeedPh.y);',
+                '    float cs = cos(ang);',
+                '    float sn = sin(ang);',
+                '    p = mat2(cs, -sn, sn, cs) * p;',
+                '    p *= 1.0 + 0.06 * sin(t * 0.0110 + 0.9 + tau * uSeedPh.y);',
+                '',
+                '    vec2 drift = 0.22 * vec2(sin(t * 0.0120 + 1.1 + tau * uSeedPh.x),',
+                '                             cos(t * 0.0085 + tau * uSeedPh.y));',
+                '',
+                '    /* 一滴墨缓慢下沉：围绕漂移的墨心做环形扰动，带出丝状尾迹 */',
+                '    vec2 core = 0.52 * vec2(sin(t * 0.0092 + 0.4 + tau * uSeedPh.y),',
+                '                            cos(t * 0.0074 - 1.2 + tau * uSeedPh.x));',
+                '    vec2 dvec = p - core;',
+                '    float dc = length(dvec) + 1e-4;',
+                '    p += 0.07 * (dvec / dc) * sin(dc * 6.5 - t * 0.22) * exp(-dc * 1.5);',
+                '',
+                '    /* 三层域扭曲：墨滴在水里散开成丝的关键。',
+                '       uSeedOff 只加在第一层，后面两层通过 q / r 自然带上 */',
+                '    vec2 q = vec2(',
+                '        fbm(p * z0 + drift * 1.10 + uSeedOff + vec2(0.0, 0.040 * t)),',
+                '        fbm(p * z0 + drift * 1.10 + uSeedOff + vec2(4.7, 2.3) - vec2(0.032 * t, 0.022 * t))',
+                '    );',
+                '    vec2 r = vec2(',
+                '        fbm(p * z1 + 1.90 * q + vec2(1.7, 9.2) + 0.024 * t),',
+                '        fbm(p * z1 + 1.90 * q + vec2(8.3, 2.8) - 0.020 * t)',
+                '    );',
+                '    float f = fbm(p * z2 + 1.70 * r + drift * 0.8);',
+                '',
+                '    /* 把三个尺度的结果揉成一个连续场：大团的晕 + 细的丝 */',
+                '    float field = 0.62 * f',
+                '                + 0.30 * length(q - 0.5) * 1.70',
+                '                + 0.26 * length(r - 0.5) * 1.60;',
+                '    float u = smoothstep(0.30, 0.74, field);',
+                '',
+                '    float silk = smoothstep(0.62, 1.00, 1.0 - abs(2.0 * f - 1.0));',
+                '',
+                '    vec3 col = ramp(u);',
+                '    col = mix(col, uGlow, 0.20 * silk);          /* 若隐若现的亮丝 */',
+                '    col *= 1.0 + 0.10 * (field - 0.5);           /* 轻微的体积感 */',
+                '',
+                '    /* 上方来的柔和光 + 屏幕固定的暗角，做出纵深 */',
+                '    col *= 1.0 + 0.10 * smoothstep(-0.45, 0.60, sp.y);',
+                '    float d = length(sp * vec2(1.0, 1.12));',
+                '    col *= mix(1.0, uVignette, smoothstep(0.30, 1.00, d));',
+                '',
+                '    /* 抖动，避免 8bit 色带 */',
+                '    col += (hash21(frag + fract(t * 0.37)) - 0.5) * (1.5 / 255.0);',
+                '',
+                '    gl_FragColor = vec4(col, 1.0);',
+                '}'
+            ].join('\n');
+
+            function createShader(type, src) {
+                var s = gl.createShader(type);
+                gl.shaderSource(s, src);
+                gl.compileShader(s);
+                if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+                    gl.deleteShader(s);
+                    return null;
+                }
+                return s;
+            }
+
+            var vs = createShader(gl.VERTEX_SHADER, VERT);
+            var fs = vs ? createShader(gl.FRAGMENT_SHADER, FRAG) : null;
+            var prog = null;
+            if (vs && fs) {
+                prog = gl.createProgram();
+                gl.attachShader(prog, vs);
+                gl.attachShader(prog, fs);
+                gl.bindAttribLocation(prog, 0, 'aPos');
+                gl.linkProgram(prog);
+                if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) prog = null;
+            }
+            if (!prog) {                 // 着色器编译失败：隐藏画布，退回 CSS 渐变
+                canvas.style.display = 'none';
+                return;
+            }
+            gl.useProgram(prog);
+
+            var buf = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+            var U = {
+                res: gl.getUniformLocation(prog, 'uRes'),
+                time: gl.getUniformLocation(prog, 'uTime'),
+                base: gl.getUniformLocation(prog, 'uBase'),
+                a: gl.getUniformLocation(prog, 'uInkA'),
+                b: gl.getUniformLocation(prog, 'uInkB'),
+                c: gl.getUniformLocation(prog, 'uInkC'),
+                glow: gl.getUniformLocation(prog, 'uGlow'),
+                vig: gl.getUniformLocation(prog, 'uVignette'),
+                seedOff: gl.getUniformLocation(prog, 'uSeedOff'),
+                seedPh: gl.getUniformLocation(prog, 'uSeedPh'),
+                seedZoom: gl.getUniformLocation(prog, 'uSeedZoom')
+            };
+
+            function parseColor(v) {
+                var h = String(v || '').trim();
+                var m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(h);
+                if (!m) return [0.5, 0.5, 0.5];
+                h = m[1];
+                if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+                return [
+                    parseInt(h.slice(0, 2), 16) / 255,
+                    parseInt(h.slice(2, 4), 16) / 255,
+                    parseInt(h.slice(4, 6), 16) / 255
+                ];
+            }
+
+            /* 调色板直接读 CSS 变量，主题配色只在一个地方维护 */
+            function readPalette() {
+                var cs = getComputedStyle(document.documentElement);
+                var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+                return {
+                    base: parseColor(cs.getPropertyValue('--ink-base')),
+                    a: parseColor(cs.getPropertyValue('--ink-a')),
+                    b: parseColor(cs.getPropertyValue('--ink-b')),
+                    c: parseColor(cs.getPropertyValue('--ink-c')),
+                    glow: parseColor(cs.getPropertyValue('--ink-glow')),
+                    vig: dark ? 0.86 : 0.97
+                };
+            }
+
+            var cur = readPalette();
+            var tgt = cur;
+
+            function mixTo(from, to, k) {
+                return [
+                    from[0] + (to[0] - from[0]) * k,
+                    from[1] + (to[1] - from[1]) * k,
+                    from[2] + (to[2] - from[2]) * k
+                ];
+            }
+
+            /* 亮暗主题切换时颜色渐变过去，而不是硬切 */
+            function blendPalette(k) {
+                cur.base = mixTo(cur.base, tgt.base, k);
+                cur.a = mixTo(cur.a, tgt.a, k);
+                cur.b = mixTo(cur.b, tgt.b, k);
+                cur.c = mixTo(cur.c, tgt.c, k);
+                cur.glow = mixTo(cur.glow, tgt.glow, k);
+                cur.vig += (tgt.vig - cur.vig) * k;
+            }
+
+            var quality = 1;
+            var cssW = 0;
+            var cssH = 0;
+
+            function resize() {
+                cssW = window.innerWidth;
+                cssH = window.innerHeight;
+                var area = cssW * cssH;
+                var scale = area > 2600000 ? 0.38 : area > 1300000 ? 0.46 : 0.58;
+                scale *= quality;
+                var w = Math.max(320, Math.round(cssW * scale));
+                var h = Math.max(240, Math.round(cssH * scale));
+                if (canvas.width !== w || canvas.height !== h) {
+                    canvas.width = w;
+                    canvas.height = h;
+                }
+                gl.viewport(0, 0, w, h);
+            }
+
+            function draw(t) {
+                gl.uniform2f(U.res, canvas.width, canvas.height);
+                gl.uniform1f(U.time, t);
+                gl.uniform3fv(U.base, cur.base);
+                gl.uniform3fv(U.a, cur.a);
+                gl.uniform3fv(U.b, cur.b);
+                gl.uniform3fv(U.c, cur.c);
+                gl.uniform3fv(U.glow, cur.glow);
+                gl.uniform1f(U.vig, cur.vig);
+                gl.uniform2f(U.seedOff, inkSeed.off[0], inkSeed.off[1]);
+                gl.uniform2f(U.seedPh, inkSeed.ph[0], inkSeed.ph[1]);
+                gl.uniform1f(U.seedZoom, inkSeed.zoom);
+                gl.drawArrays(gl.TRIANGLES, 0, 3);
+            }
+
+            resize();
+
+            var reduceMotion = window.matchMedia &&
+                window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+            if (reduceMotion) {
+                draw(inkSeed.time + 37.0);   // 只画一帧静止的墨迹（起始时刻也带种子）
+            } else {
+                var FRAME_MS = 33;           // 限到 ~30fps，这么慢的流动完全看不出差别
+                var start = performance.now();
+                var lastDraw = start;
+                var hiddenSince = 0;
+                var raf = 0;
+                var slowFrames = 0;
+
+                var tick = function (now) {
+                    raf = requestAnimationFrame(tick);
+                    var elapsed = now - lastDraw;
+                    if (elapsed < FRAME_MS) return;
+                    lastDraw = now;
+
+                    var t0 = performance.now();
+                    blendPalette(1 - Math.exp(-elapsed / 700));
+                    draw((now - start) / 1000 + inkSeed.time);
+
+                    /* 连续偏慢就降一档分辨率（最多降两级） */
+                    if (performance.now() - t0 > 26 && quality > 0.6) {
+                        if (++slowFrames > 30) {
+                            slowFrames = 0;
+                            quality *= 0.75;
+                            resize();
+                        }
+                    } else {
+                        slowFrames = 0;
+                    }
+                };
+
+                raf = requestAnimationFrame(tick);
+
+                /* 切到后台就停渲染；回来时把时钟接上，避免墨迹“跳一下” */
+                document.addEventListener('visibilitychange', function () {
+                    if (document.hidden) {
+                        hiddenSince = performance.now();
+                        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+                    } else {
+                        if (hiddenSince) {
+                            start += performance.now() - hiddenSince;
+                            hiddenSince = 0;
+                        }
+                        if (!raf) {
+                            lastDraw = performance.now();
+                            raf = requestAnimationFrame(tick);
+                        }
+                    }
+                });
+            }
+
+            /* 主题变化 -> 重新读色，交给 blendPalette 平滑过渡 */
+            if (window.MutationObserver) {
+                new MutationObserver(function () { tgt = readPalette(); })
+                    .observe(document.documentElement, {
+                        attributes: true,
+                        attributeFilter: ['data-theme', 'class']
+                    });
+            }
+
+            var resizeTimer = 0;
+            window.addEventListener('resize', function () {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(resize, 200);
+            });
+
+            canvas.addEventListener('webglcontextlost', function (e) {
+                e.preventDefault();
+                canvas.style.display = 'none';   // 退回 CSS 渐变
+            });
+        })();
+    </script>
+    { siteConfig.mirrorSite?.enabled && <SiteNavi /> }
+    <ThemeIcon />
+    <main class="main-content">
+        <slot />
+    </main>
+    <Footer />
+</body>
+
+</html>
+
+
+<style is:global define:vars={{}}>
+@font-face {
+  font-family: 'Comic Sans MS';
+  src: url('/fonts/ComicSansMS.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* @font-face {
+  font-family: 'Comic Sans MS';
+  src: url('/fonts/ComicSansMS-Bold.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+} */
+/* 默认主体，白天模式 */
+:root {
+    --bg-color: #f7f7ff;
+    --text-color: #000000;
+    --footer-text-color: #000000;
+    --link-color: #003b6e;
+    --motto-text-color: #999;
+    --border-color: gray;
+
+    --image-shadow-color: rgba(0, 0, 0, 0.15);
+    
+    /* 墨迹背景调色板（亮色：清水里晕开的水彩墨，由 canvas 里的 shader 读取） */
+    --color-background-primary: #F8F8F8;
+    --color-text: #333;
+    --color-content-bg: rgba(255, 255, 255, 0.85);
+    --color-shadow: rgba(0, 0, 0, 0.1);
+
+    --ink-base: #F4F3EF; /* 水的底色（乳白） */
+    --ink-a:    #A2C0DC; /* 蓝墨 */
+    --ink-b:    #DEBCC9; /* 胭脂墨 */
+    --ink-c:    #ABCBB9; /* 青墨 */
+    --ink-glow: #E9E3F3; /* 高光：近白的淡紫，用来做“开雾”的亮部 */
+}
+
+/* 黑暗模式 */
+[data-theme="dark"] {
+    --bg-color: #031116;
+    --text-color: #ffffff;
+    --footer-text-color: #ffffff;
+    --link-color: #57ace7;
+    --motto-text-color: #c9d0d4;
+    --border-color: gray;
+
+    --image-shadow-color: rgba(59, 130, 246, 0.4);
+    
+    /* 墨迹背景调色板（暗色：深水里的墨，带发光感） */
+    --color-background-primary: #121212;
+    --color-text: #E0E0E0; 
+    --color-content-bg: rgba(30, 30, 30, 0.85);
+    --color-shadow: rgba(255, 255, 255, 0.1);
+
+    --ink-base: #070C1A; /* 深水底色 */
+    --ink-a:    #23507F; /* 深蓝墨 */
+    --ink-b:    #5A46A0; /* 靛紫墨 */
+    --ink-c:    #1B6E7C; /* 暗青墨 */
+    --ink-glow: #A9A6F5; /* 冷紫辉光 */
+}
+
+.layout-body { 
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    margin: 0;
+}
+
+.main-content { 
+    flex: 1;
+}
+
+html, body { 
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    height: 100%;
+}
+
+body {
+    font-family: 'Comic Sans MS', 'Comic Neue';
+    /* font-weight: bold; */
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    background-color: var(--color-background-primary); /* 使用新变量 */
+    color: var(--text-color);
+    position: relative;
+    height: 100%;
+    width: 100%;
+    transition: background-color 0.5s ease, color 0.5s ease;
+}
+
+/* ============================================================
+   墨迹背景 (Ink in water)
+   ------------------------------------------------------------
+   真正的流体流动由上面 canvas 里的 WebGL shader 负责（域扭曲 fBm）。
+   这里的 background-image 只是兜底：没有 WebGL、着色器编译失败，
+   或者画布还没出第一帧时显示。底色和墨色都取自 --ink-* 变量，
+   所以两种模式共用同一套配色定义。
+   ============================================================ */
+
+.ink-bg {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background-color: var(--ink-base);
+    /* 端点用「同色透明」而不是 transparent，过渡途中不会发灰。
+       落点由 --ink-p1..4 决定，JS 每次进入页面随机一次（var 里的值是兜底默认） */
+    background-image:
+        radial-gradient(78% 68% at var(--ink-p1, 22% 26%),
+            var(--ink-a) 0%, color-mix(in srgb, var(--ink-a) 0%, transparent) 70%),
+        radial-gradient(72% 62% at var(--ink-p2, 78% 30%),
+            var(--ink-b) 0%, color-mix(in srgb, var(--ink-b) 0%, transparent) 72%),
+        radial-gradient(82% 72% at var(--ink-p3, 60% 82%),
+            var(--ink-c) 0%, color-mix(in srgb, var(--ink-c) 0%, transparent) 74%),
+        radial-gradient(64% 58% at var(--ink-p4, 16% 84%),
+            var(--ink-glow) 0%, color-mix(in srgb, var(--ink-glow) 0%, transparent) 76%);
+    transition: background-color 0.8s ease;
+}

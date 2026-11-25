@@ -1,0 +1,148 @@
+---
+// Imports
+import { getCollection } from "astro:content";
+import { useTranslations, useTranslatedPath } from "@i18n/utils";
+import { Image } from "astro:assets";
+import { formatDate } from "@utils/utils";
+import Base from "@layouts/Base.astro";
+
+// Get current language from URL
+export function getStaticPaths() {
+    return [
+        // English route: /blog
+        // [...blog] = "/blog" captures the entire path segment
+        // Creates URL: /blog
+        {
+            params: { blog: "/blog" },
+            props: { lang: "en" },
+        },
+        // Slovenian route: /sl/spletni-dnevnik
+        // [...blog] = "/sl/spletni-dnevnik" captures both language prefix and localized path
+        // Creates URL: /sl/spletni-dnevnik ("spletni-dnevnik" = "blog" in Slovenian)
+        {
+            params: { blog: "/sl/spletni-dnevnik" },
+            props: { lang: "sl" },
+        },
+    ];
+}
+
+// Alternative structure:
+// If this file was in [blog] folder and renamed to [...index.astro]
+// it would work like [blog]/[...index.astro] with these route configurations:
+//
+// English:   { params: { blog: "blog", index: undefined }, props: { lang: "en" } } → /blog
+// Slovenian: { params: { blog: "sl", index: "strani" }, props: { lang: "sl" } } → /sl/spletni-dnevnik
+
+// Props
+const { lang } = Astro.props;
+
+// Translations
+const t = useTranslations(lang);
+const translatePath = useTranslatedPath(lang);
+
+// Get blog posts filtered by language
+const posts = await getCollection("blog", (entry) => {
+    const matches = entry.id.startsWith(`${lang}/`);
+    return matches && !entry.data.isDraft;
+});
+
+// Sort posts by publication date (newest first)
+const sortedPosts = posts.sort(
+    (a, b) =>
+        new Date(b.data.pubDate).getTime() - new Date(a.data.pubDate).getTime()
+);
+
+// Get authors and localize their position titles
+const authorsRaw = await getCollection("authors");
+const authors = authorsRaw.map((a) => ({
+    ...a,
+    data: {
+        ...a.data,
+        position:
+            a.data.position?.[lang as "en" | "sl"] ??
+            a.data.position?.en ??
+            "",
+    },
+}));
+---
+
+<Base
+    title={t("blog:head.title")}
+    meta={{
+        description: t("blog:head.description"),
+        keywords: t("blog:head.keywords"),
+    }}
+>
+    <section>
+        <h1>{t("blog:title")}</h1>
+        <p class="text-2xl font-semibold mb-4 text-center">
+            {t("blog:description")}
+        </p>
+    </section>
+    <section class="space-y-10">
+        {
+            sortedPosts.length > 0 ? (
+                sortedPosts.map((post) => {
+                    const author = authors.find(
+                        (a) => a.id === post.data.author.id
+                    );
+                    return (
+                        <article class="card-blog">
+                            <a
+                                href={`${translatePath("/blog")}/${post.id.split("/")[1]}`}
+                            >
+                                <Image
+                                    src={post.data.image}
+                                    alt={post.data.imageAlt || post.data.title}
+                                    class="image"
+                                    loading="lazy"
+                                    quality={"high"}
+                                    layout="constrained"
+                                    width={768}
+                                    sizes="(min-width: 768px) 368px, 100vw"
+                                    transition:name={`${post.data.title}-image`}
+                                />
+                                <div class="text">
+                                    <p class="date">
+                                        {formatDate(post.data.pubDate, lang)}
+                                    </p>
+
+                                    {author && (
+                                        <div class="author">
+                                            <Image
+                                                src={author.data.image}
+                                                alt={author.data.name}
+                                                height={36}
+                                                width={36}
+                                                layout="fixed"
+                                                loading="lazy"
+                                                quality={"high"}
+                                                class="rounded-full"
+                                            />
+                                            <div>
+                                                <h3>{author.data.name}</h3>
+                                                <p class="position">
+                                                    {author.data.position}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <h2>{post.data.title}</h2>
+                                    <p>{post.data.description}</p>
+                                    <div class="w-fit">
+                                        <p class="button">
+                                            {t("blog:readMore")} →
+                                        </p>
+                                    </div>
+                                </div>
+                            </a>
+                        </article>
+                    );
+                })
+            ) : (
+                <p class="text-center opacity-50">{t("blog:noPosts")}</p>
+            )
+        }
+    </section>
+</Base>

@@ -1,0 +1,246 @@
+---
+# SEO metadata
+title: "Adding New Pages"
+description: "Step-by-step guide for adding new pages to a multilingual Astro project. Learn dynamic routing, URL localization, routes.ts synchronization, and practical examples."
+keywords: "Astro pages, multilingual, i18n, dynamic routing, localization, getStaticPaths, routes, Slovenian, English, MDX"
+---
+
+# Adding New Pages
+
+This guide shows you how to add a new page to a multilingual Astro project.
+
+## Two Approaches for Localization
+
+Choose the approach based on your needs:
+
+### 🗂️ Pattern A: `[...pages].astro` (Single File Pattern)
+
+**When to use:** Simple pages without subpages  
+**Examples:** `[...index].astro`, `[...blog].astro`
+
+```javascript
+export function getStaticPaths() {
+    return [
+        // English route: /pages
+        // [...pages] = "/pages" captures the entire path segment
+        // Creates URL: /pages
+        {
+            params: { pages: "/pages" },
+            props: { lang: "en" },
+        },
+        // Slovenian route: /sl/strani
+        // [...pages] = "/sl/strani" captures both language prefix and path
+        // Creates URL: /sl/strani
+        {
+            params: { pages: "/sl/strani" },
+            props: { lang: "sl" },
+        },
+    ];
+}
+```
+
+### 📁 Pattern B: `[pages]/[...index].astro` (Folder Pattern)
+
+**When to use:** Pages with additional files (MDX, images, components)
+**Examples:** `[about]/[...index].astro`, `[pages]/[...index].astro`, `[contact]/[...index].astro`
+**Advantages:** Organized structure, easier maintenance
+
+```javascript
+export function getStaticPaths() {
+    return [
+        // English route: /pages
+        // Since this file is in [pages] folder, the [pages] param becomes "pages"
+        // [...index] = undefined means no additional URL segments after /pages
+        {
+            params: { pages: "pages", index: undefined },
+            props: { lang: "en" },
+        },
+        // Slovenian route: /sl/strani
+        // [pages] = "sl" acts as language prefix in URL
+        // [...index] = "strani" captures the localized page name after /sl/
+        // This creates the final URL: /sl/strani
+        {
+            params: { pages: "sl", index: "strani" },
+            props: { lang: "sl" },
+        },
+    ];
+}
+```
+
+---
+
+## ⚠️ CRITICAL - Synchronization
+
+> **If you set a Slovenian URL in `getStaticPaths()`, you MUST also add it to `routes.ts`!**
+
+---
+
+## 🛠️ Practical Example: Adding "Services" Page
+
+Let's add a new page `/services` → `/sl/storitve`:
+
+### Step 1: Create File
+
+`src/pages/[services]/[...index].astro`
+
+### Step 2: Configure getStaticPaths
+
+```astro
+---
+import Base from "@layouts/Base.astro";
+import "@styles/markdown.css";
+
+export function getStaticPaths() {
+    return [
+        {
+            params: { services: "services", index: undefined },
+            props: { lang: "en" },
+        },
+        {
+            params: { services: "sl", index: "storitve" },  // ← "storitve"
+            props: { lang: "sl" },
+        },
+    ];
+}
+
+const { lang } = Astro.props;
+const { Content, frontmatter } = await import(`./_services-${lang}.mdx`);
+---
+
+<Base
+    title={frontmatter?.title}
+    meta={{
+        description: frontmatter?.description,
+        keywords: frontmatter?.keywords,
+    }}
+>
+    <section class="md-content" aria-label="Page content">
+        <Content />
+    </section>
+</Base>
+```
+
+### Step 3: Add to routes.ts
+
+```javascript
+export const routes: Record<string, Record<string, string>> = {
+    sl: {
+        about: "o-projektu",
+        blog: "spletni-dnevnik",
+        contact: "kontakt",
+        "dynamic-routing": "dinamicno-usmerjanje",
+        "blog-pagination": "spletni-dnevnik-paginacija",
+        pages: "strani",
+        "subpage-1": "podstran-1",
+        "subpage-2": "podstran-2",
+        services: "storitve", // ← Matches "storitve" above
+    },
+};
+```
+
+### Step 4: Add to Navigation
+
+```javascript
+const navigationData = [
+    {
+        label: "menu.list.services",
+        href: "/services", // ← English path
+        children: [],
+    },
+];
+```
+
+### Step 5: Create Content Files
+
+-   `_services-en.mdx`
+-   `_services-sl.mdx`
+
+### Step 6: Add Translations
+
+`services.json` is optional when the page content comes from MDX. The navigation label in `common.json` is required, otherwise `t("menu.list.services")` renders the raw key.
+
+**In `locales/en/services.json`:**
+
+```json
+{
+    "head": {
+        "title": "Our Services",
+        "description": "Professional services we offer"
+    },
+    "title": "Our Services",
+    "description": "We provide comprehensive solutions for your business needs."
+}
+```
+
+**In `locales/sl/services.json`:**
+
+```json
+{
+    "head": {
+        "title": "Naše storitve",
+        "description": "Strokovne storitve, ki jih ponujamo"
+    },
+    "title": "Naše storitve",
+    "description": "Zagotavljamo celovite rešitve za vaše poslovne potrebe."
+}
+```
+
+**Add the navigation label to `locales/en/common.json` (inside `menu.list`):**
+
+```json
+{
+    "menu": {
+        "list": {
+            "services": "Services"
+        }
+    }
+}
+```
+
+**Add the navigation label to `locales/sl/common.json` (inside `menu.list`):**
+
+```json
+{
+    "menu": {
+        "list": {
+            "services": "Storitve"
+        }
+    }
+}
+```
+
+## 🎯 Final Result
+
+| Language             | URL               | Works |
+| -------------------- | ----------------- | ----- |
+| 🇬🇧 English           | `/services`       | ✅    |
+| 🇸🇮 Slovenian         | `/sl/storitve`    | ✅    |
+| 🧭 Navigation        | Automatic         | ✅    |
+| 🔄 Language switcher | Switches language | ✅    |
+| 🔗 hreflang + sitemap | Automatic         | ✅    |
+
+**Congratulations! New page successfully added! 🎉**
+
+---
+
+## Common Mistake
+
+❌ **Wrong:**
+
+```javascript
+// getStaticPaths
+params: { pages: "sl", index: "strani" }
+
+// routes.ts
+pages: "stran"  // ← Different name!
+```
+
+✅ **Correct:**
+
+```javascript
+// getStaticPaths
+params: { pages: "sl", index: "strani" }
+
+// routes.ts
+pages: "strani"  // ← Same name!
+```

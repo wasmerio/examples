@@ -1,0 +1,221 @@
+---
+// Imports
+import type { GetStaticPaths } from "astro";
+import { getCollection } from "astro:content";
+import Base from "@layouts/Base.astro";
+import { Image } from "astro:assets";
+import { formatDate } from "@utils/utils";
+import { useTranslations, useTranslatedPath } from "@i18n/utils";
+import Pagination from "@components/Pagination.astro";
+
+// Get current language from URL and generate paginated paths for blog listing
+export const getStaticPaths = (async ({ paginate }) => {
+    // Fetch all blog posts and authors
+    const posts = await getCollection("blog", (entry) => !entry.data.isDraft);
+    const authorsRaw = await getCollection("authors");
+
+    // Posts per page
+    const PAGE_SIZE = 4;
+
+    // Language + routing config
+    const langConfigs = [
+        {
+            code: "en" as const,
+            prefix: "en/",
+            pagination: "blog-pagination",
+            page: undefined as string | undefined,
+        },
+        {
+            code: "sl" as const,
+            prefix: "sl/",
+            pagination: "sl",
+            page: "spletni-dnevnik-paginacija",
+        },
+    ];
+
+    // Use Astro's paginate() then post-process params to keep your i18n URL shape
+    return langConfigs.flatMap(({ code, prefix, pagination, page }) => {
+        const filtered = posts
+            .filter((p) => p.id.startsWith(prefix))
+            .sort(
+                (a, b) =>
+                    new Date(b.data.pubDate).getTime() -
+                    new Date(a.data.pubDate).getTime()
+            );
+
+        const authors = authorsRaw.map((a) => ({
+            ...a,
+            data: {
+                ...a.data,
+                position: a.data.position?.[code] ?? a.data.position?.en ?? "",
+            },
+        }));
+
+        const pages = paginate(filtered, {
+            pageSize: PAGE_SIZE,
+            // Fixed segment before the catch-all ("blog-pagination" or "sl")
+            params: { pagination },
+            // Extra props for every page
+            props: { lang: code, authors },
+        });
+
+        // For Slovenian, first page: /sl/spletni-dnevnik-paginacija
+        // Next pages: /sl/spletni-dnevnik-paginacija/2, ...
+        // For English, first page: /blog-pagination; next: /blog-pagination/2
+        return pages.map((p) => {
+            const current = (p.props as any)?.page?.currentPage ?? 1;
+            const pageSeg = (p.params as any)?.page as string | undefined; // e.g. "2" on page 2
+            const computedPageParam =
+                current === 1 ? page : page ? `${page}/${pageSeg}` : pageSeg;
+
+            return {
+                params: { pagination, page: computedPageParam },
+                props: p.props,
+            };
+        });
+    });
+}) satisfies GetStaticPaths;
+
+// Props
+const { page, lang, authors } = Astro.props;
+
+// Translations
+const t = useTranslations(lang);
+const translatePath = useTranslatedPath(lang);
+---
+
+<Base
+    title={t("blog:head.title")}
+    meta={{
+        description: t("blog:head.description"),
+        keywords: t("blog:head.keywords"),
+    }}
+>
+    <section aria-labelledby="blog-title">
+        <!-- Page Header -->
+        <div>
+            <h1 id="blog-title">{t("blog:title")}</h1>
+            <p class="text-2xl font-semibold mb-4 text-center">
+                {t("blog:descriptionPagination")}
+            </p>
+            <p
+                class="text-base text-center opacity-60 mb-10 block"
+                aria-live="polite"
+            >
+                {t("blog:totalPosts", { count: page?.total })}
+            </p>
+        </div>
+
+        <!-- Blog Posts List -->
+        <section
+            class="space-y-10"
+            role="feed"
+            aria-label="Blog posts"
+            aria-labelledby="blog-title"
+        >
+            {
+                page.data.length > 0 ? (
+                    page.data.map((post, index) => {
+                        const author = authors.find(
+                            (a) => a.id === post.data.author.id
+                        );
+                        const postUrl = `${translatePath("/blog")}/${post.id.split("/")[1]}`;
+                        const postId = `post-${index}`;
+
+                        return (
+                            <article
+                                class="card-blog"
+                                aria-labelledby={`${postId}-title`}
+                                aria-describedby={`${postId}-excerpt`}
+                            >
+                                <a
+                                    href={postUrl}
+                                    aria-label={`${post.data.title}`}
+                                >
+                                    <Image
+                                        src={post.data.image}
+                                        alt={
+                                            post.data.imageAlt ||
+                                            `${post.data.title}`
+                                        }
+                                        class="image"
+                                        loading="lazy"
+                                        quality={"high"}
+                                        layout="constrained"
+                                        width={768}
+                                        sizes="(min-width: 768px) 368px, 100vw"
+                                        transition:name={`${post.data.title}-image`}
+                                    />
+                                    <div class="text">
+                                        <time
+                                            class="date block"
+                                            datetime={post.data.pubDate.toISOString()}
+                                            aria-label={`${formatDate(post.data.pubDate, lang)}`}
+                                        >
+                                            {formatDate(post.data.pubDate, lang)}
+                                        </time>
+
+                                        {author && (
+                                            <div
+                                                class="author"
+                                                role="group"
+                                                aria-label={author.data.name}
+                                            >
+                                                <Image
+                                                    src={author.data.image}
+                                                    alt={author.data.name}
+                                                    height={36}
+                                                    width={36}
+                                                    layout="fixed"
+                                                    loading="lazy"
+                                                    quality={"mid"}
+                                                    class="rounded-full"
+                                                />
+                                                <div>
+                                                    <h3>{author.data.name}</h3>
+                                                    <p
+                                                        class="position"
+                                                        aria-label={`${author.data.position}`}
+                                                    >
+                                                        {author.data.position}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <h2 id={`${postId}-title`}>
+                                            {post.data.title}
+                                        </h2>
+                                        <p id={`${postId}-excerpt`}>
+                                            {post.data.description}
+                                        </p>
+                                        <div class="w-fit">
+                                            <span
+                                                class="button"
+                                                aria-hidden="true"
+                                            >
+                                                {t("blog:readMore")} →
+                                            </span>
+                                        </div>
+                                    </div>
+                                </a>
+                            </article>
+                        );
+                    })
+                ) : (
+                    <p class="text-center opacity-50" role="status">
+                        {t("blog:noPosts")}
+                    </p>
+                )
+            }
+        </section>
+
+        <!-- Pagination Controls -->
+        <Pagination
+            lang={lang}
+            currentPage={page.currentPage}
+            lastPage={page.lastPage}
+            basePath="/blog-pagination"
+        />
+    </section>
+</Base>

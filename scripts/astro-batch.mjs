@@ -526,9 +526,13 @@ async function nodeAdapterFor(astroVersion) {
   return nodeAdapterVersion(nodePackument, astroVersion);
 }
 
+// Package caches live under the runner's own cache folder, so a run never grows the user's global npm/pnpm/bun caches.
 function localEnv() {
   const pathPrefix = existsSync(LOCAL_NODE_BIN) ? `${LOCAL_NODE_BIN}:` : '';
-  return { ...process.env, PATH: `${pathPrefix}${process.env.PATH || ''}`, CI: 'true', ASTRO_TELEMETRY_DISABLED: '1', HUSKY: '0', NODE_OPTIONS: '--max-old-space-size=4096', npm_config_manage_package_manager_versions: 'false' };
+  const pkg = path.join(CACHE, 'pkg');
+  return { ...process.env, PATH: `${pathPrefix}${process.env.PATH || ''}`,
+    npm_config_cache: path.join(pkg, 'npm'), npm_config_store_dir: path.join(pkg, 'pnpm-store'),
+    BUN_INSTALL_CACHE_DIR: path.join(pkg, 'bun'), YARN_CACHE_FOLDER: path.join(pkg, 'yarn'), CI: 'true', ASTRO_TELEMETRY_DISABLED: '1', HUSKY: '0', NODE_OPTIONS: '--max-old-space-size=4096', npm_config_manage_package_manager_versions: 'false' };
 }
 
 // Anybuild installs pnpm 10 unless package.json declares a version (node.rs default_manager_version); match it locally.

@@ -1,0 +1,291 @@
+---
+import type { ImageMetadata, MarkdownHeading } from 'astro';
+import siteConfig from '@/config/site.config';
+import BaseLayout from './BaseLayout.astro';
+import Header from '@/components/layout/Header.astro';
+import Footer from '@/components/layout/Footer.astro';
+import Breadcrumbs from '@/components/seo/Breadcrumbs.astro';
+import ArticleHero from '@/components/blog/ArticleHero.astro';
+import ShareButtons from '@/components/blog/ShareButtons.astro';
+import RelatedPosts from '@/components/blog/RelatedPosts.astro';
+import TableOfContents from '@/components/blog/TableOfContents.astro';
+import Comments from '@/components/blog/Comments.astro';
+import Button from '@/components/ui/form/Button/Button.astro';
+import Icon from '@/components/ui/primitives/Icon/Icon.astro';
+import { createBlogPostSchema, createFAQSchema } from '@/lib/schema';
+import { getBlogOgPath, getDefaultOgPath, isShareableImage } from '@/lib/og/svg';
+import { t, getLocaleFromPath, localizedPath, getLocales } from '@/i18n';
+import { getPostSlug, getBlogBaseUrl } from '@/lib/blog';
+import { getPostTranslations } from '@/lib/post-links';
+import BlogCta from '@/components/blog/BlogCta.astro';
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+interface Props {
+  title: string;
+  description: string;
+  publishedAt: Date;
+  updatedAt?: Date;
+  author?: string;
+  image?: ImageMetadata;
+  imageAlt?: string;
+  svgSlug?: string;
+  tags?: string[];
+  slug?: string;
+  /** Canonical id of the post, used to resolve its translations across locales. */
+  uid?: string;
+  /** Optional FAQs — when provided, an FAQ JSON-LD schema is emitted alongside the BlogPosting schema. */
+  faqs?: Array<{ question: string; answer: string }>;
+  /** MDX headings — used by the optional table of contents */
+  headings?: MarkdownHeading[];
+  /** Per-post override: hide table of contents on this post */
+  toc?: boolean;
+  /** Per-post override: hide comments on this post */
+  comments?: boolean;
+  /** Raw post body, forwarded to ArticleHero for the reading-time estimate. */
+  body?: string;
+}
+
+const {
+  title,
+  description,
+  publishedAt,
+  updatedAt,
+  author = 'Team',
+  image,
+  imageAlt,
+  svgSlug,
+  tags = [],
+  slug = '',
+  uid,
+  faqs,
+  headings = [],
+  toc: tocOverride,
+  comments: commentsOverride,
+  body,
+} = Astro.props;
+
+// Resolve opt-in features (site config + per-post overrides).
+// Per-post override only fires when explicitly set to `false`, so authors
+// can hide the TOC/comments on a single post without changing site config.
+const tocConfig = siteConfig.articleFeatures?.toc;
+const commentsConfig = siteConfig.articleFeatures?.comments;
+const showToc = !!tocConfig?.enabled && tocOverride !== false;
+const showComments = !!commentsConfig?.enabled && commentsOverride !== false;
+
+// TOC layout: 'inline' (top-of-article card), 'sidebar' (xl+ sticky aside,
+// hidden below xl), or 'auto' (sidebar on xl+; inline opt-in elsewhere).
+// `sidebarActive` controls whether we render the wider grid wrapper.
+const tocLayout = tocConfig?.layout ?? 'auto';
+const sidebarActive = showToc && (tocLayout === 'sidebar' || tocLayout === 'auto');
+// Inline TOC is now opt-in: 'auto' shows only the desktop sidebar so the
+// mobile/landscape/tablet experience isn't dominated by a TOC card the
+// majority of visitors don't use. Posts that want the inline TOC visible
+// everywhere can set `toc.layout: 'inline'` in frontmatter.
+const inlineActive = showToc && tocLayout === 'inline';
+const sidebarOnLeft = (tocConfig?.sidebarPosition ?? 'right') === 'left';
+
+// `og:image` has to be a raster file. Social platforms render PNG/JPEG/WEBP/GIF
+// and nothing else, and the theme's blog covers are SVGs that take their colours
+// from CSS custom properties — fetched on their own, outside the page, every
+// fill resolves to nothing and the preview comes out blank. A post with a photo
+// or a screenshot keeps using it; anything else gets the card generated at build
+// time (see src/pages/og/blog/[slug].png.ts).
+const ogImage =
+  image && isShareableImage(image.src)
+    ? image.src
+    : slug
+      ? getBlogOgPath(getPostSlug(slug, locale))
+      : getDefaultOgPath();
+
+// The generated card shows the title and nothing else, so the cover's own alt
+// text would be describing a picture the preview never shows.
+const ogImageAlt = ogImage === image?.src ? imageAlt || title : title;
+
+const breadcrumbs = [
+  { label: t('common.home', locale), href: localizedPath('/', locale) },
+  { label: t('blog.title', locale), href: getBlogBaseUrl(locale) },
+  { label: title },
+];
+
+// Get full URL for sharing
+const fullUrl = new URL(Astro.url.pathname, Astro.site).toString();
+
+const blogPostingSchema = createBlogPostSchema({
+  title,
+  description,
+  url: fullUrl,
+  image: new URL(ogImage, Astro.site).toString(),
+  datePublished: publishedAt,
+  dateModified: updatedAt,
+  author: { name: author, url: siteConfig.url },
+});
+
+const faqSchema = faqs && faqs.length > 0 ? createFAQSchema(faqs) : null;
+const schemas = faqSchema ? [blogPostingSchema, faqSchema] : [blogPostingSchema];
+
+// Resolve this post's real per-locale URLs so the hreflang tags and the
+// LanguageSwitcher point at the correct translation — which may live at a
+// different slug — instead of blindly swapping the locale segment of the URL.
+// hreflang lists only verified translations; the switcher shows every locale,
+// falling back to a locale's blog index when this post has no translation
+// there, so switching language never lands on a 404.
+const postTranslations = await getPostTranslations(slug, locale, uid);
+const translationByLocale = new Map(postTranslations.map((tr) => [tr.locale, tr.url]));
+const languageAlternates = Object.fromEntries(
+  getLocales().map((loc) => [loc, translationByLocale.get(loc) ?? getBlogBaseUrl(loc)])
+);
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  image={ogImage}
+  imageAlt={ogImageAlt}
+  article={{
+    publishedTime: publishedAt,
+    modifiedTime: updatedAt,
+    authors: [author],
+    tags,
+  }}
+  extraSchemas={schemas}
+  localeAlternates={postTranslations}
+>
+  <Header
+    slot="header"
+    position="fixed"
+    shape="bar"
+    variant="solid"
+    size="lg"
+    showCta={false}
+    showScrollProgress
+    maxWidth="7xl"
+    languageAlternates={languageAlternates}
+  />
+
+  <div class="min-h-screen pt-16">
+  <!-- Article Hero -->
+  <ArticleHero
+    title={title}
+    description={description}
+    publishedAt={publishedAt}
+    updatedAt={updatedAt}
+    author={author}
+    tags={tags}
+    image={image}
+    imageAlt={imageAlt}
+    svgSlug={svgSlug}
+    body={body}
+  />
+
+  <article class="pt-8 pb-[var(--space-section-md)]">
+    <div class:list={[
+      'mx-auto px-6 max-w-7xl',
+      sidebarActive && (sidebarOnLeft
+        ? 'xl:grid xl:grid-cols-[15rem_minmax(0,1fr)] xl:gap-10'
+        : 'xl:grid xl:grid-cols-[minmax(0,1fr)_15rem] xl:gap-10'),
+    ]}>
+      {sidebarActive && sidebarOnLeft && (
+        <aside class="hidden xl:block" aria-label={t('blog.tableOfContents', locale)}>
+          <TableOfContents
+            headings={headings}
+            maxDepth={tocConfig?.maxDepth ?? 3}
+            minHeadings={tocConfig?.minHeadings ?? 3}
+            sticky
+          />
+        </aside>
+      )}
+
+      <div class:list={['min-w-0 max-w-4xl w-full mx-auto', sidebarActive && 'xl:mx-0']}>
+      <!-- Breadcrumbs -->
+      <Breadcrumbs items={breadcrumbs} class="mb-8" />
+
+      {sidebarActive && (
+        <div class="xl:hidden mb-10">
+          <TableOfContents
+            headings={headings}
+            maxDepth={tocConfig?.maxDepth ?? 3}
+            minHeadings={tocConfig?.minHeadings ?? 3}
+            collapsible
+          />
+        </div>
+      )}
+
+      {inlineActive && (
+        <div class="mb-10 rounded-xl border border-border bg-background-secondary p-5">
+          <TableOfContents
+            headings={headings}
+            maxDepth={tocConfig?.maxDepth ?? 3}
+            minHeadings={tocConfig?.minHeadings ?? 3}
+          />
+        </div>
+      )}
+
+      <!-- Article Content -->
+      <!--
+        The reading surface is framed like the TOC card beside it: same
+        corner radius, same surface. The border stays neutral rather than
+        brand-tinted — an accent suits a small card, but reads as
+        decoration around a full-length article, and the neutral token
+        behaves the same in every colour theme. The frame
+        starts at `sm` so a phone held upright keeps the full screen
+        width for the text.
+      -->
+      <div class="sm:rounded-xl sm:border sm:border-border sm:bg-card sm:p-8 lg:p-10">
+        <div
+          class="prose prose-lg max-w-none"
+          data-reveal-content
+        >
+          <slot />
+        </div>
+      </div>
+
+      <!-- Share buttons (centered, above the divider) -->
+      <div class="mt-12 flex justify-center" data-reveal>
+        <ShareButtons title={title} url={fullUrl} />
+      </div>
+
+      <!-- Article Footer -->
+      <footer class="border-border mt-12 border-t pt-8 flex justify-center" data-reveal>
+        <Button href={getBlogBaseUrl(locale)} variant="brand-outline" size="sm">
+          <Icon name="arrow-left" size="sm" />
+          {t('blog.backToBlog', locale)}
+        </Button>
+      </footer>
+      </div>
+
+      {sidebarActive && !sidebarOnLeft && (
+        <aside class="hidden xl:block" aria-label={t('blog.tableOfContents', locale)}>
+          <TableOfContents
+            headings={headings}
+            maxDepth={tocConfig?.maxDepth ?? 3}
+            minHeadings={tocConfig?.minHeadings ?? 3}
+            sticky
+          />
+        </aside>
+      )}
+    </div>
+  </article>
+
+  {showComments && (
+    <Comments />
+  )}
+
+  <!-- Related Posts -->
+  {tags.length > 0 && (
+    <div class="mx-auto max-w-7xl px-6" data-reveal>
+      <RelatedPosts currentSlug={slug} tags={tags} locale={locale} maxPosts={3} />
+    </div>
+  )}
+
+  <!-- Closing CTA -->
+  <BlogCta
+    locale={locale}
+    sectionClass="relative z-10 py-[var(--space-section-md)] bg-background-secondary"
+    maxWidth="7xl"
+    glitch={slug.endsWith('letter-glitch-astro-7')}
+  />
+  </div>
+
+  <Footer slot="footer" layout="columns" background="default" maxWidth="7xl" />
+</BaseLayout>

@@ -1,0 +1,258 @@
+---
+/**
+ * Comments — Artalk provider
+ *
+ * Self-hosted comment system. Like the existing providers, it only reserves
+ * space on the server and lazy-loads the client when the comments area gets
+ * near the viewport, so readers who never reach the bottom pay no network
+ * cost.
+ *
+ * Theme follows the site by default: leave `darkMode` empty in
+ * `site.config.ts` and the embed mirrors the visitor's light/dark mode. When
+ * the site theme changes after load, we update the Artalk instance via
+ * `setDarkMode`.
+ *
+ * Selected via `site.config.ts` → articleFeatures.comments.provider: 'artalk'
+ * and configured under articleFeatures.comments.artalk.
+ */
+import siteConfig from '@/config/site.config';
+import { t, getLocaleFromPath } from '@/i18n';
+
+const artalk = siteConfig.articleFeatures?.comments?.artalk;
+
+const server = artalk?.server?.trim() ?? '';
+const site = artalk?.site?.trim() ?? '';
+
+// Fail soft: render nothing unless the required server/site config exists.
+const isConfigured = Boolean(server && site);
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+const commentsTitle = t('comments.title', locale);
+
+const cssUrl = artalk?.cssUrl?.trim() || (server ? `${server}/dist/Artalk.css` : '');
+const jsUrl = artalk?.jsUrl?.trim() || (server ? `${server}/dist/Artalk.js` : '');
+
+// Empty (or unset) means "follow the site's current theme". A specific value
+// overrides it using Artalk's own `darkMode` config.
+const adaptiveDarkMode = artalk?.darkMode === undefined;
+
+// Empty (or unset) means "follow the site's current locale".
+const artalkLocale = artalk?.locale?.trim() ? artalk.locale.trim() : locale;
+---
+
+{
+  isConfigured && (
+    <section id="comments" class="mx-auto mt-12 max-w-4xl px-6" aria-label={commentsTitle}>
+      <h2 class="text-foreground mb-4 text-xl font-semibold">{commentsTitle}</h2>
+      <div
+        class="artalk-mount"
+        data-artalk
+        data-server={server}
+        data-site={site}
+        data-css-url={cssUrl}
+        data-js-url={jsUrl}
+        data-page-key={Astro.url.pathname}
+        data-page-title={Astro.props.title ?? ''}
+        data-artalk-locale={artalkLocale}
+        data-artalk-dark-mode={adaptiveDarkMode ? '' : String(artalk!.darkMode)}
+        data-artalk-adaptive={String(adaptiveDarkMode)}
+        data-i18n-error={t('comments.loadError', locale)}
+      >
+        <noscript>{t('comments.requiresJs', locale)}</noscript>
+      </div>
+    </section>
+  )
+}
+
+<style>
+  .artalk-mount {
+    /* Reserve space so the widget doesn't push content when it loads */
+    min-height: 360px;
+  }
+
+  :global(.artalk),
+  :global(.atk-layer-wrap) {
+    /* Map Artalk's accent tokens onto the site's active brand palette. */
+    --at-color-main: var(--color-brand-500);
+    --at-color-light: var(--color-brand-500);
+    --at-color-bg-light: color-mix(in oklch, var(--color-brand-500) 12%, transparent);
+  }
+
+  :global(.artalk .atk-main-editor > .atk-bottom .atk-send-btn),
+  :global(.atk-layer-wrap .atk-main-editor > .atk-bottom .atk-send-btn) {
+    background: var(--color-brand-600);
+  }
+
+  .artalk-mount[data-artalk-error='true'] {
+    min-height: 0;
+  }
+
+  .artalk-error {
+    border: 1px solid var(--color-border, rgba(148, 163, 184, 0.3));
+    border-radius: 1rem;
+    padding: 1rem 1.25rem;
+    color: var(--color-muted-foreground, rgba(100, 116, 139, 1));
+    background: var(--color-muted, rgba(148, 163, 184, 0.08));
+  }
+</style>
+
+<script>
+  type ArtalkInstance = {
+    destroy?: () => void;
+    setDarkMode?: (darkMode: boolean) => void;
+  };
+
+  type ArtalkGlobal = {
+    init: (config: Record<string, unknown>) => ArtalkInstance;
+  };
+
+  type WindowWithArtalk = Window & {
+    Artalk?: ArtalkGlobal;
+    __artalkLoaderPromise?: Promise<ArtalkGlobal>;
+  };
+
+  const mount = document.querySelector<HTMLElement>('[data-artalk]');
+  if (mount && !mount.dataset.loaded) {
+    const w = window as WindowWithArtalk;
+    const server = mount.dataset.server!;
+    const site = mount.dataset.site!;
+    const cssUrl = mount.dataset.cssUrl!;
+    const jsUrl = mount.dataset.jsUrl!;
+    const pageKey = mount.dataset.pageKey || location.pathname;
+    const pageTitle = mount.dataset.pageTitle || document.title;
+    const locale = mount.dataset.artalkLocale || undefined;
+    const adaptiveDarkMode = mount.dataset.artalkAdaptive === 'true';
+    const configuredDarkMode = mount.dataset.artalkDarkMode;
+    const resolveDarkMode = () => document.documentElement.classList.contains('dark');
+
+    let artalk: ArtalkInstance | null = null;
+    let themeObserver: MutationObserver | null = null;
+
+    const ensureCss = () => {
+      const selector = `link[data-artalk-css="${cssUrl}"]`;
+      if (document.head.querySelector(selector)) return;
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = cssUrl;
+      link.setAttribute('data-artalk-css', cssUrl);
+      document.head.appendChild(link);
+    };
+
+    const renderError = (message: string) => {
+      mount.dataset.artalkError = 'true';
+      mount.replaceChildren();
+
+      const errorMessage = document.createElement('p');
+      errorMessage.className = 'artalk-error';
+      errorMessage.textContent = message;
+      mount.appendChild(errorMessage);
+    };
+
+    const loadScript = () => {
+      if (w.Artalk?.init) return Promise.resolve(w.Artalk);
+      if (w.__artalkLoaderPromise) return w.__artalkLoaderPromise;
+
+      w.__artalkLoaderPromise = new Promise<ArtalkGlobal>((resolve, reject) => {
+        const finishResolve = () => {
+          if (w.Artalk?.init) resolve(w.Artalk);
+          else reject(new Error('Artalk failed to initialise.'));
+        };
+        const finishReject = (error: Error) => {
+          w.__artalkLoaderPromise = undefined;
+          reject(error);
+        };
+        const attachScriptListeners = (script: HTMLScriptElement) => {
+          script.addEventListener('load', finishResolve, { once: true });
+          script.addEventListener(
+            'error',
+            () => {
+              script.remove();
+              finishReject(new Error(`Failed to load Artalk script: ${jsUrl}`));
+            },
+            { once: true }
+          );
+        };
+
+        const existing = document.querySelector<HTMLScriptElement>(
+          `script[data-artalk-script="${jsUrl}"]`
+        );
+        if (existing) {
+          attachScriptListeners(existing);
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.src = jsUrl;
+        script.async = true;
+        script.setAttribute('data-artalk-script', jsUrl);
+        attachScriptListeners(script);
+        document.body.appendChild(script);
+      });
+
+      return w.__artalkLoaderPromise;
+    };
+
+    const init = async () => {
+      if (mount.dataset.loaded) return;
+      mount.dataset.loaded = 'true';
+      delete mount.dataset.artalkError;
+
+      ensureCss();
+
+      try {
+        const Artalk = await loadScript();
+
+        artalk?.destroy?.();
+        themeObserver?.disconnect();
+        mount.innerHTML = '';
+
+        const darkMode = adaptiveDarkMode
+          ? resolveDarkMode()
+          : configuredDarkMode === 'true'
+            ? true
+            : configuredDarkMode === 'false'
+              ? false
+              : 'auto';
+
+        artalk = Artalk.init({
+          el: mount,
+          pageKey,
+          pageTitle,
+          server,
+          site,
+          locale,
+          darkMode,
+        });
+
+        if (adaptiveDarkMode) {
+          themeObserver = new MutationObserver(() => {
+            artalk?.setDarkMode?.(resolveDarkMode());
+          });
+          themeObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['class'],
+          });
+        }
+      } catch (error) {
+        delete mount.dataset.loaded;
+        renderError(mount.dataset.i18nError ?? 'Comments failed to load. Please refresh and try again.');
+        console.error(error);
+      }
+    };
+
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            void init();
+            io.disconnect();
+          }
+        },
+        { rootMargin: '300px' }
+      );
+      io.observe(mount);
+    } else {
+      void init();
+    }
+  }
+</script>

@@ -1,0 +1,632 @@
+---
+/**
+ * HomeView — the landing page body.
+ *
+ * Shared by the default-locale route (`/`) and the locale-prefixed route
+ * (`/<locale>`). All copy is read from `pages.home.*` via `t()` / `tData()`,
+ * and internal links are localized with `localizedPath`. Featured projects and
+ * posts are loaded for the active locale and fall back to the default locale so
+ * the sections are never empty on a locale that hasn't translated its content
+ * yet. Each card links to the URL of the locale the content actually belongs
+ * to, so a fallback (default-locale) item still points at a real page.
+ */
+import LandingLayout from '@/layouts/LandingLayout.astro';
+import { Hero } from '@/components/hero';
+import Button from '@/components/ui/form/Button/Button.astro';
+import Badge from '@/components/ui/data-display/Badge/Badge.astro';
+import Card from '@/components/ui/data-display/Card/Card.astro';
+import ProofTile from '@/components/ui/data-display/ProofTile/ProofTile.astro';
+import Icon from '@/components/ui/primitives/Icon/Icon.astro';
+import BlogCard from '@/components/blog/BlogCard.astro';
+import CtaBand from '@/components/patterns/CtaBand.astro';
+import StackMarquee from '@/components/landing/StackMarquee.astro';
+import { getCollection } from 'astro:content';
+import siteConfig from '@/config/site.config';
+import { getPostUrl, getPublishedPosts } from '@/lib/blog';
+import { getVisibleProjects } from '@/lib/projects';
+import ProjectCard from '@/components/projects/ProjectCard.astro';
+import { t, tData, defaultLocale, localizedPath } from '@/i18n';
+
+interface Props {
+  /** Locale whose copy and content this page renders. Defaults to the site default. */
+  locale?: string;
+}
+
+interface IconCard {
+  icon: string;
+  title: string;
+  description: string;
+}
+interface Testimonial {
+  quote: string;
+  name: string;
+  role: string;
+}
+
+const { locale = defaultLocale } = Astro.props;
+
+// Featured projects for this locale, falling back to the default locale so the
+// section is never empty on a locale that hasn't translated its projects yet.
+let projectItems = await getVisibleProjects(locale);
+if (projectItems.length === 0 && locale !== defaultLocale) {
+  projectItems = await getVisibleProjects(defaultLocale);
+}
+const featuredProjects = projectItems
+  .filter((p) => p.data.featured)
+  .sort((a, b) => a.data.order - b.data.order)
+  .slice(0, 4);
+
+let postItems = await getPublishedPosts(locale);
+if (postItems.length === 0 && locale !== defaultLocale) {
+  postItems = await getPublishedPosts(defaultLocale);
+}
+const posts = [...postItems]
+  .sort((a, b) => {
+    if (a.data.featured !== b.data.featured) return a.data.featured ? -1 : 1;
+    return b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf();
+  })
+  .slice(0, 4);
+
+// Hero marquee — a focused subset of the tech stack, in this order, pulled from
+// the same `stack` collection so icons and links stay single-sourced. Seven logos
+// are wide enough to fill the constrained hero width and loop seamlessly on their
+// own; the Tech-stack section further down still shows the full stack.
+const heroStackOrder = ['Astro', 'Tailwind CSS', 'TypeScript', 'React', 'GitHub', 'Vercel', 'Claude'];
+const heroStackItems = (await getCollection('stack'))
+  .filter((e) => heroStackOrder.includes(e.data.name))
+  .sort((a, b) => heroStackOrder.indexOf(a.data.name) - heroStackOrder.indexOf(b.data.name))
+  .map((e) => ({
+    name: e.data.name,
+    icon: e.data.icon,
+    url: e.data.url,
+    version: e.data.version,
+    colorOklch: e.data.colorOklch,
+  }));
+
+const hero = tData<{
+  badge: string;
+  titleLine1: string;
+  titleLine2: string;
+  titleLine3: string;
+  description: string;
+  /** Shorter variant shown below the `sm` breakpoint so the hero stays compact on phones. */
+  descriptionMobile: string;
+  github: string;
+  getStarted: string;
+}>('pages.home.hero', locale)!;
+const workWithMe = tData<{ badge: string; heading: string; lead: string; cards: IconCard[]; cta: string }>(
+  'pages.home.workWithMe',
+  locale
+)!;
+const servicesSection = tData<{ badge: string; heading: string; lead: string; learnMore: string; cards: IconCard[] }>(
+  'pages.home.services',
+  locale
+)!;
+const portfolio = tData<{ badge: string; heading: string; lead: string; viewAll: string }>('pages.home.portfolio', locale)!;
+const testimonials = tData<{ badge: string; heading: string; lead: string; items: Testimonial[] }>(
+  'pages.home.testimonials',
+  locale
+)!;
+const aboutTeaser = tData<{
+  badge: string;
+  headingLine1: string;
+  headingLine2: string;
+  para2: string;
+  moreAboutMe: string;
+  statsIntro: string;
+  stat1: string;
+  stat2: string;
+  stat3: string;
+  basedIn: string;
+}>('pages.home.aboutTeaser', locale)!;
+const blogSection = tData<{ badge: string; heading: string; viewAll: string }>('pages.home.blog', locale)!;
+const cta = tData<{ badge: string; heading: string; description: string; primary: string; secondary: string }>(
+  'pages.home.cta',
+  locale
+)!;
+
+const servicesUrl = localizedPath('/services', locale);
+const projectsUrl = localizedPath('/projects', locale);
+const aboutUrl = localizedPath('/about', locale);
+const contactUrl = localizedPath('/contact', locale);
+const blogUrl = localizedPath('/blog', locale);
+// The getting-started guide lives at the default-locale URL; link there so the
+// CTA always resolves even before a locale has translated that post.
+const getStartedUrl = '/blog/astro-rocket-getting-started';
+
+// About-teaser copy with the configured location woven in (mirrors the original
+// page's conditional). Falls back to a location-free sentence when no city is set.
+const city = siteConfig.address?.city;
+const country = siteConfig.address?.country;
+const location = city ? (country ? `${city}, ${country}` : city) : '';
+const aboutPara1 = location
+  ? t('pages.home.aboutTeaser.para1WithLocation', locale, { location })
+  : t('pages.home.aboutTeaser.para1NoLocation', locale);
+const basedInDisplay = `${city ?? 'Your City'}${country ? `, ${country}` : ''}`;
+---
+
+<LandingLayout
+  title={t('pages.home.meta.title', locale)}
+  description={t('pages.home.meta.description', locale)}
+  includePersonSchema={true}
+  includeProfessionalServiceSchema={true}
+>
+  <!-- Hero -->
+  <!-- data-header-flip-anchor: the floating header keeps its over-the-hero
+       look until this section is nearly out from under it. See the flip
+       threshold in Header.astro.
+
+       data-bar-color: Safari on iOS floats a translucent toolbar over the foot
+       of the screen and tints it from the BODY's background. This hero is dark
+       in both colour modes while the body under it is white in light mode,
+       which draws a white strip across the foot of it. The theme script paints
+       the body this colour while the hero covers that edge, and clears it
+       after. Same value as --bar-color in global.css, which ends the hero's
+       gradient. See `paintBody` in BaseLayout.astro. -->
+  <Hero layout="centered" size="xl" class="hero-dark-gradient" fullHeight data-header-flip-anchor data-bar-color="#000">
+    <Badge slot="badge" variant="brand" pill pulse class="dark:text-brand-200">{hero.badge}</Badge>
+
+    {/* 12.6vw fills the mobile column (~95-98% at 320-390px), sized to the
+        English demo strings — translated hero copy is the site owner's to
+        refit. The 3rem cap keeps the size continuous with sm:text-5xl at
+        the 640px boundary. */}
+    <h1 slot="title" class="!text-[clamp(2rem,12.6vw,3rem)] sm:!text-5xl md:!text-6xl lg:!text-7xl">
+      <span class="text-brand-600 dark:text-foreground [-webkit-text-fill-color:currentColor] whitespace-nowrap">{hero.titleLine1}</span><br />
+      <span class="text-brand-600 dark:text-foreground [-webkit-text-fill-color:currentColor]">{hero.titleLine2}</span><br class="md:hidden" /><span class="text-brand-600 dark:text-foreground [-webkit-text-fill-color:currentColor]">{' '}{hero.titleLine3}</span>
+    </h1>
+
+    <p slot="description" class="!text-balance">
+      <span class="sm:hidden">{hero.descriptionMobile}</span>
+      <span class="hidden sm:inline">{hero.description}</span>
+    </p>
+
+   <Fragment slot="actions">
+      <Button size="lg" href="https://github.com/hansmartensdev/Astro-Rocket">
+        {hero.github}
+        <Icon name="arrow-right" size="sm" />
+      </Button>
+      <Button size="lg" variant="outline" href={getStartedUrl}>
+        <Icon name="rocket" size="sm" />
+        {hero.getStarted}
+        <Icon name="arrow-right" size="sm" />
+      </Button>
+    </Fragment>
+
+    <!-- Tech-stack marquee floored into the hero in place of the scroll indicator:
+         the content stays at the top and the marquee sits low near the bottom, with
+         a roomy gap above it (a guaranteed minimum gap, so it never crowds the
+         CTAs). Constrained to the content width; one decorative row; hidden on
+         phones. cardWidth="auto" lets each card hug its logo + name so the logos sit
+         close together; StackMarquee repeats the set to fill the row so the loop
+         stays seamless. -->
+    <div slot="bottom" class="mx-auto w-full max-w-6xl px-6">
+      <!-- Tablet & up: the animated tech-stack marquee. -->
+      <div class="hp-hero-marquee" aria-hidden="true">
+        <StackMarquee items={heroStackItems} rows={1} duration={55} pauseOnHover={false} linked={false} cardWidth="auto" gap="1rem" />
+      </div>
+      <!-- Portrait phone: a static, non-animated row of the four core-stack logos.
+           No marquee machinery — no duplicated track and no infinite animation — so
+           there's zero ongoing compositor/battery cost on mobile. Logos only,
+           non-interactive, with a one-time fade-in to match the marquee's entrance. -->
+      <div class="hp-hero-logos" aria-hidden="true">
+        {heroStackItems.slice(0, 4).map((item) => (
+          <span class="hp-hero-logo">
+            <Icon name={item.icon} size="lg" />
+          </span>
+        ))}
+      </div>
+    </div>
+  </Hero>
+
+  <!-- Services Section -->
+  <section class="relative z-10 py-[var(--space-section-md)] bg-background-secondary border-t border-border">
+    <div class="mx-auto max-w-6xl px-6 flex flex-col gap-8">
+      <div class="flex flex-col items-center gap-4 text-center" data-reveal>
+        <div class="flex flex-col items-center gap-6">
+          <Badge variant="brand" pill>
+            <Icon name="sparkles" size="sm" />
+            {servicesSection.badge}
+          </Badge>
+          <h2 class="font-display text-3xl md:text-4xl font-bold text-foreground">
+            {servicesSection.heading}
+          </h2>
+        </div>
+        <p class="text-lg text-foreground-muted max-w-2xl mx-auto">
+          {servicesSection.lead}
+        </p>
+      </div>
+
+      <div class="grid gap-6 sm:grid-cols-3">
+        {servicesSection.cards.map((card, i) => (
+          <ProofTile
+            href={servicesUrl}
+            icon={card.icon}
+            title={card.title}
+            data-reveal
+            data-reveal-delay={i || undefined}
+          >
+            {card.description}
+          </ProofTile>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- Work with me -->
+  <section class="relative z-10 py-[var(--space-section-md)] bg-background border-t border-border">
+    <div class="mx-auto max-w-6xl px-6 flex flex-col gap-8">
+      <div class="flex flex-col items-center gap-4 text-center" data-reveal>
+        <div class="flex flex-col items-center gap-6">
+          <Badge variant="brand" pill>
+            <Icon name="handshake" size="sm" />
+            {workWithMe.badge}
+          </Badge>
+          <h2 class="font-display text-3xl md:text-4xl font-bold text-foreground text-balance">
+            {workWithMe.heading}
+          </h2>
+        </div>
+        <p class="text-lg text-foreground-muted max-w-2xl mx-auto text-balance">
+          {workWithMe.lead}
+        </p>
+      </div>
+
+      <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {workWithMe.cards.map((card, i) => (
+          <ProofTile icon={card.icon} title={card.title} data-reveal data-reveal-delay={i || undefined}>
+            {card.description}
+          </ProofTile>
+        ))}
+      </div>
+
+      <div class="flex justify-center mt-4" data-reveal>
+        <Button size="lg" href={servicesUrl} class="cta-btn-brand">
+          {workWithMe.cta}
+          <Icon name="arrow-right" size="sm" />
+        </Button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Portfolio -->
+  <section id="work" class="relative z-10 py-[var(--space-section-md)] bg-background-secondary border-t border-border">
+    <div class="mx-auto max-w-6xl px-6 flex flex-col gap-8">
+      <div class="flex flex-col items-center gap-4 text-center" data-reveal>
+        <div class="flex flex-col items-center gap-6">
+          <Badge variant="brand" pill>
+            <Icon name="layers" size="sm" />
+            {portfolio.badge}
+          </Badge>
+          <h2 class="font-display text-3xl md:text-4xl font-bold text-foreground">
+            {portfolio.heading}
+          </h2>
+        </div>
+        <p class="text-lg text-foreground-muted max-w-2xl mx-auto">
+          {portfolio.lead}
+        </p>
+      </div>
+
+      <div class="grid gap-6 md:grid-cols-2">
+        {/* One card component for the homepage, the projects index, the
+            paginated pages and the tag archive. The homepage used to carry
+            its own copy of this markup, so a change to the card reached three
+            of the four places and quietly skipped this one. */}
+        {featuredProjects.map((project, i) => (
+          <ProjectCard project={project} index={i} locale={project.data.locale} />
+        ))}
+      </div>
+
+      <div class="text-center mt-4">
+        <Button variant="brand-outline" href={projectsUrl}>
+          {portfolio.viewAll}
+          <Icon name="arrow-right" size="sm" />
+        </Button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Testimonials -->
+  <section class="relative z-10 py-[var(--space-section-md)] bg-background border-t border-border">
+    <div class="mx-auto max-w-6xl px-6 flex flex-col gap-8">
+      <div class="flex flex-col items-center gap-4 text-center" data-reveal>
+        <div class="flex flex-col items-center gap-6">
+          <Badge variant="brand" pill>
+            <Icon name="quote" size="sm" />
+            {testimonials.badge}
+          </Badge>
+          <h2 class="font-display text-3xl md:text-4xl font-bold text-foreground">
+            {testimonials.heading}
+          </h2>
+        </div>
+        <p class="text-lg text-foreground-muted">
+          {testimonials.lead}
+        </p>
+      </div>
+
+      <div class="grid gap-6 md:grid-cols-2">
+        {testimonials.items.map((item, i) => (
+          <Card variant="elevated" padding="lg" hover data-reveal data-reveal-delay={i || undefined}>
+            <div class="flex flex-col h-full gap-4">
+              <div class="flex gap-1 text-brand-500" role="img" aria-label="5 out of 5 stars">
+                {[...Array(5)].map(() => (
+                  <svg class="w-4 h-4 fill-current" viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                ))}
+              </div>
+              <blockquote class="flex-1 text-foreground-muted leading-relaxed">
+                {item.quote}
+              </blockquote>
+              <div class="flex items-center gap-3 pt-4 border-t border-border">
+                <div class="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500/30 to-brand-500/10 flex items-center justify-center text-brand-500 font-bold text-sm shrink-0">
+                  {item.name.charAt(0)}
+                </div>
+                <div>
+                  <p class="text-sm font-semibold text-foreground">{item.name}</p>
+                  <p class="text-xs text-foreground-muted">{item.role}</p>
+                </div>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- About Teaser -->
+  <section class="relative z-10 py-[var(--space-section-md)] bg-background-secondary border-t border-border">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="grid gap-10 glitch:grid-cols-2 glitch:gap-12">
+        <div class="flex flex-col justify-center sm:items-center sm:text-center glitch:items-start glitch:text-left" data-reveal data-reveal-ease="smooth">
+          <div class="flex flex-col gap-6 mb-6 sm:items-center glitch:items-start">
+            <Badge variant="brand" pill class="self-start sm:self-center glitch:self-start">
+              <Icon name="user" size="sm" />
+              {aboutTeaser.badge}
+            </Badge>
+            <h2 class="font-display text-3xl md:text-4xl font-bold text-foreground">
+              {aboutTeaser.headingLine1}<br />
+              <span class="text-brand-500">{aboutTeaser.headingLine2}</span>
+            </h2>
+          </div>
+          <p class="text-lg text-foreground-muted leading-relaxed mb-4 sm:mb-0 sm:max-w-xl glitch:mb-4 glitch:max-w-none">
+           {aboutPara1}
+          </p>
+          <p class="text-lg text-foreground-muted leading-relaxed mb-8 sm:max-w-xl glitch:max-w-none sm:hidden glitch:block">
+           {aboutTeaser.para2}
+          </p>
+           <Button variant="brand-outline" href={aboutUrl} class="self-start sm:self-center glitch:self-start sm:hidden glitch:inline-flex">
+            {aboutTeaser.moreAboutMe}
+            <Icon name="arrow-right" size="sm" />
+          </Button>
+        </div>
+        <Card variant="elevated" padding="lg" class="h-full flex flex-col" data-reveal data-reveal-delay="1" data-reveal-ease="smooth">
+          <p class="text-sm font-bold text-brand-500 mb-5 text-center sm:hidden glitch:block">{aboutTeaser.statsIntro}</p>
+          <div class="grid grid-cols-2 sm:grid-cols-4 glitch:grid-cols-2 gap-3 flex-1 auto-rows-fr">
+            <div class="bg-background-tertiary rounded-xl p-5 flex flex-col items-center justify-center text-center gap-2 border-t-2 border-brand-500/40 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md hover:border-brand-500 cursor-default h-full">
+              <Icon name="history" class="w-10 h-10 text-brand-500" />
+              <p class="text-sm font-semibold text-foreground">{aboutTeaser.stat1}</p>
+            </div>
+            <a href="https://astro.build" target="_blank" rel="noopener noreferrer" class="bg-background-tertiary rounded-xl p-5 flex flex-col items-center justify-center text-center gap-2 border-t-2 border-brand-500/40 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md hover:border-brand-500 h-full">
+              <svg class="w-10 h-10 text-brand-500" viewBox="0 0 1280 1280" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M815.039 94.6439C824.758 106.709 829.714 122.99 839.626 155.553L1056.17 866.901C976.107 825.368 889.072 795.413 797.281 779.252L656.29 302.798C653.983 295.002 646.822 289.654 638.693 289.654C630.542 289.654 623.368 295.03 621.08 302.853L481.795 779.011C389.579 795.1 302.146 825.109 221.741 866.793L439.347 155.388L439.348 155.388C449.291 122.882 454.262 106.629 463.982 94.5853C472.562 83.9531 483.723 75.6958 496.4 70.6002C510.76 64.8284 527.756 64.8284 561.749 64.8284H717.174C751.212 64.8284 768.23 64.8284 782.603 70.6123C795.292 75.7184 806.459 83.9923 815.039 94.6439Z" fill="currentColor"/>
+                <path fill-rule="evenodd" clip-rule="evenodd" d="M840.951 900.754C805.253 931.279 734.002 952.097 651.929 952.097C551.197 952.097 466.767 920.737 444.363 878.561C436.354 902.732 434.558 930.396 434.558 948.068C434.558 948.068 429.281 1034.84 489.636 1095.2C489.636 1063.86 515.042 1038.46 546.381 1038.46C600.097 1038.46 600.036 1085.32 599.987 1123.34C599.986 1124.48 599.984 1125.61 599.984 1126.73C599.984 1184.44 635.255 1233.91 685.416 1254.77C677.924 1239.36 673.721 1222.05 673.721 1203.77C673.721 1148.73 706.034 1128.23 743.588 1104.41L743.588 1104.41C773.469 1085.46 806.668 1064.41 829.548 1022.17C841.486 1000.13 848.265 974.893 848.265 948.068C848.265 931.573 845.702 915.676 840.951 900.754Z" fill="currentColor"/>
+              </svg>
+              <p class="text-sm font-semibold text-foreground">{aboutTeaser.stat2}</p>
+            </a>
+            <div class="bg-background-tertiary rounded-xl p-5 flex flex-col items-center justify-center text-center gap-2 border-t-2 border-brand-500/40 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md hover:border-brand-500 cursor-default h-full">
+              <Icon name="globe" class="w-10 h-10 text-brand-500" />
+              <p class="text-sm font-semibold text-foreground">{aboutTeaser.stat3}</p>
+            </div>
+            <div class="bg-background-tertiary rounded-xl p-5 flex flex-col items-center justify-center text-center gap-2 border-t-2 border-brand-500/40 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-md hover:border-brand-500 cursor-default h-full">
+              <Icon name="map-pin" class="w-10 h-10 text-brand-500" />
+              <p class="text-sm font-semibold text-foreground">{aboutTeaser.basedIn} <br class="sm:hidden" />{basedInDisplay}</p>
+            </div>
+          </div>
+        </Card>
+        <div class="hidden sm:flex justify-center glitch:hidden" data-reveal data-reveal-delay="2">
+          <Button variant="brand-outline" href={aboutUrl}>
+            {aboutTeaser.moreAboutMe}
+            <Icon name="arrow-right" size="sm" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Blog -->
+  <section class="relative z-10 py-[var(--space-section-md)] bg-background border-t border-border">
+    <div class="mx-auto max-w-6xl px-6 flex flex-col gap-8">
+      <div class="flex flex-col items-center gap-6 text-center" data-reveal>
+        <Badge variant="brand" pill>
+          <Icon name="book" size="sm" />
+          {blogSection.badge}
+        </Badge>
+        <h2 class="font-display text-3xl md:text-4xl font-bold text-foreground">
+          {blogSection.heading}
+        </h2>
+      </div>
+
+      <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {posts.map((post, index) => (
+          <BlogCard
+            title={post.data.title}
+            description={post.data.description}
+            href={getPostUrl(post.id, post.data.locale)}
+            publishedAt={post.data.publishedAt}
+            tags={post.data.tags}
+            author={post.data.author}
+            image={post.data.image}
+            svgSlug={post.data.svgSlug}
+            body={post.body}
+            revealDelay={index}
+            class={index === 3 ? 'hidden sm:block lg:hidden' : undefined}
+          />
+        ))}
+      </div>
+
+      <div class="flex justify-center">
+        <Button variant="brand-outline" href={blogUrl}>
+          {blogSection.viewAll}
+          <Icon name="arrow-right" size="sm" />
+        </Button>
+      </div>
+    </div>
+  </section>
+
+ <!-- CTA — `secondary` so it alternates with the `background` Blog section above and the `background` Footer below. -->
+  <section class="relative z-10 py-[var(--space-section-md)] bg-background-secondary border-t border-border">
+    <CtaBand>
+      <h2 class="font-display text-4xl font-bold text-foreground mb-4 text-balance">
+        {cta.heading}
+      </h2>
+      <p class="text-lg text-foreground-muted mb-8 text-balance">
+        {cta.description}
+      </p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center">
+        <Button size="lg" href={contactUrl}>
+          {cta.primary}
+          <Icon name="arrow-right" size="sm" />
+        </Button>
+        <Button size="lg" variant="outline" class="cta-btn-brand" href={aboutUrl}>
+          {cta.secondary}
+          <Icon name="arrow-right" size="sm" />
+        </Button>
+      </div>
+    </CtaBand>
+  </section>
+
+<script>
+  function initCountup() {
+    const counters = document.querySelectorAll<HTMLElement>('[data-countup]:not([data-countup-init])');
+    if (counters.length === 0) return;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        observer.unobserve(entry.target);
+        const el = entry.target as HTMLElement;
+        const target = parseInt(el.dataset.countup ?? '0', 10);
+        const suffix = el.dataset.suffix ?? '';
+        const duration = 1200;
+        const start = performance.now();
+        const tick = (now: number) => {
+          const elapsed = now - start;
+          const progress = Math.min(elapsed / duration, 1);
+          const eased = 1 - Math.pow(1 - progress, 3);
+          el.textContent = Math.round(eased * target) + suffix;
+          if (progress < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    }, { threshold: 0.4 });
+    counters.forEach((el) => {
+      el.dataset.countupInit = 'true';
+      observer.observe(el);
+    });
+  }
+
+  initCountup();
+</script>
+
+<style is:global>
+  /* Widen the homepage hero description from md upward so the paragraph
+     reads on two lines instead of three on landscape phones, tablets,
+     and all laptop/desktop sizes. Scoped via the unique
+     .hero-dark-gradient class so other heroes keep the default
+     max-w-xl reading measure. */
+  @media (min-width: 768px) {
+    .hero-dark-gradient .hero-title-slot + div {
+      max-width: 48rem;
+    }
+  }
+
+  /* ── Homepage hero tech-stack marquee ──────────────────────────────────────
+     A decorative tech-stack strip floored into the hero in place of the scroll
+     indicator. It must stay secondary to the H1 / description / CTAs, so we strip
+     the card "box" (brand border, glow ring, panel surface) and let the
+     brand-coloured logos float on the hero gradient as light accents. The logos
+     keep their brand colour and soft chip; only the surrounding chrome is removed. */
+  .hp-hero-marquee .stack-marquee-item > * {
+    background: transparent;   /* drop the card panel */
+    border-color: transparent; /* drop the brand border */
+    box-shadow: none;          /* drop the brand glow ring */
+    padding-left: var(--space-3);  /* tighter now there's no box, so logos sit closer */
+    padding-right: var(--space-3);
+  }
+  /* Lighter, calmer tool names so the colourful logos lead the eye. */
+  .hp-hero-marquee .stack-marquee-item .font-display {
+    font-weight: 500;
+    color: var(--color-foreground-muted);
+  }
+
+  /* Floored into the hero: the marquee is the section's last flex child, pushed to
+     the floor (mt-auto, in Hero.astro). The CONTENT stays at the top and the
+     leftover hero height opens up BETWEEN the CTAs and the marquee — the roomy
+     "Chrome look". The section's column `gap` (--hero-floor-gap) is a GUARANTEED
+     MINIMUM gap, so on shorter windows the marquee can never crowd the buttons;
+     taller windows simply get more room. padding-bottom is the breathing room
+     beneath it. */
+  section.hero-dark-gradient {
+    --hero-floor-gap: var(--space-16); /* 4rem — minimum gap above the marquee */
+    padding-bottom: var(--space-16); /* 4rem — breathing room below it */
+  }
+  .hp-hero-marquee {
+    pointer-events: none; /* decorative; never intercepts taps */
+  }
+
+  /* Entrance: the marquee sits outside the content stagger container, so it fades
+     in on its own once the hero has settled (a vertical slide would fight the
+     logos' horizontal scroll). */
+  @media (prefers-reduced-motion: no-preference) {
+    .hp-hero-marquee {
+      animation: hp-hero-marquee-fade 0.6s ease-out 1.2s backwards;
+    }
+  }
+  @keyframes hp-hero-marquee-fade {
+    from { opacity: 0.01; }
+    to   { opacity: 1; }
+  }
+
+  /* Hidden on phones — portrait (width) and landscape (short + coarse pointer),
+     matching the tech-stack section's behaviour. Shown from tablet up. */
+  @media (max-width: 767px) {
+    .hp-hero-marquee { display: none; }
+  }
+  @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+    .hp-hero-marquee { display: none; }
+  }
+
+  /* Portrait-phone static stack logos — the lightweight counterpart to the
+     marquee. Hidden by default and shown only on portrait phones, exactly where
+     the marquee is hidden. A centered, non-interactive row: no links and no
+     animation loop, so it costs nothing after paint. */
+  .hp-hero-logos {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    pointer-events: none;
+  }
+  @media (max-width: 767px) and (orientation: portrait) {
+    .hp-hero-logos { display: flex; padding-bottom: 2rem; }
+  }
+
+  .hp-hero-logo {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 9999px;
+    color: var(--color-brand-500);
+    background: color-mix(in oklch, var(--color-brand-500) 12%, transparent);
+  }
+
+  /* One-time fade-in only (reuses the marquee's keyframe); nothing loops. */
+  @media (prefers-reduced-motion: no-preference) {
+    .hp-hero-logos {
+      animation: hp-hero-marquee-fade 0.6s ease-out 1.2s backwards;
+    }
+  }
+</style>
+
+</LandingLayout>

@@ -1,0 +1,205 @@
+---
+/**
+ * NewsletterForm — email signup, ready to drop anywhere.
+ *
+ * Posts to `/api/newsletter`, which adds the address to a Resend audience.
+ * Every string comes from the `newsletter.*` keys in the locale files, so the
+ * component needs no props at all; each one is an override for a single usage.
+ *
+ * Layout: the field and the button stack on a phone and sit side by side from
+ * `sm` up, where the button keeps its natural width. `layout="stacked"` forces
+ * the stacked form at every width — the right choice inside a narrow column
+ * such as a sidebar or a footer link group.
+ *
+ * The optional `heading`, `description` and `note` slots-as-props make it a
+ * complete block on its own; leave them out and you get the bare field.
+ */
+import Input from '@/components/ui/form/Input/Input.astro';
+import Button from '@/components/ui/form/Button/Button.astro';
+import { cn } from '@/lib/cn';
+import { t, getLocaleFromPath } from '@/i18n';
+import { newsletterConfigured } from '@/lib/email';
+
+interface Props {
+  /** Endpoint the form posts to. */
+  action?: string;
+  /** Field placeholder, which also names the field for screen readers. */
+  placeholder?: string;
+  buttonText?: string;
+  successMessage?: string;
+  /** Optional title above the field. */
+  heading?: string;
+  /** Optional line of explanation between the title and the field. */
+  description?: string;
+  /** Optional small print under the field — a privacy line, for example. */
+  note?: string;
+  /** Field and button size. */
+  size?: 'sm' | 'md' | 'lg';
+  /** 'auto' goes side by side from `sm`; 'stacked' stays stacked everywhere. */
+  layout?: 'auto' | 'stacked';
+  /**
+   * Extra classes for the submit button. Inside a CTA or a LetterGlitch band,
+   * pass the theme's `cta-btn-brand` / `hero-btn-brand` so the button matches
+   * the other actions there: a brand-700 fill with white label text in both
+   * colour modes, rather than the light fill the primary variant takes in
+   * dark mode.
+   */
+  buttonClass?: string;
+  class?: string;
+}
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+const {
+  action = '/api/newsletter',
+  placeholder = t('newsletter.emailPlaceholder', locale),
+  buttonText = t('newsletter.subscribe', locale),
+  successMessage = t('newsletter.success', locale),
+  heading,
+  description,
+  note,
+  size = 'md',
+  layout = 'auto',
+  buttonClass,
+  class: className,
+} = Astro.props;
+
+const stacked = layout === 'stacked';
+
+/**
+ * The form renders either way, so the theme looks complete out of the box.
+ * What changes is who is told it has no keys: the notice is for whoever is
+ * building the site, so it shows only in dev. In production the submit is
+ * disabled rather than inviting an address that has nowhere to go.
+ */
+const unconfigured = !newsletterConfigured;
+const showDevNotice = unconfigured && import.meta.env.DEV;
+---
+
+<div class={cn('newsletter', className)}>
+  {heading && (
+    <p class="mb-1 text-base font-semibold text-foreground">{heading}</p>
+  )}
+  {description && (
+    <p class="mb-4 text-sm text-foreground-muted text-balance">{description}</p>
+  )}
+
+  <form
+    class="newsletter-form"
+    action={action}
+    method="POST"
+    data-success-message={successMessage}
+    data-subscribing={t('newsletter.subscribing', locale)}
+    data-generic-error={t('newsletter.genericError', locale)}
+    data-error-message={t('newsletter.error', locale)}
+  >
+    <div class:list={['flex flex-col gap-3', !stacked && 'sm:flex-row sm:items-start']}>
+      <div class:list={['min-w-0', !stacked && 'sm:flex-1']}>
+        <Input
+          name="email"
+          type="email"
+          size={size}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          leadingIcon="mail"
+          required
+          autocomplete="email"
+        />
+      </div>
+      <Button
+        type="submit"
+        size={size}
+        disabled={unconfigured && !import.meta.env.DEV}
+        class:list={['newsletter-submit w-full shrink-0', !stacked && 'sm:w-auto', buttonClass]}
+      >
+        {buttonText}
+      </Button>
+    </div>
+
+    <!-- Honeypot field for spam protection -->
+    <div class="hidden" aria-hidden="true">
+      <input type="text" name="honeypot" tabindex="-1" autocomplete="off" />
+    </div>
+
+    <!-- Reserved line: the status message appears here without shifting
+         whatever sits below the form. -->
+    <p
+      class="newsletter-message mt-3 min-h-5 text-sm"
+      role="status"
+      aria-live="polite"
+    ></p>
+  </form>
+
+  {showDevNotice && (
+    <p class="mt-2 text-xs text-foreground-subtle text-balance" data-newsletter-dev-notice>
+      {t('newsletter.notConfigured', locale)}
+    </p>
+  )}
+
+  {unconfigured && !import.meta.env.DEV && (
+    <p class="mt-2 text-xs text-foreground-subtle text-balance">
+      {t('newsletter.unavailable', locale)}
+    </p>
+  )}
+
+  {note && <p class="mt-2 text-xs text-foreground-subtle text-balance">{note}</p>}
+</div>
+
+<script>
+  function initNewsletterForms() {
+    const forms = document.querySelectorAll<HTMLFormElement>('.newsletter-form');
+
+    forms.forEach((form) => {
+      if (form.dataset.newsletterInit) return;
+      form.dataset.newsletterInit = 'true';
+
+      const button = form.querySelector('.newsletter-submit') as HTMLButtonElement;
+      const message = form.querySelector('.newsletter-message') as HTMLParagraphElement;
+
+      if (!button || !button.textContent || !message) return;
+
+      const successMessage = form.dataset.successMessage || 'Thanks for subscribing!';
+      const originalText = button.textContent;
+
+      // Status colours are swapped with classList rather than by rewriting
+      // className, so the layout classes on the element survive a submit.
+      const setMessage = (text: string, ok: boolean) => {
+        message.textContent = text;
+        message.classList.remove('text-success-strong', 'text-destructive');
+        message.classList.add(ok ? 'text-success-strong' : 'text-destructive');
+      };
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        button.disabled = true;
+        button.textContent = form.dataset.subscribing || 'Subscribing…';
+        message.textContent = '';
+
+        try {
+          const response = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            setMessage(successMessage, true);
+            form.reset();
+          } else {
+            setMessage(data.error || form.dataset.genericError || 'Something went wrong', false);
+          }
+        } catch {
+          setMessage(form.dataset.errorMessage || 'Subscription failed. Please try again.', false);
+        } finally {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+      });
+    });
+  }
+
+  initNewsletterForms();
+  document.addEventListener('astro:after-swap', initNewsletterForms);
+</script>

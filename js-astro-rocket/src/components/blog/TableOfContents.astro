@@ -1,0 +1,290 @@
+---
+/**
+ * Table of Contents
+ *
+ * Auto-generates a TOC from MDX headings. Renders nothing when there are
+ * fewer than `minHeadings` headings — keeps short posts uncluttered.
+ *
+ * - Server-rendered HTML (no JS by default)
+ * - Optional scroll-spy highlights the active section while scrolling
+ * - Heading IDs are added automatically by Astro's MDX integration
+ */
+import type { MarkdownHeading } from 'astro';
+import { t, getLocaleFromPath } from '@/i18n';
+import Icon from '@/components/ui/primitives/Icon/Icon.astro';
+
+interface Props {
+  headings: MarkdownHeading[];
+  /** Deepest level to include (2 = H2 only, 3 = H2+H3, 4 = H2+H3+H4) */
+  maxDepth?: 2 | 3 | 4;
+  /** Minimum headings required before TOC renders */
+  minHeadings?: number;
+  /** Title shown above the list */
+  title?: string;
+  /** When true, the TOC card sticks to the top of its scrolling container */
+  sticky?: boolean;
+  /**
+   * Collapsed-card variant for small screens: a closed card with a
+   * localized Show/Hide hint and a chevron that unfolds on tap (native
+   * details/summary — the same pattern as accordion FAQs). Links
+   * auto-close the panel.
+   */
+  collapsible?: boolean;
+}
+
+const {
+  headings,
+  maxDepth = 3,
+  minHeadings = 3,
+  title,
+  sticky = false,
+  collapsible = false,
+} = Astro.props;
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+// A closed card must name its contents; an always-visible list only needs
+// a label. An explicit `title` prop still overrides either default.
+const tocTitle =
+  title ?? t(collapsible ? 'blog.tableOfContents' : 'blog.onThisPage', locale);
+const showLabel = t('blog.tocShow', locale);
+const hideLabel = t('blog.tocHide', locale);
+
+const items = headings.filter((h) => h.depth >= 2 && h.depth <= maxDepth);
+const shouldRender = items.length >= minHeadings;
+// Unique heading id per instance — multiple TOCs can mount on the same
+// page (e.g. layout: 'auto' renders both inline + sidebar variants and
+// CSS swaps which is visible). Duplicate `id` attributes would be invalid
+// HTML and break aria-labelledby.
+const headingId = `toc-heading-${Math.random().toString(36).slice(2, 9)}`;
+---
+
+{shouldRender && (() => {
+  // The theme's card frame (rounded-xl + brand border + card surface),
+  // deliberately without shadow or hover: the TOC is a reading aid —
+  // its links are interactive, the box itself is not.
+  const Wrapper = collapsible ? 'details' : 'nav';
+  return (
+    <Wrapper
+      class:list={[
+        'toc not-prose rounded-xl border border-brand-500/40 bg-card',
+        !collapsible && 'p-5',
+        sticky && 'toc-sticky',
+      ]}
+      aria-labelledby={collapsible ? undefined : headingId}
+      data-toc
+    >
+      {collapsible ? (
+        <summary class="flex cursor-pointer list-none items-center gap-2 p-5 text-sm font-semibold text-foreground [&::-webkit-details-marker]:hidden">
+          <Icon name="list" size="sm" class="text-brand-500" />
+          {tocTitle}
+          <span class="toc-hint ml-auto flex shrink-0 items-center gap-1 text-xs font-medium text-foreground-muted">
+            <span class="toc-hint-show">{showLabel}</span>
+            <span class="toc-hint-hide">{hideLabel}</span>
+            <Icon
+              name="chevron-down"
+              size="sm"
+              class="toc-chevron transition-transform duration-200"
+            />
+          </span>
+        </summary>
+      ) : (
+        <p
+          id={headingId}
+          class="mb-3 flex items-center gap-2 text-sm font-semibold text-foreground"
+        >
+          <Icon name="list" size="sm" class="text-brand-500" />
+          {tocTitle}
+        </p>
+      )}
+      <ul
+        class:list={[
+          'space-y-1.5 text-sm border-l border-border',
+          collapsible && 'mx-5 mb-5',
+        ]}
+      >
+        {items.map((h) => (
+          <li
+            class="toc-item"
+            data-depth={h.depth}
+            style={`padding-left: ${(h.depth - 2) * 0.875}rem`}
+          >
+            <a
+              href={`#${h.slug}`}
+              data-toc-link={h.slug}
+              class:list={[
+                'toc-link block pl-3 -ml-px border-l border-transparent text-foreground-muted hover:text-foreground hover:border-brand-500 transition-colors',
+                // Roomier tap targets on the touch-first collapsed variant.
+                collapsible ? 'py-1.5' : 'py-1',
+              ]}
+            >
+              {h.text}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </Wrapper>
+  );
+})()}
+
+<style>
+  /* Sticky positioning is opt-in (sidebar layout). The 6rem offset clears
+     the fixed header so the TOC scrolls into a comfortable reading band
+     and stays there as the article scrolls past. */
+  .toc-sticky {
+    position: sticky;
+    top: 6rem;
+    max-height: calc(100vh - 8rem);
+    overflow-y: auto;
+  }
+
+  .toc-link[data-active='true'] {
+    color: var(--color-foreground);
+    border-left-color: var(--color-brand-500);
+    font-weight: 500;
+  }
+
+  /* Collapsed-card variant: the chevron flips when the panel unfolds —
+     the same motion accordion FAQs use — and the action hint swaps
+     between the localized Show and Hide labels to match. */
+  details[data-toc][open] .toc-chevron {
+    transform: rotate(180deg);
+  }
+
+  .toc-hint-hide {
+    display: none;
+  }
+
+  details[data-toc][open] .toc-hint-show {
+    display: none;
+  }
+
+  details[data-toc][open] .toc-hint-hide {
+    display: inline;
+  }
+</style>
+
+<script>
+  // Scroll-spy: highlight the link whose heading is currently in view.
+  // Tiny, no dependencies — uses IntersectionObserver.
+  // Multiple TOC instances can be on the same page (e.g. layout: 'auto'
+  // renders an inline TOC for narrow viewports and a sidebar TOC for
+  // xl+, with CSS hiding whichever isn't appropriate). Each instance
+  // gets its own setup so highlighting works regardless of which is
+  // currently visible.
+  const tocs = document.querySelectorAll<HTMLElement>('[data-toc]');
+  for (const toc of tocs) {
+    const links = Array.from(
+      toc.querySelectorAll<HTMLAnchorElement>('[data-toc-link]'),
+    );
+    const slugs = links.map((a) => a.getAttribute('data-toc-link')!);
+    const headings = slugs
+      .map((s) => document.getElementById(s))
+      .filter((el): el is HTMLElement => el !== null);
+
+    // Jumping into a section whose scroll-reveal hasn't played yet lands
+    // short: the block still carries its entrance translate when the
+    // browser computes the scroll target, then rises out from under it.
+    // Settle the target's reveal state first (skipping its entrance
+    // animation — the reader is jumping straight to it anyway).
+    const settleTarget = (slug: string): HTMLElement | null => {
+      const el = document.getElementById(slug);
+      if (!el) return null;
+      const container = el.closest('[data-reveal-content]');
+      if (container) {
+        let child: HTMLElement = el;
+        while (child.parentElement && child.parentElement !== container) {
+          child = child.parentElement;
+        }
+        if (child.parentElement === container && !child.classList.contains('is-visible')) {
+          child.style.transition = 'none';
+          child.classList.add('is-visible');
+        }
+      }
+      const reveal = el.closest<HTMLElement>('[data-reveal]');
+      if (reveal && !reveal.classList.contains('is-visible')) {
+        reveal.style.transition = 'none';
+        reveal.classList.add('is-visible');
+      }
+      return el;
+    };
+
+    for (const a of links) {
+      const slug = a.getAttribute('data-toc-link')!;
+      if (toc.tagName === 'DETAILS') {
+        // Collapsed-card variant: fold the panel before navigating (an
+        // open panel above the target would make the scroll land short),
+        // then jump against the fully settled layout. The hash is written
+        // via pushState so the URL updates without a competing native
+        // scroll; scrollIntoView honours the html scroll-padding offset.
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          toc.removeAttribute('open');
+          requestAnimationFrame(() => {
+            const target = settleTarget(slug);
+            if (!target) return;
+            history.pushState(null, '', `#${slug}`);
+            target.scrollIntoView();
+          });
+        });
+      } else {
+        // Sidebar/inline variant: native navigation proceeds — settling
+        // the target first is enough for an exact landing.
+        a.addEventListener('click', () => settleTarget(slug));
+      }
+    }
+
+    if (headings.length === 0) continue;
+
+    let active = '';
+    const setActive = (slug: string) => {
+      if (slug === active) return;
+      active = slug;
+      let activeLink: HTMLAnchorElement | null = null;
+      for (const a of links) {
+        const isActive = a.getAttribute('data-toc-link') === slug;
+        a.setAttribute('data-active', isActive ? 'true' : 'false');
+        if (isActive) activeLink = a;
+      }
+
+      // Auto-scroll the TOC container so the active link stays visible.
+      // Only does work when the TOC is itself scrollable (the sticky
+      // sidebar variant has max-height + overflow-y: auto); on the
+      // inline TOC scrollHeight === clientHeight, so the branch is a
+      // no-op.
+      if (activeLink && toc.scrollHeight > toc.clientHeight) {
+        const linkRect = activeLink.getBoundingClientRect();
+        const tocRect = toc.getBoundingClientRect();
+        const padding = 12;
+        let delta = 0;
+        if (linkRect.top < tocRect.top + padding) {
+          delta = linkRect.top - tocRect.top - padding;
+        } else if (linkRect.bottom > tocRect.bottom - padding) {
+          delta = linkRect.bottom - tocRect.bottom + padding;
+        }
+        if (delta !== 0) {
+          toc.scrollBy({ top: delta, behavior: 'smooth' });
+        }
+      }
+    };
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        // Pick the topmost heading currently intersecting the upper part
+        // of the viewport. We use entry.boundingClientRect (already cached
+        // on the entry by the browser) instead of calling
+        // getBoundingClientRect() on the target — the latter forces a
+        // synchronous layout recompute, which Lighthouse flagged as a
+        // ~200ms forced-reflow source on mobile.
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible.length > 0 && visible[0].target.id) {
+          setActive(visible[0].target.id);
+        }
+      },
+      { rootMargin: '-80px 0px -70% 0px', threshold: 0 },
+    );
+
+    for (const h of headings) io.observe(h);
+  }
+</script>

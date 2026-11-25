@@ -1,0 +1,609 @@
+---
+import '@/styles/global.css';
+import outfitFont from '@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2?url';
+import manropeFont from '@fontsource-variable/manrope/files/manrope-latin-wght-normal.woff2?url';
+import SEO from '@/components/seo/SEO.astro';
+import JsonLd from '@/components/seo/JsonLd.astro';
+import Analytics from '@/components/layout/Analytics.astro';
+import ConsentBanner from '@/components/ui/overlay/ConsentBanner';
+import CursorTrail from '@/components/effects/CursorTrail.astro';
+import { createWebsiteSchema, createOrganizationSchema, createPersonSchema, createProfessionalServiceSchema } from '@/lib/schema';
+import type { Thing, WithContext } from 'schema-dts';
+import siteConfig from '@/config/site.config';
+import { t, getLocaleFromPath } from '@/i18n';
+import { getRssUrl } from '@/lib/blog';
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+  imageAlt?: string;
+  article?: {
+    publishedTime?: Date;
+    modifiedTime?: Date;
+    authors?: string[];
+    tags?: string[];
+  };
+  noindex?: boolean;
+  nofollow?: boolean;
+  includeOrgSchema?: boolean;
+  includePersonSchema?: boolean;
+  includeProfessionalServiceSchema?: boolean;
+  extraSchemas?: WithContext<Thing>[];
+  eagerReveal?: boolean;
+  /** Verified locale alternates for this page, forwarded to SEO for hreflang. */
+  localeAlternates?: { locale: string; url: string }[];
+}
+
+const {
+  title,
+  description,
+  image,
+  imageAlt,
+  article,
+  noindex = false,
+  nofollow = false,
+  includeOrgSchema = false,
+  includePersonSchema = false,
+  includeProfessionalServiceSchema = false,
+  extraSchemas = [],
+  eagerReveal = false,
+  localeAlternates,
+} = Astro.props;
+
+// Build JSON-LD schemas
+const schemas: WithContext<Thing>[] = [createWebsiteSchema()];
+if (includeOrgSchema) {
+  schemas.push(createOrganizationSchema());
+}
+if (includePersonSchema) {
+  schemas.push(createPersonSchema());
+}
+if (includeProfessionalServiceSchema) {
+  schemas.push(createProfessionalServiceSchema());
+}
+schemas.push(...extraSchemas);
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+const commentsConfig = siteConfig.articleFeatures?.comments;
+
+let commentsPreconnectHref: string | null = null;
+
+if (commentsConfig?.enabled) {
+  if (commentsConfig.provider === 'cusdis') {
+    commentsPreconnectHref = commentsConfig.cusdis?.host ?? 'https://cusdis.com';
+  } else if (commentsConfig.provider === 'artalk') {
+    const server = commentsConfig.artalk?.server;
+    if (server) {
+      try {
+        commentsPreconnectHref = new URL(server).origin;
+      } catch {
+        commentsPreconnectHref = server;
+      }
+    }
+  } else {
+    commentsPreconnectHref = 'https://giscus.app';
+  }
+}
+---
+
+<!doctype html>
+<html lang={locale} class="scroll-smooth dark" data-theme="blue" data-theme-mode="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Preload display + body fonts so they're ready for first paint -->
+    <link rel="preload" as="font" type="font/woff2" href={manropeFont} crossorigin="anonymous" />
+    <link rel="preload" as="font" type="font/woff2" href={outfitFont} crossorigin="anonymous" />
+
+    {commentsPreconnectHref && <link rel="preconnect" href={commentsPreconnectHref} crossorigin />}
+
+    <!-- Favicon. The SVG letter is outlined to a vector path at build time (see
+         src/lib/favicon), and PNG/ICO fallbacks are provided so search-engine
+         crawlers, Safari and legacy browsers all render the brand mark. -->
+    <link rel="icon" type="image/svg+xml" href={siteConfig.branding.favicon.svg} />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content={siteConfig.branding.colors.themeColor} />
+
+    <!-- SEO -->
+    <SEO
+      title={title}
+      description={description}
+      image={image}
+      imageAlt={imageAlt}
+      article={article}
+      noindex={noindex}
+      nofollow={nofollow}
+      localeAlternates={localeAlternates}
+    />
+
+    <!-- RSS Feed -->
+    <link rel="alternate" type="application/rss+xml" title={`${siteConfig.name} RSS Feed`} href={getRssUrl(locale)} />
+
+    <!-- JSON-LD Structured Data -->
+    <JsonLd schema={schemas} />
+
+    <!-- Analytics (loads if PUBLIC_GA_MEASUREMENT_ID or PUBLIC_GTM_ID is set) -->
+    <Analytics />
+
+    <!-- Client-side view transitions are intentionally disabled. They composed
+         poorly with the theme's CSS keyframe animations (hero slide-up,
+         data-reveal fades) and produced a visible post-fade "aftershake" on
+         mobile. Each navigation now does a normal page load, so animations
+         run cleanly from frame 0 every time. -->
+
+    <!-- The favicon is a single static brand mark (see the Favicon block above).
+         It intentionally does NOT re-tint to the active theme at runtime: the
+         logo must stay identical across every context — browser tab, search
+         results, social previews and home-screen icon. -->
+
+    <!-- Theme bootstrap (runs before body paint; no flash of wrong theme).
+         Implements a 3-state colour-mode contract:
+           localStorage.theme ∈ {'system','light','dark'}  (default 'system')
+           <html data-theme-mode="…">                      (mirrors saved mode)
+           <html class="dark">                              (resolved appearance)
+         When mode === 'system', <html>.dark tracks prefers-color-scheme live. -->
+    <script is:inline>
+      (function () {
+        const COLOR_THEMES = ['emerald', 'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple'];
+        const VALID_MODES = ['system', 'light', 'dark'];
+
+        function getMode() {
+          try {
+            const stored = localStorage.getItem('theme');
+            if (VALID_MODES.indexOf(stored) !== -1) return stored;
+          } catch { /* private mode / disabled storage */ }
+          return 'system';
+        }
+
+        function applyMode(el) {
+          const mode = getMode();
+          el.setAttribute('data-theme-mode', mode);
+          const isDark =
+            mode === 'dark' ||
+            (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) el.classList.add('dark');
+          else el.classList.remove('dark');
+        }
+
+        function applyColorTheme(el) {
+          try {
+            // Color palette — sessionStorage so it resets to default on each new visit
+            const saved = sessionStorage.getItem('color-theme');
+            if (saved && COLOR_THEMES.indexOf(saved) !== -1) {
+              el.setAttribute('data-theme', saved);
+            }
+          } catch { /* ignored */ }
+        }
+
+        function applyTheme(el) {
+          applyMode(el);
+          applyColorTheme(el);
+        }
+
+        /**
+         * The bottom edge of what the reader can actually see, in the same
+         * coordinates as getBoundingClientRect.
+         *
+         * `innerHeight` is the layout viewport, and on iOS that runs behind
+         * the browser chrome. `visualViewport` is the visible figure, and it
+         * changes as the toolbar collapses under a scroll. The two are
+         * identical in a desktop browser, so nothing there shows the
+         * difference.
+         */
+        function viewportBottom() {
+          const vv = window.visualViewport;
+          if (vv && vv.height) return vv.offsetTop + vv.height;
+          return window.innerHeight || document.documentElement.clientHeight;
+        }
+
+        /**
+         * The colour an opted-in section wants under Safari's bottom toolbar,
+         * or null when none applies.
+         *
+         * Safari on iOS floats that toolbar over the page and tints it from
+         * the BODY's background. A section that is darker than the body — the
+         * home page's hero, which is a dark gradient in both colour modes —
+         * therefore gets a strip of the body's colour drawn across its foot,
+         * white in light mode.
+         *
+         * The section opts in by carrying the colour as the VALUE of
+         * `data-bar-color`. Read with getAttribute rather than resolved from
+         * the cascade: `getComputedStyle` for a custom property is reliable in
+         * Chromium and is not on iOS Safari, and a version of this that read it
+         * that way fell back to the body's colour on the device — which is the
+         * colour the strip is made of.
+         *
+         * Only while the bottom edge of the screen is inside the section.
+         * Scroll it up past that edge and what sits under the toolbar is
+         * whatever follows, so the body goes back to its own colour.
+         */
+        function sectionColor() {
+          const el = document.querySelector('[data-bar-color]');
+          if (!el) return null;
+
+          const rect = el.getBoundingClientRect();
+          const edge = viewportBottom();
+          if (!(rect.height > 0 && rect.top <= edge && rect.bottom >= edge)) return null;
+
+          return (el.getAttribute('data-bar-color') || '').trim() || null;
+        }
+
+        /**
+         * Paint the body that colour.
+         *
+         * Invisible on the page: it only applies while the section covers the
+         * bottom edge of the screen, and the section is painted over the body
+         * for every pixel the reader can see. Cleared the moment that stops
+         * being true.
+         *
+         * It has to be the body. `<meta name="theme-color">` does not reach
+         * this surface, and neither does a background on <html> or a
+         * `color-scheme` declaration — all three were tried on the device and
+         * left the strip where it was.
+         */
+        function paintBody(color) {
+          if (!document.body) return;
+          if (!document.querySelector('[data-bar-color]')) return;
+
+          const want = color || '';
+          if (document.body.style.backgroundColor !== want) {
+            document.body.style.backgroundColor = want;
+          }
+        }
+
+        function syncBar() {
+          paintBody(sectionColor());
+        }
+
+        applyTheme(document.documentElement);
+        syncBar();
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', syncBar, { once: true });
+        }
+
+        if (!window.__themeListenersInit) {
+          window.__themeListenersInit = true;
+
+          // Live-update when the OS flips colour scheme AND the user is on 'system'.
+          const mql = window.matchMedia('(prefers-color-scheme: dark)');
+          const onSchemeChange = function () {
+            if (getMode() === 'system') applyMode(document.documentElement);
+          };
+          if (mql.addEventListener) mql.addEventListener('change', onSchemeChange);
+          else if (mql.addListener) mql.addListener(onSchemeChange); // Safari < 14
+
+          // Re-apply across Astro view transitions (no flash on swap).
+          document.addEventListener('astro:before-swap', function (e) {
+            applyTheme(e.newDocument.documentElement);
+          });
+          document.addEventListener('astro:after-swap', function () {
+            applyTheme(document.documentElement);
+            syncBar();
+          });
+
+          // A section that covers the bottom edge stops covering it as soon as
+          // the page moves, so this has to follow the scroll — otherwise the
+          // body would stay painted over the page below it. One update per
+          // frame at most; the work is a querySelector and a rect.
+          //
+          // iOS collapses and expands its toolbar as you scroll, which moves
+          // the visible bottom edge without firing a window resize, so
+          // visualViewport is listened to as well.
+          let queued = false;
+          function onScroll() {
+            if (queued) return;
+            queued = true;
+            requestAnimationFrame(function () {
+              queued = false;
+              syncBar();
+            });
+          }
+          window.addEventListener('scroll', onScroll, { passive: true });
+          window.addEventListener('resize', onScroll, { passive: true });
+          window.addEventListener('orientationchange', onScroll, { passive: true });
+          if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', onScroll);
+            window.visualViewport.addEventListener('scroll', onScroll);
+          }
+        }
+      })();
+    </script>
+  </head>
+
+  <body class="min-h-screen bg-background text-foreground antialiased" data-eager-reveal={eagerReveal ? '' : undefined}>
+    <!-- Skip to content link -->
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
+    >
+      {t('nav.skipToContent', locale)}
+    </a>
+
+    <slot name="header" />
+
+    <main id="main-content" class="flex-1">
+      <slot />
+    </main>
+
+    <slot name="footer" />
+
+    <ConsentBanner />
+
+    {siteConfig.effects?.cursorTrail !== false && <CursorTrail />}
+
+    <!-- Back to top button -->
+    <button
+      id="back-to-top"
+      aria-label={t('common.backToTop', locale)}
+      class="fixed bottom-6 right-6 z-50 h-12 w-12"
+      style="opacity:0;translate:0 2rem;pointer-events:none"
+    >
+      <!-- Scroll-progress ring (rotated so arc starts at 12 o'clock) -->
+      <svg class="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 48 48" aria-hidden="true">
+        <!-- Faint grey track -->
+        <circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" class="text-border" stroke-width="2" opacity="0.5" />
+        <!-- Brand progress arc -->
+        <circle id="back-to-top-ring" cx="24" cy="24" r="21" fill="none" stroke="currentColor" class="text-brand-500" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="131.95" stroke-dashoffset="131.95" />
+      </svg>
+      <!-- Inner face -->
+      <span class="absolute inset-[5px] flex items-center justify-center rounded-full bg-background border border-border-strong text-foreground-muted shadow-md" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
+      </span>
+    </button>
+
+    <script is:inline>
+      (function () {
+        const THRESHOLD = 400;
+        const CIRCUMFERENCE = 131.95;
+
+        // Cache `scrollHeight - innerHeight` so the per-frame scroll handler
+        // never reads layout-dependent properties. Reading scrollHeight on
+        // DOMContentLoaded forced a synchronous layout BEFORE first paint
+        // (Lighthouse flagged this script as ~551ms of forced reflow). The
+        // first read is now deferred to a rAF inside initBackToTop — that
+        // runs after the browser has committed initial paint, off the
+        // critical path. ResizeObserver picks up later changes.
+        let docMaxScrollY = 0;
+        function updateDocMaxScrollY() {
+          docMaxScrollY = document.documentElement.scrollHeight - window.innerHeight;
+        }
+        window.addEventListener('resize', updateDocMaxScrollY, { passive: true });
+        if (typeof ResizeObserver !== 'undefined') {
+          new ResizeObserver(updateDocMaxScrollY).observe(document.documentElement);
+        }
+
+        function initBackToTop() {
+          const btn = document.getElementById('back-to-top');
+          if (!btn || btn.dataset.bttInit) return;
+          btn.dataset.bttInit = 'true';
+
+          const ring = document.getElementById('back-to-top-ring');
+          const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          let ticking = false;
+          let visible = false;
+
+          // Ensure initial hidden state is applied via JS (guards against any cascade override)
+          btn.style.opacity = '0';
+          btn.style.translate = '0 2rem';
+          btn.style.pointerEvents = 'none';
+
+          function show() {
+            if (reducedMotion) {
+              btn.style.transition = 'none';
+            } else {
+              btn.style.transition = 'opacity 250ms cubic-bezier(0,0,0.2,1), translate 250ms cubic-bezier(0,0,0.2,1)';
+            }
+            btn.style.opacity = '1';
+            btn.style.translate = '0 0';
+            btn.style.pointerEvents = 'auto';
+            visible = true;
+          }
+
+          function hide() {
+            if (reducedMotion) {
+              btn.style.transition = 'none';
+            } else {
+              btn.style.transition = 'opacity 300ms cubic-bezier(0.4,0,1,1), translate 300ms cubic-bezier(0.4,0,1,1)';
+            }
+            btn.style.opacity = '0';
+            btn.style.translate = '0 2rem';
+            btn.style.pointerEvents = 'none';
+            visible = false;
+          }
+
+          function updateFrame() {
+            const pct = docMaxScrollY > 0 ? Math.min(1, Math.max(0, window.scrollY / docMaxScrollY)) : 0;
+            if (ring) {
+              ring.style.strokeDashoffset = String(CIRCUMFERENCE * (1 - pct));
+            }
+            if (window.scrollY > THRESHOLD) {
+              if (!visible) show();
+            } else {
+              if (visible) hide();
+            }
+            ticking = false;
+          }
+
+          function onScroll() {
+            if (!ticking) {
+              ticking = true;
+              requestAnimationFrame(updateFrame);
+            }
+          }
+
+          window.addEventListener('scroll', onScroll, { passive: true });
+          btn.addEventListener('click', function () {
+            window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
+          });
+
+          document.addEventListener('astro:before-swap', function () {
+            window.removeEventListener('scroll', onScroll);
+          }, { once: true });
+
+          // Run the first frame on rAF so it picks up the initial scroll
+          // position after layout has settled — and read scrollHeight here
+          // (after first paint) instead of forcing layout pre-paint.
+          requestAnimationFrame(function () {
+            updateDocMaxScrollY();
+            updateFrame();
+          });
+        }
+
+        document.addEventListener('astro:page-load', initBackToTop);
+        initBackToTop();
+      })();
+    </script>
+
+    <script is:inline>
+      (function () {
+        function initReveal() {
+          const els = Array.prototype.slice.call(
+            document.querySelectorAll('[data-reveal]:not(.is-visible), [data-reveal-children]:not(.is-visible)')
+          );
+
+          // Also observe each direct child of [data-reveal-content] so long
+          // article bodies (blog posts, project pages) animate block-by-block.
+          document.querySelectorAll('[data-reveal-content]').forEach(function (container) {
+            Array.prototype.forEach.call(container.children, function (child) {
+              if (!child.classList.contains('is-visible')) els.push(child);
+            });
+          });
+
+          if (!els.length) return;
+
+          // Non-eager pages trigger a bit deeper in the viewport (-15% bottom)
+          // so a block is comfortably on-screen before it rises — its slide-up
+          // plays in front of the reader instead of being masked by the scroll
+          // as it peeks in at the bottom edge. Eager pages keep the earlier -5%
+          // so their first above-fold cards still reveal promptly.
+          const eager = document.body.hasAttribute('data-eager-reveal');
+          const belowFoldMargin = eager ? '0px 0px -5% 0px' : '0px 0px -15% 0px';
+
+          // Two scroll-triggered observers for below-fold elements. Tall
+          // elements (taller than ~85% of the viewport — long code blocks,
+          // large embeds) use threshold 0 so they still fire; shorter
+          // elements use 0.15 so animations feel earned.
+          const shortObs = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+              if (entry.isIntersecting) {
+                entry.target.classList.add('is-visible');
+                shortObs.unobserve(entry.target);
+              }
+            });
+          }, { threshold: 0.15, rootMargin: belowFoldMargin });
+
+          const tallObs = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+              if (entry.isIntersecting) {
+                entry.target.classList.add('is-visible');
+                tallObs.unobserve(entry.target);
+              }
+            });
+          }, { threshold: 0, rootMargin: belowFoldMargin });
+
+          // First-pass observer: hands us boundingClientRect and rootBounds
+          // for each element without forcing a synchronous layout read. The
+          // browser computes the geometry off the main thread, so this
+          // replaces the previous getBoundingClientRect() loop that caused
+          // Lighthouse to flag a 76ms forced reflow.
+          //
+          // rootMargin -25% on the bottom defines "above-the-fold" as the
+          // top 75% of the viewport, matching the prior `rect.top < vh*0.75`
+          // condition.
+          let revealIndex = 0;
+          const firstPass = new IntersectionObserver(function (entries) {
+            // Preserve document order so the above-fold stagger is stable.
+            entries.sort(function (a, b) {
+              const pos = a.target.compareDocumentPosition(b.target);
+              if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+              if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+              return 0;
+            });
+
+            entries.forEach(function (entry) {
+              firstPass.unobserve(entry.target);
+              if (entry.isIntersecting) {
+                const i = revealIndex++;
+                setTimeout(function () {
+                  entry.target.classList.add('is-visible');
+                }, 250 + i * 80);
+              } else {
+                const rb = entry.rootBounds;
+                const tall = rb ? entry.boundingClientRect.height > rb.height * 0.85 : false;
+                (tall ? tallObs : shortObs).observe(entry.target);
+              }
+            });
+          }, { threshold: 0, rootMargin: '0px 0px -25% 0px' });
+
+          // Cards flagged data-reveal-eager (the first card on a listing page)
+          // reveal on load with the normal animation instead of waiting for
+          // scroll. On mobile the centered hero can push the first card below
+          // firstPass's fold line, which would otherwise leave it hidden until
+          // the reader scrolls — unlike pages with no heading above the grid
+          // (e.g. projects), where the first card sits above the fold and
+          // animates on load. The 250ms delay mirrors firstPass's base reveal
+          // timing so the entrance matches, and lets the opacity:0 frame paint
+          // first so the transition plays.
+          //
+          // On a multi-column grid the eager card's same-row neighbours would
+          // otherwise ride the scroll observers on a different clock, so a
+          // side-by-side pair enters visibly out of sync. Group each eager card
+          // with its same-row [data-reveal] siblings and reveal them in one
+          // tick. "Same row" is detected by a shared offsetTop, so on a stacked
+          // single-column layout (mobile) nothing qualifies and the existing
+          // top-to-bottom stagger is left untouched. The offsetTop reads happen
+          // in a single pass with no interleaved writes, so they share one
+          // layout flush rather than thrashing.
+          const eagerGroups = new Map();
+          const syncedSiblings = new Set();
+          els.forEach(function (el) {
+            if (!el.hasAttribute('data-reveal-eager')) return;
+            const group = [el];
+            const parent = el.parentElement;
+            if (parent) {
+              const top = el.offsetTop;
+              Array.prototype.forEach.call(parent.children, function (sib) {
+                if (
+                  sib !== el &&
+                  sib.hasAttribute('data-reveal') &&
+                  !sib.hasAttribute('data-reveal-eager') &&
+                  Math.abs(sib.offsetTop - top) <= 1
+                ) {
+                  group.push(sib);
+                  syncedSiblings.add(sib);
+                }
+              });
+            }
+            eagerGroups.set(el, group);
+          });
+
+          els.forEach(function (el) {
+            if (el.hasAttribute('data-reveal-eager')) {
+              const group = eagerGroups.get(el);
+              setTimeout(function () {
+                group.forEach(function (node) { node.classList.add('is-visible'); });
+              }, 250);
+              return;
+            }
+            // Already revealed in lockstep with its eager row-mate above.
+            if (syncedSiblings.has(el)) return;
+            firstPass.observe(el);
+          });
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', initReveal);
+        } else {
+          initReveal();
+        }
+      })();
+    </script>
+  </body>
+</html>

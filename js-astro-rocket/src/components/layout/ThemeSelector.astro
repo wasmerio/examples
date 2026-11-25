@@ -1,0 +1,124 @@
+---
+/**
+ * ThemeSelector
+ * A row of colour swatches that switches the active colour theme at
+ * runtime by writing `data-theme` on <html> and persisting to sessionStorage.
+ *
+ * Usage in Header:  <ThemeSelector />
+ * Pass `class` to tint the label colour for floating / inverted headers.
+ */
+import { t, getLocaleFromPath } from '@/i18n';
+import { selectorThemes as themes } from '@/lib/themes';
+
+interface Props {
+  class?: string;
+}
+
+const { class: className } = Astro.props;
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+---
+
+<div
+  class:list={['theme-selector flex flex-wrap items-center gap-1', className]}
+  role="group"
+  aria-label={t('theme.selectColourTheme', locale)}
+>
+  {themes.map((theme) => (
+    <button
+      type="button"
+      class="theme-swatch relative h-3.5 w-3.5 rounded-full transition-transform duration-150 focus-visible:outline-none"
+      data-theme-id={theme.id}
+      style={`background-color:${theme.color};--swatch:${theme.color}`}
+      title={theme.name}
+      aria-label={t('theme.swatchLabel', locale, { name: theme.name })}
+    />
+  ))}
+</div>
+
+<style>
+  /* Inactive: subtle border + dimmed so active pops without extra decoration */
+  .theme-swatch {
+    box-shadow: inset 0 0 0 1px oklch(0% 0 0 / 0.12);
+    opacity: 0.55;
+    transition:
+      opacity 150ms ease,
+      transform 150ms ease;
+  }
+
+  /* Active: full opacity + slim underline pill in the swatch colour */
+  .theme-swatch[data-active] {
+    opacity: 1;
+    box-shadow: inset 0 0 0 1px oklch(0% 0 0 / 0.12);
+  }
+
+  .theme-swatch[data-active]::after {
+    content: '';
+    position: absolute;
+    bottom: -3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 10px;
+    height: 2px;
+    background: var(--swatch);
+    border-radius: 1px;
+  }
+
+  /* Hover: lift opacity on inactive */
+  .theme-swatch:not([data-active]):hover {
+    opacity: 0.85;
+    transform: scale(1.1);
+  }
+</style>
+
+<script>
+  const STORAGE_KEY = 'color-theme';
+  const DEFAULT_THEME = 'blue';
+
+  function getActiveTheme(): string {
+    try {
+      return sessionStorage.getItem(STORAGE_KEY) || DEFAULT_THEME;
+    } catch {
+      return DEFAULT_THEME;
+    }
+  }
+
+  function setTheme(id: string) {
+    document.documentElement.setAttribute('data-theme', id);
+    try { sessionStorage.setItem(STORAGE_KEY, id); } catch { /* private mode */ }
+
+    // Update every swatch on the page (handles multiple selector instances)
+    const swatches = document.querySelectorAll<HTMLButtonElement>('.theme-swatch');
+    swatches.forEach((btn) => {
+      if (btn.dataset.themeId === id) {
+        btn.setAttribute('data-active', '');
+      } else {
+        btn.removeAttribute('data-active');
+      }
+    });
+  }
+
+  function initThemeSelector() {
+    const active = getActiveTheme();
+
+    const activeSwatches = document.querySelectorAll<HTMLButtonElement>('.theme-swatch');
+    activeSwatches.forEach((btn) => {
+      // Mark current active
+      if (btn.dataset.themeId === active) {
+        btn.setAttribute('data-active', '');
+      } else {
+        btn.removeAttribute('data-active');
+      }
+
+      // Guard against double-binding across re-runs
+      if (btn.dataset.selectorInit) return;
+      btn.dataset.selectorInit = 'true';
+
+      btn.addEventListener('click', () => setTheme(btn.dataset.themeId!));
+    });
+  }
+
+  initThemeSelector();
+  document.addEventListener('astro:page-load', initThemeSelector);
+  document.addEventListener('astro:after-swap', initThemeSelector);
+</script>

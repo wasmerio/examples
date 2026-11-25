@@ -1,0 +1,114 @@
+---
+/**
+ * YouTube — privacy-friendly, click-to-play video embed for MDX posts
+ * and pages.
+ *
+ *   import YouTube from '@/components/patterns/YouTube.astro';
+ *
+ *   <YouTube id="QONgJurkigk" title="NASA" />
+ *
+ * Renders a lightweight facade at build time — the video's thumbnail and
+ * a play button — so the page ships zero YouTube JavaScript and sets no
+ * third-party cookies. Only when the reader presses play does the real
+ * player load, from the privacy-friendly youtube-nocookie.com domain
+ * (the same "zero bytes until play" approach the project galleries use).
+ * Without JavaScript, a "watch on YouTube" link is offered instead.
+ */
+import { t, getLocaleFromPath } from '@/i18n';
+
+interface Props {
+  /** The YouTube video id — the part after `watch?v=` in the URL */
+  id: string;
+  /** The video's title — announced to screen readers and set on the player */
+  title: string;
+  class?: string;
+}
+
+const { id, title, class: className } = Astro.props;
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+// hqdefault.jpg exists for every video (maxresdefault does not). It's a
+// 4:3 frame with letterbox bars; object-fit: cover crops them away in the
+// 16:9 box. The thumbnail is a plain image from YouTube's cookieless CDN.
+const thumbnail = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+const watchUrl = `https://www.youtube.com/watch?v=${id}`;
+---
+
+<div
+  class:list={[
+    'yt-embed not-prose relative my-8 aspect-video overflow-hidden rounded-xl border border-border bg-background-secondary',
+    className,
+  ]}
+  data-yt-id={id}
+  data-yt-title={title}
+>
+  <img
+    src={thumbnail}
+    alt=""
+    loading="lazy"
+    decoding="async"
+    class="absolute inset-0 h-full w-full object-cover"
+  />
+  <button
+    type="button"
+    class="yt-play group absolute inset-0 flex cursor-pointer items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+    aria-label={t('video.playLabel', locale, { title })}
+  >
+    <span
+      class="flex h-16 w-16 items-center justify-center rounded-full border border-border-strong bg-background/90 text-brand-500 shadow-lg backdrop-blur-sm transition-transform duration-(--transition-normal) group-hover:scale-110"
+      aria-hidden="true"
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M8 5.14v13.72c0 .82.9 1.32 1.6.89l10.98-6.86a1.05 1.05 0 0 0 0-1.78L9.6 4.25c-.7-.43-1.6.07-1.6.89Z" />
+      </svg>
+    </span>
+  </button>
+  <noscript>
+    <a
+      href={watchUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="absolute bottom-3 right-3 rounded-full border border-border-strong bg-background/90 px-3 py-1.5 text-sm font-medium text-foreground"
+    >
+      {t('video.watchOn', locale)}
+    </a>
+  </noscript>
+</div>
+
+<script>
+  function initYouTubeEmbeds() {
+    document.querySelectorAll<HTMLElement>('.yt-embed:not([data-yt-init])').forEach((embed) => {
+      embed.dataset.ytInit = 'true';
+
+      const button = embed.querySelector<HTMLButtonElement>('.yt-play');
+      if (!button) return;
+
+      button.addEventListener(
+        'click',
+        () => {
+          const id = embed.dataset.ytId;
+          if (!id) return;
+          // Swap the facade for the real player only on explicit interaction,
+          // via the cookieless embed domain. autoplay=1 starts it immediately
+          // so the click isn't wasted.
+          const iframe = document.createElement('iframe');
+          iframe.src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?autoplay=1`;
+          iframe.title = embed.dataset.ytTitle || 'YouTube video';
+          iframe.allow =
+            'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+          iframe.allowFullscreen = true;
+          iframe.className = 'absolute inset-0 h-full w-full';
+          iframe.style.border = '0';
+          embed.replaceChildren(iframe);
+          // The button that held focus is gone — hand focus to the player.
+          iframe.focus();
+        },
+        { once: true }
+      );
+    });
+  }
+
+  initYouTubeEmbeds();
+  document.addEventListener('astro:page-load', initYouTubeEmbeds);
+  document.addEventListener('astro:after-swap', initYouTubeEmbeds);
+</script>

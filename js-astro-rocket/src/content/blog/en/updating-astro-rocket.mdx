@@ -1,0 +1,180 @@
+---
+title: "Updating Without Losing Your Content"
+description: "Astro Rocket is installed with git clone, so updating is a git merge rather than an npm install. Here's the safe, reversible way to do it."
+publishedAt: 2026-09-15
+author: "Hans Martens"
+tags: ["astro-rocket", "tutorial", "git", "maintenance"]
+featured: false
+locale: en
+image: "../../../assets/blog/updating-astro-rocket.svg"
+svgSlug: "updating-astro-rocket"
+imageAlt: "A circular refresh arrow above the word 'updating', on a brand-coloured background"
+---
+
+This is a question I get regularly from people running [Astro Rocket](https://astrorocket.dev): *a new version is out — how do I update without losing everything I've written?*
+
+The short answer is reassuring: **your content is safe, and the update is a git merge.** Not an `npm install`, not downloading a ZIP and copying files over the top. This post walks through exactly how to do it, what to back up, and what to do when git asks you a question halfway through.
+
+## Why it works this way
+
+Astro Rocket isn't installed as a package you depend on — you get it by cloning the repository:
+
+```bash
+git clone https://github.com/hansmartensdev/astro-rocket.git my-project
+```
+
+That means your website **is** a git repository, with the theme's full history in it. And that's good news: git already knows the difference between the theme's files and the changes you've made on top of them. Updating is simply a matter of pulling in the newer theme commits and letting git merge them with yours.
+
+It also means the update is **reversible**. Nothing is ever overwritten in a way you can't undo, as long as your own work is committed first.
+
+> **The one method to avoid.** Manually copying files over your project is the
+> only approach that really can silently destroy your work — because nothing is
+> tracking what it replaced. Everything below uses git instead, which never
+> throws away a version you committed.
+
+## The update process
+
+### One-time setup: add the theme as a remote
+
+Your project already has a remote called `origin` — that's your own repository. Add mine as a second remote called `upstream`. You only ever do this once:
+
+```bash
+git remote add upstream https://github.com/hansmartensdev/astro-rocket.git
+```
+
+Check it worked:
+
+```bash
+git remote -v
+```
+
+You should see both `origin` (yours) and `upstream` (the theme).
+
+### Every time you update
+
+```bash
+# 1. Commit your own work first, so nothing is unsaved
+git add -A
+git commit -m "My site before the theme update"
+
+# 2. Update on a branch, so your main branch stays untouched
+git checkout -b theme-update
+
+# 3. Fetch the latest theme and merge it in
+git fetch upstream
+git merge upstream/main
+
+# 4. Install any new dependencies, then test locally
+pnpm install
+pnpm dev
+
+# 5. Happy with it? Merge the update into your main branch
+git checkout main
+git merge theme-update
+```
+
+Step 1 is the one that matters most. Once your work is committed, git can always take you back to exactly this moment.
+
+### If something goes wrong
+
+Two escape hatches, both instant:
+
+```bash
+git merge --abort   # backs out of a merge that's in progress
+git checkout main   # returns to your site as it was before the update
+```
+
+Neither destroys anything. If the update doesn't look right, you can walk away from it and try again another day.
+
+## What to back up
+
+If you commit before updating, **git is your backup** — every version of every file is recoverable. But if you'd like a copy on disk to feel safe, these are the folders that hold everything that is *yours*:
+
+| Folder | What's in it |
+|--------|--------------|
+| `src/content/` | Your blog posts, projects, authors, FAQs, and pages |
+| `src/config/` | `site.config.ts`, `nav.config.ts`, `i18n.config.ts` |
+| `src/i18n/` | Your page text — `en.json` and any other language files |
+| `src/assets/` | Your images |
+| `public/` | Favicon, fonts, and other static files |
+| `.env` | Your environment variables |
+
+One of those deserves special attention: **`.env` is deliberately not tracked by git**, because it holds your API keys. That means it isn't in your commit history and it won't be restored automatically. Keep a copy of it somewhere safe.
+
+## Will your content be overwritten?
+
+**No.** A merge only touches files that actually changed in the theme. Your posts, projects, images, and settings stay exactly as you left them.
+
+There is one thing to expect, though, and it isn't an error: a **merge conflict**. That happens when you edited the same file that I also changed. Git doesn't guess — it stops and asks you which version to keep, marking both inside the file:
+
+```text
+<<<<<<< HEAD
+your version
+=======
+the theme's new version
+>>>>>>> upstream/main
+```
+
+Your editor will show this as a side-by-side choice: keep yours, take mine, or combine them. Delete the `<<<<<<<`, `=======` and `>>>>>>>` markers, save, then:
+
+```bash
+git add .
+git commit
+```
+
+Nothing has been lost — git kept both versions and simply needed you to decide.
+
+In practice, conflicts show up in the same couple of places, because they're the files everyone personalises:
+
+- `src/config/site.config.ts` — your site name, links, and options
+- `src/i18n/en.json` — your page text
+
+When you hit one there, the answer is nearly always: **keep your own values, and add any new keys the theme introduced.** New config options and new translation keys are the normal reason those files change between versions.
+
+## Keeping future updates easy
+
+A habit that avoids most conflicts entirely: **keep your changes in content and config, not in the theme's components.**
+
+Astro Rocket is built so that the things you'd normally want to change — text, colours, navigation, site details — all live in `src/config/` and `src/i18n/`. If you stay in those files, updates tend to merge cleanly with no conflicts at all.
+
+Customising a component directly is completely fine — it's your site. Just know that you're accepting a small, predictable cost: that file may need a manual decision once per update. If you do edit a component, a short comment saying what you changed and why makes that decision much easier for future you.
+
+## Before you update: read the changelog
+
+Every release is documented in [CHANGELOG.md](https://github.com/hansmartensdev/astro-rocket/blob/main/CHANGELOG.md). It's worth two minutes before you start, so nothing surprises you.
+
+One version in particular deserves a mention. **2.0.0 was a major release** — it upgraded the theme to Astro 7, which also moved the build to Vite 8 and updated every Astro integration along with it. If you're coming from a 1.x version, read that entry first, and check one thing before you begin:
+
+```bash
+node --version
+```
+
+Astro Rocket now requires **Node 22.12 or newer**. If you're on an older Node, update it first — otherwise the install step will fail and it'll look like the theme broke, when it's really just the runtime.
+
+## Then test, then deploy
+
+After the merge, always run the site locally before you push:
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Click through your homepage, a blog post, a project, and anything you've customised. Then build it once, exactly as your host will:
+
+```bash
+pnpm build
+```
+
+If both are clean, you're safe to deploy.
+
+## In short
+
+- Update with **git**, never by copying files over your project.
+- **Commit first** — that single step makes everything reversible.
+- Work on a **branch**, test, then merge into `main`.
+- Your content in `src/content/`, `src/config/`, `src/i18n/`, `src/assets/` and `public/` **is not overwritten**.
+- Keep a copy of **`.env`**, since git doesn't track it.
+- **Conflicts are normal**, not damage — usually in `site.config.ts` or `en.json`.
+
+If you hit a conflict you're unsure about, open an [issue on GitHub](https://github.com/hansmartensdev/astro-rocket/issues) with the file name and what it says — happy to help you work it out.

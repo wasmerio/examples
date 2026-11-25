@@ -1,0 +1,115 @@
+---
+/**
+ * BlogPageView — a paginated blog index page (page 2..N).
+ *
+ * Shared body for the default-locale route (`/blog/page/N`) and the
+ * locale-prefixed route (`/<locale>/blog/page/N`). The page number and total
+ * are resolved in each route's `getStaticPaths` and passed in; URLs are built
+ * locale-aware via `lib/blog`.
+ */
+import PageLayout from '@/layouts/PageLayout.astro';
+import BlogCard from '@/components/blog/BlogCard.astro';
+import Pagination from '@/components/blog/Pagination.astro';
+import TagList from '@/components/blog/TagList.astro';
+import Badge from '@/components/ui/data-display/Badge/Badge.astro';
+import Icon from '@/components/ui/primitives/Icon/Icon.astro';
+import { Hero } from '@/components/hero';
+import { t, defaultLocale } from '@/i18n';
+import BlogCta from '@/components/blog/BlogCta.astro';
+import {
+  BLOG_POSTS_PER_PAGE,
+  BLOG_TAG_CLOUD_LIMIT,
+  collectTopTags,
+  getBlogBaseUrl,
+  getBlogPageUrl,
+  getPostUrl,
+  getPublishedPosts,
+} from '@/lib/blog';
+
+interface Props {
+  /** Locale whose posts this page renders. Defaults to the site default. */
+  locale?: string;
+  /** 1-based page number (always >= 2 for this view). */
+  page: number;
+  /** Total number of index pages for this locale. */
+  totalPages: number;
+}
+
+const { locale = defaultLocale, page, totalPages } = Astro.props;
+
+const posts = await getPublishedPosts(locale);
+const nonFeatured = posts.filter((p) => !p.data.featured);
+const regularPostsAll = nonFeatured.length > 0 ? nonFeatured : posts;
+
+const start = (page - 1) * BLOG_POSTS_PER_PAGE;
+const pagePosts = regularPostsAll.slice(start, start + BLOG_POSTS_PER_PAGE);
+
+const topTags = collectTopTags(posts, BLOG_TAG_CLOUD_LIMIT);
+
+---
+
+<PageLayout
+  title={t('blog.pageMetaTitle', locale, { page })}
+  description={t('blog.pageMetaDescription', locale, { page, total: totalPages })}
+  showScrollProgress
+  eagerReveal
+  footerBackground="secondary"
+>
+  <Hero layout="centered" size="sm" class="isolate" showHeroHalo>
+    <Badge slot="badge" variant="brand" pill>
+      <Icon name="book" size="sm" />
+      {t('blog.pageBadge', locale, { page, total: totalPages })}
+    </Badge>
+
+    <h1 slot="title">{t('blog.title', locale)}</h1>
+
+    <p slot="description" class="!text-balance">{t('blog.heroDescription', locale)}</p>
+  </Hero>
+
+  <section class="bg-background-secondary py-[var(--space-section-md)] border-t border-border">
+    <div class="mx-auto max-w-6xl px-6 flex flex-col gap-8">
+      <div class="flex flex-col items-center gap-4" data-reveal>
+        <a
+          href={getBlogBaseUrl(locale)}
+          class="group inline-flex items-center gap-2 rounded-lg border border-brand-500/40 bg-transparent px-4 py-2 text-sm font-medium text-brand-700 dark:text-brand-400 hover:border-brand-500/80 hover:bg-brand-500/10 transition-colors"
+        >
+          <Icon name="arrow-left" size="sm" />
+          {t('blog.newestPosts', locale)}
+        </a>
+
+        {topTags.length > 0 && (
+          <TagList tags={topTags} locale={locale} class="justify-center" />
+        )}
+      </div>
+
+      <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {pagePosts.map((post, index) => (
+          <BlogCard
+            title={post.data.title}
+            description={post.data.description}
+            href={getPostUrl(post.id, locale)}
+            publishedAt={post.data.publishedAt}
+            tags={post.data.tags}
+            author={post.data.author}
+            image={post.data.image}
+            svgSlug={post.data.svgSlug}
+            body={post.body}
+            revealDelay={index % 3}
+            eager={index === 0}
+          />
+        ))}
+      </div>
+
+      <Pagination
+        currentPage={page}
+        totalPages={totalPages}
+        href={(p) => getBlogPageUrl(p, locale)}
+      />
+    </div>
+  </section>
+
+  <BlogCta
+    locale={locale}
+    sectionClass="relative z-10 py-[var(--space-section-md)] bg-background"
+  />
+</PageLayout>

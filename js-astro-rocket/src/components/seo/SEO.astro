@@ -1,0 +1,147 @@
+---
+import siteConfig from '@/config/site.config';
+import {
+  isEnabled as i18nIsEnabled,
+  getLocales,
+  defaultLocale,
+  swapLocaleInPath,
+} from '@/i18n';
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+  imageAlt?: string;
+  article?: {
+    publishedTime?: Date;
+    modifiedTime?: Date;
+    authors?: string[];
+    tags?: string[];
+  };
+  noindex?: boolean;
+  nofollow?: boolean;
+  /**
+   * Verified locale alternates for this page (`{ locale, url }`). When given,
+   * they drive the `hreflang` tags instead of blindly swapping the locale
+   * segment of the current path — so a translation that lives at a different
+   * slug points at its real URL, and locales without a translation are
+   * omitted. Falls back to same-path swapping when not provided.
+   */
+  localeAlternates?: { locale: string; url: string }[];
+}
+
+const {
+  title,
+  description = siteConfig.description,
+  image,
+  imageAlt,
+  article,
+  noindex = false,
+  nofollow = false,
+  localeAlternates,
+} = Astro.props;
+
+// The <title> tag carries the site name so the brand shows in search results.
+// Social cards do not: Facebook, LinkedIn and X render `og:site_name` as their
+// own line above the title, so repeating it in `og:title` shows the name twice
+// and spends ~16 characters of a box that truncates around 60-70.
+const pageTitle = title ? `${title} — ${siteConfig.name}` : siteConfig.name;
+const socialTitle = title || siteConfig.name;
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+
+// Process image - fall back to the static default OG image
+let ogImage: string;
+if (image) {
+  ogImage = image.startsWith('http') ? image : new URL(image, Astro.site).toString();
+} else {
+  ogImage = new URL(siteConfig.ogImage, Astro.site).toString();
+}
+
+const robotsContent = [noindex ? 'noindex' : 'index', nofollow ? 'nofollow' : 'follow'].join(', ');
+
+// Normalize BCP-47 locale (e.g. "en") to OG language_TERRITORY format (e.g. "en_US")
+const localeMap: Record<string, string> = {
+  en: 'en_US', fr: 'fr_FR', de: 'de_DE', es: 'es_ES', it: 'it_IT',
+  pt: 'pt_BR', nl: 'nl_NL', ja: 'ja_JP', ko: 'ko_KR', zh: 'zh_CN',
+  ru: 'ru_RU', ar: 'ar_SA', hi: 'hi_IN', pl: 'pl_PL', sv: 'sv_SE',
+};
+const rawLocale = Astro.currentLocale || 'en_US';
+const locale = rawLocale.includes('_') || rawLocale.includes('-')
+  ? rawLocale.replace('-', '_')
+  : (localeMap[rawLocale] || `${rawLocale}_${rawLocale.toUpperCase()}`);
+
+// Determine OG image MIME type from file extension
+const extToMime: Record<string, string> = {
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml',
+};
+function getImageType(url: string): string | undefined {
+  const ext = url.match(/(\.\w+)(?:\?|$)/)?.[1]?.toLowerCase();
+  return ext ? extToMime[ext] : undefined;
+}
+const ogImageType = getImageType(ogImage);
+
+// hreflang alternates — only emitted when i18n is enabled with >1 locale.
+// `x-default` points at the default-locale URL per Google's recommendation.
+// Prefer caller-provided, verified alternates (e.g. a blog post's real
+// per-locale URLs); otherwise fall back to swapping the locale segment of the
+// current path, which is correct for pages that share a slug across locales.
+const i18nOn = i18nIsEnabled();
+const resolvedAlternates =
+  localeAlternates && localeAlternates.length > 0
+    ? localeAlternates
+    : getLocales().map((loc) => ({ locale: loc, url: swapLocaleInPath(Astro.url.pathname, loc) }));
+const hreflangAlternates = i18nOn
+  ? resolvedAlternates.map((alt) => ({
+      hreflang: alt.locale,
+      href: new URL(alt.url, Astro.site).toString(),
+    }))
+  : [];
+const xDefaultUrl =
+  resolvedAlternates.find((alt) => alt.locale === defaultLocale)?.url ??
+  resolvedAlternates[0]?.url ??
+  swapLocaleInPath(Astro.url.pathname, defaultLocale);
+const xDefaultHref = i18nOn ? new URL(xDefaultUrl, Astro.site).toString() : null;
+---
+
+<!-- Primary Meta Tags -->
+<title>{pageTitle}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonicalURL.toString()} />
+<meta name="robots" content={robotsContent} />
+
+<!-- hreflang alternates (only when i18n is enabled with multiple locales) -->
+{hreflangAlternates.map((alt) => <link rel="alternate" hreflang={alt.hreflang} href={alt.href} />)}
+{xDefaultHref && <link rel="alternate" hreflang="x-default" href={xDefaultHref} />}
+
+<!-- Open Graph -->
+<meta property="og:title" content={socialTitle} />
+<meta property="og:type" content={article ? 'article' : 'website'} />
+<meta property="og:image" content={ogImage} />
+<meta property="og:url" content={canonicalURL.toString()} />
+<meta property="og:description" content={description} />
+<meta property="og:site_name" content={siteConfig.name} />
+<meta property="og:locale" content={locale} />
+<meta property="og:image:alt" content={imageAlt || socialTitle} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+{ogImageType && <meta property="og:image:type" content={ogImageType} />}
+
+<!-- Article Metadata -->
+{article?.publishedTime && <meta property="article:published_time" content={article.publishedTime.toISOString()} />}
+{article?.modifiedTime && <meta property="article:modified_time" content={article.modifiedTime.toISOString()} />}
+{article?.authors?.map((author) => <meta property="article:author" content={author} />)}
+{article?.tags?.map((tag) => <meta property="article:tag" content={tag} />)}
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={socialTitle} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={ogImage} />
+{siteConfig.twitter?.site && <meta name="twitter:site" content={siteConfig.twitter.site} />}
+{siteConfig.twitter?.creator && <meta name="twitter:creator" content={siteConfig.twitter.creator} />}
+
+<!-- Verification -->
+{siteConfig.verification?.google && <meta name="google-site-verification" content={siteConfig.verification.google} />}
+{siteConfig.verification?.bing && <meta name="msvalidate.01" content={siteConfig.verification.bing} />}

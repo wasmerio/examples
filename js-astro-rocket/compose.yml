@@ -1,0 +1,70 @@
+# Local preview only. This is not how the theme deploys — see the README.
+#
+#   docker compose up --build     build and serve on http://localhost:4321
+#   docker compose run --rm export  build and copy the site into ./dist
+#
+# The host filesystem is mounted at /export and nowhere else, so the build
+# never sees anything of yours but this repository.
+#
+# Your `.env` is not in the build context and does not need to be: Compose
+# reads it to resolve the ${...} substitutions below, and passes the values in
+# as build arguments. The file stays out; the settings get through.
+
+# Everything Astro inlines into the generated files at build time, shared by
+# both services so a preview and an export build the same site.
+#
+# The three server-side secrets (RESEND_API_KEY, RESEND_FROM_EMAIL,
+# RESEND_AUDIENCE_ID) are not here: they are read by the API routes, and
+# neither service carries routes.
+x-build-config: &build-config
+  PUBLIC_GA_MEASUREMENT_ID: ${PUBLIC_GA_MEASUREMENT_ID:-}
+  PUBLIC_GTM_ID: ${PUBLIC_GTM_ID:-}
+  PUBLIC_UMAMI_WEBSITE_ID: ${PUBLIC_UMAMI_WEBSITE_ID:-}
+  PUBLIC_UMAMI_SRC: ${PUBLIC_UMAMI_SRC:-}
+  PUBLIC_GOOGLE_MAPS_API_KEY: ${PUBLIC_GOOGLE_MAPS_API_KEY:-}
+  PUBLIC_CONSENT_ENABLED: ${PUBLIC_CONSENT_ENABLED:-}
+  PUBLIC_PRIVACY_POLICY_URL: ${PUBLIC_PRIVACY_POLICY_URL:-}
+  GOOGLE_SITE_VERIFICATION: ${GOOGLE_SITE_VERIFICATION:-}
+  BING_SITE_VERIFICATION: ${BING_SITE_VERIFICATION:-}
+
+services:
+  # Serves the built site from nginx. No Node in this container.
+  astro:
+    build:
+      context: .
+      args:
+        <<: *build-config
+        # What canonical tags, og:image, RSS and the sitemap are written
+        # against. Override when previewing with your own domain.
+        SITE_URL: ${SITE_URL:-http://localhost:4321}
+    ports:
+      - '4321:8080'
+
+  # Builds and hands the files back, for looking at the output itself.
+  # Not started by `up`; run it on demand.
+  export:
+    profiles: ['export']
+    build:
+      context: .
+      target: build
+      args:
+        <<: *build-config
+        # These files are the ones that go on a host, so SITE_URL matters here
+        # in a way it does not for the preview above. Without this the build
+        # took the Dockerfile's own default and wrote http://localhost:4321
+        # into every canonical tag, the sitemap and og:image — and said
+        # nothing, because SITE_URL was set, just to the wrong thing.
+        #
+        # Empty rather than a localhost default on purpose: an empty value is
+        # falsy, so the build falls back to the placeholder domain AND
+        # [site-url-check] warns that SITE_URL is not set. A wrong address that
+        # announces itself beats a wrong address that does not.
+        SITE_URL: ${SITE_URL:-}
+    volumes:
+      - ./dist:/export
+    command: >
+      sh -c "echo '[clearing ./dist]' &&
+             find /export -mindepth 1 -delete &&
+             echo '[copying the build to ./dist]' &&
+             cp -a /app/dist/client/. /export/ &&
+             echo '[done]'"

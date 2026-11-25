@@ -1,0 +1,159 @@
+---
+import Input from '@/components/ui/form/Input/Input.astro';
+import Textarea from '@/components/ui/form/Textarea/Textarea.astro';
+import Button from '@/components/ui/form/Button/Button.astro';
+import Icon from '@/components/ui/primitives/Icon/Icon.astro';
+import { cn } from '@/lib/cn';
+import { t, getLocaleFromPath } from '@/i18n';
+import { contactConfigured } from '@/lib/email';
+
+interface Props {
+  action?: string;
+  successMessage?: string;
+  class?: string;
+}
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+/**
+ * The endpoint returns "Email service is not configured" with a 500 — but only
+ * after a visitor has typed a name, an address and a message. Reading the same
+ * state at render time lets the form say so before anyone starts writing, and
+ * the notice itself is for whoever is building the site, so it shows in dev
+ * only. Visitors get a disabled submit and one plain line instead.
+ */
+const unconfigured = !contactConfigured;
+const showDevNotice = unconfigured && import.meta.env.DEV;
+
+const {
+  action = '/api/contact',
+  successMessage = t('contact.success', locale),
+  class: className,
+} = Astro.props;
+---
+
+<form
+  id="contact-form"
+  action={action}
+  method="POST"
+  class={cn('space-y-6', className)}
+  data-success-message={successMessage}
+  data-sending={t('contact.sending', locale)}
+  data-generic-error={t('contact.genericError', locale)}
+  data-error-message={t('contact.error', locale)}
+>
+  <!-- Name + Email side by side on sm+ -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <Input
+      label={t('contact.name', locale)}
+      name="name"
+      type="text"
+      required
+      autocomplete="name"
+    />
+    <Input
+      label={t('contact.email', locale)}
+      name="email"
+      type="email"
+      required
+      autocomplete="email"
+    />
+  </div>
+
+  <Input
+    label={t('contact.subject', locale)}
+    name="subject"
+    type="text"
+  />
+
+  <Textarea
+    label={t('contact.message', locale)}
+    name="message"
+    required
+    rows={5}
+  />
+
+  <!-- Honeypot field for spam protection -->
+  <div class="hidden" aria-hidden="true">
+    <input type="text" name="honeypot" tabindex="-1" autocomplete="off" />
+  </div>
+
+  <div id="form-message" class="hidden text-sm"></div>
+
+  {showDevNotice && (
+    <p class="text-center text-xs text-foreground-subtle text-balance">
+      {t('contact.notConfigured', locale)}
+    </p>
+  )}
+
+  {unconfigured && !import.meta.env.DEV && (
+    <p class="text-center text-xs text-foreground-subtle text-balance">
+      {t('contact.unavailable', locale)}
+    </p>
+  )}
+
+  <div class="flex justify-center">
+    <Button
+      type="submit"
+      id="submit-button"
+      disabled={unconfigured && !import.meta.env.DEV}
+      class="gap-2 cta-btn-brand"
+    >
+      {t('contact.send', locale)}
+      <Icon name="arrow-right" size="sm" />
+    </Button>
+  </div>
+</form>
+
+<script>
+  function initContactForm() {
+    const form = document.getElementById('contact-form') as HTMLFormElement;
+    const button = document.getElementById('submit-button') as HTMLButtonElement;
+    const message = document.getElementById('form-message') as HTMLDivElement;
+
+    if (!form || !button || !message) return;
+
+    const successMessage = form.dataset.successMessage || 'Message sent successfully!';
+    const originalButtonHTML = button.innerHTML;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      button.disabled = true;
+      button.textContent = form.dataset.sending || 'Sending…';
+      message.classList.add('hidden');
+
+      try {
+        const formData = new FormData(form);
+        const response = await fetch(form.action, {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          message.textContent = successMessage;
+          message.className = 'text-sm text-success-strong';
+          form.reset();
+        } else {
+          const errors = data.errors
+            ? Object.values(data.errors).flat().join(', ')
+            : (form.dataset.genericError || 'Something went wrong');
+          message.textContent = errors as string;
+          message.className = 'text-sm text-destructive';
+        }
+      } catch {
+        message.textContent = form.dataset.errorMessage || 'Failed to send message. Please try again.';
+        message.className = 'text-sm text-destructive';
+      } finally {
+        button.disabled = false;
+        button.innerHTML = originalButtonHTML;
+        message.classList.remove('hidden');
+      }
+    });
+  }
+
+  initContactForm();
+  document.addEventListener('astro:after-swap', initContactForm);
+</script>

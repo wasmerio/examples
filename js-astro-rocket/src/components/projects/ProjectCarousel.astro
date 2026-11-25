@@ -1,0 +1,269 @@
+---
+/**
+ * ProjectCarousel — swipeable media carousel for project heroes.
+ *
+ * - Native scroll-snap for touch swipe (zero JS for the swipe gesture itself)
+ * - Tiny vanilla script wires up prev/next buttons + active dot indicator
+ * - Keyboard: arrow keys move slides when any nav control has focus
+ * - First slide loads eagerly, the rest lazy — Lighthouse-friendly on mobile
+ * - Video slides render a poster frame with `preload="none"`, so no video
+ *   bytes are downloaded until the visitor presses play; swiping away from a
+ *   playing video pauses it
+ */
+import { Image, getImage } from 'astro:assets';
+import { isVideoSlide, type GallerySlide } from '@/lib/gallery';
+import { t, getLocaleFromPath } from '@/i18n';
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+interface Props {
+  slides: GallerySlide[];
+  /** Optional aria-label for the carousel region. */
+  label?: string;
+}
+
+const { slides, label = 'Project screenshots' } = Astro.props;
+const carouselId = `carousel-${Math.random().toString(36).slice(2, 9)}`;
+const hasMultiple = slides.length > 1;
+// A single image slide is shown complete at its natural ratio (no crop), so
+// nothing important — like the browser header of a screenshot — gets sliced
+// off. Galleries and video slides keep the uniform 16:9 frame.
+const imageClass = hasMultiple ? 'aspect-video w-full object-cover' : 'w-full h-auto';
+
+// Optimise video posters up front — the poster is the slide's visual (and the
+// LCP candidate when a video is the first slide), so it gets the same image
+// pipeline treatment as a regular slide.
+const posters = await Promise.all(
+  slides.map((slide) =>
+    isVideoSlide(slide) ? getImage({ src: slide.poster, width: 1280 }) : null
+  )
+);
+---
+
+<div
+  class="project-carousel relative"
+  data-carousel
+  id={carouselId}
+  role="region"
+  aria-roledescription="carousel"
+  aria-label={label}
+>
+  <!--
+    The ring uses the standard border colour in light mode. A screenshot of a
+    light interface has no edge of its own against the page, which leaves the
+    shadow marking where the image stops; a defined edge puts the shadow back
+    to suggesting depth. Dark screenshots are unaffected — they already read
+    as a distinct shape — and dark mode keeps its own ring.
+  -->
+  <div class="relative overflow-hidden rounded-xl media-shadow ring-1 ring-border dark:ring-white/10">
+    <div
+      class="carousel-track flex snap-x snap-mandatory overflow-x-auto scroll-smooth"
+      data-carousel-track
+      tabindex="0"
+      aria-live="polite"
+    >
+      {slides.map((slide, i) => (
+        <div
+          class="carousel-slide w-full shrink-0 snap-center"
+          role="group"
+          aria-roledescription="slide"
+          aria-label={`${i + 1} of ${slides.length}`}
+          data-carousel-slide
+          data-index={i}
+        >
+          {isVideoSlide(slide) ? (
+            <video
+              class="aspect-video w-full object-cover"
+              src={slide.video}
+              poster={posters[i]?.src}
+              controls
+              playsinline
+              preload="none"
+              aria-label={slide.alt}
+            />
+          ) : (
+            <Image
+              src={slide.src}
+              alt={slide.alt}
+              widths={[640, 960, 1280]}
+              sizes="(max-width: 1024px) 100vw, 640px"
+              class={imageClass}
+              loading={i === 0 ? 'eager' : 'lazy'}
+            />
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+
+  {hasMultiple && (
+    <div class="mt-4 flex items-center justify-between gap-3">
+      <button
+        type="button"
+        class="carousel-nav inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border-strong bg-background text-foreground shadow-sm transition-colors hover:border-brand-500 hover:bg-background-secondary hover:text-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        data-carousel-prev
+        aria-label={t('projects.carouselPreviousSlide', locale)}
+        aria-controls={carouselId}
+      >
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+        </svg>
+      </button>
+
+      <div class="flex items-center gap-3">
+        {/* The dot a visitor sees is 8px, which is far below the 24px minimum
+            a touch target needs. The button carries the 24x24 target and the
+            span carries the appearance, so the control is thumb-sized without
+            drawing a thumb-sized dot. The row has no gap: the targets meet
+            edge to edge rather than overlapping. */}
+        <div
+          class="flex items-center"
+          role="tablist"
+          aria-label={t('projects.carouselChooseSlide', locale)}
+          data-carousel-dots
+        >
+          {slides.map((_, i) => (
+            <button
+              type="button"
+              class="carousel-dot group flex h-6 w-6 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              data-carousel-dot
+              data-index={i}
+              role="tab"
+              aria-label={`Go to slide ${i + 1}`}
+              aria-selected={i === 0 ? 'true' : 'false'}
+              data-active={i === 0 ? 'true' : 'false'}
+            >
+              <span class="h-2 w-2 rounded-full bg-border transition-all group-hover:bg-brand-400 group-data-[active=true]:w-4 group-data-[active=true]:bg-brand-500"></span>
+            </button>
+          ))}
+        </div>
+        <span
+          class="text-xs font-medium text-foreground-muted tabular-nums"
+          data-carousel-counter
+          aria-hidden="true"
+        >
+          <span data-carousel-current>1</span> / {slides.length}
+        </span>
+      </div>
+
+      <button
+        type="button"
+        class="carousel-nav inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border-strong bg-background text-foreground shadow-sm transition-colors hover:border-brand-500 hover:bg-background-secondary hover:text-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        data-carousel-next
+        aria-label={t('projects.carouselNextSlide', locale)}
+        aria-controls={carouselId}
+      >
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+    </div>
+  )}
+</div>
+
+<style>
+  .carousel-track {
+    /* Hide native scrollbar — swipe gesture still works */
+    scrollbar-width: none;
+  }
+  .carousel-track::-webkit-scrollbar {
+    display: none;
+  }
+</style>
+
+<script>
+  function initProjectCarousels() {
+    const carousels = document.querySelectorAll<HTMLElement>(
+      '[data-carousel]:not([data-carousel-init])'
+    );
+
+    carousels.forEach((carousel) => {
+      carousel.setAttribute('data-carousel-init', 'true');
+
+      const track = carousel.querySelector<HTMLElement>('[data-carousel-track]');
+      const slides = carousel.querySelectorAll<HTMLElement>('[data-carousel-slide]');
+      const prevBtn = carousel.querySelector<HTMLButtonElement>('[data-carousel-prev]');
+      const nextBtn = carousel.querySelector<HTMLButtonElement>('[data-carousel-next]');
+      const dots = carousel.querySelectorAll<HTMLButtonElement>('[data-carousel-dot]');
+      const counter = carousel.querySelector<HTMLElement>('[data-carousel-current]');
+
+      if (!track || slides.length === 0) return;
+
+      const scrollToIndex = (index: number) => {
+        const slide = slides[index];
+        if (!slide) return;
+        track.scrollTo({ left: slide.offsetLeft, behavior: 'smooth' });
+      };
+
+      const currentIndex = () => {
+        // Find the slide whose left edge is closest to the current scrollLeft.
+        let closest = 0;
+        let smallestDiff = Infinity;
+        slides.forEach((slide, i) => {
+          const diff = Math.abs(slide.offsetLeft - track.scrollLeft);
+          if (diff < smallestDiff) {
+            smallestDiff = diff;
+            closest = i;
+          }
+        });
+        return closest;
+      };
+
+      prevBtn?.addEventListener('click', () => {
+        const i = currentIndex();
+        scrollToIndex(Math.max(0, i - 1));
+      });
+
+      nextBtn?.addEventListener('click', () => {
+        const i = currentIndex();
+        scrollToIndex(Math.min(slides.length - 1, i + 1));
+      });
+
+      dots.forEach((dot) => {
+        dot.addEventListener('click', () => {
+          const i = parseInt(dot.dataset.index ?? '0', 10);
+          scrollToIndex(i);
+        });
+      });
+
+      // Keyboard nav when the track is focused
+      track.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          scrollToIndex(Math.max(0, currentIndex() - 1));
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          scrollToIndex(Math.min(slides.length - 1, currentIndex() + 1));
+        }
+      });
+
+      // Pause any video that is no longer the active slide, so audio doesn't
+      // keep playing off-screen after a swipe.
+      const pauseInactiveVideos = (activeIndex: number) => {
+        slides.forEach((slide, j) => {
+          const video = slide.querySelector('video');
+          if (video && j !== activeIndex && !video.paused) video.pause();
+        });
+      };
+
+      // Track active slide on scroll to update dots + counter
+      let scrollTimeout: number | undefined;
+      track.addEventListener('scroll', () => {
+        if (scrollTimeout) window.clearTimeout(scrollTimeout);
+        scrollTimeout = window.setTimeout(() => {
+          const i = currentIndex();
+          dots.forEach((dot, j) => {
+            const active = i === j;
+            dot.dataset.active = active ? 'true' : 'false';
+            dot.setAttribute('aria-selected', active ? 'true' : 'false');
+          });
+          if (counter) counter.textContent = String(i + 1);
+          pauseInactiveVideos(i);
+        }, 80);
+      }, { passive: true });
+    });
+  }
+
+  initProjectCarousels();
+  document.addEventListener('astro:after-swap', initProjectCarousels);
+</script>

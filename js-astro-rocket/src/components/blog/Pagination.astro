@@ -1,0 +1,141 @@
+---
+/**
+ * Pure-HTML pagination control. No client-side JS.
+ *
+ * Renders prev/next arrows plus a sliding window of up to 5 page links
+ * around the current page. Designed to be reused across the blog index
+ * and tag archive pages.
+ */
+import Icon from '@/components/ui/primitives/Icon/Icon.astro';
+import { t, getLocaleFromPath } from '@/i18n';
+
+interface Props {
+  currentPage: number;
+  totalPages: number;
+  /** Function that returns the href for a given page number (1-based). */
+  href: (page: number) => string;
+}
+
+const { currentPage, totalPages, href } = Astro.props;
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+if (totalPages <= 1) {
+  // Render nothing — pagination has no purpose with one page.
+}
+
+// Build a small window of pages to show, capped at 5 entries, always
+// including page 1 and the last page when possible.
+function buildWindow(current: number, total: number, max = 5): number[] {
+  if (total <= max) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const half = Math.floor(max / 2);
+  let start = Math.max(1, current - half);
+  const end = Math.min(total, start + max - 1);
+  start = Math.max(1, end - max + 1);
+  return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+}
+
+const pages = buildWindow(currentPage, totalPages);
+const prevHref = currentPage > 1 ? href(currentPage - 1) : null;
+const nextHref = currentPage < totalPages ? href(currentPage + 1) : null;
+
+/**
+ * Shared shape of the two arrows, so the link and the spent version cannot
+ * drift apart visually.
+ */
+const arrowBase =
+  'inline-flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background text-foreground-muted transition-colors';
+const arrowLive = 'hover:border-brand-500 hover:text-brand-500';
+const arrowSpent = 'cursor-not-allowed opacity-40';
+---
+
+{totalPages > 1 && (
+  <nav class="mt-12 flex items-center justify-center gap-2" aria-label={t('pagination.label', locale)}>
+    {/* An anchor without an href is not a link — it falls back to a generic
+        role, and `aria-label` and `aria-disabled` are both prohibited there.
+        So the spent arrow is a span, hidden from assistive technology: it
+        offers nothing to act on, and the live arrow still names the direction
+        that is available. */}
+    {prevHref ? (
+      <a
+        href={prevHref}
+        class:list={[arrowBase, arrowLive]}
+        aria-label={t('pagination.previousPage', locale)}
+        rel="prev"
+      >
+        <Icon name="arrow-left" size="sm" />
+      </a>
+    ) : (
+      <span class:list={[arrowBase, arrowSpent]} aria-hidden="true">
+        <Icon name="arrow-left" size="sm" />
+      </span>
+    )}
+
+    <ol class="flex items-center gap-1">
+      {pages[0] > 1 && (
+        <>
+          <li>
+            <a
+              href={href(1)}
+              class="inline-flex h-10 min-w-10 items-center justify-center rounded-full border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:border-brand-500 hover:text-brand-500"
+            >
+              1
+            </a>
+          </li>
+          {pages[0] > 2 && (
+            <li aria-hidden="true" class="px-1 text-sm text-foreground-subtle">…</li>
+          )}
+        </>
+      )}
+
+      {pages.map((page) => (
+        <li>
+          <a
+            href={href(page)}
+            class:list={[
+              'inline-flex h-10 min-w-10 items-center justify-center rounded-full border px-3 text-sm font-medium transition-colors',
+              page === currentPage
+                ? 'border-brand-500 bg-brand-500 text-white pointer-events-none'
+                : 'border-border bg-background text-foreground hover:border-brand-500 hover:text-brand-500',
+            ]}
+            aria-current={page === currentPage ? 'page' : undefined}
+          >
+            {page}
+          </a>
+        </li>
+      ))}
+
+      {pages[pages.length - 1] < totalPages && (
+        <>
+          {pages[pages.length - 1] < totalPages - 1 && (
+            <li aria-hidden="true" class="px-1 text-sm text-foreground-subtle">…</li>
+          )}
+          <li>
+            <a
+              href={href(totalPages)}
+              class="inline-flex h-10 min-w-10 items-center justify-center rounded-full border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:border-brand-500 hover:text-brand-500"
+            >
+              {totalPages}
+            </a>
+          </li>
+        </>
+      )}
+    </ol>
+
+    {nextHref ? (
+      <a
+        href={nextHref}
+        class:list={[arrowBase, arrowLive]}
+        aria-label={t('pagination.nextPage', locale)}
+        rel="next"
+      >
+        <Icon name="arrow-right" size="sm" />
+      </a>
+    ) : (
+      <span class:list={[arrowBase, arrowSpent]} aria-hidden="true">
+        <Icon name="arrow-right" size="sm" />
+      </span>
+    )}
+  </nav>
+)}

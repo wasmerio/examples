@@ -1,0 +1,113 @@
+---
+import { render } from "astro:content";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import GalleryLightbox from "@/components/GalleryLightbox.astro";
+import StructuredData from "@/components/StructuredData.astro";
+import { getAllNotes, getNoteSlugPath, buildBacklinkMap } from "@/utils/content";
+import { formatDate } from "@/utils/text";
+import { getAssetPath, absoluteUrl, getOgImagePath } from "@/utils/url";
+import { getConfig } from "@/utils/config";
+
+export async function getStaticPaths() {
+  const notes = await getAllNotes();
+
+  return notes.map((note) => ({
+    params: { slug: getNoteSlugPath(note.id, note.filePath) },
+    props: { note },
+  }));
+}
+
+const { note } = Astro.props;
+const { Content } = await render(note);
+
+const siteConfig = await getConfig();
+const date = formatDate(note.data.published);
+
+const backlinkMap = await buildBacklinkMap();
+const noteSlug = getNoteSlugPath(note.id, note.filePath);
+const backlinks = [
+  ...new Map(
+    (backlinkMap.get(noteSlug) ?? [])
+      .filter((link) => link.slug !== noteSlug)
+      .map((link) => [link.slug, link] as const)
+  ).values(),
+];
+
+const notePath = `/notes/${noteSlug}`;
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  headline: note.data.title,
+  description: note.data.description ?? siteConfig.description,
+  datePublished: note.data.published.toISOString(),
+  dateModified: (note.data.updated ?? note.data.published).toISOString(),
+  author: { "@type": "Person", name: siteConfig.author.name },
+  image: absoluteUrl(getOgImagePath(notePath), Astro.site),
+  url: absoluteUrl(notePath, Astro.site),
+};
+---
+
+<BaseLayout title={note.data.title} description={note.data.description} type="article">
+  <StructuredData schema={schema} slot="head" />
+  <div class="layout-content">
+    <article class="markdown-content mx-auto max-w-3xl py-8">
+      <a
+        href={getAssetPath("notes")}
+        class="not-prose font-mono text-xs uppercase tracking-wide text-clay hover:underline"
+      >
+        ← Notes
+      </a>
+
+      <h1 class="not-prose mt-8 font-serif text-4xl leading-tight">
+        {note.data.title}
+      </h1>
+
+      <div class="not-prose mt-4 flex items-center gap-2">
+        <time
+          datetime={note.data.published.toISOString()}
+          class="rounded-xs border border-border px-1 font-mono text-xs uppercase tabular-nums text-muted-foreground"
+        >
+          {date}
+        </time>
+        {note.data.category && (
+          <>
+            <span class="text-muted-foreground/50">·</span>
+            <span class="font-mono text-xs uppercase text-muted-foreground">
+              {note.data.category}
+            </span>
+          </>
+        )}
+      </div>
+
+      <hr class="not-prose mt-6 border-border/50" />
+      <aside data-pagefind-body>
+        <meta data-pagefind-meta="title[content]" content={note.data.title} />
+        <meta data-pagefind-sort="date[content]" content={note.data.published.toISOString()} />
+        <meta data-pagefind-filter="collection[content]" content={note.collection} />
+        <meta data-pagefind-filter="category[content]" content={note.data.category} />
+        <Content />
+      </aside>
+
+      {backlinks.length > 0 && (
+        <div class="not-prose mt-10 border-t border-border/50 pt-4">
+          <h2 class="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+            Backlinks
+          </h2>
+          <ul class="mt-2 space-y-1">
+            {backlinks.map((link) => (
+              <li>
+                <a
+                  href={getAssetPath(`notes/${link.slug}`)}
+                  class="font-serif text-foreground hover:underline"
+                >
+                  {link.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </article>
+  </div>
+  <GalleryLightbox />
+</BaseLayout>

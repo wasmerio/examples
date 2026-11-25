@@ -1,0 +1,93 @@
+---
+import { render } from "astro:content";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import ImageWrapper from "@/components/ImageWrapper.astro";
+import GalleryLightbox from "@/components/GalleryLightbox.astro";
+import StructuredData from "@/components/StructuredData.astro";
+import { getAllPosts, getPostSlugPath } from "@/utils/content";
+import { getCoverImage } from "@/utils/image";
+import { formatDate, calculateReadingTime } from "@/utils/text";
+import { getAssetPath, absoluteUrl, getOgImagePath } from "@/utils/url";
+import { getConfig } from "@/utils/config";
+
+export async function getStaticPaths() {
+  const posts = await getAllPosts();
+
+  return posts.map((post) => ({
+    params: { slug: getPostSlugPath(post.id, post.filePath) },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+
+const siteConfig = await getConfig();
+const cover = getCoverImage(post.data.cover);
+const date = formatDate(post.data.published);
+const readingTime = calculateReadingTime(post.body ?? "");
+
+const postPath = `/posts/${getPostSlugPath(post.id, post.filePath)}`;
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  headline: post.data.title,
+  description: post.data.description,
+  datePublished: post.data.published.toISOString(),
+  dateModified: (post.data.updated ?? post.data.published).toISOString(),
+  author: { "@type": "Person", name: siteConfig.author.name },
+  image: absoluteUrl(getOgImagePath(postPath), Astro.site),
+  url: absoluteUrl(postPath, Astro.site),
+};
+---
+
+<BaseLayout title={post.data.title} description={post.data.description} type="article">
+  <StructuredData schema={schema} slot="head" />
+  <div class="layout-content">
+    <article class="annotated markdown-content mx-auto max-w-4xl py-8">
+      <a
+        href={getAssetPath("posts")}
+        class="not-prose font-mono text-xs uppercase tracking-wide text-clay hover:underline"
+      >
+        ← Essays
+      </a>
+
+      {cover && (
+        <ImageWrapper
+          src={cover}
+          alt={post.data.title}
+          bare
+          class="not-prose mt-6 aspect-[2/1] w-full object-cover"
+        />
+      )}
+
+      <h1 class="not-prose mt-8 font-serif text-4xl leading-tight">
+        {post.data.title}
+      </h1>
+
+      <div class="not-prose mt-4 flex items-center gap-2">
+        <time
+          datetime={post.data.published.toISOString()}
+          class="rounded-xs border border-border px-1 font-mono text-xs uppercase tabular-nums text-muted-foreground"
+        >
+          {date}
+        </time>
+        <span class="text-muted-foreground/50">·</span>
+        <span class="font-mono text-xs uppercase text-muted-foreground">
+          {readingTime.text}
+        </span>
+      </div>
+
+      <hr class="not-prose mt-6 border-border/50" />
+
+      <aside data-pagefind-body>
+        <meta data-pagefind-meta="title[content]" content={post.data.title} />
+        <meta data-pagefind-sort="date[content]" content={post.data.published.toISOString()} />
+        <meta data-pagefind-filter="collection[content]" content={post.collection} />
+        <meta data-pagefind-filter="category[content]" content={post.data.category} />
+        <Content />
+      </aside>
+    </article>
+  </div>
+  <GalleryLightbox />
+</BaseLayout>

@@ -1,0 +1,114 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import PageHeader from "@/components/PageHeader.astro";
+import ImageWrapper from "@/components/ImageWrapper.astro";
+import Section from "@/components/Section.astro";
+import PostFeed from "@/components/PostFeed.astro";
+import NotesGrid from "@/components/NotesGrid.astro";
+import StructuredData from "@/components/StructuredData.astro";
+import { getConfig } from "@/utils/config";
+import { getAllPosts, getAllNotes, getPostUrl } from "@/utils/content";
+import { getCoverImage } from "@/utils/image";
+import { formatDate } from "@/utils/text";
+import { absoluteUrl } from "@/utils/url";
+
+const siteConfig = await getConfig();
+const allPosts = await getAllPosts();
+const allNotes = await getAllNotes();
+
+const recentPosts = allPosts.slice(0, siteConfig.recentPosts);
+const recentNotes = allNotes.slice(0, siteConfig.recentPosts);
+
+const featuredEntry =
+  recentPosts.find((p) => p.data.featured) ??
+  recentPosts.at(0);
+
+const feedPosts = featuredEntry
+  ? recentPosts.filter((p) => p.id !== featuredEntry.id)
+  : [];
+
+const coverImage = getCoverImage(featuredEntry?.data.cover);
+const dateLabel = formatDate(featuredEntry?.data.published);
+
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: siteConfig.title,
+  description: siteConfig.description,
+  url: absoluteUrl("/", Astro.site),
+  author: { "@type": "Person", name: siteConfig.author.name, url: siteConfig.author.url },
+};
+---
+
+<BaseLayout>
+  <StructuredData schema={schema} slot="head" />
+  <div class="layout-content">
+    <PageHeader
+      eyebrow={siteConfig.tagline}
+      title={siteConfig.title}
+      lede={siteConfig.heroText}
+    />
+		<Section title="Recent Articles" href="/posts">
+			<!-- Lead Entry -->
+      {featuredEntry && (
+        <article class="grid items-start gap-8 sm:grid-cols-[1.2fr_1fr]">
+
+          <ImageWrapper
+            src={coverImage}
+            alt={featuredEntry.data.title}
+            class="aspect-[3/2] w-full"
+          />
+
+          <div class="flex flex-col gap-4">
+
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="rounded-xs border border-border px-1 font-mono text-xs uppercase tabular-nums text-muted-foreground">
+                {dateLabel}
+              </span>
+
+              <span class="font-mono text-xs uppercase text-muted-foreground">
+                {featuredEntry.data.category}
+              </span>
+            </div>
+
+            <div class="space-y-3">
+              <h3 class="font-serif text-2xl leading-tight">
+                <a href={getPostUrl(featuredEntry.id, featuredEntry.filePath)}>
+                  {featuredEntry.data.title}
+                </a>
+              </h3>
+
+              <p class="italic text-muted-foreground">
+                {featuredEntry.data.description}
+              </p>
+            </div>
+
+            <div class="mt-auto">
+              <a
+                href={getPostUrl(featuredEntry.id, featuredEntry.filePath)}
+                class="font-mono text-sm text-muted-foreground hover:text-foreground"
+              >
+                Read →
+              </a>
+            </div>
+
+          </div>
+        </article>
+      )}
+
+      <!-- Entry List -->
+      <div class="mt-12">
+        <PostFeed posts={feedPosts} variant="archive" />
+      </div>
+		</Section>
+
+		<Section
+  		title="Recent Notes"
+  		href="/notes"
+      class="mt-6"
+		>
+  		<NotesGrid notes={recentNotes} />
+		</Section>
+
+  </div>
+</BaseLayout>

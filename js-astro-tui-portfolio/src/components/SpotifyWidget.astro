@@ -1,0 +1,362 @@
+---
+import { SPOTIFY_CONFIG, getSpotifyActivity } from "../config/spotifyConfig";
+
+const liveTrack = await getSpotifyActivity();
+
+const track = liveTrack || {
+  isPlaying: false,
+  title: "No Active Track",
+  artist: "Offline",
+  album: "Spotify Inactive",
+  albumArt: "",
+  songUrl: "https://open.spotify.com",
+  progressMs: 0,
+  durationMs: 180000,
+};
+
+function formatTime(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = totalSeconds % 60;
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
+
+const isLive = Boolean(liveTrack && liveTrack.isPlaying);
+const progressPercent = Math.min(
+  100,
+  Math.max(0, Math.round((track.progressMs / track.durationMs) * 100)),
+);
+---
+
+{SPOTIFY_CONFIG.enabled && SPOTIFY_CONFIG.lanyardUserId && SPOTIFY_CONFIG.lanyardUserId.trim() !== "" && (
+  <div
+    id="spotify-widget"
+    data-progress={track.progressMs}
+    data-duration={track.durationMs}
+    data-lanyard={SPOTIFY_CONFIG.lanyardUserId || ""}
+    data-is-live={isLive ? "true" : "false"}
+    class="border border-[var(--border-color)] bg-[var(--bg-card)] p-4 font-mono text-xs space-y-3 relative overflow-hidden group hover:border-[var(--accent)] transition-all duration-200"
+  >
+    <div class="flex items-center justify-between border-b border-[var(--border-color)] pb-2 gap-2">
+      <div class="flex items-center gap-1.5 min-w-0">
+        <span id="spotify-header-title" class={`${isLive ? "text-emerald-400" : "text-[var(--fg-dim)]"} font-bold flex items-center gap-1.5`}>
+          <span class="relative flex h-2 w-2 shrink-0">
+            <span id="spotify-dot-ping" class={`${isLive ? "animate-ping opacity-75" : "hidden"} absolute inline-flex h-full w-full rounded-full bg-emerald-400`}></span>
+            <span id="spotify-dot" class={`relative inline-flex rounded-full h-2 w-2 ${isLive ? "bg-emerald-500" : "bg-gray-500"}`}></span>
+          </span>
+          <span id="spotify-header-text" class="text-[11px] font-bold uppercase tracking-wider">{isLive ? "NOW PLAYING" : "LAST PLAYED"}</span>
+        </span>
+      </div>
+      <div class="flex items-center gap-1.5 text-[10px] text-[var(--fg-dim)] shrink-0 whitespace-nowrap">
+        <!-- Equalizer Bars -->
+        <span class="inline-flex items-end gap-0.5 h-3 shrink-0">
+          <span id="eq-bar-1" class={`w-0.5 ${isLive ? "bg-emerald-400 animate-[bounce_1s_infinite_100ms] h-full" : "bg-gray-600 h-1/3"}`}></span>
+          <span id="eq-bar-2" class={`w-0.5 ${isLive ? "bg-emerald-400 animate-[bounce_1s_infinite_300ms] h-2/3" : "bg-gray-600 h-1/2"}`}></span>
+          <span id="eq-bar-3" class={`w-0.5 ${isLive ? "bg-emerald-400 animate-[bounce_1s_infinite_200ms] h-5/6" : "bg-gray-600 h-1/4"}`}></span>
+          <span id="eq-bar-4" class={`w-0.5 ${isLive ? "bg-emerald-400 animate-[bounce_1s_infinite_400ms] h-1/2" : "bg-gray-600 h-1/3"}`}></span>
+        </span>
+        <span class="uppercase font-bold tracking-widest text-[9px]">RPC</span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- Fixed 48x48 Album Art Box with DOM elements always present -->
+      <div class="w-12 h-12 bg-[var(--bg-main)] border border-[var(--border-color)] relative shrink-0 flex items-center justify-center overflow-hidden">
+        <span id="spotify-art-placeholder" class={track.albumArt ? "hidden" : "text-xl"}>📻</span>
+        <img
+          id="spotify-art"
+          src={track.albumArt || ""}
+          alt={track.album || "Album Cover"}
+          onerror="this.classList.add('hidden'); document.getElementById('spotify-art-placeholder')?.classList.remove('hidden');"
+          class={`w-full h-full object-cover transition-all duration-300 ${track.albumArt ? "" : "hidden"}`}
+        />
+      </div>
+
+      <div class="flex-1 min-w-0 space-y-0.5">
+        <div class="flex items-center justify-between">
+          <a
+            id="spotify-link"
+            href={track.songUrl || "#"}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-[var(--fg-bright)] font-bold text-sm truncate hover:text-[var(--accent)] transition-colors inline-block"
+          >
+            <span id="spotify-title">{track.title}</span> ↗
+          </a>
+        </div>
+        <div class="text-[var(--fg-main)] text-xs truncate">
+          by <span id="spotify-artist" class="text-[var(--accent)] font-bold">{track.artist}</span>
+        </div>
+        <div class="text-[var(--fg-dim)] text-[10px] truncate">
+          Album: <span id="spotify-album">{track.album}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Progress Bar -->
+    <div class="space-y-1 pt-1">
+      <div class="flex justify-between text-[10px] text-[var(--fg-dim)] font-bold">
+        <span id="spotify-cur-time">▶ {formatTime(track.progressMs)}</span>
+        <span id="spotify-pct" class="text-emerald-400">{progressPercent}%</span>
+        <span id="spotify-dur-time">{formatTime(track.durationMs)}</span>
+      </div>
+      <div class="w-full bg-[var(--bg-main)] h-1.5 border border-[var(--border-color)] relative overflow-hidden">
+        <div
+          id="spotify-bar"
+          class="bg-[var(--accent)] h-full transition-all duration-300"
+          style={`width: ${progressPercent}%;`}
+        ></div>
+      </div>
+    </div>
+  </div>
+)}
+
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const widget = document.getElementById("spotify-widget");
+    if (!widget) return;
+
+    let progressMs = parseInt(widget.getAttribute("data-progress") || "0", 10);
+    let durationMs = parseInt(widget.getAttribute("data-duration") || "180000", 10);
+    const lanyardId = widget.getAttribute("data-lanyard") || "";
+    let isLive = widget.getAttribute("data-is-live") === "true";
+    let trackStartTimestamp = 0;
+    let trackEndTimestamp = 0;
+
+    const curTimeEl = document.getElementById("spotify-cur-time");
+    const durTimeEl = document.getElementById("spotify-dur-time");
+    const pctEl = document.getElementById("spotify-pct");
+    const barEl = document.getElementById("spotify-bar");
+    const titleEl = document.getElementById("spotify-title");
+    const artistEl = document.getElementById("spotify-artist");
+    const albumEl = document.getElementById("spotify-album");
+    const linkEl = document.getElementById("spotify-link") as HTMLAnchorElement;
+    const artEl = document.getElementById("spotify-art") as HTMLImageElement;
+    const artPlaceholderEl = document.getElementById("spotify-art-placeholder");
+    const headerTextEl = document.getElementById("spotify-header-text");
+    const headerTitleEl = document.getElementById("spotify-header-title");
+    const dotEl = document.getElementById("spotify-dot");
+    const dotPingEl = document.getElementById("spotify-dot-ping");
+
+    function updateArt(artUrl: string) {
+      if (artEl) {
+        if (artUrl) {
+          artEl.onerror = () => {
+            artEl.classList.add("hidden");
+            if (artPlaceholderEl) artPlaceholderEl.classList.remove("hidden");
+          };
+          artEl.src = artUrl;
+          artEl.classList.remove("hidden");
+          if (artPlaceholderEl) artPlaceholderEl.classList.add("hidden");
+        } else {
+          artEl.classList.add("hidden");
+          if (artPlaceholderEl) artPlaceholderEl.classList.remove("hidden");
+        }
+      }
+    }
+
+    function saveLastPlayedTrack(data: { song: string; artist: string; album: string; album_art_url?: string; track_id?: string }) {
+      try {
+        const payload = JSON.stringify(data);
+        document.cookie = `tui_last_played_track=${encodeURIComponent(payload)}; path=/; max-age=2592000; SameSite=Lax`;
+        localStorage.setItem("tui_last_played_track", payload);
+      } catch {}
+    }
+
+    function loadLastPlayedTrack() {
+      try {
+        let raw = "";
+        const match = document.cookie.match(/(?:^|; )tui_last_played_track=([^;]*)/);
+        if (match && match[1]) {
+          raw = decodeURIComponent(match[1]);
+        } else {
+          raw = localStorage.getItem("tui_last_played_track") || "";
+        }
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch {
+        return null;
+      }
+    }
+
+    function formatTime(ms: number): string {
+      const totalSeconds = Math.floor(ms / 1000);
+      const mins = Math.floor(totalSeconds / 60);
+      const secs = totalSeconds % 60;
+      return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    }
+
+    function setLiveUI(active: boolean) {
+      isLive = active;
+      if (headerTextEl) {
+        headerTextEl.textContent = active ? "NOW PLAYING" : "LAST PLAYED";
+      }
+      if (headerTitleEl) {
+        headerTitleEl.className = active ? "text-emerald-400 font-bold flex items-center gap-1.5" : "text-[var(--fg-dim)] font-bold flex items-center gap-1.5";
+      }
+      if (dotEl) {
+        dotEl.className = `relative inline-flex rounded-full h-2 w-2 ${active ? "bg-emerald-500" : "bg-gray-500"}`;
+      }
+      if (dotPingEl) {
+        dotPingEl.className = active ? "animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" : "hidden";
+      }
+
+      const eqBars = [
+        document.getElementById("eq-bar-1"),
+        document.getElementById("eq-bar-2"),
+        document.getElementById("eq-bar-3"),
+        document.getElementById("eq-bar-4"),
+      ];
+      const heights = ["h-full", "h-2/3", "h-5/6", "h-1/2"];
+      const delays = ["100ms", "300ms", "200ms", "400ms"];
+
+      eqBars.forEach((bar, idx) => {
+        if (bar) {
+          if (active) {
+            bar.className = `w-0.5 bg-emerald-400 animate-[bounce_1s_infinite_${delays[idx]}] ${heights[idx]}`;
+          } else {
+            bar.className = `w-0.5 bg-gray-600 h-1/3`;
+          }
+        }
+      });
+    }
+
+    function updateProgressUI() {
+      if (isLive && progressMs > durationMs) {
+        progressMs = durationMs;
+      }
+      const pct = Math.min(100, Math.max(0, Math.round((progressMs / durationMs) * 100)));
+      if (curTimeEl) curTimeEl.textContent = `${isLive ? "▶" : "⏸"} ${formatTime(progressMs)}`;
+      if (durTimeEl) durTimeEl.textContent = formatTime(durationMs);
+      if (pctEl) pctEl.textContent = `${pct}%`;
+      if (barEl) barEl.style.width = `${pct}%`;
+    }
+
+    // On Load: If not currently live, restore last played track from cookie/localStorage
+    if (!isLive) {
+      const stored = loadLastPlayedTrack();
+      if (stored && stored.song) {
+        if (titleEl) titleEl.textContent = stored.song;
+        if (artistEl) artistEl.textContent = stored.artist;
+        if (albumEl) albumEl.textContent = stored.album;
+        if (linkEl && stored.track_id) linkEl.href = `https://open.spotify.com/track/${stored.track_id}`;
+        updateArt(stored.album_art_url || "");
+        setLiveUI(false);
+      }
+    }
+
+    // 1-second interval to calculate exact progress from system time
+    setInterval(() => {
+      if (isLive) {
+        if (trackStartTimestamp > 0) {
+          const now = Date.now();
+          progressMs = Math.max(0, now - trackStartTimestamp);
+          if (trackEndTimestamp > trackStartTimestamp) {
+            durationMs = Math.max(1, trackEndTimestamp - trackStartTimestamp);
+          }
+        } else {
+          progressMs += 1000;
+        }
+        updateProgressUI();
+      }
+    }, 1000);
+
+    // Instant Real-Time WebSocket & Polling Connection via Lanyard API
+    if (lanyardId) {
+      let heartbeatInterval: any = null;
+
+      function updateSpotifyData(s: any) {
+        if (!s) {
+          setLiveUI(false);
+          const stored = loadLastPlayedTrack();
+          if (stored && stored.song) {
+            if (titleEl) titleEl.textContent = stored.song;
+            if (artistEl) artistEl.textContent = stored.artist;
+            if (albumEl) albumEl.textContent = stored.album;
+            if (linkEl && stored.track_id) linkEl.href = `https://open.spotify.com/track/${stored.track_id}`;
+            updateArt(stored.album_art_url || "");
+          }
+          return;
+        }
+
+        const now = Date.now();
+        trackStartTimestamp = s.timestamps?.start || now;
+        trackEndTimestamp = s.timestamps?.end || now + 180000;
+
+        if (titleEl) titleEl.textContent = s.song;
+        if (artistEl) artistEl.textContent = s.artist;
+        if (albumEl) albumEl.textContent = s.album;
+        if (linkEl && s.track_id) linkEl.href = `https://open.spotify.com/track/${s.track_id}`;
+        updateArt(s.album_art_url || "");
+
+        progressMs = Math.max(0, now - trackStartTimestamp);
+        durationMs = Math.max(1, trackEndTimestamp - trackStartTimestamp);
+
+        // Save last played track to cookie & localStorage
+        saveLastPlayedTrack({
+          song: s.song,
+          artist: s.artist,
+          album: s.album,
+          album_art_url: s.album_art_url,
+          track_id: s.track_id,
+        });
+
+        setLiveUI(true);
+        updateProgressUI();
+      }
+
+      function connectLanyardWS() {
+        try {
+          const socket = new WebSocket("wss://api.lanyard.rest/socket");
+
+          socket.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+              const { op, d, t } = msg;
+
+              if (op === 1) {
+                const period = d.heartbeat_interval || 30000;
+                if (heartbeatInterval) clearInterval(heartbeatInterval);
+                heartbeatInterval = setInterval(() => {
+                  if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ op: 3 }));
+                  }
+                }, period);
+
+                if (socket.readyState === WebSocket.OPEN) {
+                  socket.send(
+                    JSON.stringify({
+                      op: 2,
+                      d: { subscribe_to_id: lanyardId },
+                    })
+                  );
+                }
+              } else if (op === 0 && (t === "INIT_STATE" || t === "PRESENCE_UPDATE")) {
+                const spotify = d.spotify || (d[lanyardId]?.spotify);
+                updateSpotifyData(spotify);
+              }
+            } catch {}
+          };
+
+          socket.onclose = () => {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            setTimeout(connectLanyardWS, 3000);
+          };
+        } catch {
+          // Fallback to HTTP polling if WebSocket is blocked
+          setInterval(async () => {
+            try {
+              const res = await fetch(`https://api.lanyard.rest/v1/users/${lanyardId}`);
+              const data = await res.json();
+              if (data.success) {
+                updateSpotifyData(data.data?.spotify);
+              }
+            } catch {}
+          }, 3000);
+        }
+      }
+
+      connectLanyardWS();
+    }
+  });
+</script>

@@ -1,0 +1,1021 @@
+---
+import { PORTFOLIO_DATA } from "../data/portfolio";
+---
+
+<div id="view-cli" class="flex flex-col flex-1 font-mono text-xs md:text-sm">
+  <!-- Terminal Welcome Message & Banner -->
+  <div class="mb-4 space-y-1.5 text-[var(--fg-main)]">
+    <div class="text-[var(--accent)] font-bold">
+      WELCOME TO QUANTUM-TUI TERMINAL INTERFACE v5.3.0 (x86_64-apple-darwin)
+    </div>
+    <div class="text-[var(--fg-dim)]">
+      Type <span class="text-[var(--fg-bright)] font-bold">help</span> to view available
+      commands, or click <span
+        class="text-[var(--accent)] cursor-pointer hover:underline"
+        onclick="window.switchTuiMode('gui')">[#] GUI Dashboard</span
+      > for visual mode.
+    </div>
+  </div>
+
+  <!-- Terminal Output Buffer -->
+  <div id="cli-output" class="flex-1 space-y-4 mb-4">
+    <!-- Initial welcome banner output -->
+    <div
+      class="border-l-2 border-[var(--accent)] pl-3 py-1 bg-[var(--bg-card)] text-[var(--fg-main)]"
+    >
+      <div class="font-bold text-[var(--fg-bright)]">
+        {PORTFOLIO_DATA.developer.name} - {PORTFOLIO_DATA.developer.title}
+      </div>
+      <div class="text-xs text-[var(--fg-dim)] mt-0.5">
+        {PORTFOLIO_DATA.developer.CLI_EMOJI}
+        {PORTFOLIO_DATA.developer.status}
+      </div>
+      <div class="text-xs text-[var(--accent)] mt-1 font-bold">
+        Type 'about', 'skills', or 'collabs' to explore content.
+      </div>
+    </div>
+  </div>
+
+  <!-- CLI Interactive Input Line -->
+  <div
+    class="flex items-center gap-2 pt-2 border-t border-[var(--border-color)] bg-[var(--bg-main)]"
+  >
+    <span
+      class="text-[var(--accent)] font-bold flex items-center gap-1 select-none"
+    >
+      <span class="text-emerald-400">guest</span>@<span
+        class="text-[var(--fg-bright)]">quantum-box</span
+      >:<span class="text-cyan-400">~</span>$
+    </span>
+    <div class="relative flex-1 flex items-center">
+      <input
+        id="cli-input"
+        aria-label="Terminal Command Input"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Type 'about', 'skills', or 'collabs'..."
+        class="w-full bg-transparent text-[var(--fg-bright)] font-mono focus:outline-none caret-[var(--accent)] py-1 text-xs md:text-sm"
+      />
+    </div>
+  </div>
+</div>
+
+<script>
+  import { PORTFOLIO_DATA } from "../data/portfolio";
+  import { SPOTIFY_CONFIG, getSpotifyActivity } from "../config/spotifyConfig";
+  import { RADIO_CONFIG } from "../config/radioConfig";
+  import { fetchGitHubStats } from "../utils/github";
+  import {
+    ALL_THEMES,
+    applyTheme,
+  } from "../config/themeConfig";
+  import {
+    playKeypressSound,
+    playSuccessSound,
+    playErrorSound,
+    playBeep,
+    toggleSfx,
+  } from "../utils/sound";
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const input = document.getElementById("cli-input") as HTMLInputElement;
+    const output = document.getElementById("cli-output");
+    if (!input || !output) return;
+
+    let commandHistory: string[] = [];
+    let historyIndex = -1;
+
+    const availableCommands = PORTFOLIO_DATA.commands.map((c) => c.name);
+
+    document.getElementById("view-cli")?.addEventListener("click", () => {
+      input.focus();
+    });
+
+    input.addEventListener("keydown", (e) => {
+      if (
+        e.key !== "Enter" &&
+        e.key !== "Tab" &&
+        e.key !== "ArrowUp" &&
+        e.key !== "ArrowDown"
+      ) {
+        playKeypressSound();
+      }
+
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const current = input.value.trim().toLowerCase();
+        if (!current) return;
+
+        const matches = availableCommands.filter((c) => c.startsWith(current));
+        if (matches.length === 1) {
+          input.value = matches[0] + " ";
+          playBeep(600, 0.04);
+        } else if (matches.length > 1) {
+          appendOutput(
+            `<div class="text-[var(--fg-dim)]">Possible matches: ${matches.join("  ")}</div>`,
+          );
+          playBeep(400, 0.04);
+        }
+        return;
+      }
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (commandHistory.length === 0) return;
+        if (historyIndex < commandHistory.length - 1) {
+          historyIndex++;
+          input.value =
+            commandHistory[commandHistory.length - 1 - historyIndex];
+        }
+        return;
+      }
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (historyIndex > 0) {
+          historyIndex--;
+          input.value =
+            commandHistory[commandHistory.length - 1 - historyIndex];
+        } else if (historyIndex === 0) {
+          historyIndex = -1;
+          input.value = "";
+        }
+        return;
+      }
+
+      if (e.key === "Enter") {
+        const rawCmd = input.value.trim();
+        if (!rawCmd) return;
+
+        commandHistory.push(rawCmd);
+        historyIndex = -1;
+
+        appendEcho(rawCmd);
+        input.value = "";
+
+        processCommand(rawCmd);
+      }
+    });
+
+    function appendEcho(cmd: string) {
+      if (!output) return;
+      const echoDiv = document.createElement("div");
+      echoDiv.className =
+        "flex items-center gap-2 font-mono text-xs md:text-sm font-bold mt-3";
+      echoDiv.innerHTML = `
+        <span class="text-[var(--accent)]"><span class="text-emerald-400">guest</span>@<span class="text-[var(--fg-bright)]">quantum-box</span>:<span class="text-cyan-400">~</span>$</span>
+        <span class="text-[var(--fg-bright)]">${escapeHtml(cmd)}</span>
+      `;
+      output.appendChild(echoDiv);
+    }
+
+    function appendOutput(html: string) {
+      if (!output) return;
+      const outDiv = document.createElement("div");
+      outDiv.className = "mt-1 text-xs md:text-sm font-mono leading-relaxed";
+      outDiv.innerHTML = html;
+      output.appendChild(outDiv);
+
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    }
+
+    function processCommand(rawCmd: string) {
+      const parts = rawCmd.split(" ").filter(Boolean);
+      const cmd = parts[0].toLowerCase();
+      const args = parts.slice(1);
+
+      switch (cmd) {
+        case "help":
+        case "man":
+          playSuccessSound();
+          renderHelp();
+          break;
+
+        case "about":
+        case "bio":
+          playSuccessSound();
+          renderAbout();
+          break;
+
+        case "skills":
+          playSuccessSound();
+          renderSkills();
+          break;
+
+        case "collabs":
+        case "collaborations":
+          playSuccessSound();
+          renderCollabs();
+          break;
+
+        case "cat":
+          playSuccessSound();
+          const fileArg = (args[0] || "").toLowerCase();
+          if (fileArg === "bio.txt" || fileArg === "bio") renderAbout();
+          else if (fileArg === "skills.sh" || fileArg === "skills") renderSkills();
+          else if (fileArg === "collabs.md" || fileArg === "collabs") renderCollabs();
+          else if (fileArg === "contact.txt" || fileArg === "contact") renderContact();
+          else if (fileArg === "github.sh" || fileArg === "github.txt" || fileArg === "github") renderGitHub();
+          else if (fileArg === "pong.sh" || fileArg === "pong.exe" || fileArg === "pong") {
+            const winPong = window as unknown as {
+              togglePong?: (f?: boolean) => void;
+            };
+            if (winPong.togglePong) winPong.togglePong(true);
+            appendOutput(`<div class="text-[var(--accent)] font-bold">🕹️ Executing pong.sh...</div>`);
+          } else if (fileArg === "snake.sh" || fileArg === "snake.exe" || fileArg === "snake") {
+            const winSnake = window as unknown as {
+              toggleSnake?: (f?: boolean) => void;
+            };
+            if (winSnake.toggleSnake) winSnake.toggleSnake(true);
+            appendOutput(`<div class="text-emerald-400 font-bold">🐍 Executing snake.sh...</div>`);
+          } else if (fileArg === "radio.sh" || fileArg === "radio") {
+            renderRadio();
+          } else {
+            appendOutput(
+              `<div class="text-yellow-400">Usage: cat &lt;bio.txt | skills.sh | collabs.md | github.sh | contact.txt | pong.sh | snake.sh | radio.sh&gt;</div>`,
+            );
+          }
+          break;
+
+        case "./pong.sh":
+        case "./pong":
+          playSuccessSound();
+          const winPongExec = window as unknown as {
+            togglePong?: (f?: boolean) => void;
+          };
+          if (winPongExec.togglePong) winPongExec.togglePong(true);
+          appendOutput(`<div class="text-[var(--accent)] font-bold">🕹️ Executing ./pong.sh...</div>`);
+          break;
+
+        case "./snake.sh":
+        case "./snake":
+          playSuccessSound();
+          const winSnakeExec = window as unknown as {
+            toggleSnake?: (f?: boolean) => void;
+          };
+          if (winSnakeExec.toggleSnake) winSnakeExec.toggleSnake(true);
+          appendOutput(`<div class="text-emerald-400 font-bold">🐍 Executing ./snake.sh...</div>`);
+          break;
+
+        case "./radio.sh":
+        case "./radio":
+          playSuccessSound();
+          renderRadio();
+          break;
+
+        case "ls":
+          playSuccessSound();
+          appendOutput(`
+            <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2 text-xs font-mono py-1">
+              <span class="text-yellow-400 font-bold">📄 bio.txt</span>
+              <span class="text-emerald-400 font-bold">⚙️ skills.sh</span>
+              <span class="text-purple-400 font-bold">🤝 collabs.md</span>
+              <span class="text-sky-400 font-bold cursor-pointer" onclick="document.getElementById('gui-github')?.scrollIntoView()">🐙 github.sh</span>
+              <span class="text-red-400 font-bold">✉️ contact.txt</span>
+              <span class="text-[var(--accent)] font-bold cursor-pointer" onclick="window.togglePong?.(true)">🕹️ pong.sh*</span>
+              <span class="text-emerald-400 font-bold cursor-pointer" onclick="window.toggleSnake?.(true)">🐍 snake.sh*</span>
+              <span class="text-pink-400 font-bold cursor-pointer" onclick="window.radioEngine?.toggleModal(true)">📻 radio.sh*</span>
+            </div>
+          `);
+          break;
+
+        case "neofetch":
+        case "fetch":
+          playSuccessSound();
+          renderNeofetch();
+          break;
+
+        case "contact":
+        case "mail":
+          playSuccessSound();
+          renderContact();
+          break;
+
+        case "links":
+        case "socials":
+        case "urls":
+          playSuccessSound();
+          renderLinks();
+          break;
+
+        case "theme":
+          if (args[0]) {
+            const themeInput = args[0].toLowerCase();
+            const matchedTheme = ALL_THEMES.find((t) => t.id === themeInput);
+            if (matchedTheme) {
+              applyTheme(matchedTheme.id);
+              localStorage.setItem("tui_theme", matchedTheme.id);
+              const selectEl = document.getElementById(
+                "theme-select",
+              ) as HTMLSelectElement;
+              if (selectEl) selectEl.value = matchedTheme.id;
+              playSuccessSound();
+              appendOutput(
+                `<div class="text-emerald-400 font-bold">Theme set to ${matchedTheme.emoji} [${matchedTheme.name.toUpperCase()}].</div>`,
+              );
+            } else {
+              playErrorSound();
+              const themeList = ALL_THEMES.map((t) => t.id).join(" | ");
+              appendOutput(
+                `<div class="text-red-400">Invalid theme. Available options: ${themeList}</div>`,
+              );
+            }
+          } else {
+            const themeList = ALL_THEMES.map((t) => t.id).join(" | ");
+            appendOutput(
+              `<div class="text-yellow-400">Usage: theme &lt;${themeList}&gt;</div>`,
+            );
+          }
+          break;
+
+        case "spotify":
+        case "nowplaying":
+        case "np":
+          playSuccessSound();
+          renderSpotify();
+          break;
+
+        case "radio":
+        case "lofi":
+        case "music":
+          playSuccessSound();
+          renderRadio(args[0], args[1], args.slice(2).join(" "));
+          break;
+
+        case "matrix":
+          playSuccessSound();
+          const win = window as unknown as {
+            toggleMatrix?: (f?: boolean) => void;
+          };
+          if (win.toggleMatrix) win.toggleMatrix(true);
+          appendOutput(
+            `<div class="text-emerald-400 font-bold">Matrix rain canvas enabled. Press [ESC] to exit.</div>`,
+          );
+          break;
+
+        case "pong":
+        case "game":
+        case "play":
+          playSuccessSound();
+          const winPong = window as unknown as {
+            togglePong?: (f?: boolean) => void;
+          };
+          if (winPong.togglePong) winPong.togglePong(true);
+          appendOutput(
+            `<div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-3 my-2 font-mono text-xs">
+              <div class="text-[var(--accent)] font-bold">🕹️ LAUNCHING PONG.EXE...</div>
+              <div class="text-[var(--fg-dim)] text-[11px] mt-1">Controls: [W/S] or [↑/↓] to move paddle • [SPACE] to serve/pause • [ESC] to exit</div>
+            </div>`
+          );
+          break;
+
+        case "snake":
+        case "playsnake":
+          playSuccessSound();
+          const winSnake = window as unknown as {
+            toggleSnake?: (f?: boolean) => void;
+          };
+          if (winSnake.toggleSnake) winSnake.toggleSnake(true);
+          appendOutput(
+            `<div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-3 my-2 font-mono text-xs">
+              <div class="text-emerald-400 font-bold">🐍 LAUNCHING SNAKE.EXE...</div>
+              <div class="text-[var(--fg-dim)] text-[11px] mt-1">Controls: [W/A/S/D] or Arrow Keys to steer • [SPACE] to pause • [ESC] to exit</div>
+            </div>`
+          );
+          break;
+
+        case "github":
+        case "gh":
+        case "stats":
+          playSuccessSound();
+          renderGitHub();
+          break;
+
+        case "repos":
+        case "projects":
+          playSuccessSound();
+          renderRepos();
+          break;
+
+        case "crt":
+          document.getElementById("toggle-crt-btn")?.click();
+          appendOutput(
+            `<div class="text-cyan-400">Toggled CRT scanlines overlay.</div>`,
+          );
+          break;
+
+        case "sfx":
+          const enabled = toggleSfx();
+          appendOutput(
+            `<div class="text-cyan-400">SFX Sound feedback: ${enabled ? "ENABLED 🔊" : "MUTED 🔇"}</div>`,
+          );
+          break;
+
+        case "clear":
+        case "cls":
+          if (output) output.innerHTML = "";
+          playBeep(800, 0.03);
+          break;
+
+        case "gui":
+          const switchFn = (
+            window as unknown as { switchTuiMode?: (m: string) => void }
+          ).switchTuiMode;
+          if (switchFn) switchFn("gui");
+          break;
+
+        default:
+          playErrorSound();
+          appendOutput(`
+            <div class="text-red-400">
+              zsh: command not found: <span class="font-bold">${escapeHtml(cmd)}</span>. 
+              Type <span class="text-[var(--fg-bright)] underline cursor-pointer" onclick="document.getElementById('cli-input').value='help'; document.getElementById('cli-input').dispatchEvent(new KeyboardEvent('keydown', {key:'Enter'}));">help</span> for manual.
+            </div>
+          `);
+          break;
+      }
+    }
+
+    function renderHelp() {
+      let html = `
+        <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-3 my-2 font-mono">
+          <div class="text-[var(--fg-bright)] font-bold border-b border-[var(--border-color)] pb-1 mb-2">AVAILABLE TERMINAL COMMANDS</div>
+          <div class="space-y-1.5 text-xs">
+      `;
+      PORTFOLIO_DATA.commands.forEach((c) => {
+        html += `
+          <div class="grid grid-cols-12 gap-2">
+            <span class="col-span-3 text-[var(--accent)] font-bold">${c.name}</span>
+            <span class="col-span-9 text-[var(--fg-main)]">${c.desc} <span class="text-[var(--fg-dim)] text-[10px]">(${c.usage})</span></span>
+          </div>
+        `;
+      });
+      html += `</div></div>`;
+      appendOutput(html);
+    }
+
+    function renderAbout() {
+      const { developer } = PORTFOLIO_DATA;
+      appendOutput(`
+        <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-4 my-2 font-mono text-xs space-y-2">
+          <div class="text-[var(--fg-bright)] font-bold text-sm border-b border-[var(--border-color)] pb-1">📄 ABOUT ME // ${developer.name}</div>
+          <p class="text-[var(--fg-main)] leading-relaxed">${developer.bio}</p>
+          <div class="text-[var(--fg-dim)] italic">${developer.quote}</div>
+          <div class="pt-2 flex flex-wrap gap-4 text-xs">
+            <span>📍 ${developer.location}</span>
+            <span>✉️ ${developer.email}</span>
+          </div>
+        </div>
+      `);
+    }
+
+    function renderSkills() {
+      let html = `<div class="space-y-3 my-2">`;
+      PORTFOLIO_DATA.skills.forEach((cat) => {
+        html += `
+          <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-3 text-xs font-mono">
+            <div class="text-[var(--accent)] font-bold mb-2 flex items-center gap-2">
+              <span>${cat.icon}</span>
+              <span>${cat.category}</span>
+            </div>
+            <div class="space-y-1.5">
+        `;
+        cat.skills.forEach((s) => {
+          const filledCount = Math.round(s.level / 10);
+          const bar = "█".repeat(filledCount) + "░".repeat(10 - filledCount);
+          html += `
+            <div class="grid grid-cols-12 gap-2 items-center">
+              <span class="col-span-4 sm:col-span-3 text-[var(--fg-bright)] font-bold truncate">${s.name}</span>
+              <span class="col-span-6 sm:col-span-7 text-[var(--fg-main)] text-[11px] font-mono">[${bar}] ${s.level}%</span>
+              <span class="col-span-2 text-right text-[var(--fg-dim)] text-[10px]">${s.experience}</span>
+            </div>
+          `;
+        });
+        html += `</div></div>`;
+      });
+      html += `</div>`;
+      appendOutput(html);
+    }
+
+    function renderCollabs() {
+      let html = `<div class="space-y-3 my-2">`;
+      PORTFOLIO_DATA.collabs.forEach((c) => {
+        html += `
+          <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-4 text-xs font-mono space-y-2 hover:border-[var(--border-active)] transition-colors">
+            <div class="flex items-center justify-between border-b border-[var(--border-color)] pb-2">
+              <span class="text-[var(--fg-bright)] font-bold text-sm">🤝 ${c.title}</span>
+              <span class="px-2 py-0.5 text-[10px] bg-[var(--border-color)] text-[var(--accent)] font-bold uppercase">${c.partnerType}</span>
+            </div>
+            <div class="text-[var(--accent)] font-bold">Partner: <span class="text-[var(--fg-bright)]">${c.partner}</span> // Role: <span class="text-emerald-400">${c.role}</span></div>
+            ${c.asciiLogo ? `<pre class="my-2 p-2 bg-[var(--bg-main)] text-[10px] text-[var(--fg-bright)] overflow-x-auto leading-tight select-none border border-[var(--border-color)] font-mono whitespace-pre">${c.asciiLogo}</pre>` : ""}
+            <p class="text-[var(--fg-main)] leading-relaxed">${c.description}</p>
+            <ul class="list-disc list-inside text-[var(--fg-dim)] space-y-0.5">
+              ${c.contributions.map((cont) => `<li>${cont}</li>`).join("")}
+            </ul>
+            <div class="flex flex-wrap gap-1 pt-1">
+              ${c.techStack.map((t) => `<span class="px-1.5 py-0.5 bg-[var(--bg-main)] text-[var(--fg-dim)] border border-[var(--border-color)] text-[10px]">${t}</span>`).join("")}
+            </div>
+          </div>
+        `;
+      });
+      html += `</div>`;
+      appendOutput(html);
+    }
+
+    function renderNeofetch() {
+      const { developer } = PORTFOLIO_DATA;
+      let paletteHtml = "";
+
+      if (developer.palette && developer.palette.length > 8) {
+        paletteHtml = `<span class="text-red-400 font-bold text-[10px] px-2 py-0.5 border border-red-500/50 bg-red-950/40">❌ PALETTE ERROR: Maximum 8 colors allowed (found ${developer.palette.length})</span>`;
+      } else {
+        paletteHtml = (
+          developer.palette || [
+            "#0f0f0f",
+            "#ef4444",
+            "#22c55e",
+            "#eab308",
+            "#3b82f6",
+            "#a855f7",
+            "#06b6d4",
+            "#f8fafc",
+          ]
+        )
+          .map(
+            (c) =>
+              `<span class="w-3.5 h-3.5 inline-block border border-gray-700/60" style="background-color: ${c};"></span>`,
+          )
+          .join("");
+      }
+
+      appendOutput(`
+        <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-3 my-2 font-mono text-xs space-y-2">
+          <div class="text-[var(--fg-bright)] font-bold border-b border-[var(--border-color)] pb-1">${developer.alias}</div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div><span class="text-[var(--accent)] font-bold">Name:</span> ${developer.name}</div>
+            <div><span class="text-[var(--accent)] font-bold">Title:</span> ${developer.title}</div>
+            <div><span class="text-[var(--accent)] font-bold">OS:</span> ${developer.specs.OS}</div>
+            <div><span class="text-[var(--accent)] font-bold">Shell:</span> ${developer.specs.Shell}</div>
+            <div><span class="text-[var(--accent)] font-bold">Status:</span> ${developer.status}</div>
+          </div>
+          <div class="pt-1 flex items-center gap-1 flex-wrap">
+            <span class="text-[10px] text-[var(--fg-dim)] mr-1">PALETTE:</span>
+            ${paletteHtml}
+          </div>
+        </div>
+      `);
+    }
+
+    function renderContact() {
+      const { developer } = PORTFOLIO_DATA;
+      appendOutput(`
+        <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-4 my-2 text-xs font-mono space-y-2">
+          <div class="text-[var(--fg-bright)] font-bold text-sm border-b border-[var(--border-color)] pb-1">✉️ CONTACT INFO</div>
+          <div><span class="text-[var(--accent)] font-bold">Email:</span> ${developer.email}</div>
+          <div><span class="text-[var(--accent)] font-bold">GitHub:</span> ${developer.github}</div>
+          <div><span class="text-[var(--accent)] font-bold">Location:</span> ${developer.location}</div>
+        </div>
+      `);
+    }
+
+    function renderLinks() {
+      const dev = PORTFOLIO_DATA.developer;
+      appendOutput(`
+        <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-4 my-2 font-mono text-xs space-y-3">
+          <div class="text-[var(--accent)] font-bold border-b border-[var(--border-color)] pb-2 flex items-center justify-between">
+            <span>🔗 OFFICIAL SOCIAL & PROFILE LINKS</span>
+            <span class="text-[10px] text-[var(--fg-dim)]">[INTERACTIVE]</span>
+          </div>
+
+          <div class="space-y-2 text-xs">
+            <div class="flex items-center justify-between border-b border-[var(--border-color)]/40 pb-1.5 flex-wrap gap-1">
+              <span class="text-[var(--fg-dim)] font-bold flex items-center gap-2">
+                <span class="text-purple-400">🐙</span> GitHub:
+              </span>
+              <a href="${dev.github}" target="_blank" rel="noopener noreferrer" class="text-sky-400 font-bold hover:underline">
+                ${dev.github} ↗
+              </a>
+            </div>
+
+            <div class="flex items-center justify-between border-b border-[var(--border-color)]/40 pb-1.5 flex-wrap gap-1">
+              <span class="text-[var(--fg-dim)] font-bold flex items-center gap-2">
+                <span class="text-blue-400">💼</span> LinkedIn:
+              </span>
+              <a href="${dev.linkedin}" target="_blank" rel="noopener noreferrer" class="text-sky-400 font-bold hover:underline">
+                ${dev.linkedin} ↗
+              </a>
+            </div>
+
+            <div class="flex items-center justify-between border-b border-[var(--border-color)]/40 pb-1.5 flex-wrap gap-1">
+              <span class="text-[var(--fg-dim)] font-bold flex items-center gap-2">
+                <span class="text-cyan-400">𝕏</span> Twitter / 𝕏:
+              </span>
+              <a href="${dev.twitter}" target="_blank" rel="noopener noreferrer" class="text-sky-400 font-bold hover:underline">
+                ${dev.twitter} ↗
+              </a>
+            </div>
+
+            <div class="flex items-center justify-between flex-wrap gap-1">
+              <span class="text-[var(--fg-dim)] font-bold flex items-center gap-2">
+                <span class="text-red-400">✉️</span> Email:
+              </span>
+              <a href="mailto:${dev.email}" target="_blank" rel="noopener noreferrer" class="text-emerald-400 font-bold hover:underline">
+                ${dev.email} ✉
+              </a>
+            </div>
+          </div>
+        </div>
+      `);
+    }
+
+    async function renderSpotify() {
+      const isDisabled =
+        !SPOTIFY_CONFIG.enabled ||
+        !SPOTIFY_CONFIG.lanyardUserId ||
+        SPOTIFY_CONFIG.lanyardUserId.trim() === "" ||
+        SPOTIFY_CONFIG.lanyardUserId === "your_discord_id";
+
+      if (isDisabled) {
+        appendOutput(`
+          <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-4 my-2 text-xs font-mono space-y-2">
+            <div class="flex items-center justify-between border-b border-[var(--border-color)] pb-2">
+              <span class="text-yellow-400 font-bold flex items-center gap-1.5">📻 SPOTIFY WIDGET DISABLED</span>
+              <span class="text-[10px] text-[var(--fg-dim)] font-bold">RPC INACTIVE</span>
+            </div>
+            <div class="text-[var(--fg-main)] leading-relaxed">
+              Spotify activity tracking is currently disabled. To activate live Spotify streaming, set your Discord User ID (<span class="text-[var(--accent)] font-bold">lanyardUserId</span>) in <span class="text-sky-400 font-bold">src/config/spotifyConfig.ts</span>.
+            </div>
+          </div>
+        `);
+        return;
+      }
+
+      const liveTrack = await getSpotifyActivity();
+      const track = liveTrack || {
+        isPlaying: false,
+        title: "No Track Playing",
+        artist: "Offline",
+        album: "Spotify Inactive",
+        progressMs: 0,
+        durationMs: 180000,
+        timestamps: undefined,
+      };
+      const instanceId = `cli-spotify-${Date.now()}`;
+
+      const formatTime = (ms: number) => {
+        const total = Math.floor(ms / 1000);
+        const m = Math.floor(total / 60);
+        const s = total % 60;
+        return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+      };
+
+      const now = Date.now();
+      const start = track.timestamps?.start || (now - track.progressMs);
+      const end = track.timestamps?.end || (start + track.durationMs);
+      const curProgress = track.isPlaying ? Math.max(0, now - start) : track.progressMs;
+      const dur = Math.max(1, end - start);
+      const pct = Math.min(100, Math.max(0, Math.round((curProgress / dur) * 100)));
+      const filled = Math.round(pct / 5);
+      const bar = "█".repeat(filled) + "░".repeat(20 - filled);
+
+      appendOutput(`
+        <div id="${instanceId}" class="border border-[var(--border-color)] bg-[var(--bg-card)] p-4 my-2 text-xs font-mono space-y-2.5">
+          <div class="flex items-center justify-between border-b border-[var(--border-color)] pb-2">
+            <span class="text-emerald-400 font-bold flex items-center gap-1.5">
+              <span class="relative flex h-2 w-2">
+                <span class="${track.isPlaying ? "animate-ping opacity-75" : "hidden"} cli-spotify-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 ${track.isPlaying ? "bg-emerald-500" : "bg-gray-500"} cli-spotify-dot"></span>
+              </span>
+              🎵 SPOTIFY NOW PLAYING
+            </span>
+            <span class="text-[10px] text-[var(--fg-dim)] font-bold">AUDIO RPC v1.0</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div><span class="text-[var(--accent)] font-bold">Track:</span> <a href="${track.songUrl || "#"}" target="_blank" class="text-[var(--fg-bright)] underline cli-spotify-title">${track.title} ↗</a></div>
+            <div><span class="text-[var(--accent)] font-bold">Artist:</span> <span class="text-emerald-400 font-bold cli-spotify-artist">${track.artist}</span></div>
+            <div><span class="text-[var(--accent)] font-bold">Album:</span> <span class="cli-spotify-album">${track.album}</span></div>
+            <div><span class="text-[var(--accent)] font-bold">Status:</span> <span class="cli-spotify-status font-bold ${track.isPlaying ? "text-emerald-400" : "text-gray-400"}">${track.isPlaying ? "▶ PLAYING" : "⏸ PAUSED"}</span></div>
+          </div>
+          <div class="pt-1 space-y-1">
+            <div class="flex justify-between text-[10px] text-[var(--fg-dim)] font-bold">
+              <span class="cli-spotify-cur">${formatTime(curProgress)}</span>
+              <span class="text-emerald-400 cli-spotify-pct">[${bar}] ${pct}%</span>
+              <span class="cli-spotify-dur">${formatTime(dur)}</span>
+            </div>
+          </div>
+        </div>
+      `);
+
+      // Live 1-second interval loop updating progress bar & track info dynamically in CLI
+      const timer = setInterval(async () => {
+        const card = document.getElementById(instanceId);
+        if (!card) {
+          clearInterval(timer);
+          return;
+        }
+
+        const fresh = await getSpotifyActivity();
+        const activeTrack = fresh || {
+          isPlaying: false,
+          title: "No Active Track",
+          artist: "Offline",
+          album: "Spotify Inactive",
+          progressMs: 0,
+          durationMs: 180000,
+        };
+
+        const curEl = card.querySelector(".cli-spotify-cur");
+        const pctEl = card.querySelector(".cli-spotify-pct");
+        const durEl = card.querySelector(".cli-spotify-dur");
+        const statusEl = card.querySelector(".cli-spotify-status");
+        const titleEl = card.querySelector(".cli-spotify-title");
+        const artistEl = card.querySelector(".cli-spotify-artist");
+        const albumEl = card.querySelector(".cli-spotify-album");
+        const dotEl = card.querySelector(".cli-spotify-dot");
+        const pingEl = card.querySelector(".cli-spotify-ping");
+
+        const tNow = Date.now();
+        const tStart = activeTrack.timestamps?.start || (tNow - activeTrack.progressMs);
+        const tEnd = activeTrack.timestamps?.end || (tStart + activeTrack.durationMs);
+        const cProgress = activeTrack.isPlaying ? Math.max(0, tNow - tStart) : activeTrack.progressMs;
+        const cDur = Math.max(1, tEnd - tStart);
+        const cPct = Math.min(100, Math.max(0, Math.round((cProgress / cDur) * 100)));
+        const cFilled = Math.round(cPct / 5);
+        const cBar = "█".repeat(cFilled) + "░".repeat(20 - cFilled);
+
+        if (curEl) curEl.textContent = formatTime(cProgress);
+        if (durEl) durEl.textContent = formatTime(cDur);
+        if (pctEl) pctEl.textContent = `[${cBar}] ${cPct}%`;
+        if (statusEl) {
+          statusEl.textContent = activeTrack.isPlaying ? "▶ PLAYING" : "⏸ PAUSED";
+          statusEl.className = `cli-spotify-status font-bold ${activeTrack.isPlaying ? "text-emerald-400" : "text-gray-400"}`;
+        }
+        if (dotEl) {
+          dotEl.className = `relative inline-flex rounded-full h-2 w-2 ${activeTrack.isPlaying ? "bg-emerald-500" : "bg-gray-500"} cli-spotify-dot`;
+        }
+        if (pingEl) {
+          pingEl.className = `${activeTrack.isPlaying ? "animate-ping opacity-75" : "hidden"} cli-spotify-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400`;
+        }
+        if (titleEl) {
+          titleEl.textContent = `${activeTrack.title} ↗`;
+          (titleEl as HTMLAnchorElement).href = activeTrack.songUrl || "#";
+        }
+        if (artistEl) artistEl.textContent = activeTrack.artist;
+        if (albumEl) albumEl.textContent = activeTrack.album;
+      }, 1000);
+    }
+
+    function renderRadio(subCmd?: string, arg?: string, extraArg?: string) {
+      const engine = (window as unknown as {
+        radioEngine?: {
+          play: () => void;
+          pause: () => void;
+          toggle: () => void;
+          next: () => void;
+          prev: () => void;
+          setVolume: (v: number) => void;
+          setTrack: (idx: number, autoPlay?: boolean) => void;
+          addYouTubeTrack: (url: string, title?: string) => Promise<boolean>;
+          removeTrack: (idx: number) => void;
+          getTracks: () => Array<{ title: string; artist: string; genre: string; duration?: string; isCustom?: boolean }>;
+          toggleModal: (f?: boolean) => void;
+          getStatus: () => {
+            isPlaying: boolean;
+            currentTrack: { title: string; artist: string; genre: string; duration?: string };
+            currentTrackIdx: number;
+            volume: number;
+          };
+        };
+      }).radioEngine;
+
+      if (!engine) {
+        appendOutput(`<div class="text-yellow-400">Radio engine initializing...</div>`);
+        return;
+      }
+
+      const cmd = (subCmd || "").toLowerCase();
+
+      if (cmd === "add" || cmd === "yt") {
+        if (arg) {
+          const customTitle = extraArg || undefined;
+          appendOutput(`<div class="text-[var(--accent)] font-bold">⏳ Loading YouTube audio stream: ${escapeHtml(arg)}...</div>`);
+          engine.addYouTubeTrack(arg, customTitle).then((success) => {
+            if (success) {
+              const status = engine.getStatus();
+              appendOutput(`<div class="text-emerald-400 font-bold">✓ Successfully queued & playing: ${status.currentTrack.title} (${status.currentTrack.artist})</div>`);
+            } else {
+              appendOutput(`<div class="text-red-400">✖ Failed to load YouTube track. Check URL and try again.</div>`);
+            }
+          });
+        } else {
+          appendOutput(`<div class="text-yellow-400">Usage: radio add &lt;youtube_url&gt; [optional_title]</div>`);
+        }
+      } else if (cmd === "rm" || cmd === "remove" || cmd === "delete") {
+        if (arg) {
+          const idx = parseInt(arg, 10) - 1;
+          engine.removeTrack(idx);
+          appendOutput(`<div class="text-cyan-400 font-bold">✓ Removed custom track #${arg} from playlist.</div>`);
+        } else {
+          appendOutput(`<div class="text-yellow-400">Usage: radio rm &lt;track_number&gt;</div>`);
+        }
+      } else if (cmd === "play") {
+        engine.play();
+        const status = engine.getStatus();
+        appendOutput(
+          `<div class="text-emerald-400 font-bold">▶ Radio playing: ${status.currentTrack.title} (${status.currentTrack.artist})</div>`
+        );
+      } else if (cmd === "pause" || cmd === "stop") {
+        engine.pause();
+        appendOutput(`<div class="text-yellow-400 font-bold">⏸ Radio paused.</div>`);
+      } else if (cmd === "next") {
+        engine.next();
+        const status = engine.getStatus();
+        appendOutput(
+          `<div class="text-cyan-400 font-bold">⏭ Skipped to: ${status.currentTrack.title} (${status.currentTrack.artist})</div>`
+        );
+      } else if (cmd === "prev") {
+        engine.prev();
+        const status = engine.getStatus();
+        appendOutput(
+          `<div class="text-cyan-400 font-bold">⏮ Playing: ${status.currentTrack.title} (${status.currentTrack.artist})</div>`
+        );
+      } else if (cmd === "vol" || cmd === "volume") {
+        if (arg) {
+          const val = Math.max(0, Math.min(100, parseInt(arg, 10) || 50));
+          engine.setVolume(val);
+          appendOutput(`<div class="text-[var(--accent)] font-bold">🔊 Radio volume set to ${val}%.</div>`);
+        } else {
+          const status = engine.getStatus();
+          appendOutput(`<div class="text-[var(--fg-dim)]">Current volume: ${status.volume}%. Usage: radio vol &lt;0-100&gt;</div>`);
+        }
+      } else if (cmd === "list") {
+        const trackList = engine.getTracks ? engine.getTracks() : RADIO_CONFIG.tracks;
+        let html = `
+          <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-3 my-2 font-mono text-xs space-y-1.5">
+            <div class="text-[var(--accent)] font-bold border-b border-[var(--border-color)] pb-1 mb-2 flex justify-between">
+              <span>📻 AVAILABLE RADIO STATIONS & CUSTOM YOUTUBE SONGS</span>
+              <span>${trackList.length} TRACKS</span>
+            </div>
+        `;
+        trackList.forEach((t, i) => {
+          const genreBadgeColor = t.genre === "YouTube" ? "bg-red-950 text-red-400 border border-red-800" : "bg-[var(--border-color)] text-[var(--accent)]";
+          html += `
+            <div class="flex justify-between items-center py-0.5 cursor-pointer hover:text-[var(--accent)]" onclick="window.radioEngine?.setTrack(${i}, true)">
+              <span class="truncate pr-2">${i + 1}. <strong class="text-[var(--fg-bright)]">${t.title}</strong> <span class="text-[var(--fg-dim)]">(${t.artist})</span></span>
+              <span class="text-[9px] px-1 py-0.5 ${genreBadgeColor} font-bold shrink-0">${t.genre}</span>
+            </div>
+          `;
+        });
+        html += `</div>`;
+        appendOutput(html);
+      } else {
+        engine.toggleModal(true);
+        const status = engine.getStatus();
+        appendOutput(`
+          <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-3.5 my-2 text-xs font-mono space-y-2.5">
+            <div class="flex items-center justify-between border-b border-[var(--border-color)] pb-2">
+              <span class="text-[var(--accent)] font-bold flex items-center gap-1.5">
+                <span>📻</span> RETRO CASSETTE RADIO // LO-FI + YOUTUBE
+              </span>
+              <span class="text-[10px] ${status.isPlaying ? "text-emerald-400 animate-pulse" : "text-[var(--fg-dim)]"} font-bold">
+                [${status.isPlaying ? "PLAYING" : "STANDBY"}]
+              </span>
+            </div>
+
+            <div class="bg-[var(--bg-main)] border border-[var(--border-color)] p-3 space-y-2">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div class="min-w-0 flex-1">
+                  <div class="text-[var(--fg-bright)] font-bold text-sm truncate">♪ ${escapeHtml(status.currentTrack.title)}</div>
+                  <div class="text-[var(--fg-dim)] text-[11px] mt-0.5">${escapeHtml(status.currentTrack.artist)} (${status.currentTrack.genre})</div>
+                </div>
+                <span class="text-[10px] px-2 py-0.5 bg-[var(--border-color)] text-[var(--accent)] font-bold shrink-0 self-start sm:self-center">
+                  ${status.currentTrack.genre.toUpperCase()}
+                </span>
+              </div>
+
+              <div class="flex items-center justify-between text-[11px] pt-2 border-t border-[var(--border-color)]/60 text-[var(--fg-dim)]">
+                <span>🔊 VOL: <strong class="text-[var(--accent)]">${status.volume}%</strong></span>
+                <span>SPECTRUM: <strong class="text-[var(--accent)] font-mono"> ▂▃▅▆▇</strong></span>
+              </div>
+            </div>
+
+            <div class="text-[10px] text-[var(--fg-dim)] pt-0.5">
+              CLI Controls: <span class="text-[var(--fg-bright)] font-bold">radio play</span> • <span class="text-[var(--fg-bright)] font-bold">radio next</span> • <span class="text-[var(--fg-bright)] font-bold">radio add &lt;yt_url&gt;</span> • <span class="text-[var(--fg-bright)] font-bold">radio vol &lt;0-100&gt;</span>
+            </div>
+          </div>
+        `);
+      }
+    }
+
+    async function renderGitHub() {
+      appendOutput(`<div class="text-[var(--fg-dim)] text-xs font-mono">Connecting to GitHub REST API...</div>`);
+      const stats = await fetchGitHubStats();
+      if (!stats) {
+        appendOutput(`<div class="text-red-400 font-mono text-xs">Failed to fetch GitHub stats or rate-limited. Try again shortly.</div>`);
+        return;
+      }
+
+      const langBar = stats.topLanguages.map(l => `<span class="text-[var(--accent)] font-bold">${l.name}</span> <span class="text-[var(--fg-dim)]">(${l.percentage}%)</span>`).join(" • ");
+
+      appendOutput(`
+        <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-4 my-2 text-xs font-mono space-y-3">
+          <div class="flex items-center justify-between border-b border-[var(--border-color)] pb-2">
+            <span class="text-sky-400 font-bold flex items-center gap-1.5">
+              <span>🐙</span> GITHUB PROFILE & ACTIVITY METRICS
+            </span>
+            <a href="https://github.com/${stats.username}" target="_blank" rel="noopener noreferrer" class="text-[10px] text-[var(--accent)] hover:underline font-bold">
+              @${stats.username} ↗
+            </a>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-4 items-start">
+            <pre class="text-sky-400 text-xs sm:text-sm leading-tight select-none font-bold shrink-0">
+  /\\___/\\
+ (  o o  )
+ (  =^=  )
+  (____)</pre>
+
+            <div class="space-y-2 flex-1 min-w-0">
+              <div class="text-sm font-bold text-[var(--fg-bright)] truncate">${stats.name} <span class="text-xs text-[var(--fg-dim)] font-normal">(${stats.bio || "Software Engineer"})</span></div>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5">
+                <div class="bg-[var(--bg-main)] p-2 border border-[var(--border-color)] text-center">
+                  <div class="text-[10px] text-[var(--fg-dim)] font-bold">STARS ⭐</div>
+                  <div class="text-base font-bold text-yellow-400">${stats.totalStars}</div>
+                </div>
+                <div class="bg-[var(--bg-main)] p-2 border border-[var(--border-color)] text-center">
+                  <div class="text-[10px] text-[var(--fg-dim)] font-bold">FORKS 🍴</div>
+                  <div class="text-base font-bold text-cyan-400">${stats.totalForks}</div>
+                </div>
+                <div class="bg-[var(--bg-main)] p-2 border border-[var(--border-color)] text-center">
+                  <div class="text-[10px] text-[var(--fg-dim)] font-bold">REPOS 📦</div>
+                  <div class="text-base font-bold text-emerald-400">${stats.publicRepos}</div>
+                </div>
+                <div class="bg-[var(--bg-main)] p-2 border border-[var(--border-color)] text-center">
+                  <div class="text-[10px] text-[var(--fg-dim)] font-bold">FOLLOWERS 👥</div>
+                  <div class="text-base font-bold text-purple-400">${stats.followers}</div>
+                </div>
+              </div>
+              <div class="text-[11px] pt-1">
+                <span class="text-[var(--fg-dim)] font-bold">Top Languages:</span> ${langBar}
+              </div>
+            </div>
+          </div>
+          <div class="text-[10px] text-[var(--fg-dim)] pt-1 border-t border-[var(--border-color)]">
+            Tip: Type <span class="text-[var(--fg-bright)] font-bold">repos</span> to explore featured repositories and project source code.
+          </div>
+        </div>
+      `);
+    }
+
+    async function renderRepos() {
+      appendOutput(`<div class="text-[var(--fg-dim)] text-xs font-mono">Fetching repository list...</div>`);
+      const stats = await fetchGitHubStats();
+      if (!stats || !stats.topRepos.length) {
+        appendOutput(`<div class="text-red-400 font-mono text-xs">No repositories retrieved. Check network connection.</div>`);
+        return;
+      }
+
+      let html = `
+        <div class="border border-[var(--border-color)] bg-[var(--bg-card)] p-4 my-2 text-xs font-mono space-y-2.5">
+          <div class="flex items-center justify-between border-b border-[var(--border-color)] pb-2">
+            <span class="text-sky-400 font-bold flex items-center gap-1.5">
+              <span>📦</span> FEATURED GITHUB REPOSITORIES
+            </span>
+            <span class="text-[10px] text-[var(--fg-dim)] font-bold">TOTAL: ${stats.topRepos.length}</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+      `;
+
+      stats.topRepos.forEach((repo) => {
+        html += `
+          <a href="${repo.url}" target="_blank" rel="noopener noreferrer" class="border border-[var(--border-color)] bg-[var(--bg-main)] p-2.5 hover:border-[var(--accent)] transition-all block group">
+            <div class="flex items-center justify-between gap-1 border-b border-[var(--border-color)] pb-1 mb-1">
+              <span class="font-bold text-[var(--fg-bright)] group-hover:text-[var(--accent)] truncate">📦 ${repo.name}</span>
+              <span class="text-[10px] text-[var(--accent)] font-bold shrink-0">⭐ ${repo.stars}</span>
+            </div>
+            <p class="text-[11px] text-[var(--fg-dim)] line-clamp-2 leading-tight">${repo.description}</p>
+            <div class="flex justify-between items-center text-[10px] text-[var(--fg-dim)] pt-1.5 mt-1.5 border-t border-[var(--border-color)]">
+              <span class="text-emerald-400 font-bold">${repo.language}</span>
+              <span>Updated ${repo.updatedAt} ↗</span>
+            </div>
+          </a>
+        `;
+      });
+
+      html += `
+          </div>
+        </div>
+      `;
+
+      appendOutput(html);
+    }
+
+    function escapeHtml(str: string): string {
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+  });
+</script>

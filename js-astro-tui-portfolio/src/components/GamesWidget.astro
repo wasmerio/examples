@@ -1,0 +1,242 @@
+---
+import { GAMES_CONFIG, getLiveGameActivity } from "../config/gamesConfig";
+
+const liveGame = await getLiveGameActivity();
+
+const game = liveGame || {
+  isPlaying: false,
+  gameName: "No Active Game",
+  details: "Offline",
+  state: "",
+  largeImage: "",
+  startTimestamp: 0,
+  elapsedMs: 0,
+};
+
+function formatElapsed(ms: number): string {
+  const totalSecs = Math.floor(ms / 1000);
+  const hrs = Math.floor(totalSecs / 3600);
+  const mins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+  if (hrs > 0) {
+    return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  }
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
+
+const isLive = Boolean(liveGame && liveGame.isPlaying);
+---
+
+{GAMES_CONFIG.enabled && GAMES_CONFIG.lanyardUserId && GAMES_CONFIG.lanyardUserId.trim() !== "" && (
+  <div
+    id="games-widget"
+    data-start={game.startTimestamp || 0}
+    data-lanyard={GAMES_CONFIG.lanyardUserId || ""}
+    data-is-live={isLive ? "true" : "false"}
+    class={`${isLive ? "" : "hidden "}border border-[var(--border-color)] bg-[var(--bg-card)] p-4 font-mono text-xs space-y-3 relative overflow-hidden group hover:border-[var(--accent)] transition-all duration-200`}
+  >
+    <div class="flex items-center justify-between border-b border-[var(--border-color)] pb-2 gap-2">
+      <div class="flex items-center gap-1.5 min-w-0">
+        <span id="game-header-title" class="text-emerald-400 font-bold flex items-center gap-1.5">
+          <span class="relative flex h-2 w-2 shrink-0">
+            <span id="game-dot-ping" class="animate-ping opacity-75 absolute inline-flex h-full w-full rounded-full bg-emerald-400"></span>
+            <span id="game-dot" class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+          <span id="game-header-text" class="text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">GAME PLAYING</span>
+        </span>
+      </div>
+      <div id="game-rpc-badge" class="flex items-center gap-1.5 text-[10px] text-emerald-400 shrink-0 whitespace-nowrap">
+        <span id="game-rpc-icon" class="text-sm inline-block animate-bounce">🎮</span>
+        <span class="uppercase font-bold tracking-widest text-[9px] px-1 py-0.5 border border-[var(--border-color)] bg-[var(--bg-main)]">RPC</span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- Fixed 48x48 Game Image Box -->
+      <div class="w-12 h-12 bg-[var(--bg-main)] border border-[var(--border-color)] relative shrink-0 flex items-center justify-center overflow-hidden">
+        <span id="game-art-placeholder" class={game.largeImage ? "hidden" : "text-xl"}>🎮</span>
+        <img
+          id="game-art"
+          src={game.largeImage || ""}
+          alt={game.gameName || "Game Art"}
+          onerror="this.classList.add('hidden'); document.getElementById('game-art-placeholder')?.classList.remove('hidden');"
+          class={`w-full h-full object-cover transition-all duration-300 ${game.largeImage ? "" : "hidden"}`}
+        />
+      </div>
+
+      <div class="flex-1 min-w-0 space-y-0.5">
+        <div class="text-[var(--fg-bright)] font-bold text-sm truncate">
+          <span id="game-title">{game.gameName}</span>
+        </div>
+        <div class="text-[var(--fg-main)] text-xs truncate">
+          <span id="game-details">{game.details}</span>
+        </div>
+        <div class="text-[var(--fg-dim)] text-[10px] truncate">
+          <span id="game-state">{game.state || ""}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Playtime Timer -->
+    <div class="pt-1 border-t border-[var(--border-color)]/60 flex items-center justify-between text-[10px] text-[var(--fg-dim)] font-bold">
+      <span>ELAPSED TIME:</span>
+      <span id="game-elapsed-time" class="text-purple-400 font-mono">⏱ {formatElapsed(game.elapsedMs || 0)}</span>
+    </div>
+  </div>
+)}
+
+<script>
+  import { parseGameAsset, fetchGameIconByName } from "../config/gamesConfig";
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const widget = document.getElementById("games-widget");
+    if (!widget) return;
+
+    let startTimestamp = parseInt(widget.getAttribute("data-start") || "0", 10);
+    const lanyardId = widget.getAttribute("data-lanyard") || "";
+    let isLive = widget.getAttribute("data-is-live") === "true";
+
+    const titleEl = document.getElementById("game-title");
+    const detailsEl = document.getElementById("game-details");
+    const stateEl = document.getElementById("game-state");
+    const artEl = document.getElementById("game-art") as HTMLImageElement;
+    const artPlaceholderEl = document.getElementById("game-art-placeholder");
+    const elapsedEl = document.getElementById("game-elapsed-time");
+
+    function formatElapsed(ms: number): string {
+      const totalSecs = Math.floor(ms / 1000);
+      const hrs = Math.floor(totalSecs / 3600);
+      const mins = Math.floor((totalSecs % 3600) / 60);
+      const secs = totalSecs % 60;
+      if (hrs > 0) {
+        return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+      }
+      return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    }
+
+    function updateArt(artUrl: string) {
+      if (artEl) {
+        if (artUrl) {
+          artEl.onerror = () => {
+            artEl.classList.add("hidden");
+            if (artPlaceholderEl) artPlaceholderEl.classList.remove("hidden");
+          };
+          artEl.src = artUrl;
+          artEl.classList.remove("hidden");
+          if (artPlaceholderEl) artPlaceholderEl.classList.add("hidden");
+        } else {
+          artEl.classList.add("hidden");
+          if (artPlaceholderEl) artPlaceholderEl.classList.remove("hidden");
+        }
+      }
+    }
+
+    function updateElapsedUI() {
+      if (elapsedEl) {
+        if (isLive && startTimestamp > 0) {
+          const now = Date.now();
+          const elapsed = Math.max(0, now - startTimestamp);
+          elapsedEl.textContent = `⏱ ${formatElapsed(elapsed)}`;
+        }
+      }
+    }
+
+    // 1-second interval to update elapsed timer while game is active
+    setInterval(() => {
+      if (isLive) {
+        updateElapsedUI();
+      }
+    }, 1000);
+
+    // Real-Time WebSocket & Polling Connection via Lanyard API
+    if (lanyardId) {
+      let heartbeatInterval: any = null;
+
+      async function updateGameData(game: any) {
+        if (!game) {
+          isLive = false;
+          widget?.classList.add("hidden");
+          return;
+        }
+
+        isLive = true;
+        widget?.classList.remove("hidden");
+
+        const now = Date.now();
+        startTimestamp = game.timestamps?.start || now;
+
+        let largeImg = parseGameAsset(game);
+        if (!largeImg) {
+          largeImg = await fetchGameIconByName(game.name);
+        }
+
+        if (titleEl) titleEl.textContent = game.name;
+        if (detailsEl) detailsEl.textContent = game.details || "In Game";
+        if (stateEl) stateEl.textContent = game.state || "";
+        updateArt(largeImg);
+
+        updateElapsedUI();
+      }
+
+      function extractGameActivity(activities: any[]) {
+        if (!activities || !Array.isArray(activities)) return null;
+        return activities.find((a: any) => a.type === 0 && a.name.toLowerCase() !== "spotify") || null;
+      }
+
+      function connectLanyardWS() {
+        try {
+          const socket = new WebSocket("wss://api.lanyard.rest/socket");
+
+          socket.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+              const { op, d, t } = msg;
+
+              if (op === 1) {
+                const period = d.heartbeat_interval || 30000;
+                if (heartbeatInterval) clearInterval(heartbeatInterval);
+                heartbeatInterval = setInterval(() => {
+                  if (socket && socket.readyState === WebSocket.OPEN) {
+                    socket.send(JSON.stringify({ op: 3 }));
+                  }
+                }, period);
+
+                if (socket.readyState === WebSocket.OPEN) {
+                  socket.send(
+                    JSON.stringify({
+                      op: 2,
+                      d: { subscribe_to_id: lanyardId },
+                    })
+                  );
+                }
+              } else if (op === 0 && (t === "INIT_STATE" || t === "PRESENCE_UPDATE")) {
+                const userObj = d[lanyardId] || d;
+                const game = extractGameActivity(userObj.activities || []);
+                updateGameData(game);
+              }
+            } catch {}
+          };
+
+          socket.onclose = () => {
+            if (heartbeatInterval) clearInterval(heartbeatInterval);
+            setTimeout(connectLanyardWS, 3000);
+          };
+        } catch {
+          // Fallback to HTTP polling if WebSocket is blocked
+          setInterval(async () => {
+            try {
+              const res = await fetch(`https://api.lanyard.rest/v1/users/${lanyardId}`);
+              const data = await res.json();
+              if (data.success) {
+                const game = extractGameActivity(data.data?.activities || []);
+                updateGameData(game);
+              }
+            } catch {}
+          }, 3000);
+        }
+      }
+
+      connectLanyardWS();
+    }
+  });
+</script>

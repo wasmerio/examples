@@ -1,0 +1,967 @@
+---
+// Retro Cassette Radio Player with Web Audio API & Custom YouTube Song Loader
+---
+
+<div
+  id="radio-modal-container"
+  class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-2 sm:p-6 hidden select-none overflow-y-auto py-4 sm:py-6"
+>
+  <div
+    id="radio-window"
+    class="w-full max-w-xl max-h-[94vh] sm:max-h-[90vh] border-2 border-[var(--border-active)] bg-[var(--bg-main)] shadow-2xl relative font-mono text-[var(--fg-main)] flex flex-col my-auto overflow-hidden rounded-sm"
+  >
+    <!-- Window Header -->
+    <div
+      class="bg-[var(--status-bar-bg)] border-b border-[var(--border-color)] px-3 py-2 flex items-center justify-between shrink-0"
+    >
+      <div class="flex items-center gap-2 overflow-hidden">
+        <span
+          class="w-3 h-3 rounded-full bg-red-500 inline-block border border-red-700 cursor-pointer shrink-0"
+          id="radio-win-close"></span>
+        <span
+          class="w-3 h-3 rounded-full bg-yellow-500/50 inline-block border border-yellow-700 shrink-0"
+        ></span>
+        <span
+          class="w-3 h-3 rounded-full bg-emerald-500/50 inline-block border border-emerald-700 shrink-0"
+        ></span>
+        <span
+          class="font-bold text-[11px] sm:text-xs text-[var(--fg-bright)] ml-1 flex items-center gap-1.5 truncate"
+        >
+          <span>📻</span>
+          <span class="inline sm:hidden">RADIO.SH</span>
+          <span class="hidden sm:inline">RETRO CASSETTE RADIO [LO-FI + YOUTUBE]</span>
+        </span>
+      </div>
+
+      <button
+        id="radio-close-btn"
+        class="px-2 py-0.5 border border-[var(--border-color)] bg-[var(--bg-card)] hover:border-red-500 hover:text-red-400 text-[10px] sm:text-xs font-bold transition-colors cursor-pointer shrink-0 ml-2"
+      >
+        ✕ CLOSE<span class="hidden sm:inline"> [ESC]</span>
+      </button>
+    </div>
+
+    <!-- Scrollable Modal Body -->
+    <div class="flex-1 overflow-y-auto">
+      <!-- Cassette Tape Unit -->
+      <div class="p-3 sm:p-5 bg-[var(--bg-card)] border-b border-[var(--border-color)] space-y-3 sm:space-y-4">
+        <!-- Cassette Body Visual -->
+        <div
+          class="border-2 border-[var(--border-color)] bg-[var(--bg-main)] p-2.5 sm:p-3 rounded-sm relative shadow-inner"
+        >
+          <div class="flex items-center justify-between border-b border-[var(--border-color)] pb-2 mb-2.5">
+            <div class="flex items-center gap-1.5 sm:gap-2">
+              <span class="text-[9px] sm:text-[10px] px-1.5 py-0.5 bg-[var(--border-color)] text-[var(--accent)] font-bold">
+                TYPE-II HIGH BIAS
+              </span>
+              <span id="radio-genre-badge" class="text-[9px] sm:text-[10px] px-1.5 py-0.5 border border-[var(--border-color)] text-[var(--fg-bright)] font-bold">
+                LO-FI
+              </span>
+            </div>
+            <div class="text-[10px] sm:text-[11px] font-bold text-[var(--fg-dim)] flex items-center gap-1.5">
+              <span id="radio-led" class="w-2 h-2 rounded-full bg-neutral-600"></span>
+              <span id="radio-status-text">STANDBY</span>
+            </div>
+          </div>
+
+          <!-- Cassette Spools & Tape Window -->
+          <div class="flex items-center justify-center gap-3 sm:gap-6 py-1.5 sm:py-2">
+            <!-- Left Reel -->
+            <div class="relative w-12 h-12 sm:w-20 sm:h-20 rounded-full border-2 border-[var(--border-color)] bg-[var(--bg-card)] flex items-center justify-center shrink-0">
+              <div id="reel-left" class="w-8 h-8 sm:w-12 sm:h-12 border-2 sm:border-4 border-dashed border-[var(--accent)] rounded-full transition-transform"></div>
+              <div class="absolute w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-[var(--fg-main)]"></div>
+            </div>
+
+            <!-- Middle Tape Window & Spectrum Analyzer Canvas -->
+            <div class="flex-1 max-w-[140px] sm:max-w-[180px] h-12 sm:h-16 border border-[var(--border-color)] bg-black/60 px-2 py-1 flex flex-col justify-between overflow-hidden">
+              <div class="flex justify-between text-[8px] sm:text-[9px] text-[var(--fg-dim)]">
+                <span>SPECTRUM</span>
+                <span id="radio-ascii-meter"> ▂▃▅▆▇</span>
+              </div>
+              <canvas id="radio-canvas-viz" width="160" height="30" class="w-full h-6 sm:h-7 block"></canvas>
+            </div>
+
+            <!-- Right Reel -->
+            <div class="relative w-12 h-12 sm:w-20 sm:h-20 rounded-full border-2 border-[var(--border-color)] bg-[var(--bg-card)] flex items-center justify-center shrink-0">
+              <div id="reel-right" class="w-8 h-8 sm:w-12 sm:h-12 border-2 sm:border-4 border-dashed border-[var(--accent)] rounded-full transition-transform"></div>
+              <div class="absolute w-3 h-3 sm:w-4 sm:h-4 rounded-full bg-[var(--fg-main)]"></div>
+            </div>
+          </div>
+
+          <!-- Track LCD Display -->
+          <div class="mt-2.5 sm:mt-3 bg-black/70 border border-[var(--border-color)] p-2 flex items-center justify-between">
+            <div class="overflow-hidden whitespace-nowrap pr-2">
+              <div id="radio-track-title" class="text-xs sm:text-sm font-bold text-[var(--fg-bright)] truncate">
+                Select a track or paste a YouTube URL...
+              </div>
+              <div id="radio-track-artist" class="text-[10px] sm:text-[11px] text-[var(--fg-dim)] truncate">
+                RetroWave Audio
+              </div>
+            </div>
+            <div id="radio-time-display" class="text-[11px] sm:text-xs font-mono text-[var(--accent)] whitespace-nowrap font-bold">
+              0:00 / 0:00
+            </div>
+          </div>
+        </div>
+
+        <!-- Controls Panel -->
+        <div class="flex flex-col sm:flex-row items-center justify-center sm:justify-between gap-2.5 sm:gap-3 pt-1">
+          <!-- Playback Buttons (Centered on Mobile) -->
+          <div class="flex items-center justify-center w-full sm:w-auto gap-2 sm:gap-2">
+            <button
+              id="radio-prev-btn"
+              title="Previous Track"
+              class="px-3 py-1.5 border border-[var(--border-color)] bg-[var(--bg-main)] hover:border-[var(--border-active)] text-[var(--fg-bright)] font-bold text-xs cursor-pointer active:scale-95 transition-transform"
+            >
+              ⏮ PREV
+            </button>
+            <button
+              id="radio-play-btn"
+              title="Play / Pause"
+              class="px-4 py-1.5 border-2 border-[var(--accent)] bg-[var(--bg-main)] hover:bg-[var(--border-color)] text-[var(--fg-bright)] font-bold text-xs cursor-pointer active:scale-95 transition-transform shadow-[0_0_10px_var(--glow-color)]"
+            >
+              ▶ PLAY
+            </button>
+            <button
+              id="radio-next-btn"
+              title="Next Track"
+              class="px-3 py-1.5 border border-[var(--border-color)] bg-[var(--bg-main)] hover:border-[var(--border-active)] text-[var(--fg-bright)] font-bold text-xs cursor-pointer active:scale-95 transition-transform"
+            >
+              NEXT ⏭
+            </button>
+          </div>
+
+          <!-- Volume Slider (Desktop Only, Default 100%) -->
+          <div class="hidden sm:flex items-center gap-1.5 sm:gap-2 text-xs">
+            <span id="radio-vol-icon" class="cursor-pointer text-xs sm:text-sm">🔊</span>
+            <input
+              id="radio-vol-slider"
+              type="range"
+              min="0"
+              max="100"
+              value="100"
+              aria-label="Radio Volume Slider"
+              class="w-20 sm:w-24 accent-[var(--accent)] cursor-pointer"
+            />
+            <span id="radio-vol-label" class="text-[10px] sm:text-[11px] text-[var(--fg-dim)] font-mono w-7 sm:w-8">100%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- YouTube Track Loader Input Box -->
+      <div class="p-2.5 sm:p-3 bg-[var(--bg-main)] border-b border-[var(--border-color)] space-y-2">
+        <div class="flex items-center justify-between text-[10px] font-bold text-[var(--fg-dim)]">
+          <span>➕ STREAM CUSTOM SONG VIA YOUTUBE URL</span>
+          <span id="yt-loader-status" class="text-[var(--accent)]"></span>
+        </div>
+        <div class="flex flex-col sm:flex-row gap-2">
+          <input
+            id="yt-url-input"
+            type="text"
+            placeholder="Paste YouTube link (e.g. https://youtu.be/... or watch?v=...)"
+            class="flex-1 bg-[var(--bg-card)] border border-[var(--border-color)] px-2.5 py-1.5 text-[11px] sm:text-xs text-[var(--fg-bright)] font-mono focus:border-[var(--accent)] outline-none"
+          />
+          <button
+            id="yt-add-btn"
+            class="px-3 py-1.5 bg-[var(--bg-card)] border border-[var(--accent)] hover:bg-[var(--border-color)] text-[var(--accent)] font-bold text-[11px] sm:text-xs cursor-pointer whitespace-nowrap active:scale-95 transition-all"
+          >
+            ▶ LOAD & PLAY
+          </button>
+        </div>
+      </div>
+
+      <!-- Playlist Selection Drawer -->
+      <div class="p-2.5 sm:p-3 bg-[var(--bg-main)] max-h-36 sm:max-h-48 overflow-y-auto font-mono text-[11px] sm:text-xs space-y-1">
+        <div class="text-[10px] text-[var(--fg-dim)] font-bold uppercase tracking-wider mb-2 border-b border-[var(--border-color)] pb-1 flex justify-between">
+          <span>TRACKLIST & CUSTOM SONGS</span>
+          <span id="radio-track-count-badge">5 TRACKS</span>
+        </div>
+
+        <div id="radio-playlist-container" class="space-y-1">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden Audio & YouTube Iframe Elements -->
+    <audio id="tui-radio-audio" preload="metadata" crossorigin="anonymous"></audio>
+    <div id="tui-yt-container" class="hidden pointer-events-none opacity-0 w-0 h-0 overflow-hidden">
+      <div id="tui-yt-player"></div>
+    </div>
+
+    <!-- Footer -->
+    <div
+      class="bg-[var(--status-bar-bg)] border-t border-[var(--border-color)] px-3 py-1.5 flex items-center justify-between text-[9px] sm:text-[10px] text-[var(--fg-dim)] shrink-0 font-mono"
+    >
+      <span class="truncate">Supports MP3 + YouTube streams</span>
+      <span class="shrink-0 ml-1 hidden sm:inline"><kbd class="px-1 py-0.5 border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--fg-bright)]">Space</kbd> Play/Pause • <kbd class="px-1 py-0.5 border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--fg-bright)]">ESC</kbd> Close</span>
+      <span class="shrink-0 ml-1 inline sm:hidden">Tap <kbd class="px-1 py-0.5 border border-[var(--border-color)] bg-[var(--bg-card)] text-[var(--fg-bright)]">CLOSE ✕</kbd> to Exit</span>
+    </div>
+  </div>
+</div>
+
+<style>
+  @keyframes spinReel {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .reel-spinning {
+    animation: spinReel 2.5s linear infinite;
+  }
+</style>
+
+<script>
+  import { RADIO_CONFIG } from "../config/radioConfig";
+  import type { RadioTrack } from "../config/radioConfig";
+  import { playBeep, playSuccessSound, playErrorSound } from "../utils/sound";
+
+  let audioEl: HTMLAudioElement | null = null;
+  let audioCtx: AudioContext | null = null;
+  let analyser: AnalyserNode | null = null;
+  let sourceNode: MediaElementAudioSourceNode | null = null;
+  let dataArray: Uint8Array<ArrayBuffer> | null = null;
+  let isWebAudioInitialized = false;
+
+  let ytPlayer: any = null;
+  let isYtApiLoaded = false;
+  let isYtReady = false;
+
+  let allTracks: RadioTrack[] = [...RADIO_CONFIG.tracks];
+  let currentTrackIdx = 0;
+  let isPlaying = false;
+  let volume = RADIO_CONFIG.defaultVolume;
+  let isModalOpen = false;
+  let vizAnimationId: number | null = null;
+  let ytTimeInterval: number | null = null;
+
+  const ASCII_BARS = [" ", " ", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
+
+  // YouTube URL parser
+  function extractYouTubeId(url: string): string | null {
+    if (!url) return null;
+    const match = url.match(
+      /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/
+    );
+    return match ? match[1] : null;
+  }
+
+  function loadYouTubeApi() {
+    if (isYtApiLoaded || typeof window === "undefined") return;
+    isYtApiLoaded = true;
+
+    const tag = document.createElement("script");
+    tag.src = "https://www.youtube.com/iframe_api";
+    const firstScriptTag = document.getElementsByTagName("script")[0];
+    firstScriptTag?.parentNode?.insertBefore(tag, firstScriptTag);
+
+    (window as any).onYouTubeIframeAPIReady = () => {
+      initYouTubePlayer();
+    };
+  }
+
+  function initYouTubePlayer() {
+    if (typeof (window as any).YT === "undefined" || !(window as any).YT.Player) return;
+    try {
+      ytPlayer = new (window as any).YT.Player("tui-yt-player", {
+        height: "1",
+        width: "1",
+        videoId: "",
+        playerVars: {
+          autoplay: 0,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          rel: 0,
+        },
+        events: {
+          onReady: () => {
+            isYtReady = true;
+            if (ytPlayer && ytPlayer.setVolume) {
+              ytPlayer.setVolume(Math.round(volume * 100));
+            }
+          },
+          onStateChange: (event: any) => {
+            // YT.PlayerState.PLAYING = 1, PAUSED = 2, ENDED = 0
+            if (event.data === 1) {
+              setPlayState(true);
+              startYtTimeTracking();
+            } else if (event.data === 2) {
+              setPlayState(false);
+              stopYtTimeTracking();
+            } else if (event.data === 0) {
+              stopYtTimeTracking();
+              nextTrack();
+            }
+          },
+          onError: () => {
+            setPlayState(false);
+            stopYtTimeTracking();
+          },
+        },
+      });
+    } catch {}
+  }
+
+  function startYtTimeTracking() {
+    stopYtTimeTracking();
+    ytTimeInterval = window.setInterval(() => {
+      if (ytPlayer && isPlaying && allTracks[currentTrackIdx]?.type === "youtube") {
+        try {
+          const cur = ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0;
+          const dur = ytPlayer.getDuration ? ytPlayer.getDuration() : 0;
+          const timeEl = document.getElementById("radio-time-display");
+          const track = allTracks[currentTrackIdx];
+          if (timeEl) {
+            if (track?.duration === "LIVE" || dur > 86400 || dur <= 0 || !isFinite(dur)) {
+              timeEl.textContent = "00:00 / ∞";
+            } else {
+              timeEl.textContent = `${formatTime(cur)} / ${formatTime(dur)}`;
+            }
+          }
+        } catch {}
+      }
+    }, 500);
+  }
+
+  function stopYtTimeTracking() {
+    if (ytTimeInterval) {
+      clearInterval(ytTimeInterval);
+      ytTimeInterval = null;
+    }
+  }
+
+  function loadCustomTracksFromStorage() {
+    try {
+      const saved = localStorage.getItem("tui_custom_radio_tracks");
+      if (saved) {
+        const parsed: RadioTrack[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          allTracks = [...RADIO_CONFIG.tracks, ...parsed];
+        }
+      }
+    } catch {}
+  }
+
+  function saveCustomTracksToStorage() {
+    try {
+      const customTracks = allTracks.filter((t) => t.isCustom);
+      localStorage.setItem("tui_custom_radio_tracks", JSON.stringify(customTracks));
+    } catch {}
+  }
+
+  function initAudioEngine() {
+    audioEl = document.getElementById("tui-radio-audio") as HTMLAudioElement;
+    if (!audioEl) return;
+
+    loadCustomTracksFromStorage();
+
+    // Load saved volume and track
+    try {
+      const savedTrack = localStorage.getItem("tui_radio_track");
+      if (savedTrack !== null) {
+        currentTrackIdx = Math.max(0, Math.min(allTracks.length - 1, parseInt(savedTrack, 10) || 0));
+      }
+      const savedVol = localStorage.getItem("tui_radio_volume");
+      if (savedVol !== null) {
+        volume = parseFloat(savedVol) || RADIO_CONFIG.defaultVolume;
+      }
+    } catch {}
+
+    audioEl.volume = volume;
+    renderPlaylist();
+    loadTrack(currentTrackIdx, false);
+
+    audioEl.addEventListener("ended", () => {
+      nextTrack();
+    });
+
+    audioEl.addEventListener("timeupdate", () => {
+      if (allTracks[currentTrackIdx]?.type !== "youtube") {
+        updateTimeDisplay();
+      }
+    });
+
+    audioEl.addEventListener("play", () => {
+      setPlayState(true);
+    });
+
+    audioEl.addEventListener("pause", () => {
+      setPlayState(false);
+    });
+
+    loadYouTubeApi();
+  }
+
+  function setupWebAudio() {
+    if (isWebAudioInitialized || !audioEl) return;
+    try {
+      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtxClass) {
+        audioCtx = new AudioCtxClass();
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 64;
+        const bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(new ArrayBuffer(bufferLength));
+
+        sourceNode = audioCtx.createMediaElementSource(audioEl);
+        sourceNode.connect(analyser);
+        analyser.connect(audioCtx.destination);
+        isWebAudioInitialized = true;
+      }
+    } catch {}
+  }
+
+  function loadTrack(index: number, autoPlay: boolean = true) {
+    if (!allTracks[index]) return;
+    currentTrackIdx = index;
+    const track = allTracks[currentTrackIdx];
+
+    try {
+      localStorage.setItem("tui_radio_track", String(currentTrackIdx));
+    } catch {}
+
+    updateUI();
+
+    if (track.type === "youtube" && track.youtubeId) {
+      // Pause HTML5 audio
+      if (audioEl) audioEl.pause();
+
+      if (autoPlay) {
+        playYouTubeTrack(track.youtubeId);
+      }
+    } else {
+      // Pause YouTube player
+      if (ytPlayer && ytPlayer.pauseVideo) {
+        try { ytPlayer.pauseVideo(); } catch {}
+      }
+      stopYtTimeTracking();
+
+      if (audioEl) {
+        audioEl.src = track.url;
+        audioEl.load();
+      }
+
+      if (autoPlay) {
+        playHtml5Track();
+      }
+    }
+
+    // Broadcast track change
+    window.dispatchEvent(
+      new CustomEvent("tui-radio-change", {
+        detail: {
+          track,
+          index: currentTrackIdx,
+          isPlaying,
+        },
+      })
+    );
+  }
+
+  function playHtml5Track() {
+    if (!audioEl) return;
+    setupWebAudio();
+
+    if (audioCtx && audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+
+    audioEl
+      .play()
+      .then(() => {
+        setPlayState(true);
+      })
+      .catch(() => {
+        setPlayState(false);
+      });
+  }
+
+  function playYouTubeTrack(videoId: string) {
+    if (!isYtReady || !ytPlayer) {
+      loadYouTubeApi();
+      setTimeout(() => playYouTubeTrack(videoId), 800);
+      return;
+    }
+
+    try {
+      ytPlayer.loadVideoById(videoId);
+      ytPlayer.setVolume(Math.round(volume * 100));
+      ytPlayer.playVideo();
+      setPlayState(true);
+    } catch {
+      setPlayState(false);
+    }
+  }
+
+  function togglePlay() {
+    const track = allTracks[currentTrackIdx];
+    if (isPlaying) {
+      pauseTrack();
+    } else {
+      if (track?.type === "youtube" && track.youtubeId) {
+        if (ytPlayer && ytPlayer.playVideo) {
+          ytPlayer.playVideo();
+          setPlayState(true);
+        } else {
+          playYouTubeTrack(track.youtubeId);
+        }
+      } else {
+        playHtml5Track();
+      }
+    }
+  }
+
+  function pauseTrack() {
+    const track = allTracks[currentTrackIdx];
+    if (track?.type === "youtube") {
+      if (ytPlayer && ytPlayer.pauseVideo) {
+        try { ytPlayer.pauseVideo(); } catch {}
+      }
+      stopYtTimeTracking();
+    } else {
+      if (audioEl) audioEl.pause();
+    }
+    setPlayState(false);
+  }
+
+  function nextTrack() {
+    const nextIdx = (currentTrackIdx + 1) % allTracks.length;
+    loadTrack(nextIdx, true);
+    playBeep(650, 0.04);
+  }
+
+  function prevTrack() {
+    const prevIdx = (currentTrackIdx - 1 + allTracks.length) % allTracks.length;
+    loadTrack(prevIdx, true);
+    playBeep(550, 0.04);
+  }
+
+  function setVolume(val: number) {
+    volume = Math.max(0, Math.min(1, val));
+    if (audioEl) audioEl.volume = volume;
+    if (ytPlayer && ytPlayer.setVolume) {
+      try { ytPlayer.setVolume(Math.round(volume * 100)); } catch {}
+    }
+
+    try {
+      localStorage.setItem("tui_radio_volume", String(volume));
+    } catch {}
+
+    const slider = document.getElementById("radio-vol-slider") as HTMLInputElement;
+    const label = document.getElementById("radio-vol-label");
+    if (slider) slider.value = String(Math.round(volume * 100));
+    if (label) label.textContent = `${Math.round(volume * 100)}%`;
+  }
+
+  function setPlayState(playing: boolean) {
+    isPlaying = playing;
+    const playBtn = document.getElementById("radio-play-btn");
+    const reelL = document.getElementById("reel-left");
+    const reelR = document.getElementById("reel-right");
+    const led = document.getElementById("radio-led");
+    const statusText = document.getElementById("radio-status-text");
+
+    if (playBtn) playBtn.textContent = isPlaying ? "⏸ PAUSE" : "▶ PLAY";
+
+    if (isPlaying) {
+      reelL?.classList.add("reel-spinning");
+      reelR?.classList.add("reel-spinning");
+      if (led) led.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+      if (statusText) {
+        statusText.textContent = "PLAYING";
+        statusText.className = "text-emerald-400";
+      }
+      startVisualizer();
+    } else {
+      reelL?.classList.remove("reel-spinning");
+      reelR?.classList.remove("reel-spinning");
+      if (led) led.className = "w-2 h-2 rounded-full bg-neutral-600";
+      if (statusText) {
+        statusText.textContent = "PAUSED";
+        statusText.className = "text-[var(--fg-dim)]";
+      }
+    }
+
+    // Broadcast change
+    window.dispatchEvent(
+      new CustomEvent("tui-radio-change", {
+        detail: {
+          track: allTracks[currentTrackIdx],
+          index: currentTrackIdx,
+          isPlaying,
+        },
+      })
+    );
+  }
+
+  async function addYouTubeTrack(url: string, customTitle?: string): Promise<boolean> {
+    const videoId = extractYouTubeId(url);
+    const statusEl = document.getElementById("yt-loader-status");
+
+    if (!videoId) {
+      playErrorSound();
+      if (statusEl) {
+        statusEl.textContent = "✖ Invalid YouTube URL";
+        statusEl.className = "text-red-400 font-bold";
+        setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 4000);
+      }
+      return false;
+    }
+
+    if (statusEl) {
+      statusEl.textContent = "⏳ Fetching title...";
+      statusEl.className = "text-yellow-400 font-bold";
+    }
+
+    let title = customTitle || `YouTube Track [${videoId}]`;
+    let artist = "YouTube Stream";
+
+    try {
+      const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`);
+      const data = await res.json();
+      if (data && data.title) {
+        title = data.title;
+        artist = data.author_name || "YouTube Creator";
+      }
+    } catch {}
+
+    const newTrack: RadioTrack = {
+      id: `yt-${videoId}-${Date.now()}`,
+      title,
+      artist,
+      genre: "YouTube",
+      type: "youtube",
+      youtubeId: videoId,
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+      duration: "Stream",
+      isCustom: true,
+    };
+
+    allTracks.push(newTrack);
+    saveCustomTracksToStorage();
+    renderPlaylist();
+    loadTrack(allTracks.length - 1, true);
+
+    playSuccessSound();
+    if (statusEl) {
+      statusEl.textContent = "✓ Track Added & Playing!";
+      statusEl.className = "text-emerald-400 font-bold";
+      setTimeout(() => { if (statusEl) statusEl.textContent = ""; }, 4000);
+    }
+
+    const input = document.getElementById("yt-url-input") as HTMLInputElement;
+    if (input) input.value = "";
+
+    return true;
+  }
+
+  function removeCustomTrack(idx: number) {
+    if (!allTracks[idx] || !allTracks[idx].isCustom) return;
+    const removedCurrent = idx === currentTrackIdx;
+    allTracks.splice(idx, 1);
+    saveCustomTracksToStorage();
+    renderPlaylist();
+
+    if (removedCurrent) {
+      loadTrack(Math.max(0, currentTrackIdx - 1), isPlaying);
+    }
+  }
+
+  function renderPlaylist() {
+    const container = document.getElementById("radio-playlist-container");
+    const countBadge = document.getElementById("radio-track-count-badge");
+    if (!container) return;
+
+    if (countBadge) countBadge.textContent = `${allTracks.length} TRACKS`;
+
+    container.innerHTML = "";
+    allTracks.forEach((track, idx) => {
+      const isSelected = idx === currentTrackIdx;
+      const row = document.createElement("div");
+      row.className = `radio-track-row flex items-center justify-between p-1.5 hover:bg-[var(--border-color)] cursor-pointer transition-colors border ${
+        isSelected ? "bg-[var(--border-color)] border-[var(--accent)]" : "border-transparent hover:border-[var(--border-color)]"
+      }`;
+      row.setAttribute("data-track-index", String(idx));
+
+      const genreColor = track.genre === "YouTube" ? "bg-red-950 text-red-400 border border-red-800" : "bg-[var(--border-color)] text-[var(--accent)]";
+
+      row.innerHTML = `
+        <div class="flex items-center gap-2 truncate pr-2">
+          <span class="text-[var(--fg-dim)] text-[10px] w-4 font-mono">${idx + 1}.</span>
+          <span class="radio-row-title text-[var(--fg-bright)] font-bold truncate">${track.title}</span>
+          <span class="text-[var(--fg-dim)] text-[10px]">(${track.artist})</span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <span class="text-[9px] px-1 py-0.5 ${genreColor} font-bold">${track.genre}</span>
+          ${
+            track.isCustom
+              ? `<button class="yt-delete-btn text-red-400 hover:text-red-300 font-bold px-1 text-xs" title="Remove track">✕</button>`
+              : `<span class="text-[10px] text-[var(--fg-dim)]">${track.duration || "2:00"}</span>`
+          }
+        </div>
+      `;
+
+      row.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).classList.contains("yt-delete-btn")) {
+          e.stopPropagation();
+          removeCustomTrack(idx);
+          return;
+        }
+        loadTrack(idx, true);
+        playBeep(700, 0.04);
+      });
+
+      container.appendChild(row);
+    });
+  }
+
+  function updateUI() {
+    const track = allTracks[currentTrackIdx];
+    if (!track) return;
+
+    const titleEl = document.getElementById("radio-track-title");
+    const artistEl = document.getElementById("radio-track-artist");
+    const genreEl = document.getElementById("radio-genre-badge");
+
+    if (titleEl) titleEl.textContent = track.title;
+    if (artistEl) artistEl.textContent = track.artist;
+    if (genreEl) genreEl.textContent = track.genre.toUpperCase();
+
+    const timeEl = document.getElementById("radio-time-display");
+    if (timeEl) {
+      if (track.duration === "LIVE") {
+        timeEl.textContent = "00:00 / ∞";
+      } else {
+        timeEl.textContent = "0:00 / 0:00";
+      }
+    }
+
+    // Highlight row in tracklist
+    const rows = document.querySelectorAll(".radio-track-row");
+    rows.forEach((row, idx) => {
+      if (idx === currentTrackIdx) {
+        row.classList.add("bg-[var(--border-color)]", "border-[var(--accent)]");
+      } else {
+        row.classList.remove("bg-[var(--border-color)]", "border-[var(--accent)]");
+      }
+    });
+  }
+
+  function formatTime(secs: number): string {
+    if (isNaN(secs) || secs < 0 || !isFinite(secs)) return "0:00";
+    const mins = Math.floor(secs / 60);
+    const remainder = Math.floor(secs % 60);
+    return `${mins}:${remainder < 10 ? "0" : ""}${remainder}`;
+  }
+
+  function updateTimeDisplay() {
+    if (!audioEl) return;
+    const timeEl = document.getElementById("radio-time-display");
+    const track = allTracks[currentTrackIdx];
+    if (timeEl) {
+      if (track?.duration === "LIVE" || isNaN(audioEl.duration) || !isFinite(audioEl.duration)) {
+        timeEl.textContent = "00:00 / ∞";
+      } else {
+        timeEl.textContent = `${formatTime(audioEl.currentTime)} / ${formatTime(audioEl.duration)}`;
+      }
+    }
+  }
+
+  function getThemeColor(): string {
+    const theme = document.documentElement.getAttribute("data-theme") || "green";
+    switch (theme) {
+      case "amber": return "#ffb000";
+      case "cyan": return "#00f0ff";
+      case "dracula": return "#bd93f9";
+      case "mono": return "#eeeeee";
+      case "cappuccino": return "#e69a58";
+      case "green":
+      default: return "#00ff66";
+    }
+  }
+
+  function startVisualizer() {
+    const canvas = document.getElementById("radio-canvas-viz") as HTMLCanvasElement;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const meterEl = document.getElementById("radio-ascii-meter");
+
+    function renderViz() {
+      const c = ctx;
+      const cvs = canvas;
+      if (!c || !cvs) return;
+      c.clearRect(0, 0, cvs.width, cvs.height);
+
+      let asciiStr = "";
+      const barCount = 10;
+      const barWidth = cvs.width / barCount;
+      const themeColor = getThemeColor();
+
+      if (analyser && dataArray && isPlaying && allTracks[currentTrackIdx]?.type !== "youtube") {
+        analyser.getByteFrequencyData(dataArray);
+
+        for (let i = 0; i < barCount; i++) {
+          const val = dataArray[i * 2] || 0;
+          const percent = val / 255;
+          const barHeight = Math.max(2, percent * cvs.height);
+
+          c.fillStyle = themeColor;
+          c.fillRect(i * barWidth + 1, cvs.height - barHeight, barWidth - 2, barHeight);
+
+          const asciiIdx = Math.min(ASCII_BARS.length - 1, Math.floor(percent * ASCII_BARS.length));
+          asciiStr += ASCII_BARS[asciiIdx];
+        }
+      } else if (isPlaying) {
+        // Procedural rhythmic spectrum for YouTube / Streams
+        const now = Date.now() / 180;
+        for (let i = 0; i < barCount; i++) {
+          const wave = Math.abs(Math.sin(now + i * 0.7) * Math.cos(now * 0.5 + i));
+          const barHeight = Math.max(3, wave * cvs.height * 0.9);
+
+          c.fillStyle = themeColor;
+          c.fillRect(i * barWidth + 1, cvs.height - barHeight, barWidth - 2, barHeight);
+
+          const asciiIdx = Math.min(ASCII_BARS.length - 1, Math.floor(wave * ASCII_BARS.length));
+          asciiStr += ASCII_BARS[asciiIdx];
+        }
+      } else {
+        asciiStr = " ▂▃▅▆▇";
+      }
+
+      if (meterEl) meterEl.textContent = asciiStr;
+
+      // Broadcast visualizer tick for status bar ticker
+      window.dispatchEvent(
+        new CustomEvent("tui-radio-viz", {
+          detail: {
+            ascii: asciiStr,
+            isPlaying,
+            track: allTracks[currentTrackIdx],
+          },
+        })
+      );
+
+      if (isPlaying || isModalOpen) {
+        vizAnimationId = requestAnimationFrame(renderViz);
+      }
+    }
+
+    if (vizAnimationId) cancelAnimationFrame(vizAnimationId);
+    vizAnimationId = requestAnimationFrame(renderViz);
+  }
+
+  function toggleModal(force?: boolean) {
+    const modal = document.getElementById("radio-modal-container");
+    if (!modal) return;
+
+    isModalOpen = force !== undefined ? force : !isModalOpen;
+
+    if (isModalOpen) {
+      modal.classList.remove("hidden");
+      renderPlaylist();
+      updateUI();
+      startVisualizer();
+    } else {
+      modal.classList.add("hidden");
+    }
+  }
+
+  // Global window API for CLI & UI components
+  const radioEngine = {
+    play: () => {
+      const track = allTracks[currentTrackIdx];
+      if (track?.type === "youtube" && track.youtubeId) {
+        if (ytPlayer && ytPlayer.playVideo) {
+          ytPlayer.playVideo();
+          setPlayState(true);
+        } else {
+          playYouTubeTrack(track.youtubeId);
+        }
+      } else {
+        playHtml5Track();
+      }
+    },
+    pause: pauseTrack,
+    toggle: togglePlay,
+    next: nextTrack,
+    prev: prevTrack,
+    setTrack: loadTrack,
+    setVolume: (v: number) => setVolume(v / 100),
+    addYouTubeTrack,
+    removeTrack: removeCustomTrack,
+    getTracks: () => allTracks,
+    toggleModal,
+    getStatus: () => ({
+      isPlaying,
+      currentTrack: allTracks[currentTrackIdx],
+      currentTrackIdx,
+      volume: Math.round(volume * 100),
+    }),
+  };
+
+  (window as unknown as { radioEngine: typeof radioEngine }).radioEngine = radioEngine;
+
+  document.addEventListener("DOMContentLoaded", () => {
+    initAudioEngine();
+
+    const modal = document.getElementById("radio-modal-container");
+    const closeBtn = document.getElementById("radio-close-btn");
+    const winCloseBtn = document.getElementById("radio-win-close");
+    const playBtn = document.getElementById("radio-play-btn");
+    const nextBtn = document.getElementById("radio-next-btn");
+    const prevBtn = document.getElementById("radio-prev-btn");
+    const volSlider = document.getElementById("radio-vol-slider") as HTMLInputElement;
+
+    const ytInput = document.getElementById("yt-url-input") as HTMLInputElement;
+    const ytAddBtn = document.getElementById("yt-add-btn");
+
+    closeBtn?.addEventListener("click", () => toggleModal(false));
+    winCloseBtn?.addEventListener("click", () => toggleModal(false));
+    playBtn?.addEventListener("click", togglePlay);
+    nextBtn?.addEventListener("click", nextTrack);
+    prevBtn?.addEventListener("click", prevTrack);
+
+    volSlider?.addEventListener("input", (e) => {
+      const target = e.target as HTMLInputElement;
+      setVolume(parseInt(target.value, 10) / 100);
+    });
+
+    ytAddBtn?.addEventListener("click", () => {
+      if (ytInput && ytInput.value.trim()) {
+        addYouTubeTrack(ytInput.value.trim());
+      }
+    });
+
+    ytInput?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && ytInput.value.trim()) {
+        addYouTubeTrack(ytInput.value.trim());
+      }
+    });
+
+    // Modal background click
+    modal?.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        toggleModal(false);
+      }
+    });
+  });
+
+  // Global shortcut for Space (only when radio modal is open)
+  document.addEventListener("keydown", (e) => {
+    if (!isModalOpen) return;
+
+    // Ignore space if typing in YouTube input
+    const activeEl = document.activeElement;
+    if (activeEl && activeEl.id === "yt-url-input") return;
+
+    if (e.key === " " || e.code === "Space") {
+      e.preventDefault();
+      togglePlay();
+    }
+    if (e.key === "Escape" || e.key === "q" || e.key === "Q") {
+      toggleModal(false);
+    }
+  });
+</script>

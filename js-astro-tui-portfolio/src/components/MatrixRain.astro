@@ -1,0 +1,134 @@
+---
+---
+
+<div id="matrix-container" class="fixed inset-0 pointer-events-none z-40 hidden opacity-85 transition-opacity duration-500">
+  <canvas id="matrix-canvas" class="w-full h-full block"></canvas>
+  
+  <div class="hidden md:flex absolute top-4 right-4 bg-black/80 border border-emerald-500 text-emerald-400 font-mono text-xs px-3 py-1.5 items-center gap-2 shadow-lg">
+    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+    <span>MATRIX_RAIN_OVERLAY [ACTIVE]</span>
+    <button id="matrix-close-btn" class="ml-2 text-red-400 hover:text-red-300 font-bold pointer-events-auto cursor-pointer">[ESC / X]</button>
+  </div>
+</div>
+
+<script>
+  let matrixInterval: number | null = null;
+  let canvas: HTMLCanvasElement | null = null;
+  let ctx: CanvasRenderingContext2D | null = null;
+  let isActive = false;
+
+  const characters = "010101010101ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%&*+~<>?/\\{}[]";
+  const fontSize = 14;
+  let columns = 0;
+  let drops: number[] = [];
+
+  function initCanvas() {
+    canvas = document.getElementById('matrix-canvas') as HTMLCanvasElement;
+    if (!canvas) return;
+    ctx = canvas.getContext('2d');
+    
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+  }
+
+  function resizeCanvas() {
+    if (!canvas) return;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    columns = Math.floor(canvas.width / fontSize);
+    drops = [];
+    for (let i = 0; i < columns; i++) {
+      drops[i] = Math.floor(Math.random() * -50);
+    }
+  }
+
+  function drawMatrix() {
+    const c = ctx;
+    const cvs = canvas;
+    if (!c || !cvs) return;
+
+    c.fillStyle = 'rgba(0, 0, 0, 0.05)';
+    c.fillRect(0, 0, cvs.width, cvs.height);
+
+    const activeTheme = document.documentElement.getAttribute('data-theme') || 'green';
+    let color = '#00ff66';
+    if (activeTheme === 'amber') color = '#ffb000';
+    if (activeTheme === 'cyan') color = '#00f0ff';
+    if (activeTheme === 'dracula') color = '#bd93f9';
+    if (activeTheme === 'mono') color = '#ffffff';
+    if (activeTheme === 'cappuccino') color = '#e69a58';
+
+    c.fillStyle = color;
+    c.font = `${fontSize}px 'JetBrains Mono', monospace`;
+
+    for (let i = 0; i < drops.length; i++) {
+      const text = characters.charAt(Math.floor(Math.random() * characters.length));
+      c.fillText(text, i * fontSize, drops[i] * fontSize);
+
+      if (drops[i] * fontSize > cvs.height && Math.random() > 0.975) {
+        drops[i] = 0;
+      }
+      drops[i]++;
+    }
+  }
+
+  function toggleMatrix(force?: boolean) {
+    const container = document.getElementById('matrix-container');
+    if (!container) return;
+
+    const isMobile = window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    isActive = force !== undefined ? force : !isActive;
+
+    if (isActive) {
+      container.classList.remove('hidden');
+      if (isMobile) {
+        container.classList.remove('pointer-events-none');
+        container.classList.add('pointer-events-auto', 'cursor-pointer');
+      }
+      if (!canvas) initCanvas();
+      if (!matrixInterval) {
+        matrixInterval = window.setInterval(drawMatrix, 33);
+      }
+    } else {
+      container.classList.add('hidden');
+      if (isMobile) {
+        container.classList.add('pointer-events-none');
+        container.classList.remove('pointer-events-auto', 'cursor-pointer');
+      }
+      if (matrixInterval) {
+        clearInterval(matrixInterval);
+        matrixInterval = null;
+      }
+    }
+  }
+
+  (window as unknown as { toggleMatrix: typeof toggleMatrix }).toggleMatrix = toggleMatrix;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initCanvas();
+    const container = document.getElementById('matrix-container');
+    const closeBtn = document.getElementById('matrix-close-btn');
+
+    closeBtn?.addEventListener('click', () => toggleMatrix(false));
+
+    // Tap/Touch anywhere on Matrix canvas to turn off on mobile
+    const handleMobileTap = (e: Event) => {
+      const isMobile = window.innerWidth < 768 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile && isActive) {
+        // Prevent click if clicking the explicit close button to avoid double triggers
+        if (e.target !== closeBtn) {
+          toggleMatrix(false);
+        }
+      }
+    };
+
+    container?.addEventListener('touchstart', handleMobileTap, { passive: true });
+    container?.addEventListener('click', handleMobileTap);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (isActive && (e.key === 'Escape' || e.key === 'x' || e.key === 'X')) {
+      toggleMatrix(false);
+    }
+  });
+</script>

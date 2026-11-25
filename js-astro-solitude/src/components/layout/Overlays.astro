@@ -1,0 +1,547 @@
+---
+import Icon from '@/components/Icon.astro';
+import type { IconName } from '@/lib/icons';
+import { cfg, config, t, url, dateLabel, isoDate } from '@/lib/site';
+import { taxonomy, wordCount, type Post } from '@/lib/content';
+import Menu from '@/components/layout/Menu.astro';
+interface Props {
+  posts: Post[];
+  comments?: boolean;
+  toc?: boolean;
+}
+const { posts, comments = false, toc = false } = Astro.props;
+const tags = taxonomy(posts, 'tags');
+const categories = taxonomy(posts, 'categories');
+const updated = new Date();
+const actionLabels: Record<string, string> = {
+  toggleKeyboard: 'keyboardDisable',
+  showConsole: 'keyboardConsole',
+  musicToggle: 'keyboardMusic',
+  toggleTheme: 'keyboardThemeDark',
+  openSearch: 'keyboardSearch',
+  randomPost: 'keyboardRandomPost',
+};
+const months = [
+  ...new Set(posts.map((p) => p.data.date.toISOString().slice(0, 7))),
+].slice(0, 5);
+const contextItems: (readonly [string, IconName, string])[] = [
+  ['copytext', 'lucide:copy', 'rightMenuCopy'],
+  ['pastetext', 'lucide:clipboard', 'rightMenuPaste'],
+  ...(cfg.comment.use
+    ? [
+        [
+          'commenttext',
+          'lucide:message-circle-plus',
+          'rightMenuComment',
+        ] as const,
+      ]
+    : []),
+  ['newwindow', 'lucide:square-arrow-out-up-right', 'rightMenuNew'],
+  ['copylink', 'lucide:link', 'rightMenuLink'],
+  ['copyimg', 'lucide:copy', 'rightMenuImage'],
+  ['downloadimg', 'lucide:cloud-download', 'rightMenuDownloadImage'],
+  ...(cfg.search.enable
+    ? [['search', 'lucide:search', 'rightMenuSearch'] as const]
+    : []),
+  ...(cfg.capsule.enable
+    ? ([
+        ['music-toggle', 'lucide:play', 'rightMenuMusicStart'],
+        ['music-back', 'lucide:rewind', 'rightMenuMusicBack'],
+        ['music-forward', 'lucide:fast-forward', 'rightMenuMusicForward'],
+        ['music-copyMusicName', 'lucide:copy', 'rightMenuMusicCopy'],
+      ] as const)
+    : []),
+];
+---
+
+{cfg.console.enable && (
+  <div
+    id="console"
+    class="tw:flex tw:justify-center tw:flex-col tw:items-center"
+  >
+    <div class="console-content tw:[#console_&]:flex tw:[#console_&]:relative tw:[#console_&]:justify-center tw:[#console_&]:flex-col tw:[#console_&]:items-center">
+      <div
+        class="console-card-group tw:[#console_&]:flex tw:[#console_&]:justify-center tw:[#console_&]:items-center"
+        data-solitude-action="onConsoleCardGroupClick"
+        data-solitude-event="true"
+      >
+        {cfg.comment.use && cfg.console.recentComment.enable && (
+          <div class="console-card-group-left">
+            <div
+              class="console-card tw:[#console_&]:flex tw:[#console_&]:flex-col"
+              id="card-newest-comments"
+              data-solitude-action="hideConsole"
+            >
+              <div class="card-content tw:[#aside-content_.card-widget_&]:relative tw:[#aside-content_.card-widget_&]:flex tw:[#aside-content_.card-widget_&]:flex-col tw:[.author-content-item_&]:absolute tw:[.author-content-item_&]:flex tw:[.author-content-item_&]:flex-col">
+                <div class="author-content-item-tips">
+                  {t('recentComments')}
+                </div>
+                <div class="author-content-item-title tw:[#console_&]:flex tw:[#console_&]:items-center tw:[#console_&]:justify-between tw:[#about-page_.interest-card_&]:flex tw:[#about-page_.interest-card_&]:items-start tw:[#about-page_.interest-card_&]:justify-between tw:[#about-page_.interest-card--media_&]:block">
+                  {t('comments')}
+                  {cfg.recent_comments.enable && (
+                    <a
+                      class="recent-comment-more tw:[.card-recent-comment_&]:inline-flex tw:[.card-recent-comment_&]:items-center tw:[.card-recent-comment_&]:justify-center tw:[#console_&]:flex tw:[#console_&]:items-center"
+                      href={url(cfg.recent_comments.page)}
+                      title={t('more')}
+                      aria-label={t('more')}
+                    >
+                      <Icon
+                        name="lucide:circle-chevron-right"
+                        class="solitude"
+                      />
+                    </a>
+                  )}
+                </div>
+              </div>
+              <div
+                class="console_recentcomments tw:[div&]:flex tw:[div&]:flex-wrap"
+                data-comment-provider={cfg.comment.use}
+                aria-live="polite"
+                aria-busy="true"
+              >
+                <div class="comment-loading tw:[.card-recent-comment_&]:inline-flex tw:[.card-recent-comment_&]:items-center">
+                  {t('commentsLoading')}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {(cfg.console.card.tags || cfg.console.card.archive) && (
+          <div class="console-card-group-right tw:[#console_&]:flex tw:[#console_&]:flex-col tw:[#console_&]:justify-center">
+            {cfg.console.card.tags && (
+              <div
+                class="console-card tags tw:[#console_&]:flex tw:[#console_&]:flex-col"
+                data-solitude-action="hideConsole"
+              >
+                <div class="card-content tw:[#aside-content_.card-widget_&]:relative tw:[#aside-content_.card-widget_&]:flex tw:[#aside-content_.card-widget_&]:flex-col tw:[.author-content-item_&]:absolute tw:[.author-content-item_&]:flex tw:[.author-content-item_&]:flex-col">
+                  <div class="author-content-item-tips">{t('tags')}</div>
+                  <div class="author-content-item-title tw:[#console_&]:flex tw:[#console_&]:items-center tw:[#console_&]:justify-between tw:[#about-page_.interest-card_&]:flex tw:[#about-page_.interest-card_&]:items-start tw:[#about-page_.interest-card_&]:justify-between tw:[#about-page_.interest-card--media_&]:block">
+                    {t('explore')}
+                  </div>
+                </div>
+                <div class="card-tag-cloud tw:overflow-hidden tw:relative tw:flex tw:flex-row tw:flex-wrap tw:[#console_.console-card.tags_&]:flex tw:[#console_.console-card.tags_&]:flex-wrap tw:[#sidebar_#sidebar-menus_&]:flex tw:[#sidebar_#sidebar-menus_&]:whitespace-nowrap tw:[#sidebar_#sidebar-menus_&]:flex-row tw:[#sidebar_#sidebar-menus_&]:flex-wrap">
+                  {tags.slice(0, 20).map((tag) => (
+                    <a href={url(tag.path)}>
+                      {tag.name}
+                      <sup>{tag.posts.length}</sup>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            {cfg.console.card.archive && (
+              <div
+                class="console-card history tw:[#console_&]:flex tw:[#console_&]:flex-col"
+                data-solitude-action="hideConsole"
+              >
+                <ul class="card-archive-list tw:[#console_.console-card.history_&]:flex tw:[#console_.console-card.history_&]:flex-row tw:[#console_.console-card.history_&]:flex-wrap">
+                  {months.map((month) => (
+                    <li class="item">
+                      <a href={url('/archives/')}>
+                        <span class="date">{month}</span>
+                        <div class="count-group tw:[#console_.console-card.history_.card-archive-list_a_&]:flex tw:[#console_.console-card.history_.card-archive-list_a_&]:flex-row">
+                          <span class="count tw:[#console_.console-card.history_.card-archive-list_a_.count-group_&]:text-left">
+                            {
+                              posts.filter((p) =>
+                                p.data.date.toISOString().startsWith(month),
+                              ).length
+                            }
+                          </span>
+                          <span class="unit tw:[#console_.console-card.history_.card-archive-list_a_.count-group_&]:text-left">
+                            {t('postUnit')}
+                          </span>
+                        </div>
+                      </a>
+                    </li>
+                  ))}
+                  <li class="item">
+                    <a href={url('/archives/')}>
+                      <span class="date">{t('allPosts')}</span>
+                      <div class="count-group tw:[#console_.console-card.history_.card-archive-list_a_&]:flex tw:[#console_.console-card.history_.card-archive-list_a_&]:flex-row">
+                        <span class="count tw:[#console_.console-card.history_.card-archive-list_a_.count-group_&]:text-left">
+                          {posts.length}
+                        </span>
+                        <span class="unit tw:[#console_.console-card.history_.card-archive-list_a_.count-group_&]:text-left">
+                          {t('postUnit')}
+                        </span>
+                      </div>
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div class="button-group tw:[#console_&]:flex tw:[#console_&]:justify-center">
+        <div class="console-btn-item tw:[#console_.button-group_&]:cursor-pointer">
+          <button
+            class="darkmode_switchbutton tw:[#sidebar_#sidebar-menus_.sidebar-menu-item_&]:cursor-pointer"
+            data-solitude-action="toggleTheme"
+            aria-label={t('toggleTheme')}
+          >
+            <Icon name="lucide:sun-moon" class="solitude" />
+          </button>
+        </div>
+        <div
+          class="console-btn-item tw:[#console_.button-group_&]:cursor-pointer"
+          id="consoleHideAside"
+        >
+          <button
+            class="asideSwitch"
+            data-solitude-action="switchHideAside"
+            aria-label={t('toggleAside')}
+          >
+            <Icon name="lucide:panel-left-close" class="solitude" />
+          </button>
+        </div>
+        {cfg.keyboard.enable && (
+          <div
+            class="console-btn-item tw:[#console_.button-group_&]:cursor-pointer"
+            id="consoleKeyboard"
+          >
+            <button
+              class="keyboardSwitch"
+              type="button"
+              data-solitude-action="switchKeyboard"
+              aria-label={t('keyboardToggle')}
+              aria-pressed="false"
+            >
+              <Icon name="lucide:keyboard" class="solitude" />
+            </button>
+          </div>
+        )}
+        {cfg.capsule.enable && (
+          <div
+            class="console-btn-item tw:[#console_.button-group_&]:cursor-pointer"
+            id="consoleMusic"
+          >
+            <button
+              class="music-switch"
+              data-solitude-action="musicToggle"
+              aria-label={t('keyboardMusic')}
+            >
+              <Icon name="lucide:disc-3" class="solitude" />
+            </button>
+          </div>
+        )}
+        {cfg.comment.use && cfg.comment.commentBarrage && (
+          <div
+            class="console-btn-item on tw:[#console_.button-group_&]:cursor-pointer"
+            id="consoleCommentBarrage"
+            data-solitude-action="switchCommentBarrage"
+          >
+            <span class="commentBarrage">
+              <Icon name="lucide:message-circle" class="solitude" />
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+    <div
+      class="console-mask tw:[#console_&]:absolute"
+      data-solitude-action="hideConsole"
+    />
+  </div>
+)}
+{cfg.keyboard.enable && (
+  <aside
+    id="keyboard-tips"
+    aria-hidden="true"
+    aria-labelledby="keyboard-title"
+    class="tw:flex tw:flex-col"
+  >
+    <div class="keyboardTitle" id="keyboard-title">
+      {t('keyboardTitle')}
+    </div>
+    <div
+      class="keyboardList tw:[#keyboard-tips_&]:flex tw:[#keyboard-tips_&]:flex-col"
+      role="list"
+    >
+      {cfg.keyboard.list.map((item, index: number) => (
+        <div
+          class="keyboardItem tw:[#keyboard-tips_&]:grid tw:[#keyboard-tips_&]:items-center"
+          role="listitem"
+          data-shortcut-index={index}
+          data-shortcut-action={item.action}
+          data-shortcut-custom-label={String(Boolean(item.name))}
+          data-theme-light-label={t('keyboardThemeLight')}
+          data-theme-dark-label={t('keyboardThemeDark')}
+        >
+          <div class="keyGroup tw:[#keyboard-tips_&]:flex tw:[#keyboard-tips_&]:items-center">
+            <kbd class="key">
+              {item.modifier === 'mod' ? '⌘/Ctrl' : 'Shift'}
+            </kbd>
+            <kbd class="key">{item.key}</kbd>
+          </div>
+          <div class="keyContent">
+            <span class="content">
+              {item.name ??
+                t(actionLabels[item.action ?? ''] ?? item.action ?? '')}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  </aside>
+)}
+<div id="sidebar">
+  <div id="menu-mask" />
+  <div id="sidebar-menus" class="tw:[#sidebar_&]:overflow-hidden">
+    <div class="site-data tw:flex tw:justify-between">
+      {[
+        { name: 'archives', path: '/archives/', count: posts.length },
+        { name: 'categories', path: '/categories/', count: categories.length },
+        { name: 'tags', path: '/tags/', count: tags.length },
+      ].map((item) => (
+        <div class="data-item is-center tw:[.site-data_&]:flex tw:[.site-data_&]:justify-start">
+          <div class="data-item-link">
+            <a href={url(item.path)}>
+              <div class="headline tw:[.site-data_.data-item_.data-item-link_&]:whitespace-nowrap tw:[.relatedPosts_&]:flex tw:[.relatedPosts_&]:items-center">
+                {t(item.name)}
+              </div>
+              <div class="length-num">{item.count}</div>
+            </a>
+          </div>
+        </div>
+      ))}
+      {cfg.comment.sidebar &&
+        cfg.comment.use.toLowerCase().includes('valine') && (
+          <div class="data-item is-center tw:[.site-data_&]:flex tw:[.site-data_&]:justify-start">
+            <div class="data-item-link">
+              <a href={url(cfg.recent_comments.page)}>
+                <div class="headline tw:[.site-data_.data-item_.data-item-link_&]:whitespace-nowrap tw:[.relatedPosts_&]:flex tw:[.relatedPosts_&]:items-center">
+                  {t('comments')}
+                </div>
+                <div class="length-num" id="valine_allcount">
+                  <Icon name="lucide:loader-circle" spin class="solitude" />
+                </div>
+              </a>
+            </div>
+          </div>
+        )}
+    </div>
+    <span class="sidebar-menu-item-title">{t('sidebarFeatures')}</span>
+    <div class="sidebar-menu-item tw:[#sidebar_#sidebar-menus_&]:flex tw:[#sidebar_#sidebar-menus_&]:flex-col">
+      <button
+        type="button"
+        class="darkmode_switchbutton menu-child tw:[#sidebar_#sidebar-menus_.sidebar-menu-item_&]:cursor-pointer tw:[#sidebar_#sidebar-menus_.sidebar-menu-item_&]:flex tw:[#sidebar_#sidebar-menus_.sidebar-menu-item_&]:items-center tw:[#sidebar_#sidebar-menus_.sidebar-menu-item_&]:text-left"
+        data-solitude-action="toggleTheme"
+      >
+        <Icon name="lucide:sun-moon" class="solitude" />
+        <span>{t('displayMode')}</span>
+      </button>
+    </div>
+    <Menu />
+    <span class="sidebar-menu-item-title">{t('tags')}</span>
+    <div class="card-tags">
+      <div class="card-tag-cloud tw:overflow-hidden tw:relative tw:flex tw:flex-row tw:flex-wrap tw:[#console_.console-card.tags_&]:flex tw:[#console_.console-card.tags_&]:flex-wrap tw:[#sidebar_#sidebar-menus_&]:flex tw:[#sidebar_#sidebar-menus_&]:whitespace-nowrap tw:[#sidebar_#sidebar-menus_&]:flex-row tw:[#sidebar_#sidebar-menus_&]:flex-wrap">
+        {tags.slice(0, cfg.aside.tags.limit).map((tag) => (
+          <a
+            href={url(tag.path)}
+            class={
+              cfg.aside.tags.highlight_list.includes(tag.name)
+                ? 'highlight'
+                : undefined
+            }
+          >
+            {tag.name}
+            <sup>{tag.posts.length}</sup>
+          </a>
+        ))}
+      </div>
+      {tags.length >= cfg.aside.tags.limit && (
+        <a class="more-tags-btn" href={url('/tags/')}>
+          {t('moreTags')}
+        </a>
+      )}
+    </div>
+    <span class="sidebar-menu-item-title">{t('siteInformation')}</span>
+    <div class="webinfo tw:[#sidebar_#sidebar-menus_&]:flex tw:[#sidebar_#sidebar-menus_&]:whitespace-nowrap tw:[#sidebar_#sidebar-menus_&]:flex-col">
+      {cfg.aside.siteinfo.postcount && (
+        <div class="webinfo-item tw:flex tw:flex-row tw:justify-between tw:[#sidebar_#sidebar-menus_.webinfo_&]:justify-between">
+          <div class="item-name">{t('posts')}</div>
+          <div class="item-count">{posts.length}</div>
+        </div>
+      )}
+      {cfg.aside.siteinfo.runtimeenable && (
+        <div class="webinfo-item tw:flex tw:flex-row tw:justify-between tw:[#sidebar_#sidebar-menus_.webinfo_&]:justify-between">
+          <div class="item-name">{t('uptime')}</div>
+          <div class="item-count runtimeshow" />
+        </div>
+      )}
+      {cfg.aside.siteinfo.updatetime && (
+        <div class="webinfo-item tw:flex tw:flex-row tw:justify-between tw:[#sidebar_#sidebar-menus_.webinfo_&]:justify-between">
+          <div class="item-name">{t('lastUpdated')}</div>
+          <time class="item-count" datetime={isoDate(updated)}>
+            {dateLabel(updated)}
+          </time>
+        </div>
+      )}
+      {cfg.aside.siteinfo.wordcount && (
+        <div class="webinfo-item tw:flex tw:flex-row tw:justify-between tw:[#sidebar_#sidebar-menus_.webinfo_&]:justify-between">
+          <div class="item-name">{t('totalWords')}</div>
+          <div class="item-count">
+            {posts.reduce((n, p) => n + wordCount(p.body ?? ''), 0)}
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+</div>
+{cfg.rightside.enable && (
+  <div id="rightside" class="needEndHide">
+    <div id="rightside-config-hide" class="rs_hide">
+      {cfg.translate.enable && cfg.rightside.hide.translate && (
+        <button
+          id="translateLink"
+          class="translate"
+          type="button"
+          aria-label="Translate"
+        >
+          繁
+        </button>
+      )}
+      {cfg.rightside.hide.mode && (
+        <button
+          class="mode darkmode_switchbutton tw:[#sidebar_#sidebar-menus_.sidebar-menu-item_&]:cursor-pointer"
+          type="button"
+          data-solitude-action="toggleTheme"
+          aria-label={t('toggleTheme')}
+        >
+          <Icon name="lucide:sun-moon" class="solitude" />
+        </button>
+      )}
+      {cfg.rightside.hide.aside && cfg.console.enable && (
+        <button
+          class="aside pc"
+          type="button"
+          data-solitude-action="switchHideAside"
+          aria-label={t('toggleAside')}
+        >
+          <Icon name="lucide:panel-left-close" class="solitude" />
+        </button>
+      )}
+    </div>
+    <div id="rightside-config-show" class="rs_show">
+      {cfg.rightside.hide.enable && (
+        <button
+          id="rightside-config"
+          class="config"
+          type="button"
+          data-solitude-action="toggleTargetClass"
+          data-solitude-target="#rightside-config-hide"
+          aria-label={t('settings')}
+        >
+          <Icon name="lucide:settings" class="solitude" />
+        </button>
+      )}
+      {toc && (
+        <button
+          class="mobile toc"
+          type="button"
+          data-solitude-toc-toggle
+          aria-controls="card-toc"
+          aria-expanded="false"
+          aria-label={t('toc')}
+        >
+          <Icon name="lucide:list" class="solitude" />
+        </button>
+      )}
+      {comments && (
+        <button
+          class="comment rightside-comment"
+          type="button"
+          data-solitude-action="scrollTo"
+          data-solitude-target="post-comment"
+          aria-label={t('comments')}
+        >
+          <Icon name="lucide:message-circle" class="solitude" />
+        </button>
+      )}
+    </div>
+  </div>
+)}
+{cfg.right_menu.enable && (
+  <>
+    <nav id="rightMenu" aria-label={t('rightMenuLabel')}>
+      <div class="rightMenu-group rightMenu-small">
+        {(
+          [
+            ['backward', 'lucide:arrow-left', 'rightMenuBack'],
+            ['forward', 'lucide:arrow-right', 'rightMenuForward'],
+            ['refresh', 'lucide:refresh-cw', 'rightMenuRefresh'],
+            ['top', 'lucide:arrow-up', 'backTop'],
+          ] as const
+        ).map(([id, icon, label]) => (
+          <button
+            class="rightMenu-item"
+            id={`menu-${id}`}
+            type="button"
+            aria-label={t(label)}
+            title={t(label)}
+          >
+            <Icon name={icon} class="solitude" />
+          </button>
+        ))}
+      </div>
+      <div class="rightMenu-group rightMenu-line rightMenuPlugin">
+        {contextItems.map(([id, icon, label]) => (
+          <button
+            class="rightMenu-item"
+            id={`menu-${id}`}
+            type="button"
+            title={t(label)}
+          >
+            <Icon name={icon} class="solitude" />
+            <span>{t(label)}</span>
+          </button>
+        ))}
+      </div>
+      <div class="rightMenu-group rightMenu-line rightMenuOther">
+        {cfg.right_menu.custom_list.map((item) => (
+          <button
+            class={`rightMenu-item ${item.class ?? ''}`}
+            id={item.id}
+            type="button"
+            data-solitude-action="runConfiguredAction"
+            data-solitude-value={item.click}
+          >
+            {item.icon && <Icon name={item.icon} class="solitude" />}
+            <span>{item.name}</span>
+          </button>
+        ))}
+        {cfg.comment.use &&
+          cfg.comment.commentBarrage &&
+          cfg.right_menu.commentBarrage && (
+            <button
+              class="rightMenu-item"
+              id="menu-commentBarrage"
+              data-solitude-action="switchCommentBarrage"
+            >
+              <Icon name="lucide:message-circle" class="solitude" />
+              <span class="menu-commentBarrage-text">
+                {t('rightMenuBarrageClose')}
+              </span>
+            </button>
+          )}
+        <button
+          class="rightMenu-item"
+          id="menu-darkmode"
+          type="button"
+          data-solitude-action="switchDarkMode"
+        >
+          <Icon name="lucide:sun-moon" class="solitude" />
+          <span class="menu-darkmode-text">{t('rightMenuDark')}</span>
+        </button>
+        {cfg.right_menu.translate && (
+          <button class="rightMenu-item" id="menu-translate" type="button">
+            <Icon name="lucide:languages" class="solitude" />
+            <span>{t('rightMenuToTraditional')}</span>
+          </button>
+        )}
+      </div>
+    </nav>
+    <div id="rightmenu-mask" />
+  </>
+)}

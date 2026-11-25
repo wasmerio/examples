@@ -1,0 +1,4 @@
+---
+title: Guestbook
+type: message
+---

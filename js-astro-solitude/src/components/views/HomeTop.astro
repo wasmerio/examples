@@ -1,0 +1,107 @@
+---
+import { cfg, t, url } from '@/lib/site';
+import { homePosts, contentPath, type Post } from '@/lib/content';
+interface Props {
+  posts: Post[];
+}
+const { posts } = Astro.props;
+const normalize = (s: string) => s.replace(/\/$/, '').replace(/\.html$/, '');
+const hidden = new Set(
+  posts.filter((p) => !p.data.home).map((p) => normalize(contentPath(p))),
+);
+const items = cfg.hometop.recommendList.filter(
+  (p) => p.enable !== false && !hidden.has(normalize(p.url)),
+);
+for (const post of homePosts(posts).sort(
+  (a, b) => +b.data.date - +a.data.date,
+)) {
+  if (items.length >= 5) break;
+  if (!items.some((p) => normalize(p.url) === normalize(contentPath(post))))
+    items.push({
+      title: post.data.title,
+      url: contentPath(post),
+      cover: post.data.cover,
+      label: post.data.categories[0],
+    });
+}
+const slides = items.slice(0, 5).map((item) => ({
+  ...item,
+  description:
+    item.description ??
+    posts.find((post) => normalize(contentPath(post)) === normalize(item.url))
+      ?.data.description ??
+    '',
+}));
+const first = slides[0];
+---
+
+{first && (
+  <div
+    class="home-center"
+    id="home_center"
+    role="region"
+    aria-label={t('recommendations')}
+    style="--current-theme:var(--efu-main);--current-theme-op:color-mix(in srgb,var(--efu-main) 14%,transparent);--current-theme-op-deep:color-mix(in srgb,var(--efu-main) 87%,transparent)"
+  >
+    <div class="home-center-content tw:flex tw:overflow-hidden">
+      <div class="home-center-left tw:relative tw:overflow-hidden">
+        <div class="home-center-banner" aria-live="off">
+          {slides.map((item, i) => (
+            <a
+              class:list={['home-center-banner-item', { active: i === 0 }]}
+              id={`home-center-slide-${i}`}
+              href={url(item.url)}
+              aria-label={item.title}
+              tabindex={i === 0 ? 0 : -1}
+              aria-hidden={i !== 0}
+              data-index={i}
+              data-title={item.title}
+              data-description={item.description}
+              data-color={item.color}
+            >
+              <div class="home-center-cover tw:shrink-0 tw:flex tw:items-center tw:justify-center">
+                <img
+                  class="home-center-cover-img nolazyload"
+                  src={url(item.cover ?? cfg.post.default.cover[0])}
+                  alt=""
+                  loading={i === 0 ? 'eager' : 'lazy'}
+                  data-solitude-fallback={url(cfg.post.default.cover[0])}
+                />
+              </div>
+              <div class="home-center-mask tw:absolute" />
+            </a>
+          ))}
+        </div>
+        <div class="home-center-title tw:absolute tw:text-left">
+          <a class="home-center-title-link" href={url(first.url)}>
+            {first.title}
+          </a>
+          <p class="home-center-description" hidden={!first.description}>
+            {first.description}
+          </p>
+          {slides.length > 1 && (
+            <div
+              class="home-center-indicators"
+              role="group"
+              aria-label={t('recommendations')}
+            >
+              {slides.map((_, i) => (
+                <button
+                  class:list={['home-center-indicator', { active: i === 0 }]}
+                  type="button"
+                  data-index={i}
+                  aria-controls={`home-center-slide-${i}`}
+                  aria-label={t('recommendationItem').replace(
+                    '{index}',
+                    String(i + 1),
+                  )}
+                  aria-current={i === 0 ? 'true' : 'false'}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+)}

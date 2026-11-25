@@ -1,0 +1,141 @@
+---
+import Icon from '@/components/Icon.astro';
+import { cfg, t, url, termPath, dateLabel } from '@/lib/site';
+import { contentPath } from '@/lib/content';
+import type { Post, RenderedContent } from '@/types/content';
+import type { PageMetadata } from '@/types/page';
+import Aside from '@/components/layout/Aside.astro';
+import PostMeta from '@/components/post/PostMeta.astro';
+import Copyright from '@/components/post/Copyright.astro';
+import Comments from '@/components/integrations/Comments.astro';
+import { components } from '@/components/mdx';
+
+interface Props {
+  post: Post;
+  posts: Post[];
+  p: PageMetadata;
+  Content?: RenderedContent['Content'];
+  headings: RenderedContent['headings'];
+  hideAside: boolean;
+  commentsEnabled: boolean;
+}
+const { post, posts, p, Content, headings, hideAside, commentsEnabled } =
+  Astro.props;
+const index = posts.findIndex((item) => item.id === post.id);
+const previous = posts[index + 1],
+  next = posts[index - 1];
+const related = posts
+  .filter((item) => item.id !== post.id && +item.data.date <= +post.data.date)
+  .map((item) => ({
+    item,
+    score: item.data.tags.filter((x) => post.data.tags.includes(x)).length,
+  }))
+  .filter((x) => x.score > 0)
+  .sort((a, b) => b.score - a.score)
+  .slice(0, cfg.related_post.limit)
+  .map((x) => x.item);
+---
+
+<main class="layout tw:[.layout&]:relative" id="content-inner">
+  <div id="post">
+    {post.data.not_cover && <PostMeta post={post} />}
+    <article class="post-content article-container">
+      {Content && <Content components={components} />}
+    </article>
+    <Copyright post={post} />
+    <div class="post-tools-right tw:[#post_&]:flex tw:[#post_&]:items-center tw:[#post_&]:flex-row tw:[#post_&]:justify-between tw:[#post_&]:flex-wrap">
+      <div class="tag_share">
+        <div class="post-meta__tag-list tw:[.post_#post-info_#post-firstinfo_.meta-firstline_.tag\_share_&]:flex tw:[.post_#post-info_#post-firstinfo_.meta-firstline_.tag\_share_&]:flex-row tw:[.post_#post-info_#post-firstinfo_.meta-firstline_.tag\_share_&]:items-center tw:[#post_.post-tools-right_.tag\_share_&]:flex tw:[#post_.post-tools-right_.tag\_share_&]:flex-wrap tw:[#post_.post-tools-right_.tag\_share_&]:flex-row">
+          {post.data.tags.map((tag) => (
+            <a
+              class="post-meta__tags tw:[.post_#post-info_#post-firstinfo_.meta-firstline_.tag\_share_.post-meta\_\_tag-list_&]:flex tw:[.post_#post-info_#post-firstinfo_.meta-firstline_.tag\_share_.post-meta\_\_tag-list_&]:flex-row tw:[.post_#post-info_#post-firstinfo_.meta-firstline_.tag\_share_.post-meta\_\_tag-list_&]:items-center tw:[#post_.post-tools-right_.tag\_share_.post-meta\_\_tag-list_&]:flex tw:[#post_.post-tools-right_.tag\_share_.post-meta\_\_tag-list_&]:items-center tw:[#post_.post-tools-right_.tag\_share_.post-meta\_\_tag-list_&]:whitespace-nowrap"
+              href={url(termPath('tags', tag))}
+            >
+              <span class="tags-punctuation tw:[span&]:flex tw:[span&]:items-center tw:[#post_.post-tools-right_.tag\_share_.post-meta\_\_tag-list_.post-meta\_\_tags_span&]:flex tw:[#post_.post-tools-right_.tag\_share_.post-meta\_\_tag-list_.post-meta\_\_tags_span&]:items-center">
+                <Icon name="lucide:hash" class="solitude" />
+                {tag}
+                <span class="tagsPageCount tw:[span&]:text-center">
+                  {posts.filter((p) => p.data.tags.includes(tag)).length}
+                </span>
+              </span>
+            </a>
+          ))}
+        </div>
+      </div>
+    </div>
+    {(previous || next) && (
+      <nav
+        class="needEndHide pagination-post tw:[#post_&]:overflow-hidden"
+        id="pagination"
+        aria-label={t('postNavigation')}
+      >
+        {previous && (
+          <div class={`prev-post ${next ? 'pull-left' : 'pull-full'}`}>
+            <a href={url(contentPath(previous))}>
+              <div class="pagination-info tw:[#post_#pagination_.prev-post_&]:text-left tw:[#post_#pagination_&]:absolute">
+                <div class="label">{t('previousPost')}</div>
+                <div class="prev_info">{previous.data.title}</div>
+              </div>
+            </a>
+          </div>
+        )}
+        {next && (
+          <div class={`next-post ${previous ? 'pull-right' : 'pull-full'}`}>
+            <a href={url(contentPath(next))}>
+              <div class="pagination-info tw:[#post_#pagination_.prev-post_&]:text-left tw:[#post_#pagination_&]:absolute">
+                <div class="label">{t('nextPost')}</div>
+                <div class="next_info">{next.data.title}</div>
+              </div>
+            </a>
+          </div>
+        )}
+      </nav>
+    )}
+    {cfg.related_post.enable && related.length > 0 && (
+      <section class="relatedPosts" aria-labelledby="related-posts-title">
+        <div class="headline tw:[.site-data_.data-item_.data-item-link_&]:whitespace-nowrap tw:[.relatedPosts_&]:flex tw:[.relatedPosts_&]:items-center">
+          <Icon name="lucide:star" class="solitude" />
+          <span id="related-posts-title">{t('relatedPostsLead')}</span>
+          <button
+            class="relatedPosts-random tw:inline-flex tw:items-center tw:justify-center tw:whitespace-nowrap tw:cursor-pointer"
+            type="button"
+            data-solitude-action="randomPost"
+          >
+            {t('browseRandomly')}
+          </button>
+        </div>
+        <div class="relatedPosts-list tw:flex tw:flex-col">
+          {related.map((item) => (
+            <article class="relatedPosts-item tw:[.relatedPosts_&]:relative tw:[.relatedPosts_&]:overflow-hidden">
+              <a class="relatedPosts-link" href={url(contentPath(item))}>
+                <img
+                  class="cover"
+                  src={url(item.data.cover ?? cfg.post.default.cover[0])}
+                  alt=""
+                  loading="lazy"
+                />
+                <div class="content is-center">
+                  <div class="title">{item.data.title}</div>
+                  <time class="date">
+                    {dateLabel(
+                      cfg.related_post.date_type === 'updated'
+                        ? (item.data.lastmod ?? item.data.date)
+                        : item.data.date,
+                    )}
+                  </time>
+                </div>
+              </a>
+            </article>
+          ))}
+        </div>
+      </section>
+    )}
+    <Comments enabled={commentsEnabled} />
+  </div>
+  <Aside
+    posts={posts}
+    post
+    enabled={!hideAside}
+    headings={p.toc === false ? [] : headings}
+  />
+</main>

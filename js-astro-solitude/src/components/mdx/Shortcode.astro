@@ -1,0 +1,509 @@
+---
+import Icon from '@/components/Icon.astro';
+import { brandIcon, type IconName } from '@/lib/icons';
+import { randomUUID } from 'node:crypto';
+import { getPosts, contentPath } from '@/lib/content';
+import { cfg, t, url } from '@/lib/site';
+import type { ShortcodeProps } from '@/types/page';
+export interface Props extends ShortcodeProps {
+  kind: string;
+}
+const { kind, ...p } = Astro.props;
+const id = p.id ?? `solitude-${kind}-${randomUUID()}`;
+const src = p.url ?? p.src;
+const external =
+  typeof (p.url ?? p.link) === 'string' &&
+  /^https?:/.test(p.url ?? p.link ?? '');
+const type = p.type ?? 'default';
+const icons: Record<string, IconName> = {
+  info: 'lucide:info',
+  blue: 'lucide:info',
+  danger: 'lucide:circle-alert',
+  red: 'lucide:circle-alert',
+  warning: 'lucide:triangle-alert',
+  success: 'lucide:circle-check',
+  green: 'lucide:circle-check',
+  primary: 'lucide:star',
+  purple: 'lucide:star',
+  orange: 'lucide:bell',
+  disabled: 'lucide:ban',
+};
+const inline = kind === 'hideInline';
+const HideTag = inline ? 'span' : 'div';
+const TextTag = kind === 'p' ? 'p' : 'span';
+const host =
+  kind === 'gitea'
+    ? String(p.host ?? p.server ?? '').replace(/\/$/, '')
+    : `https://${kind}.com`;
+const endpoint =
+  kind === 'github'
+    ? `https://api.github.com/repos/${p.repo}`
+    : kind === 'gitlab'
+      ? `https://gitlab.com/api/v4/projects/${encodeURIComponent(p.repo ?? '')}`
+      : kind === 'gitee'
+        ? `https://gitee.com/api/v5/repos/${p.repo}`
+        : `${host}/api/v1/repos/${p.repo}`;
+const allSeriesPosts = kind === 'series' ? await getPosts() : [];
+const seriesName =
+  p.name ??
+  allSeriesPosts.find((post) => url(contentPath(post)) === Astro.url.pathname)
+    ?.data.series[0];
+const seriesPosts = allSeriesPosts
+  .filter((post) => post.data.series.includes(seriesName ?? ''))
+  .sort((a, b) => +a.data.date - +b.data.date);
+---
+
+{['note', 'subnote'].includes(kind) && (
+  <aside
+    class={`solitude-tag note ${kind === 'subnote' ? 'subnote' : ''} ${type} ${p.style ?? 'flat'} no-icon has-icon`}
+  >
+    <span class="note-icon" aria-hidden="true">
+      <Icon name={icons[type] ?? 'lucide:sticky-note'} />
+    </span>
+    <div class="note-content">
+      <slot />
+    </div>
+  </aside>
+)}
+{kind === 'fold' && (
+  <details class="solitude-tag tag-fold" open={p.open === true}>
+    <summary class="tag-fold-summary">
+      <span class="tag-fold-title">{p.title}</span>
+      <span class="tag-fold-icon" aria-hidden="true" />
+    </summary>
+    <div class="tag-fold-content">
+      <slot />
+    </div>
+  </details>
+)}
+{['hideInline', 'hideBlock', 'hideToggle'].includes(kind) && (
+  <HideTag
+    class={`solitude-tag tag-hide tag-hide-${kind === 'hideToggle' ? 'toggle' : inline ? 'inline' : 'block'}`}
+  >
+    <button
+      type="button"
+      class="tag-hide-button"
+      aria-expanded="false"
+      aria-controls={id}
+    >
+      {p.title ?? p.text ?? 'Click'}
+    </button>
+    <HideTag id={id} class="tag-hide-content" hidden>
+      <slot />
+    </HideTag>
+  </HideTag>
+)}
+{kind === 'tabs' && (
+  <div class="solitude-tag tag-tabs tabs" id={id} data-solitude-tabs>
+    <div class="tab-contents">
+      <slot />
+    </div>
+  </div>
+)}
+{kind === 'tab' && (
+  <section class="tab-item-content" id={id} data-tab-title={p.title}>
+    {p.icon && (
+      <template data-tab-icon>
+        <Icon name={p.icon} />
+      </template>
+    )}
+    <slot />
+  </section>
+)}
+{kind === 'gallery' && (
+  <div
+    class="solitude-tag tag-gallery gallery-container"
+    data-columns={p.columns}
+  >
+    <slot />
+  </div>
+)}
+{kind === 'galleryItem' && (
+  <div class="solitude-tag tag-gallery-item gallery-item">
+    <img class="nolazyload" src={url(p.src)} alt={p.alt ?? ''} loading="lazy" />
+  </div>
+)}
+{kind === 'galleryGroup' && (
+  <figure class="solitude-tag tag-gallery-group gallery-group">
+    {p.img && (
+      <img
+        class="gallery-group-img no-lightbox"
+        src={url(p.img)}
+        alt={p.title ?? p.name ?? ''}
+      />
+    )}
+    <figcaption>
+      <div class="gallery-group-name">{p.title ?? p.name}</div>
+      <div>
+        <slot />
+      </div>
+      {p.url && <a href={url(p.url)} aria-label={p.title ?? p.name} />}
+    </figcaption>
+  </figure>
+)}
+{kind === 'img' && (
+  <figure class="solitude-tag tag-image-wrap">
+    <img
+      class="solitude-tag tag-image"
+      src={url(p.src)}
+      alt={p.alt ?? ''}
+      loading="lazy"
+      style={p.style}
+    />
+    {p.caption && <figcaption>{p.caption}</figcaption>}
+  </figure>
+)}
+{kind === 'inlineImg' && (
+  <img
+    class="solitude-tag inline-img tag-inline-image no-lightbox"
+    src={url(p.src)}
+    alt={p.alt ?? ''}
+    style={p.height ? `height:${p.height}` : undefined}
+    loading="lazy"
+  />
+)}
+{kind === 'button' && (
+  <a
+    class={`solitude-tag st-btn tag-button ${p.option ?? ''} ${p.icon ? 'has-icon' : ''} ${p.icon && !p.text ? 'is-icon-only' : ''}`}
+    href={url(p.url ?? '#')}
+    aria-label={p.label ?? p.title}
+    target={external ? '_blank' : undefined}
+    rel={external ? 'noopener noreferrer' : undefined}
+  >
+    {p.icon && <Icon name={p.icon} class="solitude" aria-hidden="true" />}
+    {p.text ? <span>{p.text}</span> : <slot />}
+  </a>
+)}
+{kind === 'link' && (
+  <div class="solitude-tag tag-link-card">
+    <a
+      class="solitude-tag tag-link"
+      href={url(p.url ?? p.link)}
+      target={external ? '_blank' : undefined}
+      rel={external ? 'noopener noreferrer' : undefined}
+    >
+      <div class="tag-link-tips">
+        <Icon name={external ? 'lucide:external-link' : 'lucide:house'} />
+        {external ? t('externalLink') : t('internalLink')}
+      </div>
+      <div class="tag-link-bottom">
+        <div class="tag-link-left">
+          <Icon name="lucide:link" class="solitude" />
+        </div>
+        <div class="tag-link-right">
+          <div class="tag-link-title">{p.title}</div>
+          <div class="tag-link-sitename">{p.desc ?? p.subtitle}</div>
+        </div>
+        <Icon name="lucide:chevron-right" class="solitude" />
+      </div>
+    </a>
+  </div>
+)}
+{kind === 'card' && (
+  <article
+    class={`solitude-tag card_box tag-card ${p.cover || p.bg ? 'has-cover' : 'no-cover'} ${p.url ? 'has-action' : 'no-action'}`}
+    style={`width:${p.width ?? '100%'};${p.height ? `height:${p.height};` : ''}`}
+  >
+    {(p.cover || p.bg) && (
+      <div
+        class="card_cover"
+        aria-hidden="true"
+        style={{ backgroundImage: `url('${url(p.cover ?? p.bg)}')` }}
+      />
+    )}
+    <div class="card_body">
+      <div class="card_top">
+        {p.icon && <Icon name={p.icon} />}{' '}
+        {p.tag && <span class="card_tag">{p.tag}</span>}
+      </div>
+      <div class="card_mask card_info">
+        <div class="card_content">
+          <span class="card_title">{p.title ?? p.name ?? t('untitled')}</span>
+          <span class="card_description">
+            {p.desc}
+            <slot />
+          </span>
+        </div>
+        <div class="card_footer">
+          {p.star != null && (
+            <div
+              class="card_rating"
+              aria-label={t('cardRating').replace('{rating}', String(p.star))}
+            >
+              <Icon name="lucide:star" aria-hidden="true" />
+              <span aria-hidden="true">{p.star} / 5</span>
+            </div>
+          )}
+          {p.url && (
+            <a
+              class="card_action"
+              href={url(p.url)}
+              aria-label={t('cardDetails').replace(
+                '{name}',
+                p.title ?? p.name ?? t('untitled'),
+              )}
+              target={external ? '_blank' : undefined}
+              rel={external ? 'noopener noreferrer' : undefined}
+            >
+              <Icon name="lucide:arrow-right" aria-hidden="true" />
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  </article>
+)}
+{['github', 'gitlab', 'gitee', 'gitea'].includes(kind) && (
+  <article
+    class="solitude-tag repo-card tag-repo"
+    data-repo-provider={kind}
+    data-repo-endpoint={endpoint}
+    aria-busy="true"
+  >
+    <div class="repo-card-header">
+      <span class="repo-provider">
+        <Icon name={brandIcon(kind)} />
+        {kind}
+      </span>
+      <img class="repo-language no-lightbox" alt="" loading="lazy" hidden />
+    </div>
+    <a
+      class="repo-title"
+      href={`${host}/${p.repo}`}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {p.repo?.split('/').pop()}
+    </a>
+    <p class="repo-desc">{t('repoLoading')}</p>
+    <div class="repo-card-footer">
+      <div class="repo-gist" aria-label="Repository statistics">
+        <span>
+          <Icon name="lucide:star" />
+          <span class="repo-stars">—</span>
+        </span>
+        <span>
+          <Icon name="lucide:git-fork" />
+          <span class="repo-forks">—</span>
+        </span>
+      </div>
+      <span class="repo-status" role="status">
+        {t('loading')}
+      </span>
+    </div>
+  </article>
+)}
+{kind === 'audio' && (
+  <div class="solitude-tag audio tag-audio">
+    <span class="tag-media-icon" aria-hidden="true">
+      <Icon name="lucide:music" />
+    </span>
+    <audio controls preload="metadata" aria-label={p.name}>
+      <source src={url(src)} />
+    </audio>
+  </div>
+)}
+{kind === 'video' && (
+  <div class="solitude-tag video tag-video">
+    <video
+      controls
+      preload="metadata"
+      poster={p.poster ? url(p.poster) : undefined}
+    >
+      <source src={url(src)} />
+    </video>
+  </div>
+)}
+{kind === 'videos' && (
+  <div class="solitude-tag videos tag-videos" data-columns={p.col ?? 2}>
+    {(p.sources ?? []).map((source: string) => (
+      <video controls preload="metadata">
+        <source src={url(source)} />
+      </video>
+    ))}
+    <slot />
+  </div>
+)}
+{kind === 'youtube' && (
+  <div class="solitude-tag video-container tag-video-embed tag-video-youtube">
+    <iframe
+      src={`https://www.youtube${p.privacy === false ? '' : '-nocookie'}.com/embed/${encodeURIComponent(p.id ?? '')}`}
+      title="YouTube video player"
+      loading="lazy"
+      allowfullscreen
+    ></iframe>
+  </div>
+)}
+{kind === 'bvideo' && (
+  <div class="solitude-tag video-container tag-video-embed tag-video-bilibili">
+    <iframe
+      src={`https://player.bilibili.com/player.html?autoplay=0&bvid=${encodeURIComponent(p.bvid ?? p.id ?? '')}`}
+      title="Bilibili video player"
+      loading="lazy"
+      allowfullscreen
+    ></iframe>
+  </div>
+)}
+{kind === 'mermaid' && cfg.mermaid && (
+  <div class="solitude-tag tag-mermaid mermaid">
+    {p.code}
+    <slot />
+  </div>
+)}
+{kind === 'chartjs' && cfg.chart && (
+  <div
+    class:list={[
+      'solitude-tag chartjs-container tag-chart',
+      { 'chartjs-abreast': p.layout },
+    ]}
+    data-chartjs-id={id}
+    data-width={p.width ? `${p.width}%` : undefined}
+  >
+    <pre
+      class="chartjs-src"
+      hidden
+    >{typeof p.config==='object'?JSON.stringify(p.config):p.code}<slot/></pre>
+    {p.description && <div class="chartjs-desc">{p.description}</div>}
+  </div>
+)}
+{kind === 'score' && (
+  <div
+    class="solitude-tag abc-music-sheet tag-score"
+    data-params={JSON.stringify(p.params ?? {})}
+    aria-label="Music notation"
+  >
+    {p.score}
+    <slot />
+  </div>
+)}
+{kind === 'typeit' && (
+  <div class="solitude-tag tag-typeit typeit">
+    <span id={id} data-typeit data-speed={p.speed ?? 80}>
+      <slot />
+    </span>
+  </div>
+)}
+{kind === 'timeline' && (
+  <div class={`solitude-tag timeline tag-timeline ${p.color ?? ''}`}>
+    {p.title && (
+      <div class="timeline-item headline tw:[.site-data_.data-item_.data-item-link_&]:whitespace-nowrap tw:[.relatedPosts_&]:flex tw:[.relatedPosts_&]:items-center">
+        <div class="timeline-item-title">
+          <div class="item-circle">{p.title}</div>
+        </div>
+      </div>
+    )}
+    <slot />
+  </div>
+)}
+{kind === 'timenode' && (
+  <div class="timeline-item solitude-tag timenode tag-timenode">
+    <div class="timeline-item-title meta tw:[#bber_&]:flex tw:[#bber_&]:items-center">
+      <div class="item-circle">
+        <p>{p.time}</p>
+      </div>
+    </div>
+    <div class="timeline-item-content body">
+      <strong>{p.title}</strong>
+      <slot />
+    </div>
+  </div>
+)}
+{['checkbox', 'radio'].includes(kind) && (
+  <div class={`solitude-tag checkbox tag-choice ${p.style ?? ''}`}>
+    <input
+      type={kind === 'radio' ? 'radio' : 'checkbox'}
+      checked={p.checked !== false}
+      disabled
+      aria-label={p.label ?? kind}
+    />
+    <span class="tag-choice-content">
+      <slot />
+    </span>
+  </div>
+)}
+{kind === 'bubble' && (
+  <span class="solitude-tag bubble tag-bubble">
+    <span class="bubble-content" tabindex="0">
+      {p.text}
+      <slot />
+    </span>
+    <span class={`bubble-notation bg-${p.color ?? 'blue'}`}>
+      {p.notation ?? p.position}
+    </span>
+  </span>
+)}
+{kind === 'keyboard' && (
+  <kbd class="solitude-tag keyboard-tag tag-keyboard">
+    {p.text}
+    <slot />
+  </kbd>
+)}
+{kind === 'label' && (
+  <mark class={`solitude-tag hl-label tag-label ${p.color ?? 'default'}`}>
+    {p.text}
+    <slot />
+  </mark>
+)}
+{kind === 'spoiler' && (
+  <span
+    class={`solitude-tag spoiler tag-spoiler ${p.style ?? 'block'}-text`}
+    tabindex="0"
+    aria-label="Hidden text"
+  >
+    <slot />
+  </span>
+)}
+{['p', 'span'].includes(kind) && (
+  <TextTag
+    class={`solitude-tag tag-text tag-${kind === 'p' ? 'paragraph' : 'span'} ${p.color ?? ''}`}
+  >
+    <slot />
+  </TextTag>
+)}
+{kind === 'series' && (
+  <ol class="solitude-tag series-items tag-series">
+    {seriesPosts.map((post) => (
+      <li>
+        <a href={url(contentPath(post))}>{post.data.title}</a>
+      </li>
+    ))}
+  </ol>
+)}
+{kind === 'flink' && (
+  <div class="solitude-tag flink tag-flink">
+    {(p.groups ?? []).map((g) => (
+      <>
+        {g.class_name && <div class="flink-name">{g.class_name}</div>}
+        {g.class_desc && <div class="flink-desc">{g.class_desc}</div>}
+        <div class="flink-list">
+          {g.link_list.map((item) => (
+            <div class="flink-list-item tw:[.article-container_&]:relative tw:[.article-container_&]:flex tw:[.article-container_&]:overflow-hidden">
+              <a
+                class="cf-friends-link"
+                href={url(item.link)}
+                title={item.name}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  class="flink-avatar cf-friends-avatar no-lightbox"
+                  src={url(item.avatar ?? '/img/default_avatar.avif')}
+                  alt=""
+                  loading="lazy"
+                />
+                <div class="flink-item-info">
+                  <span class="flink-item-name cf-friends-name">
+                    {item.name}
+                  </span>
+                  <span class="flink-item-desc">
+                    {item.descr ?? item.description}
+                  </span>
+                </div>
+              </a>
+            </div>
+          ))}
+        </div>
+      </>
+    ))}
+  </div>
+)}

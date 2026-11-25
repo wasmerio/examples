@@ -1,0 +1,108 @@
+---
+import { render } from 'astro:content';
+import { cfg, config } from '@/lib/site';
+import { getPosts } from '@/lib/content';
+import type { Post } from '@/types/content';
+import type { Route } from '@/lib/routing';
+import Base from '@/layouts/Base.astro';
+import Home from '@/components/views/Home.astro';
+import PostView from '@/components/views/Post.astro';
+import Archive from '@/components/views/Archive.astro';
+import Taxonomy from '@/components/views/Taxonomy.astro';
+import Page from '@/components/views/Page.astro';
+import Redirect from '@/components/views/Redirect.astro';
+
+interface Props {
+  route: Route;
+}
+const { route } = Astro.props;
+const posts = await getPosts();
+const fullEntry = route.entry;
+if (fullEntry && !fullEntry.filePath?.endsWith('.mdx') && !fullEntry.rendered)
+  throw new Error(`Content rendering failed: ${fullEntry.filePath}`);
+const result = fullEntry ? await render(fullEntry) : null;
+const Content = result?.Content;
+const headings = result?.headings ?? [];
+const p: import('@/types/page').PageMetadata = route.entry?.data ?? {};
+const type = route.kind === 'home' ? 'solitude' : (route.type ?? route.kind);
+const post = route.kind === 'post' ? (route.entry as Post) : undefined;
+const hideAside =
+  p.aside === false ||
+  [
+    'about',
+    'music',
+    'tags',
+    'categories',
+    'links',
+    'kit',
+    'brevity',
+    'recentcomment',
+    'message',
+  ].includes(type) ||
+  route.kind === 'taxonomy';
+const commentsEnabled =
+  p.comment !== false &&
+  ![
+    'about',
+    'music',
+    'tags',
+    'categories',
+    'brevity',
+    'recentcomment',
+    'archives',
+  ].includes(type) &&
+  !['taxonomy', 'term'].includes(route.kind);
+---
+
+{route.kind === 'redirect' ? (
+  <Redirect route={route} />
+) : (
+  <Base
+    title={route.title}
+    description={String(p.description ?? config.description)}
+    type={type}
+    post={post}
+    page={p}
+    toc={
+      !hideAside &&
+      p.toc !== false &&
+      headings.length > 0 &&
+      (post ? cfg.aside.toc.post : cfg.aside.toc.page)
+    }
+  >
+    {route.kind === 'home' ? (
+      <Home route={route} posts={posts} />
+    ) : post ? (
+      <PostView
+        post={post}
+        posts={posts}
+        p={p}
+        Content={Content}
+        headings={headings}
+        hideAside={hideAside}
+        commentsEnabled={commentsEnabled}
+      />
+    ) : type === 'archives' ? (
+      <Archive posts={posts} hideAside={hideAside} />
+    ) : route.kind === 'taxonomy' || route.kind === 'term' ? (
+      <Taxonomy
+        route={route}
+        posts={posts}
+        p={p}
+        headings={headings}
+        hideAside={hideAside}
+      />
+    ) : (
+      <Page
+        route={route}
+        posts={posts}
+        p={p}
+        type={type}
+        Content={Content}
+        headings={headings}
+        hideAside={hideAside}
+        commentsEnabled={commentsEnabled}
+      />
+    )}
+  </Base>
+)}

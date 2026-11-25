@@ -1,0 +1,247 @@
+---
+import { ClientRouter } from 'astro:transitions';
+import { applyInitialTheme } from '@/scripts/core/theme-bootstrap';
+import { cfg, config, t, url, absolute, json } from '@/lib/site';
+import { getPosts, getPages, contentPath, type Post } from '@/lib/content';
+import { runtimeConfig } from '@/lib/site/runtime-config';
+import Header from '@/components/layout/Header.astro';
+import Footer from '@/components/layout/Footer.astro';
+import Search from '@/components/integrations/Search.astro';
+import Overlays from '@/components/layout/Overlays.astro';
+import Capsule from '@/components/integrations/Capsule.astro';
+import RuntimeIcons from '@/components/integrations/RuntimeIcons.astro';
+import 'katex/dist/katex.min.css';
+import '@/styles/main.css';
+import layerOrder from '@/styles/layers.css?inline';
+import aboutStyle from '@/styles/pages/about.css?url';
+import brevityStyle from '@/styles/pages/brevity.css?url';
+import '@/styles/custom.css';
+interface Props {
+  title?: string;
+  description?: string;
+  type?: string;
+  post?: Post;
+  page?: import('@/types/page').PageMetadata;
+  toc?: boolean;
+}
+const {
+  title = config.title,
+  description = config.description,
+  type = 'page',
+  post,
+  page = {},
+  toc = false,
+} = Astro.props;
+const posts = await getPosts(),
+  pages = await getPages();
+const runtime = runtimeConfig(posts, pages, { ...page, type });
+const pageConfig = {
+  is_post: Boolean(post),
+  is_page: type !== 'solitude' && !post,
+  is_home: type === 'solitude',
+  page: type,
+  toc: page.toc !== false && Boolean(post || type === 'page'),
+  comment: page.comment !== false,
+  color: page.color ?? false,
+};
+const vars = {
+  'solitude-theme-light': cfg.theme_color.light,
+  'solitude-theme-dark': cfg.theme_color.dark,
+  'solitude-nav-hover-light': cfg.theme_color.nav_hover_text.light,
+  'solitude-nav-hover-dark': cfg.theme_color.nav_hover_text.dark,
+  'solitude-font-size': cfg.font.font_size,
+  'solitude-code-font-size': cfg.font.code_font_size,
+  'solitude-font-family': cfg.font.font_family,
+  'solitude-code-font-family': cfg.font.code_font_family,
+  'solitude-index-columns': String(cfg.index_post_list.column),
+};
+const inlineVars = Object.entries(vars)
+  .map(([key, value]) => `--${key}:${value}`)
+  .join(';');
+---
+
+<!doctype html>
+<html lang={config.locale} data-theme="light" style={inlineVars}>
+  <head>
+    <style is:inline set:html={layerOrder}></style>
+    {type === 'about' && <link rel="stylesheet" href={aboutStyle} />}
+    {type === 'brevity' && <link rel="stylesheet" href={brevityStyle} />}
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="generator" content={Astro.generator} />
+    <title>{type==='solitude'?config.title:`${title} | ${config.title}`}</title>
+    <meta name="description" content={description} />
+    <link
+      rel="canonical"
+      href={
+        post
+          ? absolute(contentPath(post))
+          : new URL(Astro.url.pathname, config.site).href
+      }
+    />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={config.title}
+      href={url('/index.xml')}
+    />
+    <link rel="icon" href={url(cfg.site.icon)} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta
+      property="og:url"
+      content={
+        post
+          ? absolute(contentPath(post))
+          : new URL(Astro.url.pathname, config.site).href
+      }
+    />
+    <meta property="og:type" content={post ? 'article' : 'website'} />
+    {(post?.data.cover || page.cover) && (
+      <meta
+        property="og:image"
+        content={absolute((post?.data.cover ?? page.cover)!)}
+      />
+    )}
+    {cfg.pwa.enable && (
+      <>
+        <link rel="manifest" href={url(cfg.pwa.manifest)} />
+        <meta name="theme-color" content={cfg.pwa.theme_color} />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <link
+          rel="apple-touch-icon"
+          sizes="180x180"
+          href={url(cfg.pwa.apple_touch_icon)}
+        />
+        <link
+          rel="mask-icon"
+          href={url(cfg.pwa.mask_icon)}
+          color={cfg.pwa.theme_color}
+        />
+        <link
+          rel="icon"
+          type="image/png"
+          sizes="16x16"
+          href={url(cfg.pwa.favicon_16_16)}
+        />
+        <link
+          rel="icon"
+          type="image/png"
+          sizes="32x32"
+          href={url(cfg.pwa.favicon_32_32)}
+        />
+        <link rel="bookmark" href={url(cfg.pwa.bookmark_icon)} />
+      </>
+    )}
+
+    <ClientRouter />
+    <script
+      is:inline
+      data-astro-rerun
+      set:html={`(${applyInitialTheme.toString()})(${json(cfg.display_mode.type)});`}
+    ></script>
+    <template id="site-config" set:html={json(runtime)} />
+    <template id="config-diff" set:html={json(pageConfig)} />
+    {cfg.verify_site.map((html: string) => (
+      <Fragment set:html={html} />
+    ))}
+    {cfg.extends.head.map((html: string) => (
+      <Fragment set:html={html} />
+    ))}
+  </head>
+  <body
+    class:list={{
+      'solitude-memorial':
+        cfg.memorial.enable &&
+        cfg.memorial.date.includes(
+          new Intl.DateTimeFormat('sv-SE', { timeZone: config.timeZone })
+            .format(new Date())
+            .slice(5),
+        ),
+    }}
+    id="body"
+    data-type={type}
+    data-search={cfg.search.type}
+    data-aside-position={cfg.aside.position}
+    data-index-layout={cfg.index_post_list.direction}
+  >
+    {(cfg.loading.fullpage || cfg.loading.pace) && (
+      <>
+        <div
+          id="page-loader"
+          aria-hidden="true"
+          transition:persist="page-loader"
+        >
+          {cfg.loading.fullpage && (
+            <div class="page-loader-screen">
+              <img
+                src={url(cfg.loading.image || cfg.site.icon)}
+                alt=""
+                width="100"
+                height="100"
+              />
+            </div>
+          )}
+          {cfg.loading.pace && <div class="page-loader-capsule" />}
+        </div>
+        <script is:inline>
+          if (document.readyState === 'loading') {
+            const loader = document.getElementById('page-loader');
+            loader.dataset.state = 'initial';
+            // Reveal the page even if the site's JavaScript bundle fails to load.
+            setTimeout(() => {
+              if (loader.dataset.state === 'initial') {
+                loader.dataset.state = 'complete';
+              }
+            }, 5000);
+          }
+        </script>
+      </>
+    )}
+    <a class="skip-link" href="#content-inner">
+      {t('startReading')}
+    </a>
+    <RuntimeIcons />
+    <Overlays
+      posts={posts}
+      toc={toc}
+      comments={
+        Boolean(cfg.comment.use) &&
+        page.comment !== false &&
+        ![
+          'solitude',
+          'about',
+          'music',
+          'tags',
+          'categories',
+          'series',
+          'brevity',
+          'recentcomment',
+          'archives',
+          'taxonomy',
+          'term',
+          '404',
+        ].includes(type)
+      }
+    />
+    <div
+      id="body-wrap"
+      class={type === '404' ? 'error' : post ? 'post' : 'page'}
+    >
+      <Header title={title} post={post} />
+      <slot />
+      {type !== '404' && <Footer />}
+    </div>
+    <Search />
+    <Capsule />
+    <script>
+      import '@/scripts/entry';
+    </script>
+    {cfg.extends.body.map((html: string) => (
+      <Fragment set:html={html} />
+    ))}
+  </body>
+</html>

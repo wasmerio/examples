@@ -1,0 +1,116 @@
+---
+import BaseLayout from "@/layouts/base.astro";
+import "@pagefind/default-ui/css/ui.css";
+import { getEntry } from "astro:content";
+
+const entry = await getEntry("views", "search");
+
+if (!entry) {
+  return Astro.redirect("/404");
+}
+---
+
+<BaseLayout entry={entry}>
+  <div class="container py-4">
+    <script is:inline src="/pagefind/pagefind-ui.js"></script>
+
+    <div id="search"></div>
+
+    <script>
+      const initializePagefind = () => {
+        // Remove any existing Pagefind UI elements to avoid duplicates
+        const existingSearchUI = document.querySelector(".pagefind-ui");
+        if (existingSearchUI) {
+          existingSearchUI.remove();
+        }
+
+        // Import dynamically to ensure proper re-initialization
+        // @ts-expect-error
+        import("@pagefind/default-ui")
+          .then(({ PagefindUI }) => {
+            new PagefindUI({
+              element: "#search",
+              showSubResults: true,
+              showImages: false,
+              autofocus: true,
+            });
+
+            const el = document.querySelector(".pagefind-ui");
+            const input =
+              el?.querySelector<HTMLInputElement>(`input[type="text"]`);
+            const clearButton = el?.querySelector(".pagefind-ui__search-clear");
+            const url = new URL(window.location.href);
+            const params = new URLSearchParams(url.search);
+            const query = params.get("q");
+
+            if (clearButton) {
+              clearButton.textContent = "× Clear";
+            }
+            if (query && input) {
+              input.value = query;
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+
+            input?.addEventListener("input", (e) => {
+              const input = e.target as HTMLInputElement;
+              const url = new URL(window.location.href);
+              const params = new URLSearchParams(url.search);
+              params.set("q", input.value);
+              window.history.replaceState({}, "", `${url.pathname}?${params}`);
+            });
+
+            clearButton?.addEventListener("click", () => {
+              const url = new URL(window.location.href);
+              const params = new URLSearchParams(url.search);
+              params.delete("q");
+              window.history.replaceState({}, "", `${url.pathname}`);
+            });
+          })
+          .catch(console.error);
+      };
+
+      document.addEventListener("astro:page-load", () => {
+        initializePagefind();
+      });
+    </script>
+  </div>
+</BaseLayout>
+
+<style is:inline>
+  :root {
+    --pagefind-ui-scale: 0.9;
+    --pagefind-ui-primary: oklch(var(--p));
+    --pagefind-ui-text: oklch(var(--bc));
+    --pagefind-ui-background: oklch(var(--b1));
+    --pagefind-ui-border: oklch(var(--b2));
+    --pagefind-ui-tag: oklch(var(--b2));
+    --pagefind-ui-border-width: 2px;
+    --pagefind-ui-border-radius: 8px;
+    --pagefind-ui-image-border-radius: 8px;
+    --pagefind-ui-image-box-ratio: 3 / 2;
+    --pagefind-ui-font: var(--font-sans);
+  }
+</style>
+
+<style is:global>
+  .pagefind-ui__result.svelte-4xnkmf {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #eee;
+  }
+  .pagefind-ui__search-input.svelte-e9gkc3 {
+    border: 2px solid #e5e7eb;
+    padding: 0.75rem 1rem;
+  }
+
+  .pagefind-ui__search-clear.svelte-e9gkc3 {
+    background: rgba(229, 231, 235, 0.493);
+    top: calc(9px * var(--pagefind-ui-scale));
+    right: calc(10px * var(--pagefind-ui-scale));
+    height: calc(46px * var(--pagefind-ui-scale));
+    border: none;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 0.75rem 1rem;
+    transition: background 0.2s ease;
+  }
+</style>

@@ -1,0 +1,107 @@
+<script is:inline>
+  // Optimized event attachment function
+  function attachSocialShareEvents() {
+    const shareButtons = document.querySelectorAll("[data-aw-social-share]");
+
+    shareButtons.forEach((elem) => {
+      elem.addEventListener("click", handleSocialShare, false);
+    });
+  }
+
+  function handleSocialShare(event) {
+    const elem = event.currentTarget;
+    const network = elem.getAttribute("data-aw-social-share");
+    const rawUrl = elem.getAttribute("data-aw-url");
+    const rawText = elem.getAttribute("data-aw-text");
+
+    // Handle clipboard separately as it doesn't need to open a new window
+    if (network === "clipboard") {
+      copyToClipboard(rawUrl);
+      return;
+    }
+
+    // Check if native Web Share API is available for mobile devices
+    if (navigator.share && /Mobi|Android/i.test(navigator.userAgent)) {
+      navigator
+        .share({
+          title: rawText,
+          text: rawText,
+          url: rawUrl,
+        })
+        .catch(() => {
+          // Fallback to traditional sharing if native sharing fails
+          openSocialShare(network, rawUrl, rawText);
+        });
+    } else {
+      openSocialShare(network, rawUrl, rawText);
+    }
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          console.log("Text successfully copied to clipboard");
+          // Optional: Show a brief success indicator
+        })
+        .catch((err) => {
+          console.error("Unable to copy text to clipboard", err);
+          fallbackCopyTextToClipboard(text);
+        });
+    } else {
+      fallbackCopyTextToClipboard(text);
+    }
+  }
+
+  function openSocialShare(network, rawUrl, rawText) {
+    const url = encodeURIComponent(rawUrl);
+    const text = encodeURIComponent(rawText);
+
+    // Social platform URLs mapping
+    const platformUrls = {
+      facebook: `https://www.facebook.com/sharer.php?u=${url}`,
+      twitter: `https://twitter.com/intent/tweet?url=${url}&text=${text}`,
+      linkedin: `https://www.linkedin.com/shareArticle?mini=true&url=${url}&title=${text}`,
+      whatsapp: `https://wa.me/?text=${text}%20${url}`,
+    };
+
+    const href = platformUrls[network];
+    if (href) {
+      // Use window.open for better popup handling
+      window.open(
+        href,
+        "_blank",
+        "width=600,height=400,scrollbars=yes,resizable=yes,noopener,noreferrer"
+      );
+    }
+  }
+
+  // Fallback clipboard function for older browsers
+  function fallbackCopyTextToClipboard(text) {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-999999px";
+    textArea.style.top = "-999999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    try {
+      document.execCommand("copy");
+      console.log("Fallback: Text copied to clipboard");
+    } catch (err) {
+      console.error("Fallback: Unable to copy text to clipboard", err);
+    }
+
+    document.body.removeChild(textArea);
+  }
+
+  // Use DOMContentLoaded for faster execution than window.onload
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", attachSocialShareEvents);
+  } else {
+    attachSocialShareEvents();
+  }
+</script>

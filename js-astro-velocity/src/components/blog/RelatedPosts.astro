@@ -1,0 +1,51 @@
+---
+import BlogCard from './BlogCard.astro';
+import { getLocale, useTranslations } from '@/i18n';
+import { getPosts, getPostSlug, getPostUrl, getPostReadingTime } from '@/lib/blog';
+
+interface Props {
+  /** Slug of the current post (without locale folder) */
+  currentSlug: string;
+  tags: string[];
+  /** Defaults to the current page's locale */
+  locale?: string;
+  maxPosts?: number;
+}
+
+const { currentSlug, tags, locale = getLocale(Astro), maxPosts = 3 } = Astro.props;
+const t = useTranslations(locale);
+
+// Posts in the same locale that share at least one tag, most shared tags first, then newest.
+const relatedPosts = (await getPosts(locale))
+  .filter((post) => getPostSlug(post) !== currentSlug && post.data.tags.some((tag) => tags.includes(tag)))
+  .sort((a, b) => {
+    const aMatches = a.data.tags.filter((tag) => tags.includes(tag)).length;
+    const bMatches = b.data.tags.filter((tag) => tags.includes(tag)).length;
+    if (bMatches !== aMatches) return bMatches - aMatches;
+    return b.data.publishedAt.valueOf() - a.data.publishedAt.valueOf();
+  })
+  .slice(0, maxPosts);
+---
+
+{relatedPosts.length > 0 && (
+  <section class="border-t border-border pt-[var(--space-section-header)] mt-[var(--space-section-header)]">
+    <h2 class="font-display text-2xl font-bold text-foreground mb-[var(--space-stack-lg)]">
+      {t('blog.relatedPosts')}
+    </h2>
+
+    <div class="grid gap-[var(--space-stack-lg)] md:grid-cols-2 lg:grid-cols-3">
+      {relatedPosts.map((post) => (
+        <BlogCard
+          title={post.data.title}
+          description={post.data.description}
+          readingTime={getPostReadingTime(post)}
+          href={getPostUrl(post)}
+          publishedAt={post.data.publishedAt}
+          tags={post.data.tags}
+          author={post.data.author}
+          image={post.data.image}
+        />
+      ))}
+    </div>
+  </section>
+)}

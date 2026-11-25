@@ -1,0 +1,197 @@
+---
+/**
+ * Analytics Component
+ *
+ * Conditionally loads analytics scripts based on environment variables.
+ * Supports Google Analytics (GA4) and Google Tag Manager.
+ *
+ * When PUBLIC_CONSENT_ENABLED is true, integrates with Google Consent Mode v2:
+ * - consent_mode_v2: Scripts load normally but with denied defaults (cookieless pings)
+ * - strict: Scripts only load after explicit user consent
+ * - opt_out: Scripts load with `defaultEnabled` defaults; visitors in
+ *   `optInRegions` start denied, and Global Privacy Control opts out
+ *
+ * Click tracking: any element with `data-track="event_name"` sends that event
+ * when clicked, with its `data-track-*` attributes as parameters (see
+ * src/lib/analytics.ts). Call `track()` from that module for anything else.
+ *
+ * Environment variables:
+ * - PUBLIC_GA_MEASUREMENT_ID: Google Analytics 4 Measurement ID (e.g., G-XXXXXXXXXX)
+ * - PUBLIC_GTM_ID: Google Tag Manager Container ID (e.g., GTM-XXXXXXX)
+ * - PUBLIC_CONSENT_ENABLED: Enable cookie consent integration (boolean)
+ *
+ * CSP: inline scripts live in ./analytics/ and render through <InlineScript />,
+ * which adds their hash to the page's CSP. They are static: dynamic values are
+ * passed via a <script type="application/json"> element. When analytics is enabled, this
+ * component also registers the Google script hosts for the current page via
+ * Astro.csp.insertScriptResource() — no manual config needed.
+ *
+ * A page rendered on demand sends its CSP before <InlineScript /> has hashed
+ * anything, so integrations/layout-csp.mjs also lists the scripts imported
+ * below in the config. Add new ones there too.
+ *
+ * Required CSP directives for GA4/GTM:
+ *
+ *   script-src:
+ *     https://*.googletagmanager.com
+ *     https://*.google-analytics.com
+ *     https://analytics.google.com
+ *
+ *   connect-src:
+ *     https://*.google-analytics.com      (covers region1, region2, etc.)
+ *     https://analytics.google.com         (separate domain, not a subdomain)
+ *     https://*.googletagmanager.com
+ *
+ * IMPORTANT: GA4 sends data to regional endpoints like
+ * https://region1.google-analytics.com/g/s/collect — whitelisting only
+ * www.google-analytics.com will silently drop all tracking requests with
+ * no console errors. The wildcard *.google-analytics.com is required.
+ */
+import { PUBLIC_GA_MEASUREMENT_ID, PUBLIC_GTM_ID, PUBLIC_CONSENT_ENABLED } from 'astro:env/client';
+import consentConfig from '@/config/consent.config';
+import { DEFAULT_OPT_IN_REGIONS } from '@/lib/consent.types';
+import ClickTracking from './analytics/ClickTracking.astro';
+import InlineScript from '@/components/seo/InlineScript.astro';
+import loadGtm from './analytics/load-gtm.js?raw';
+import loadGa from './analytics/load-ga.js?raw';
+import consentDefaults from './analytics/consent-defaults.js?raw';
+import strictGtm from './analytics/strict-gtm.js?raw';
+import strictGa from './analytics/strict-ga.js?raw';
+
+const gaId = PUBLIC_GA_MEASUREMENT_ID;
+const gtmId = PUBLIC_GTM_ID;
+const consentEnabled = PUBLIC_CONSENT_ENABLED;
+const consentMode = consentConfig.mode;
+const storageKey = consentConfig.storageKey;
+const configVersion = consentConfig.version;
+
+// Build GCM default values from config categories
+const gcmDefaults: Record<string, string> = {};
+for (const [, cat] of Object.entries(consentConfig.categories)) {
+  for (const gcmType of cat.gcmTypes) {
+    gcmDefaults[gcmType] = cat.defaultEnabled ? 'granted' : 'denied';
+  }
+}
+
+// What opt-in regions start with in opt_out mode: only required categories granted
+const gcmDenied: Record<string, string> = {};
+for (const [, cat] of Object.entries(consentConfig.categories)) {
+  for (const gcmType of cat.gcmTypes) {
+    gcmDenied[gcmType] = cat.required ? 'granted' : 'denied';
+  }
+}
+
+// Build category default states from config (e.g. { necessary: true, analytics: false, ... })
+const categoryDefaults: Record<string, boolean> = {};
+for (const [key, cat] of Object.entries(consentConfig.categories)) {
+  categoryDefaults[key] = cat.required || cat.defaultEnabled;
+}
+
+// Build category → GCM type mapping for dynamic resolution
+const categoryGcmMap: Record<string, string[]> = {};
+for (const [key, cat] of Object.entries(consentConfig.categories)) {
+  categoryGcmMap[key] = cat.gcmTypes;
+}
+
+// Derive the category key that maps to analytics_storage (for strict-mode guards)
+let analyticsCategoryKey = 'analytics';
+for (const [key, cat] of Object.entries(consentConfig.categories)) {
+  if (cat.gcmTypes.includes('analytics_storage')) {
+    analyticsCategoryKey = key;
+    break;
+  }
+}
+
+// Rendering flags — keeps template conditions simple and highlighter-friendly
+const hasGtm = !!gtmId;
+const hasGa = !!gaId && !gtmId;
+const hasAnalytics = !!(gaId || gtmId);
+const noConsent = !consentEnabled;
+
+// Declare the third-party script hosts this page needs (security.csp).
+// Pages without analytics keep a strict 'self'-only script-src.
+if (hasAnalytics && Astro.csp) {
+  for (const host of [
+    'https://*.googletagmanager.com',
+    'https://*.google-analytics.com',
+    'https://analytics.google.com',
+  ]) {
+    Astro.csp.insertScriptResource(host);
+  }
+}
+// opt_out loads scripts the same way as consent_mode_v2; only the defaults differ
+const isV2 = consentEnabled && (consentMode === 'consent_mode_v2' || consentMode === 'opt_out');
+const isStrict = consentEnabled && consentMode === 'strict';
+
+// JSON data for all analytics scripts (single data element avoids duplication)
+const analyticsDataJson = JSON.stringify({
+  gtmId: gtmId || null,
+  gaId: gaId || null,
+  storageKey,
+  configVersion,
+  gcmDefaults,
+  categoryDefaults,
+  categoryGcmMap,
+  analyticsCategoryKey,
+  mode: consentEnabled ? consentMode : null,
+  optInRegions: consentConfig.optInRegions ?? DEFAULT_OPT_IN_REGIONS,
+  gcmDenied,
+});
+---
+
+{/* Analytics data element — read by all inline scripts below */}
+{hasAnalytics && (
+  <script is:inline type="application/json" id="analytics-data" set:html={analyticsDataJson} />
+)}
+
+{/* Sends a GA event for clicks on [data-track] elements */}
+{hasAnalytics && <ClickTracking />}
+
+{/* ── No consent: load GTM directly ── */}
+{noConsent && hasGtm && (
+  <InlineScript code={loadGtm} />
+)}
+
+{/* ── No consent: load GA directly ── */}
+{noConsent && hasGa && (
+  <>
+    <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}></script>
+    <InlineScript code={loadGa} />
+  </>
+)}
+
+{/* ── Consent enabled: set consent defaults BEFORE loading scripts ── */}
+{consentEnabled && hasAnalytics && (
+  <InlineScript code={consentDefaults} />
+)}
+
+{/* ── V2 mode: load GTM after consent defaults ── */}
+{isV2 && hasGtm && (
+  <InlineScript code={loadGtm} />
+)}
+
+{/* ── V2 mode: load GA after consent defaults ── */}
+{isV2 && hasGa && (
+  <>
+    <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}></script>
+    <InlineScript code={loadGa} />
+  </>
+)}
+
+{/* ── Strict mode: meta tags for consent banner dynamic injection ── */}
+{isStrict && hasGtm && (
+  <meta name="gtm-id" content={gtmId} />
+)}
+{isStrict && hasGa && (
+  <meta name="ga-id" content={gaId} />
+)}
+
+{/* ── Strict mode: conditionally load GTM if consent already granted ── */}
+{isStrict && hasGtm && (
+  <InlineScript code={strictGtm} />
+)}
+
+{/* ── Strict mode: conditionally load GA if consent already granted ── */}
+{isStrict && hasGa && (
+  <InlineScript code={strictGa} />
+)}

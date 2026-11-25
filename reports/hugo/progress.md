@@ -7,3 +7,8 @@
 501-600: shipped 29, blocked 71, rejected-license 0, duplicate 0, already-exists 0
 601-700: shipped 23, blocked 77, rejected-license 0, duplicate 0, already-exists 0
 701-800: shipped 12, blocked 87, rejected-license 0, duplicate 0, already-exists 1
+801-900: shipped 15, blocked 83, rejected-license 2, duplicate 0, already-exists 0
+901-1000: shipped 19, blocked 81, rejected-license 0, duplicate 0, already-exists 0
+1001-1100: shipped 8, blocked 91, rejected-license 1, duplicate 0, already-exists 0
+1101-1200: shipped 13, blocked 86, rejected-license 1, duplicate 0, already-exists 0
+1201-1248: shipped 4, blocked 44, rejected-license 0, duplicate 0, already-exists 0

@@ -1,0 +1,294 @@
+---
+---
+
+<button 
+  id="theme-toggle" 
+  data-theme-toggle
+  class="relative overflow-hidden rounded-full p-1.5 sm:p-2 transition-all duration-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-zinc-300 dark:focus:ring-zinc-700 group touch-manipulation"
+  aria-label="Toggle dark mode"
+>
+  <div class="relative z-10 flex h-5 w-5 items-center justify-center">
+    <!-- Sun icon -->
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      class="icon-light absolute h-5 w-5 rotate-0 scale-100 transition-all duration-500 dark:-rotate-90 dark:scale-0 text-zinc-800 dark:text-zinc-200"
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      stroke-width="2" 
+      stroke-linecap="round" 
+      stroke-linejoin="round"
+    >
+      <circle cx="12" cy="12" r="5"/>
+      <path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/>
+    </svg>
+    
+    <!-- Moon icon -->
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      class="icon-dark absolute h-5 w-5 rotate-90 scale-0 transition-all duration-500 dark:rotate-0 dark:scale-100 text-zinc-800 dark:text-zinc-200"
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      stroke-width="2" 
+      stroke-linecap="round" 
+      stroke-linejoin="round"
+    >
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+    </svg>
+  </div>
+  
+  <!-- Ripple effect -->
+  <span class="absolute inset-0 h-full w-full bg-zinc-200 dark:bg-zinc-700 opacity-0 transition-opacity duration-300 group-active:opacity-20"></span>
+</button>
+
+<script>
+  // Use a function to handle theme toggle to ensure it can be called from anywhere
+  function setupThemeToggle() {
+    const themeToggles = document.querySelectorAll('[data-theme-toggle]');
+    
+    // Check for dark mode preference at the system level
+    const prefersDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+    // Check for saved theme preference or use the system preference
+    const currentTheme = localStorage.getItem('theme') || (prefersDarkMode ? 'dark' : 'light');
+    
+    // Apply the theme on initial load
+    if (currentTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    
+    // Create theme switch overlay element if it doesn't exist
+    if (!document.querySelector('.theme-switch-overlay')) {
+      const overlay = document.createElement('div');
+      overlay.className = 'theme-switch-overlay fixed inset-0 pointer-events-none z-50';
+      overlay.style.opacity = '0';
+      overlay.style.transition = 'opacity 0.3s ease-out';
+      document.body.appendChild(overlay);
+    }
+    
+    // Toggle theme when any theme toggle button is clicked
+    themeToggles.forEach(toggle => {
+      // Add event listeners for both click and touch events
+      ['click', 'touchend'].forEach(eventType => {
+        toggle.addEventListener(eventType, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          // Get click/touch position for radial animation
+          let x, y;
+          if (e.type === 'touchend' && e.changedTouches && e.changedTouches[0]) {
+            const rect = toggle.getBoundingClientRect();
+            x = e.changedTouches[0].clientX - rect.left;
+            y = e.changedTouches[0].clientY - rect.top;
+          } else {
+            const rect = toggle.getBoundingClientRect();
+            x = e.clientX - rect.left;
+            y = e.clientY - rect.top;
+          }
+          
+          // Set the position variables for the radial gradient
+          document.documentElement.style.setProperty('--x', `${x}px`);
+          document.documentElement.style.setProperty('--y', `${y}px`);
+          
+          // Get the overlay element
+          const overlay = document.querySelector('.theme-switch-overlay');
+          
+          // Determine the new theme
+          const isDark = document.documentElement.classList.contains('dark');
+          const newTheme = isDark ? 'light' : 'dark';
+          
+          // Show overlay during transition
+          if (overlay) {
+            overlay.style.backgroundColor = newTheme === 'dark' ? 'rgba(24, 24, 27, 0.3)' : 'rgba(255, 255, 255, 0.3)';
+            overlay.style.opacity = '1';
+          }
+          
+          // Add transition class
+          document.documentElement.classList.add('theme-switching');
+          
+          // Add ripple effect
+          const ripple = document.createElement('span');
+          ripple.className = 'theme-toggle-ripple';
+          toggle.appendChild(ripple);
+          
+          // Force a reflow to ensure all elements update
+          document.body.offsetHeight;
+          
+          // Toggle dark mode with a slight delay to allow overlay to appear
+          setTimeout(() => {
+            if (isDark) {
+              document.documentElement.classList.remove('dark');
+            } else {
+              document.documentElement.classList.add('dark');
+            }
+            
+            // Store the preference
+            localStorage.setItem('theme', newTheme);
+            
+            // Dispatch a custom event for other components to react to
+            document.dispatchEvent(new CustomEvent('themeChanged', { 
+              detail: { isDark: newTheme === 'dark' } 
+            }));
+            
+            // Force another reflow to ensure all elements update
+            document.body.offsetHeight;
+            
+            // Hide overlay after theme has changed
+            setTimeout(() => {
+              if (overlay) {
+                overlay.style.opacity = '0';
+              }
+              
+              // Remove transition class after animation completes
+              document.documentElement.classList.remove('theme-switching');
+              ripple.remove();
+            }, 300);
+          }, 50);
+        }, { passive: false });
+      });
+      
+      // Add touch feedback
+      toggle.addEventListener('touchstart', () => {
+        toggle.classList.add('active-touch');
+      }, { passive: true });
+      
+      toggle.addEventListener('touchend', () => {
+        setTimeout(() => {
+          toggle.classList.remove('active-touch');
+        }, 150);
+      }, { passive: true });
+    });
+  }
+  
+  // Run setup on load
+  document.addEventListener('DOMContentLoaded', setupThemeToggle);
+  
+  // Also run on page visibility change to ensure theme is consistent
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      const currentTheme = localStorage.getItem('theme');
+      if (currentTheme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else if (currentTheme === 'light') {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+  });
+  
+  // Listen for system preference changes
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ({ matches }) => {
+    if (!localStorage.getItem('theme')) {
+      if (matches) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+  });
+</script>
+
+<style>
+  /* Smooth transition for the entire page when theme changes */
+  :global(body) {
+    transition: background-color 0.5s ease, color 0.5s ease;
+  }
+  
+  /* Theme transition overlay */
+  :global(.theme-switch-overlay) {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    transition: opacity 0.3s ease-out;
+  }
+  
+  /* Ensure theme transitions apply to all elements */
+  :global(.theme-switching *) {
+    transition-duration: 0.5s !important;
+    transition-property: background-color, border-color, color, fill, stroke !important;
+  }
+  
+  /* Ripple animation */
+  .theme-toggle-ripple {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background-color: rgba(161, 161, 170, 0.3);
+    animation: ripple 0.8s ease-out;
+  }
+  
+  @keyframes ripple {
+    0% {
+      transform: translate(-50%, -50%) scale(0);
+      opacity: 0.5;
+    }
+    100% {
+      transform: translate(-50%, -50%) scale(2.5);
+      opacity: 0;
+    }
+  }
+  
+  /* Subtle hover animation */
+  #theme-toggle {
+    transform: translateY(0);
+    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    -webkit-tap-highlight-color: transparent; /* Remove default mobile tap highlight */
+    min-height: 32px; /* Ensure minimum touch target size */
+    min-width: 32px; /* Ensure minimum touch target size */
+  }
+  
+  /* Only apply hover effects on non-touch devices */
+  @media (hover: hover) {
+    #theme-toggle:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    #theme-toggle:hover .icon-light:not(.dark .icon-light) {
+      filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.6));
+      transform: scale(1.1) rotate(15deg);
+    }
+    
+    #theme-toggle:hover .icon-dark:not(:not(.dark) .icon-dark) {
+      filter: drop-shadow(0 0 2px rgba(129, 140, 248, 0.6));
+      transform: scale(1.1) rotate(-15deg);
+    }
+  }
+  
+  /* Touch feedback */
+  #theme-toggle.active-touch {
+    transform: scale(0.95);
+    transition: transform 0.15s ease-in-out;
+  }
+  
+  /* Optimize animations for mobile */
+  @media (prefers-reduced-motion: reduce) {
+    .icon-light, .icon-dark {
+      transition: all 0.2s ease-out !important;
+    }
+    
+    #theme-toggle, #theme-toggle:hover {
+      transform: none;
+      transition: none;
+    }
+    
+    .theme-toggle-ripple {
+      animation-duration: 0.4s;
+    }
+  }
+  
+  /* Adjust size for very small screens */
+  @media (max-width: 320px) {
+    #theme-toggle {
+      padding: 0.25rem !important;
+    }
+  }
+</style>
+

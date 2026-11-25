@@ -1,0 +1,413 @@
+---
+import Layout from './Layout.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+import ShareButtons from '../components/ShareButtons.astro';
+import TagList from '../components/TagList.astro';
+import './styles/markdown.css';
+export interface Props {
+  title: string;
+  description: string;
+  pubDate: Date;
+  updatedDate?: Date;
+  heroImage?: string;
+  readingTime?: string;
+  tags?: string[];
+}
+
+const { title, description, pubDate, updatedDate, heroImage, readingTime = '5 min read', tags = [] } = Astro.props;
+
+// Fix for the canonicalURL creation
+let canonicalURL;
+try {
+  canonicalURL = new URL(Astro.url.pathname, Astro.site || 'https://example.com');
+} catch (error) {
+  console.error('Error creating canonical URL:', error);
+  canonicalURL = new URL('https://example.com');
+}
+
+const slug = Astro.url.pathname.split('/').filter(Boolean).pop() || ''; // Ensure slug is a string
+
+// Xử lý heroImage an toàn hơn - hỗ trợ cả URL tuyệt đối và đường dẫn tương đối
+let heroImageUrl = null;
+if (heroImage) {
+  try {
+    // Kiểm tra nếu là URL đầy đủ
+    if (heroImage.startsWith('http')) {
+      heroImageUrl = heroImage;
+    } 
+    // Kiểm tra nếu là đường dẫn tương đối
+    else if (heroImage.startsWith('/')) {
+      // Nếu Astro.site tồn tại, sử dụng nó làm cơ sở
+      if (Astro.site) {
+        heroImageUrl = new URL(heroImage, Astro.site).toString();
+      } 
+      // Nếu không, sử dụng đường dẫn tương đối như đã cung cấp
+      else {
+        heroImageUrl = heroImage;
+      }
+    }
+    // Trường hợp khác
+    else {
+      heroImageUrl = heroImage;
+    }
+  } catch (error) {
+    console.error(`Error processing heroImage: ${heroImage}`, error);
+    // Sử dụng đường dẫn gốc nếu có lỗi
+    heroImageUrl = heroImage;
+  }
+}
+---
+
+<Layout title={title} description={description}>
+  <article class="prose dark:prose-invert prose-zinc lg:prose-lg mx-auto max-w-4xl">
+    <div class="mb-12">
+      <h1 class="mb-4 text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 sm:text-5xl">
+        {title}
+      </h1>
+      
+      <div class="flex items-center gap-x-4 text-sm text-zinc-500 dark:text-zinc-400 mb-6">
+        <FormattedDate date={pubDate} />
+        {readingTime && <span>· {readingTime}</span>}
+      </div>
+      
+      <TagList tags={tags} class="mt-2" />
+    </div>
+    
+    <!-- Hero image with improved styling -->
+    {heroImage && (
+      <div class="relative mb-8 sm:mb-12 overflow-hidden rounded-xl shadow-lg">
+        <div class="aspect-[16/9] w-full">
+          <img 
+            src={heroImageUrl} 
+            alt={title}
+            class="w-full h-full object-cover"
+            loading="eager"
+          />
+        </div>
+        <div class="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent"></div>
+      </div>
+    )}
+    
+    <div class="markdown-content">
+      <slot />
+    </div>
+    
+    <!-- Add the like button after the content -->
+    <div class="mt-12 pt-8 border-t border-zinc-200 dark:border-zinc-800">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-6">
+        <ShareButtons url={canonicalURL.toString()} title={title} /> <!-- Convert URL to string -->
+      </div>
+    </div>
+    
+    {updatedDate && (
+      <div class="mt-8 text-sm text-zinc-500 dark:text-zinc-400 italic">
+        Last updated on <FormattedDate date={updatedDate} />
+      </div>
+    )}
+  </article>
+  
+  <slot name="after-article" />
+</Layout>
+
+<script>
+  // Enhanced blog post SPA transitions
+  function setupBlogPostTransitions() {
+    // Animate article entrance
+    const article = document.querySelector('article');
+    if (article) {
+      article.classList.add('article-entering');
+      
+      // Remove class after animation completes
+      setTimeout(() => {
+        article.classList.remove('article-entering');
+      }, 1000);
+    }
+    
+    // Ensure consistent code block styling
+    function updateCodeBlockStyles() {
+      document.querySelectorAll('pre').forEach(pre => {
+        // Force the background color with !important for both light and dark mode
+        pre.setAttribute('style', 'background-color: #1e293b !important');
+        
+        // Also apply to any nested code elements
+        const codeElements = pre.querySelectorAll('code');
+        codeElements.forEach(code => {
+          code.setAttribute('style', 'background-color: transparent !important; color: #e5e7eb !important;');
+        });
+      });
+    }
+    
+    // Initial application
+    updateCodeBlockStyles();
+    
+    // Watch for theme changes
+    const observer = new MutationObserver(() => {
+      updateCodeBlockStyles();
+    });
+    
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    
+    // Also run on any content changes that might add new code blocks
+    const contentObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.addedNodes.length) {
+          updateCodeBlockStyles();
+          break;
+        }
+      }
+    });
+    
+    contentObserver.observe(document.body, { childList: true, subtree: true });
+    
+    // Clean up observers when navigating away
+    document.addEventListener('spa-navigation-start', () => {
+      observer.disconnect();
+      contentObserver.disconnect();
+    });
+    
+    // Remove the parallax effect for hero image
+    
+    // Handle prev/next navigation links
+    const navLinks = document.querySelectorAll('.blog-nav-link');
+    navLinks.forEach(link => {
+      if (!link.hasAttribute('data-spa-handled')) {
+        link.setAttribute('data-spa-handled', 'true');
+        
+        link.addEventListener('mouseenter', () => {
+          link.classList.add('nav-link-hover');
+        });
+        
+        link.addEventListener('mouseleave', () => {
+          link.classList.remove('nav-link-hover');
+        });
+      }
+    });
+    
+    // Animate headings when they enter the viewport
+    const animateHeadings = () => {
+      const headings = document.querySelectorAll('article h2, article h3');
+      
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('heading-visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, {
+        threshold: 0.2,
+        rootMargin: '0px 0px -100px 0px'
+      });
+      
+      headings.forEach(heading => {
+        heading.classList.add('heading-animated');
+        observer.observe(heading);
+      });
+      
+      return observer;
+    };
+    
+    // Initialize heading animations
+    const headingObserver = animateHeadings();
+    
+        // Enhance code blocks with syntax highlighting and copy button
+        function enhanceCodeBlocks() {
+      const codeBlocks = document.querySelectorAll('pre code');
+      
+      codeBlocks.forEach(codeBlock => {
+        // Skip if already processed
+        if (codeBlock.parentElement.classList.contains('enhanced')) return;
+        
+        // Mark as enhanced
+        codeBlock.parentElement.classList.add('enhanced');
+        
+        // Create copy button
+        const copyButton = document.createElement('button');
+        copyButton.className = 'copy-code-button';
+        copyButton.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+            <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+          </svg>
+        `;
+        
+        // Add copy functionality
+        copyButton.addEventListener('click', () => {
+          const code = codeBlock.textContent;
+          navigator.clipboard.writeText(code);
+          
+          // Show copied feedback
+          copyButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+            </svg>
+          `;
+          
+          setTimeout(() => {
+            copyButton.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+              </svg>
+            `;
+          }, 2000);
+        });
+        
+        // Add copy button to pre element
+        codeBlock.parentElement.appendChild(copyButton);
+        
+        // Fix line numbers implementation
+        const codeText = codeBlock.textContent;
+        const lines = codeText.split('\n');
+        
+        const lineNumbers = document.createElement('div');
+        lineNumbers.className = 'line-numbers';
+        
+        // Always include all lines, including empty ones
+        for (let i = 0; i < lines.length; i++) {
+          const lineNumber = document.createElement('span');
+          lineNumber.textContent = i + 1;
+          lineNumbers.appendChild(lineNumber);
+        }
+        
+        codeBlock.parentElement.classList.add('with-line-numbers');
+        codeBlock.parentElement.insertBefore(lineNumbers, codeBlock);
+        
+        // Fix language label detection and display
+        const className = codeBlock.className;
+        const languageMatch = className.match(/language-(\w+)/);
+        
+        if (languageMatch && languageMatch[1]) {
+          const language = languageMatch[1];
+          
+          // Add language label at top right
+          const languageLabel = document.createElement('div');
+          languageLabel.className = 'language-label';
+          languageLabel.textContent = language;
+          codeBlock.parentElement.appendChild(languageLabel);
+          
+          // Add language badge at bottom right with markdown syntax
+          const languageBadge = document.createElement('div');
+          languageBadge.className = 'language-badge';
+          languageBadge.textContent = `\`\`\`${language}`;
+          languageBadge.style.position = 'absolute';
+          languageBadge.style.bottom = '0.5rem';
+          languageBadge.style.right = '0.5rem';
+          languageBadge.style.fontSize = '0.7rem';
+          languageBadge.style.padding = '0.1rem 0.3rem';
+          languageBadge.style.backgroundColor = 'rgba(75, 85, 99, 0.7)';
+          languageBadge.style.color = '#e5e7eb';
+          languageBadge.style.borderRadius = '0.25rem';
+          languageBadge.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+          languageBadge.style.zIndex = '10';
+          codeBlock.parentElement.appendChild(languageBadge);
+        }
+      });
+    }
+    
+    // Enhance tables with better styling
+    function enhanceTables() {
+      const tables = document.querySelectorAll('.markdown-content table');
+      
+      tables.forEach(table => {
+        if (table.classList.contains('enhanced-table')) return;
+        
+        table.classList.add('enhanced-table');
+        
+        // Wrap table in responsive container
+        const wrapper = document.createElement('div');
+        wrapper.className = 'table-container';
+        table.parentNode.insertBefore(wrapper, table);
+        wrapper.appendChild(table);
+        
+        // Add zebra striping to rows
+        const rows = table.querySelectorAll('tbody tr');
+        rows.forEach((row, index) => {
+          if (index % 2 === 0) {
+            row.classList.add('even-row');
+          } else {
+            row.classList.add('odd-row');
+          }
+        });
+      });
+    }
+    
+    // Enhance blockquotes with icons
+    function enhanceBlockquotes() {
+      const blockquotes = document.querySelectorAll('.markdown-content blockquote');
+      
+      blockquotes.forEach(blockquote => {
+        if (blockquote.classList.contains('enhanced-quote')) return;
+        
+        blockquote.classList.add('enhanced-quote');
+        
+        // Add quote icon
+        const icon = document.createElement('div');
+        icon.className = 'quote-icon';
+        icon.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" />
+          </svg>
+        `;
+        
+        blockquote.insertBefore(icon, blockquote.firstChild);
+      });
+    }
+    
+    // Run all enhancements
+    enhanceCodeBlocks();
+    enhanceTables();
+    enhanceBlockquotes();
+    
+    // Clean up observers when navigating away
+    document.addEventListener('spa-navigation-start', () => {
+      if (headingObserver) {
+        headingObserver.disconnect();
+      }
+    });
+  }
+  
+  // Initialize on first load
+  document.addEventListener('DOMContentLoaded', setupBlogPostTransitions);
+  
+  // Re-initialize when content changes via Astro's view transitions
+  document.addEventListener('astro:page-load', setupBlogPostTransitions);
+  
+  // For compatibility with custom transition system
+  document.addEventListener('page-transition-complete', setupBlogPostTransitions);
+  
+  // Also initialize when SPA navigation completes
+  document.addEventListener('spa-navigation-complete', setupBlogPostTransitions);
+</script>
+
+<style>
+  /* Enhanced hero image styling */
+  article img:first-of-type {
+    border-radius: 1rem;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    transition: transform 0.3s ease;
+  }
+  
+  article img:first-of-type:hover {
+    transform: scale(1.01);
+  }
+  
+  /* Article entrance animation */
+  .article-entering {
+    animation: article-fade-in 0.8s ease-out forwards;
+  }
+  
+  @keyframes article-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  /* Rest of the styles remain unchanged... */
+</style>
+

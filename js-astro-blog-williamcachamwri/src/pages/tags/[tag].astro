@@ -1,0 +1,405 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import FormattedDate from '../../components/FormattedDate.astro';
+
+// Add this near the top of the frontmatter section
+export const prerender = true;
+
+export async function getStaticPaths() {
+  const allPosts = await getCollection('blog');
+  
+  // Get all unique tags
+  const uniqueTags = [...new Set(allPosts.flatMap(post => post.data.tags || []))];
+  
+  // Create a path for each tag
+  return uniqueTags.map(tag => {
+    // Make tag matching case-insensitive
+    const filteredPosts = allPosts.filter(post => 
+      post.data.tags?.some(t => t.toLowerCase() === (tag as string).toLowerCase()) // Explicitly cast tag to string
+    );
+    return {
+      params: { tag },
+      props: { posts: filteredPosts },
+    };
+  });
+}
+
+const { tag } = Astro.params as { tag: string }; // Explicitly type tag as string
+const { posts = [] } = Astro.props;
+
+// Kiểm tra và log số lượng bài viết để debug
+console.log(`Tag: ${tag}, Number of posts: ${posts.length}`);
+
+// Sort posts by date (only if posts array exists and has items)
+const sortedPosts = posts && posts.length > 0 
+  ? [...posts].sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+  : [];
+
+// Log sau khi sắp xếp để kiểm tra
+console.log(`Sorted posts length: ${sortedPosts.length}`);
+
+// Generate a consistent but random-looking hue for the tag
+const tagHue = Math.abs(tag.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % 360);
+
+// Generate related tags (tags that appear together with the current tag)
+const relatedTags = [...new Set(
+  sortedPosts.flatMap(post => post.data.tags || [])
+    .filter(t => t !== tag)
+)].slice(0, 5);
+---
+
+<BaseLayout title={`Posts tagged with "${tag}"`}>
+  <div class="max-w-5xl mx-auto px-4 py-10 sm:py-16">
+    <!-- Header section với màu zinc thay vì gray -->
+    <div class="relative mb-10 sm:mb-16">
+      <div class="absolute -top-20 -left-20 w-48 sm:w-64 h-48 sm:h-64 bg-zinc-100 dark:bg-zinc-900/30 rounded-full blur-3xl opacity-30 animate-blob"></div>
+      <div class="absolute -bottom-10 -right-10 w-36 sm:w-48 h-36 sm:h-48 bg-zinc-200 dark:bg-zinc-900/20 rounded-full blur-2xl opacity-20 animate-blob animation-delay-2000"></div>
+      
+      <div class="relative text-center sm:text-left">
+        <a href="/tags" class="inline-flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors mb-4 group">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 transition-transform duration-300 group-hover:-translate-x-1">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+          </svg>
+          <span>Back to all tags</span>
+          <span class="block max-w-0 group-hover:max-w-full transition-all duration-300 h-0.5 bg-zinc-300 dark:bg-zinc-700"></span>
+        </a>
+        
+        <div class="flex flex-col sm:flex-row sm:items-center gap-4 mb-2 justify-center sm:justify-start">
+          <div class="tag-icon flex items-center justify-center w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 shadow-sm mx-auto sm:mx-0">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-zinc-700 dark:text-zinc-300">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z" />
+            </svg>
+          </div>
+          
+          <h1 class="text-3xl sm:text-4xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+            <span class="relative">
+              #{tag}
+              <span class="absolute -bottom-1 left-0 w-full h-1 bg-zinc-200 dark:bg-zinc-700"></span>
+              <span class="absolute -bottom-1 left-0 w-1/2 h-1 bg-zinc-900 dark:bg-zinc-100 opacity-70 animate-expand"></span>
+            </span>
+          </h1>
+        </div>
+        
+        <p class="text-base sm:text-lg text-zinc-600 dark:text-zinc-400 mt-4 max-w-2xl mx-auto sm:mx-0">
+          Exploring <span class="font-medium text-zinc-900 dark:text-zinc-100">{sortedPosts.length}</span> articles tagged with <span class="font-medium text-zinc-900 dark:text-zinc-100">"{tag}"</span>
+        </p>
+      </div>
+    </div>
+    
+    <!-- Related tags section - chuyển sang màu zinc -->
+    {relatedTags.length > 0 && (
+      <div class="mb-8 sm:mb-12 overflow-x-auto pb-4 hide-scrollbar">
+        <h2 class="text-lg font-medium text-zinc-900 dark:text-zinc-100 mb-3 text-center sm:text-left">Related topics</h2>
+        <div class="flex gap-2 flex-nowrap justify-center sm:justify-start">
+          {relatedTags.map(relatedTag => (
+            <a 
+              href={`/tags/${relatedTag}`}
+              class="flex-shrink-0 inline-flex items-center rounded-full px-3 py-1.5 text-sm font-medium bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+            >
+              #{relatedTag}
+            </a>
+          ))}
+        </div>
+      </div>
+    )}
+    
+    <!-- Posts list với màu zinc -->
+    <div class="relative">
+      <div class="absolute inset-0 bg-grid-pattern opacity-5 dark:opacity-10 pointer-events-none"></div>
+      
+      <div class="relative space-y-6 sm:space-y-8">
+        {sortedPosts.map((post) => (
+          <article class="group relative flex flex-col p-5 sm:p-8 rounded-2xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 transition-all duration-300 hover:shadow-md hover-card max-w-2xl mx-auto sm:mx-0">
+            <div class="absolute inset-0 bg-gradient-to-br from-zinc-50/0 to-zinc-100/0 dark:from-zinc-900/0 dark:to-zinc-800/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-2xl"></div>
+            
+            <div class="flex flex-col sm:flex-row gap-5 sm:gap-6">
+              {post.data.image && (
+                <div class="flex-shrink-0 w-full sm:w-56 h-40 rounded-xl overflow-hidden shadow-sm group-hover:shadow-md transition-all duration-300 mx-auto sm:mx-0">
+                  <img
+                    src={post.data.image}
+                    alt={post.data.title}
+                    class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    loading="lazy"
+                  />
+                </div>
+              )}
+              
+              <div class="flex-1">
+                <!-- Inside the article element, add like count to the metadata section -->
+                <div class="flex flex-wrap items-center text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 gap-3 sm:gap-4 mb-2 sm:mb-3 justify-center sm:justify-start">
+                  {post.data.pubDate && (
+                    <time datetime={post.data.pubDate.toISOString()} class="flex items-center gap-1.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5 sm:w-4 sm:h-4">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0 
+                        A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                      </svg>
+                      <FormattedDate date={post.data.pubDate} /> <!-- Remove format prop -->
+                    </time>
+                  )}
+                  
+                  {post.data.readingTime && (
+                    <span class="flex items-center gap-1.5">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3.5 h-3.5 sm:w-4 sm:h-4">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {post.data.readingTime}
+                    </span>
+                  )}
+                  
+                  <!-- Remove the like count display section -->
+                </div>
+                
+                <h2 class="text-xl sm:text-2xl font-semibold text-zinc-900 dark:text-zinc-100 mb-2 sm:mb-3 group-hover:text-zinc-700 dark:group-hover:text-zinc-300 transition-colors text-center sm:text-left">
+                  <a href={`/blog/${post.slug}/`} class="before:absolute before:inset-0">
+                    {post.data.title}
+                  </a>
+                </h2>
+                
+                <p class="text-sm sm:text-base text-zinc-600 dark:text-zinc-400 mb-4 line-clamp-2 sm:line-clamp-3 text-center sm:text-left">
+                  {post.data.description}
+                </p>
+              </div>
+            </div>
+            
+            <div class="flex flex-wrap justify-center sm:justify-between items-end mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800">
+              {post.data.tags && post.data.tags.length > 0 && (
+                <div class="flex flex-wrap gap-2 mb-3 sm:mb-0 justify-center sm:justify-start">
+                  {post.data.tags.slice(0, 3).map(postTag => (
+                    <a 
+                      href={`/tags/${postTag}`}
+                      class={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                        postTag === tag 
+                          ? 'bg-zinc-900/10 text-zinc-900 dark:bg-zinc-100/20 dark:text-zinc-100' 
+                          : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                      }`}
+                    >
+                      #{postTag}
+                    </a>
+                  ))}
+                  {post.data.tags.length > 3 && (
+                    <span class="inline-flex items-center rounded-full bg-zinc-50 px-2 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+                      +{post.data.tags.length - 3}
+                    </span>
+                  )}
+                </div>
+              )}
+              
+              <div class="mx-auto sm:ml-auto sm:mr-0">
+                <a 
+                  href={`/blog/${post.slug}/`}
+                  class="inline-flex items-center text-sm font-medium text-zinc-700 dark:text-zinc-300 group-hover:text-zinc-900 dark:group-hover:text-zinc-100 transition-colors"
+                  aria-hidden="true"
+                  tabindex="-1"
+                >
+                  <span class="relative overflow-hidden inline-block">
+                    <span class="block transition-transform duration-300 group-hover:-translate-y-full">Read article</span>
+                    <span class="absolute top-0 left-0 translate-y-full group-hover:translate-y-0 transition-transform duration-300 whitespace-nowrap">Explore now</span>
+                  </span>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 ml-1 transition-transform duration-300 group-hover:translate-x-1">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                  </svg>
+                </a>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+    
+    <!-- Empty state với màu zinc -->
+    {sortedPosts.length === 0 && (
+      <div class="text-center py-12 sm:py-20">
+        <div class="inline-flex items-center justify-center w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-zinc-100 dark:bg-zinc-800 mb-4 sm:mb-6">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 sm:w-10 sm:h-10 text-zinc-500 dark:text-zinc-400">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+        </div>
+        <h2 class="text-xl sm:text-2xl font-semibold text-zinc-900 dark:text-zinc-100 mb-2">No posts found</h2>
+        <p class="text-zinc-600 dark:text-zinc-400">There are no posts with this tag yet.</p>
+        <a href="/blog" class="inline-flex items-center gap-2 mt-6 px-4 py-2 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all duration-300 text-sm font-medium">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 12h-15m0 0l6.75 6.75M4.5 12l6.75-6.75" />
+          </svg>
+          <span>Browse all articles</span>
+        </a>
+      </div>
+    )}
+  </div>
+</BaseLayout>
+
+<style>
+  /* Grid pattern background */
+  .bg-grid-pattern {
+    background-size: 30px 30px;
+    background-image: radial-gradient(circle, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+  }
+  
+  :global(.dark) .bg-grid-pattern {
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  }
+  
+  /* Hide scrollbar but keep functionality */
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  
+  /* Animated underline */
+  @keyframes expand {
+    from { width: 0; }
+    to { width: 50%; }
+  }
+  
+  .animate-expand {
+    animation: expand 1s ease-out forwards;
+  }
+  
+  /* Blob animation */
+  .animate-blob {
+    animation: blob 7s infinite;
+  }
+  
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+  
+  @keyframes blob {
+    0% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    33% {
+      transform: translate(20px, -20px) scale(1.1);
+    }
+    66% {
+      transform: translate(-20px, 20px) scale(0.9);
+    }
+    100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+  }
+  
+  /* Hover card effect */
+  .hover-card {
+    transform: translateY(0);
+    transition: transform 0.3s ease, box-shadow 0.3s ease, background-color 0.3s ease;
+  }
+  
+  @media (hover: hover) {
+    .hover-card:hover {
+      transform: translateY(-2px);
+    }
+  }
+  
+  /* Line clamp for descriptions */
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 640px) {
+    .animate-blob {
+      animation-duration: 10s;
+    }
+  }
+</style>
+
+<script>
+  // Handle SPA transitions for tag pages
+  function setupSPATransitions() {
+    // Handle all internal links for SPA transitions
+    document.querySelectorAll('a[href^="/"]').forEach(link => {
+      // Skip links that are anchor links, external links, or already processed
+      if (link.getAttribute('href').includes('#') || 
+          link.getAttribute('target') === '_blank' || 
+          link.hasAttribute('data-spa-handled')) {
+        return;
+      }
+      
+      // Mark as handled to avoid duplicate listeners
+      link.setAttribute('data-spa-handled', 'true');
+      
+      link.addEventListener('click', (e) => {
+        // Don't handle if modifier keys are pressed (for opening in new tab, etc.)
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+          return;
+        }
+        
+        e.preventDefault();
+        const targetHref = link.getAttribute('href');
+        
+        // Trigger page transition animation
+        const pageTransition = document.getElementById('page-transition');
+        if (pageTransition) {
+          pageTransition.classList.remove('opacity-0');
+          pageTransition.classList.add('opacity-100');
+          
+          // Navigate after transition effect
+          setTimeout(() => {
+            window.location.href = targetHref;
+          }, 300);
+        } else {
+          // Fallback if transition element doesn't exist
+          window.location.href = targetHref;
+        }
+      });
+    });
+    
+    // Initialize animations for tag page
+    function animateTagContent() {
+      // Animate header elements
+      const headerElements = document.querySelectorAll('h1, .tag-icon, .tag-description');
+      headerElements.forEach((el, index) => {
+        setTimeout(() => {
+          el.classList.add('animate-reveal');
+        }, 100 + (index * 150));
+      });
+      
+      // Animate posts with staggered delay
+      const articles = document.querySelectorAll('article');
+      articles.forEach((article, index) => {
+        setTimeout(() => {
+          article.classList.add('animate-reveal');
+        }, 400 + (index * 100));
+      });
+      
+      // Animate related tags
+      const relatedTags = document.querySelectorAll('.related-tags a');
+      relatedTags.forEach((tag, index) => {
+        setTimeout(() => {
+          tag.classList.add('animate-reveal');
+        }, 600 + (index * 50));
+      });
+    }
+    
+    // Run animations
+    animateTagContent();
+  }
+  
+  // Initialize on first load
+  document.addEventListener('DOMContentLoaded', setupSPATransitions);
+  
+  // Re-initialize when content changes via Astro's view transitions
+  document.addEventListener('astro:page-load', setupSPATransitions);
+  
+  // For compatibility with custom transition system
+  document.addEventListener('page-transition-complete', setupSPATransitions);
+</script>
+
+<!-- Add this at the end of your page -->
+</BaseLayout>

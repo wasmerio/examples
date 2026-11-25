@@ -1,0 +1,209 @@
+---
+import Layout from '@/layouts/Layout.astro'
+import { getCollection, render } from 'astro:content'
+import { Separator } from '@/components/ui/separator'
+import { Button } from '@/components/ui/button'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator
+} from '@/components/ui/breadcrumb'
+import DynamicToc from '@/components/astro/DynamicToc.astro'
+import { AuthorMetadata } from '@/components/AuthorAvatar'
+import { getRelatedPosts, getPostNavigation, calculateReadTime } from '@/utils/blog'
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+
+import Blog from '@/components/blocks/blog-related-post/blog-related-post'
+import CTA from '@/components/blocks/cta-section/cta-section'
+
+export async function getStaticPaths() {
+  const blogEntries = await getCollection('blog')
+  return blogEntries.map(entry => ({
+    params: { slug: entry.id },
+    props: { entry }
+  }))
+}
+
+const { entry } = Astro.props
+const { Content, headings } = await render(entry)
+
+// Get all posts for navigation and related posts
+const allPosts = await getCollection('blog')
+const publishedPosts = allPosts
+
+// Get related posts (same category)
+const relatedPosts = getRelatedPosts(publishedPosts, entry.id, entry.data.category, 3)
+
+// Map relatedPosts to BlogPost type for the Blog component
+const formattedRelatedPosts = relatedPosts.map(post => ({
+  id: post.data.id,
+  slug: post.data.slug,
+  title: post.data.title,
+  description: post.data.description,
+  imageUrl: post.data.imageUrl || '',
+  imageAlt: post.data.imageAlt || '',
+  pubDate: post.data.pubDate,
+  author: post.data.author,
+  avatarUrl: post.data.avatarUrl || '',
+  category: post.data.category,
+  readTime: post.data.readTime || calculateReadTime(post.body),
+  featured: post.data.featured || false
+}))
+
+// Get previous and next posts
+const { previous: previousPost, next: nextPost } = getPostNavigation(publishedPosts, entry.id)
+
+// Calculate read time if not provided
+const readTime = entry.data.readTime || calculateReadTime(entry.body)
+
+const schema = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: entry.data.title,
+  description: entry.data.description,
+  image: entry.data.imageUrl,
+  datePublished: entry.data.pubDate,
+  author: {
+    '@type': 'Person',
+    name: entry.data.author
+  }
+}
+---
+
+<Layout
+  title={entry.data.title}
+  description={entry.data.description}
+  image={entry.data.imageUrl}
+  type='article'
+  publishedTime={entry.data.pubDate}
+  author={entry.data.author}
+  schema={schema}
+>
+  <main class='flex flex-col'>
+    <section class='py-8 sm:pt-16 sm:pb-24'>
+      <div class='mx-auto max-w-7xl space-y-8 px-4 sm:px-6 lg:space-y-16 lg:px-8'>
+        <div class='gap-16 md:grid md:grid-cols-5 lg:grid-cols-7'>
+          <!-- Table of Contents Sidebar -->
+          <div class='hidden md:col-span-2 md:block lg:col-span-2'>
+            <DynamicToc headings={headings} />
+          </div>
+
+          <!-- Main Content -->
+          <div class='space-y-12 md:col-span-3 lg:col-span-5'>
+            <!-- Breadcrumbs -->
+            <div class='space-y-6'>
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem>
+                    <BreadcrumbLink href='/'>Home</BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbLink href='/#categories'>Blog</BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>{entry.data.category}</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
+
+              <!-- Title and Description -->
+              <h1 class='text-foreground text-4xl font-semibold'>{entry.data.title}</h1>
+              <p class='text-muted-foreground text-xl'>{entry.data.description}</p>
+
+              <Separator />
+
+              <!-- Post Metadata -->
+              <div class='flex flex-wrap justify-between gap-4'>
+                <div class='flex flex-wrap items-center gap-3'>
+                  <AuthorMetadata client:load avatarUrl={entry.data.avatarUrl} author={entry.data.author} />
+                  <div class='flex flex-col gap-1'>
+                    <span class='text-muted-foreground text-sm'>Written by</span>
+                    <span class='text-foreground text-sm font-medium'>{entry.data.author}</span>
+                  </div>
+                </div>
+                <div class='flex flex-col gap-1.5'>
+                  <span class='text-muted-foreground text-sm'>Read Time</span>
+                  <span class='text-foreground text-sm font-medium'>{readTime} minute read</span>
+                </div>
+                <div class='flex flex-col gap-1.5'>
+                  <span class='text-muted-foreground text-sm'>Posted on</span>
+                  <span class='text-foreground text-sm font-medium'>{entry.data.pubDate}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Hero Image -->
+            {
+              entry.data.imageUrl && (
+                <div>
+                  <img
+                    src={entry.data.imageUrl}
+                    alt={entry.data.title}
+                    class='max-h-148 w-full rounded-xl max-md:rounded-md'
+                    loading='lazy'
+                  />
+                </div>
+              )
+            }
+
+            <!-- Article Content -->
+            <article id='content' class='prose dark:prose-invert max-w-none'>
+              <Content />
+            </article>
+
+            <!-- Post Navigation -->
+            <div class='flex w-full justify-between pt-8'>
+              {
+                previousPost ? (
+                  <a href={`/blog/${previousPost.id}`}>
+                    <Button variant='outline'>
+                      <ChevronLeftIcon className='size-4' />
+                      Previous Post
+                    </Button>
+                  </a>
+                ) : (
+                  <Button variant='outline' disabled>
+                    <ChevronLeftIcon className='size-4' />
+                    Previous Post
+                  </Button>
+                )
+              }
+
+              {
+                nextPost ? (
+                  <a class='ms-auto' href={`/blog/${nextPost.id}`}>
+                    <Button
+                      className='bg-sky-600/10 text-sky-600 hover:bg-sky-600/20 focus-visible:ring-sky-600/20 dark:bg-sky-400/10 dark:text-sky-400 dark:hover:bg-sky-400/20 dark:focus-visible:ring-sky-400/40'
+                      variant='outline'
+                    >
+                      Next Post
+                      <ChevronRightIcon className='size-4' />
+                    </Button>
+                  </a>
+                ) : (
+                  <Button
+                    className='ml-auto bg-sky-600/10 text-sky-600 hover:bg-sky-600/20 focus-visible:ring-sky-600/20 dark:bg-sky-400/10 dark:text-sky-400 dark:hover:bg-sky-400/20 dark:focus-visible:ring-sky-400/40'
+                    variant='outline'
+                    disabled
+                  >
+                    Next Post
+                    <ChevronRightIcon className='size-4' />
+                  </Button>
+                )
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <Blog relatedPosts={formattedRelatedPosts} />
+
+    <CTA />
+  </main>
+</Layout>

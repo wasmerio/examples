@@ -391,9 +391,9 @@ function isFinal(status) {
   return FINAL.has(status) || String(status).startsWith('duplicate-of:');
 }
 
-function run(cmd, args, opts = {}) {
+export function run(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env || process.env });
+    const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env || process.env, timeout: opts.timeout });
     let out = '';
     let err = '';
     child.stdout.on('data', (chunk) => { out += chunk; });
@@ -411,22 +411,22 @@ function run(cmd, args, opts = {}) {
   });
 }
 
-function sleep(ms) {
+export function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function tailText(error) {
+export function tailText(error) {
   const text = `${error && error.out ? error.out : ''}\n${error && error.err ? error.err : ''}\n${error && error.message ? error.message : error}`;
   return text.trim().split('\n').filter(Boolean).slice(-20).join('\n').slice(-1800);
 }
 
-function flag(name, fallback = '') {
+export function flag(name, fallback = '') {
   const index = process.argv.indexOf(name);
   if (index === -1 || !process.argv[index + 1]) return fallback;
   return process.argv[index + 1];
 }
 
-function walk(dir, skip = SIZE_SKIP, files = []) {
+export function walk(dir, skip = SIZE_SKIP, files = []) {
   if (!existsSync(dir)) return files;
   for (const name of readdirSync(dir)) {
     if (skip.has(name) && path.dirname(dir) !== dir) {
@@ -1072,7 +1072,7 @@ async function selectHugo(row, dest, env) {
   return { error: firstError || 'no Hugo version produced a site' };
 }
 
-function absUrl(base, ref) {
+export function absUrl(base, ref) {
   try { return new URL(ref, base).href; } catch { return ''; }
 }
 
@@ -1128,17 +1128,17 @@ async function liveChecks(demo) {
 }
 
 let gitChain = Promise.resolve();
-function withGit(fn) {
+export function withGit(fn) {
   const next = gitChain.then(fn, fn);
   gitChain = next.then(() => {}, () => {});
   return next;
 }
 
-async function gitOut(args) {
+export async function gitOut(args) {
   return (await run('git', args, { cwd: ROOT })).out.trim();
 }
 
-async function assertPublishBranch(branch) {
+export async function assertPublishBranch(branch) {
   const current = await gitOut(['rev-parse', '--abbrev-ref', 'HEAD']);
   if (!current || current === 'HEAD' || current === 'main' || current === 'master') throw new Error(`Refusing to publish from ${current || 'detached HEAD'}`);
   if (branch && current !== branch) throw new Error(`On ${current}, expected ${branch}`);
@@ -1232,7 +1232,7 @@ async function unpublishFolder(folder, branch, state) {
   });
 }
 
-async function deleteCreated(created, owner) {
+export async function deleteCreated(created, owner) {
   if (!created) return '';
   try {
     await run('wasmer', ['app', 'delete', '--non-interactive', `${owner}/${created}`]);
@@ -1242,7 +1242,7 @@ async function deleteCreated(created, owner) {
   }
 }
 
-async function withBackoff(fn) {
+export async function withBackoff(fn) {
   let wait = 4000;
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     try { return await fn(); } catch (error) {
@@ -1256,7 +1256,7 @@ async function withBackoff(fn) {
   return null;
 }
 
-function loadJsonl(file) {
+export function loadJsonl(file) {
   const map = new Map();
   if (!existsSync(file)) return map;
   for (const line of readFileSync(file, 'utf8').split('\n')) {
@@ -1296,7 +1296,7 @@ function readSet(file) {
   return new Set(readFileSync(file, 'utf8').split('\n').map((line) => line.trim()).filter(Boolean));
 }
 
-async function mapPool(items, limit, fn) {
+export async function mapPool(items, limit, fn) {
   let cursor = 0;
   const size = Math.max(1, Math.min(limit, items.length || 1));
   async function worker() {

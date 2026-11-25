@@ -1,0 +1,6 @@
+---
+title: Posts
+---
+
+Hello world!
+

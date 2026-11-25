@@ -1,0 +1,228 @@
+---
+import Card from "./Card/index.astro";
+import Button from "./Button.astro";
+import { Icon } from "astro-icon/components";
+import Tooltip from "./Tooltip/index";
+import { SITE } from "../site-config";
+import AvatarSprite from "./AvatarSprite.astro";
+---
+
+<Card colSpan="md:col-span-3" rowSpan="md:row-span-4" class="pad-lg">
+  <div class="flex w-full h-full items-center">
+    <div class="flex flex-col justify-between gap-4">
+      <div class="flex flex-col h-full">
+        <h6 class="text-sm font-light m-0 text-darkslate-300">welcome</h6>
+
+        <p class="sr-only">
+          Hi, I'm {SITE.author.fullName}, a full-stack developer
+          (frontend-leaning) with a good eye for design. I've worked across
+          startups, consultancy agencies and corporate companies, often as the
+          bridge between designers and engineers. If you have a project in mind,
+          want to collaborate, or just want to say hello, I'd love to hear from
+          you. Beyond coding, I'm passionate about design, illustration,
+          animation, photography, and parametric 3D modelling. I love
+          travelling, and I have an unusual hobby of collecting vintage
+          passports, fascinating pieces of history.
+        </p>
+        <p aria-hidden="true" class="m-0 font-light text-base">
+          <span>
+            Hi, I'm <b class="font-bold">{SITE.author.fullName}</b>, a
+            full-stack developer (frontend-leaning) with a good eye for design.
+          </span>
+          <br />
+          <span class="block mt-2">
+            I've worked across startups, consultancy agencies and corporate
+            companies, often as the bridge between designers and engineers.
+          </span>
+          <span class="block mt-2">
+            If you have a project in mind, want to collaborate, or just want to
+            say hello, I'd love to hear from you.
+          </span>
+          <span class="block mt-2">
+            Beyond coding, I'm passionate about design, illustration, animation,
+            photography, parametric 3D modelling, and genealogy. I love
+            travelling, and I collect vintage passports.
+          </span>
+        </p>
+      </div>
+      <div class="flex flex-col lg:flex-row gap-2 lg:gap-4">
+        <div class="flex gap-2 lg:gap-4">
+          <a
+            href={SITE.links.github}
+            aria-label="github profile"
+            target="_blank"
+          >
+            <Button aria-label="github profile">
+              <Icon name="pixel-github" />
+              <span class="sr-only" data-umami-event="github button"
+                >GitHub Profile</span
+              >
+            </Button>
+          </a>
+          <a
+            href={SITE.links.linkedin}
+            aria-label="linkedin profile"
+            target="_blank"
+          >
+            <Button aria-label="linkedin profile">
+              <Icon name="pixel-linkedin" />
+              <span class="sr-only" data-umami-event="linkedin button"
+                >Linkedin Profile</span
+              >
+            </Button>
+          </a>
+          <Tooltip client:visible>
+            <Button aria-label="easter egg btn">
+              <Icon name="pixel-laugh" />
+              <span class="sr-only" data-umami-event="Easter egg button"
+                >Easter egg button</span
+              >
+            </Button>
+          </Tooltip>
+        </div>
+      </div>
+    </div>
+    <div
+      id="memoji-spin-area"
+      class="contents md:flex md:flex-col md:items-center md:pb-3 md:select-none md:touch-pan-y md:cursor-[var(--cursor-rotate)]"
+    >
+      <AvatarSprite
+        id="memoji-avatar"
+        themed
+        levitate
+        spinOnReveal
+        height="270px"
+        label={`memoji of ${SITE.author.firstName}, slowly rotating`}
+        class="select-none absolute right-[-110px] bottom-[-20px] z-[-1] opacity-50 md:opacity-100 md:relative md:right-auto md:bottom-auto md:z-auto pointer-events-none md:pointer-events-auto"
+      />
+      <Icon
+        name="pixel-rotate"
+        aria-hidden="true"
+        class="hidden md:block w-[26px] h-auto mt-4 text-darkslate-300 opacity-40"
+      />
+    </div>
+  </div>
+</Card>
+
+<script>
+  import {
+    cellPosition,
+    DEFAULT_SHEET,
+    SHEET_BY_THEME,
+    SPRITE,
+  } from "../lib/avatar-sprite.mjs";
+
+  const PX_PER_FRAME = 14;
+
+  const sheetFor = (theme: string | null): string =>
+    SHEET_BY_THEME[theme ?? "default"] ?? DEFAULT_SHEET;
+
+  /* Swap only once decoded: an unfetched sheet paints the sprite blank. */
+  const decoding = new Map<string, Promise<unknown>>();
+
+  function warmSheet(url: string) {
+    let pending = decoding.get(url);
+    if (!pending) {
+      const img = new Image();
+      img.src = url;
+      pending = img.decode().catch(() => {});
+      decoding.set(url, pending);
+    }
+    return pending;
+  }
+
+  async function updateMemojiImage() {
+    const next = `url("${sheetFor(localStorage.getItem("theme"))}")`;
+    const root = document.documentElement;
+    if (root.style.getPropertyValue("--memoji-sheet") === next) return;
+
+    await warmSheet(sheetFor(localStorage.getItem("theme")));
+    root.style.setProperty("--memoji-sheet", next);
+  }
+
+  function prewarmOnThemeHover() {
+    document.querySelectorAll<HTMLElement>(".theme-btn").forEach((btn) => {
+      btn.addEventListener(
+        "pointerenter",
+        () => warmSheet(sheetFor(btn.dataset.theme ?? null)),
+        { once: true },
+      );
+    });
+  }
+
+  function initPointerSpin() {
+    const avatar = document.getElementById("memoji-avatar");
+    // The area spans the avatar, the rotate hint and the gap between them.
+    const area = document.getElementById("memoji-spin-area");
+    if (!avatar || !area) return;
+
+    const duration =
+      parseFloat(
+        getComputedStyle(avatar).getPropertyValue("--sprite-duration"),
+      ) * 1000;
+    let frame = 0;
+    let lastX = 0;
+    let travel = 0;
+
+    const liveFrame = () => {
+      const spin = avatar
+        .getAnimations()
+        .find((a) => (a as CSSAnimation).animationName === "avatar-sprite-row");
+      const progress = spin?.effect?.getComputedTiming().progress;
+      return progress == null
+        ? frame
+        : Math.floor(progress * SPRITE.FRAMES) % SPRITE.FRAMES;
+    };
+
+    area.addEventListener("pointerenter", (event) => {
+      lastX = event.clientX;
+      travel = 0;
+      frame = liveFrame();
+      avatar.classList.add("is-manual");
+      avatar.style.backgroundPosition = cellPosition(frame);
+    });
+
+    area.addEventListener("pointermove", (event) => {
+      if (!avatar.classList.contains("is-manual")) return;
+      travel += event.clientX - lastX;
+      lastX = event.clientX;
+
+      const steps = Math.trunc(travel / PX_PER_FRAME);
+      if (!steps) return;
+      travel -= steps * PX_PER_FRAME;
+      frame =
+        (((frame + steps) % SPRITE.FRAMES) + SPRITE.FRAMES) % SPRITE.FRAMES;
+      avatar.style.backgroundPosition = cellPosition(frame);
+    });
+
+    // Holding the button keeps the drag alive outside the area until release.
+    area.addEventListener("pointerdown", (event) => {
+      area.setPointerCapture(event.pointerId);
+    });
+
+    area.addEventListener("pointerleave", () => {
+      avatar.classList.remove("is-manual");
+      avatar.style.backgroundPosition = "";
+      avatar.style.animationDelay = `-${(frame / SPRITE.FRAMES) * duration}ms`;
+    });
+  }
+
+  const observer = new MutationObserver((mutations) => {
+    if (mutations.some((mutation) => mutation.attributeName === "class")) {
+      updateMemojiImage();
+    }
+  });
+
+  document.addEventListener("astro:page-load", () => {
+    updateMemojiImage();
+    initPointerSpin();
+    prewarmOnThemeHover();
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+  });
+
+  document.addEventListener("astro:before-swap", () => observer.disconnect());
+  document.addEventListener("themechange", updateMemojiImage);
+</script>

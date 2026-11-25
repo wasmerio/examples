@@ -1,0 +1,234 @@
+---
+import { getCurrentTimeInTimezone, formatTimeTo12H } from "../lib/helpers";
+import Card from "./Card/index.astro";
+import { SITE } from "../site-config";
+
+const homeTzAbbr =
+  new Intl.DateTimeFormat("en-US", {
+    timeZone: SITE.location.timezone,
+    timeZoneName: "short",
+  })
+    .formatToParts(new Date())
+    .find((p) => p.type === "timeZoneName")?.value ??
+  SITE.location.timezone.split("/").pop();
+---
+
+<script>
+  import { getCurrentTimeInTimezone } from "../lib/helpers";
+
+  let interval: ReturnType<typeof setInterval>;
+  let homeTimezone = "";
+  let use24HourOverride: boolean | null = null;
+
+  function getHomeTimezoneFromDom(): string {
+    const el = document.getElementById("homeTzDisplay");
+    return (el as HTMLSpanElement | null)?.dataset?.timezone || "";
+  }
+
+  function getVisitorTimezone(): string {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  }
+
+  function uses24HourFormat(): boolean {
+    if (use24HourOverride !== null) return use24HourOverride;
+    const formatter = new Intl.DateTimeFormat(navigator.language, {
+      hour: "numeric",
+    });
+    const parts = formatter.formatToParts(new Date());
+    const hourPart = parts.find((p) => p.type === "hour");
+    return hourPart ? !parts.some((p) => p.type === "dayPeriod") : false;
+  }
+
+  function formatTimeForTimezone(
+    date: Date,
+    timezone: string,
+    use24Hour: boolean,
+  ): string {
+    return new Intl.DateTimeFormat(navigator.language, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: !use24Hour,
+      timeZone: timezone,
+    }).format(date);
+  }
+
+  function getTimezoneAbbreviation(timezone: string): string {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      timeZoneName: "short",
+    }).formatToParts(new Date());
+    const tzName = parts.find((p) => p.type === "timeZoneName");
+    return tzName ? tzName.value : timezone.split("/").pop() || timezone;
+  }
+
+  function getOffsetLabel(
+    homeTimezone: string,
+    visitorTimezone: string,
+  ): string {
+    const now = new Date();
+    const toMins = (tz: string) => {
+      const d = new Date(now.toLocaleString("en-US", { timeZone: tz }));
+      return d.getHours() * 60 + d.getMinutes();
+    };
+    let diff = toMins(homeTimezone) - toMins(visitorTimezone);
+    if (diff > 720) diff -= 1440;
+    if (diff < -720) diff += 1440;
+
+    if (diff === 0) return "same timezone";
+    const abs = Math.abs(diff);
+    const h = Math.floor(abs / 60);
+    const m = abs % 60;
+    const label = m > 0 ? `${h}h ${m}m` : `${h}h`;
+    return diff > 0 ? `${label} ahead of you` : `${label} behind you`;
+  }
+
+  let italyTimeDisplay: HTMLElement | null = null;
+  let visitorTimeDisplay: HTMLElement | null = null;
+  let visitorTzDisplay: HTMLElement | null = null;
+  let homeTzDisplay: HTMLElement | null = null;
+  let offsetDisplay: HTMLElement | null = null;
+  let formatToggle: HTMLElement | null = null;
+
+  function cacheDomRefs() {
+    italyTimeDisplay = document.getElementById("italyTimeDisplay");
+    visitorTimeDisplay = document.getElementById("visitorTimeDisplay");
+    visitorTzDisplay = document.getElementById("visitorTzDisplay");
+    homeTzDisplay = document.getElementById("homeTzDisplay");
+    offsetDisplay = document.getElementById("offsetDisplay");
+    formatToggle = document.getElementById("formatToggle");
+  }
+
+  function updateToggleLabel() {
+    if (!formatToggle) return;
+    formatToggle.textContent = uses24HourFormat() ? "12h" : "24h";
+  }
+
+  function updateClock() {
+    if (!homeTimezone) homeTimezone = getHomeTimezoneFromDom() || "UTC";
+
+    const visitorTimezone = getVisitorTimezone();
+    const homeTime = getCurrentTimeInTimezone(homeTimezone);
+    const visitorTime = getCurrentTimeInTimezone(visitorTimezone);
+    const use24Hour = uses24HourFormat();
+
+    if (italyTimeDisplay) {
+      italyTimeDisplay.textContent = formatTimeForTimezone(
+        homeTime,
+        homeTimezone,
+        use24Hour,
+      );
+      italyTimeDisplay.setAttribute("datetime", homeTime.toISOString());
+    }
+    if (visitorTimeDisplay) {
+      visitorTimeDisplay.textContent = formatTimeForTimezone(
+        visitorTime,
+        visitorTimezone,
+        use24Hour,
+      );
+      visitorTimeDisplay.setAttribute("datetime", visitorTime.toISOString());
+    }
+    if (visitorTzDisplay) {
+      visitorTzDisplay.textContent = getTimezoneAbbreviation(visitorTimezone);
+    }
+    if (homeTzDisplay) {
+      homeTzDisplay.textContent = getTimezoneAbbreviation(homeTimezone);
+    }
+    if (offsetDisplay) {
+      offsetDisplay.textContent = getOffsetLabel(homeTimezone, visitorTimezone);
+    }
+  }
+
+  document.addEventListener("astro:page-load", () => {
+    cacheDomRefs();
+    updateClock();
+    updateToggleLabel();
+    interval = setInterval(updateClock, 60_000);
+
+    formatToggle?.addEventListener("click", () => {
+      use24HourOverride = !uses24HourFormat();
+      updateClock();
+      updateToggleLabel();
+    });
+  });
+
+  document.addEventListener("astro:before-swap", () => {
+    clearInterval(interval);
+  });
+</script>
+
+<Card
+  colSpan="lg:col-span-1"
+  rowSpan="md:row-span-2"
+  padding="p-4"
+  nsPadY="1rem"
+>
+  <div class="flex flex-col h-full justify-center gap-0">
+    <!-- My time -->
+    <div
+      class="flex flex-col gap-0 md:flex-1 md:items-center md:justify-center lg:flex-none lg:items-start lg:justify-start"
+    >
+      <div class="flex items-center gap-1.5">
+        <span
+          class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse flex-shrink-0"
+        ></span>
+        <span
+          class="text-3xs font-medium uppercase tracking-widest text-darkslate-300"
+          >in {SITE.location.countryName}</span
+        >
+        <button
+          id="formatToggle"
+          class="text-4xs font-medium uppercase tracking-widest text-darkslate-300 hover:text-white border border-darkslate-400 hover:border-darkslate-200 rounded px-1.5 leading-[13px] transition-colors"
+        >
+          24h
+        </button>
+      </div>
+      <time
+        datetime=""
+        id="italyTimeDisplay"
+        class="whitespace-nowrap text-2xl font-bold tabular-nums leading-tight md:text-fluid-clock-md lg:text-fluid-clock"
+      >
+        {formatTimeTo12H(getCurrentTimeInTimezone(SITE.location.timezone))}
+      </time>
+      <div class="flex items-center gap-1 text-3xs text-darkslate-300">
+        <span id="homeTzDisplay" data-timezone={SITE.location.timezone}
+          >{homeTzAbbr}</span
+        >
+        <span class="opacity-40">·</span>
+        <span>{SITE.location.countryName}</span>
+      </div>
+    </div>
+
+    <!-- Offset divider -->
+    <div class="flex items-center gap-2">
+      <div class="flex-1 h-px bg-darkslate-400 opacity-40"></div>
+      <span
+        id="offsetDisplay"
+        class="inline-block min-w-[13ch] text-center text-3xs text-darkslate-300 whitespace-nowrap"
+        >&nbsp;</span
+      >
+      <div class="flex-1 h-px bg-darkslate-400 opacity-40"></div>
+    </div>
+
+    <!-- Your time -->
+    <div
+      class="flex flex-col gap-0 md:flex-1 md:items-center md:justify-center lg:flex-none lg:items-start lg:justify-start"
+    >
+      <span
+        class="text-3xs font-medium uppercase tracking-widest text-darkslate-300"
+        >where you are</span
+      >
+      <time
+        datetime=""
+        id="visitorTimeDisplay"
+        class="whitespace-nowrap text-2xl font-bold tabular-nums leading-tight md:text-fluid-clock-md lg:text-fluid-clock"
+      >
+        {formatTimeTo12H(getCurrentTimeInTimezone(SITE.location.timezone))}
+      </time>
+      <span
+        id="visitorTzDisplay"
+        class="inline-block min-w-[4ch] text-3xs text-darkslate-300"
+        >&nbsp;</span
+      >
+    </div>
+  </div>
+</Card>

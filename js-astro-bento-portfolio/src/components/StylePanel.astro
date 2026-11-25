@@ -1,0 +1,205 @@
+---
+import { Icon } from "astro-icon/components";
+import StyleGlyph from "./StyleGlyph.astro";
+import { STYLES } from "../lib/appearance";
+
+const BTN_BASE =
+  "relative w-full h-9 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-all duration-200 outline-none";
+const BTN = `style-btn ${BTN_BASE}`;
+---
+
+<div
+  class="style-btn-panel chrome--ns w-9 flex flex-col items-center rounded-lg bg-darkslate-500 border border-darkslate-400 shadow-lg overflow-hidden"
+>
+  <button
+    id="style-panel-toggle"
+    class="style-btn w-full flex-1 min-h-9 flex items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-all duration-200 outline-none"
+    aria-label="Toggle style panel"
+    title="Styles"
+  >
+    <Icon
+      id="style-icon-sliders"
+      name="pixel-brush"
+      class="w-[17px] h-[17px]"
+    />
+    <svg
+      id="style-icon-arrow"
+      xmlns="http://www.w3.org/2000/svg"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      class="hidden"
+    >
+      <polyline points="6,9 12,15 18,9"></polyline>
+    </svg>
+  </button>
+
+  <div
+    id="style-btn-list"
+    class="w-full overflow-hidden"
+    style="max-height:0;transition:max-height 250ms ease"
+  >
+    <div class="w-full h-px bg-white/5"></div>
+    {
+      STYLES.map(({ id, label }, i) => (
+        <button
+          class={BTN}
+          data-style={id}
+          data-label={label}
+          aria-label={`${label} style`}
+          title={label}
+        >
+          <StyleGlyph index={i} />
+          <span class="absolute top-1 right-1.5 text-4xs opacity-40 leading-none">
+            {i + 1}
+          </span>
+        </button>
+      ))
+    }
+
+    <div class="w-full h-px bg-white/5"></div>
+    <button
+      id="border-toggle"
+      class={BTN_BASE}
+      aria-label="Toggle custom card border"
+      aria-pressed="false"
+      title="Custom card border"
+    >
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linejoin="round"
+      >
+        <path
+          d="M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3z"
+        ></path>
+      </svg>
+      <span class="absolute top-1 right-1.5 text-4xs opacity-40 leading-none"
+        >B</span
+      >
+    </button>
+  </div>
+</div>
+
+<script>
+  import { CHIME, play } from "../lib/sound";
+  import {
+    applyAppearance,
+    BORDER_KEY,
+    isCustomBorder,
+    STYLES,
+  } from "../lib/appearance";
+
+  function updateStyleBtns() {
+    const saved = localStorage.getItem("portfolioStyle");
+    const current = STYLES.some((s) => s.id === saved) ? saved : "default";
+    document.querySelectorAll<HTMLElement>(".style-btn").forEach((btn) => {
+      const active = btn.dataset.style === current;
+      btn.classList.toggle("text-white", active);
+      btn.classList.toggle("text-white/50", !active);
+      btn.classList.toggle("bg-white/10", active);
+    });
+  }
+
+  function applyBorderMode(doc: Document = document) {
+    const custom = isCustomBorder();
+    doc.documentElement.classList.toggle("cards-custom", custom);
+    applyAppearance(doc.body);
+    if (doc !== document) return;
+
+    document.querySelectorAll<HTMLElement>(".style-btn").forEach((btn) => {
+      if (!btn.dataset.style) return;
+      btn.classList.toggle("opacity-40", custom);
+      btn.title = custom
+        ? `${btn.dataset.label} — switches off the custom border`
+        : (btn.dataset.label ?? "");
+    });
+
+    const toggle = document.getElementById("border-toggle");
+    toggle?.classList.toggle("text-white", custom);
+    toggle?.classList.toggle("bg-white/10", custom);
+    toggle?.setAttribute("aria-pressed", String(custom));
+    if (toggle)
+      toggle.title = custom
+        ? "Custom card border: on"
+        : "Custom card border: off";
+  }
+
+  function switchBorderMode() {
+    const custom = !isCustomBorder();
+    localStorage.setItem(BORDER_KEY, custom ? "custom" : "normal");
+
+    const settle = () => {
+      applyBorderMode();
+      updateStyleBtns();
+    };
+
+    if (
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      !document.querySelector(".card--ns")
+    ) {
+      settle();
+      return;
+    }
+
+    import("../lib/card-morph")
+      .then(({ morphCards }) => morphCards(custom))
+      .catch(() => {})
+      .finally(settle);
+  }
+
+  function setPanelOpen(open: boolean) {
+    const list = document.getElementById("style-btn-list");
+    const iconSliders = document.getElementById("style-icon-sliders");
+    const iconArrow = document.getElementById("style-icon-arrow");
+    if (list) list.style.maxHeight = open ? "360px" : "0";
+    iconSliders?.classList.toggle("hidden", open);
+    iconArrow?.classList.toggle("hidden", !open);
+    localStorage.setItem("stylePanelOpen", String(open));
+  }
+
+  document.addEventListener("astro:before-swap", (e) => {
+    applyBorderMode((e as unknown as { newDocument: Document }).newDocument);
+    document.body.classList.remove("ns-js-shape");
+  });
+
+  document.addEventListener("astro:page-load", () => {
+    applyBorderMode();
+    updateStyleBtns();
+    setPanelOpen(false);
+
+    document.getElementById("border-toggle")?.addEventListener("click", () => {
+      switchBorderMode();
+      play(CHIME);
+    });
+
+    document.querySelectorAll<HTMLElement>(".style-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.id === "style-panel-toggle") return;
+        localStorage.setItem("portfolioStyle", btn.dataset.style as string);
+        play(CHIME);
+        if (isCustomBorder()) return switchBorderMode();
+        applyBorderMode();
+        updateStyleBtns();
+      });
+    });
+
+    document
+      .getElementById("style-panel-toggle")
+      ?.addEventListener("click", () => {
+        const list = document.getElementById("style-btn-list");
+        const isOpen =
+          list?.style.maxHeight !== "0px" && list?.style.maxHeight !== "0";
+        setPanelOpen(!isOpen);
+      });
+  });
+</script>

@@ -1,0 +1,231 @@
+---
+import AvatarSprite from "../../components/AvatarSprite.astro";
+import PlaygroundShell from "../../components/PlaygroundShell.astro";
+import { SITE } from "../../site-config";
+import { SPRITE, UNDITHERED_SHEET } from "../../lib/avatar-sprite.mjs";
+
+const { COLS, ROWS, FRAMES, CELL_W, CELL_H } = SPRITE;
+
+export const prerender = true;
+---
+
+<PlaygroundShell
+  title={`${SITE.author.fullName} - Playground - Avatar turntable`}
+  description="A 24-frame Blender render of my avatar, animated as a CSS spritesheet"
+>
+  <div class="tt-stage checkerboard" id="tt-stage">
+    <div class="tt-viewport">
+      <AvatarSprite
+        id="tt-spin"
+        class="tt-spin"
+        sheet={UNDITHERED_SHEET}
+        height="var(--tt-height)"
+        label="Avatar rotating 360 degrees"
+      />
+    </div>
+
+    <p class="tt-readout">
+      <span id="tt-readout">24 frames &middot; 15&deg; per step</span>
+    </p>
+
+    <figure class="tt-sheet" id="tt-sheet" hidden>
+      <figcaption class="tt-label">
+        Spritesheet &mdash; {COLS} &times; {ROWS}
+      </figcaption>
+      <img
+        src={UNDITHERED_SHEET}
+        alt={`Spritesheet of the avatar rotating 360 degrees across ${FRAMES} frames`}
+        width={CELL_W * COLS}
+        height={CELL_H * ROWS}
+        loading="lazy"
+        decoding="async"
+      />
+    </figure>
+  </div>
+</PlaygroundShell>
+
+<style>
+  .tt-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+
+    --tt-height: 300px;
+    --duration: 2.4s;
+  }
+
+  .tt-viewport {
+    display: grid;
+    place-items: center;
+    padding: 1.5rem;
+    border: 1px solid var(--darkslate-700);
+    border-radius: 14px;
+  }
+
+  .tt-stage :global(.tt-spin.is-paused) {
+    animation-play-state: paused;
+  }
+
+  .tt-stage :global(.tt-spin.is-reversed) {
+    animation-direction: reverse;
+  }
+
+  .tt-readout {
+    margin: 0;
+    font-size: 0.625rem;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+    color: var(--darkslate-300);
+  }
+
+  .tt-sheet {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: min(100%, 620px);
+  }
+
+  .tt-sheet[hidden] {
+    display: none;
+  }
+
+  .tt-sheet img {
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--darkslate-700);
+    border-radius: 10px;
+  }
+
+  .tt-label {
+    font-size: 0.625rem;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--darkslate-300);
+  }
+</style>
+
+<script>
+  import { Pane } from "tweakpane";
+  import {
+    SHEET_BY_NAME,
+    SPRITE,
+    UNDITHERED_SHEET,
+    cellPosition,
+  } from "../../lib/avatar-sprite.mjs";
+
+  const { FRAMES } = SPRITE;
+
+  const SHEETS: Record<string, string> = {
+    undithered: UNDITHERED_SHEET,
+    ...SHEET_BY_NAME,
+  };
+
+  const PARAMS = {
+    sheet: "undithered",
+    size: 320,
+    duration: 2400,
+    playing: true,
+    reversed: false,
+    frame: 0,
+    showSheet: false,
+  };
+
+  let pane: Pane | null = null;
+
+  function initTurntable() {
+    const stage = document.getElementById("tt-stage");
+    const spin = document.getElementById("tt-spin");
+    const readout = document.getElementById("tt-readout");
+    const sheet = document.getElementById("tt-sheet");
+    if (!stage || !spin || !readout || !sheet) return;
+
+    const applySize = () => {
+      stage.style.setProperty("--tt-height", `${PARAMS.size}px`);
+    };
+
+    const applySheet = () => {
+      spin.style.backgroundImage = `url("${SHEETS[PARAMS.sheet]}")`;
+    };
+
+    const applyDuration = () => {
+      stage.style.setProperty("--duration", `${PARAMS.duration}ms`);
+    };
+
+    const applyPlayback = () => {
+      spin.classList.toggle("is-manual", !PARAMS.playing);
+      spin.classList.toggle("is-paused", !PARAMS.playing);
+      if (PARAMS.playing) {
+        spin.style.backgroundPosition = "";
+        readout.textContent = `${PARAMS.sheet} · ${FRAMES} frames · ${(360 / FRAMES).toFixed(0)}° per step`;
+      } else {
+        applyFrame();
+      }
+    };
+
+    const applyFrame = () => {
+      if (PARAMS.playing) return;
+      spin.style.backgroundPosition = cellPosition(PARAMS.frame);
+      const deg = Math.round((PARAMS.frame * 360) / FRAMES);
+      readout.textContent = `frame ${String(PARAMS.frame).padStart(2, "0")} · ${deg}°`;
+    };
+
+    applySheet();
+    applySize();
+    applyDuration();
+    applyPlayback();
+
+    pane = new Pane({ title: "Turntable" });
+
+    pane
+      .addBinding(PARAMS, "sheet", {
+        options: Object.fromEntries(Object.keys(SHEETS).map((k) => [k, k])),
+      })
+      .on("change", applySheet);
+    pane
+      .addBinding(PARAMS, "size", { min: 96, max: 520, step: 4 })
+      .on("change", applySize);
+    pane
+      .addBinding(PARAMS, "duration", {
+        label: "duration (ms)",
+        min: 400,
+        max: 6000,
+        step: 100,
+      })
+      .on("change", applyDuration);
+    pane.addBinding(PARAMS, "playing").on("change", () => {
+      applyPlayback();
+      pane?.refresh();
+    });
+    pane.addBinding(PARAMS, "reversed").on("change", () => {
+      spin.classList.toggle("is-reversed", PARAMS.reversed);
+    });
+    pane
+      .addBinding(PARAMS, "frame", { min: 0, max: FRAMES - 1, step: 1 })
+      .on("change", () => {
+        if (PARAMS.playing) {
+          PARAMS.playing = false;
+          applyPlayback();
+          pane?.refresh();
+        }
+        applyFrame();
+      });
+    pane
+      .addBinding(PARAMS, "showSheet", { label: "show sheet" })
+      .on("change", () => {
+        (sheet as HTMLElement).hidden = !PARAMS.showSheet;
+      });
+  }
+
+  function disposeTurntable() {
+    pane?.dispose();
+    pane = null;
+  }
+
+  document.addEventListener("astro:page-load", initTurntable);
+  document.addEventListener("astro:before-swap", disposeTurntable);
+</script>

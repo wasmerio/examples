@@ -1,0 +1,141 @@
+---
+import Card from "../Card/index.astro";
+import GuestbookEntryMeta from "./GuestbookEntryMeta.astro";
+import GuestbookThread from "./GuestbookThread.astro";
+import { rotationFromSeed, type GuestbookEntry } from "../../lib/guestbook";
+
+interface Props {
+  entry: GuestbookEntry;
+  replies?: GuestbookEntry[];
+}
+
+const { entry, replies = [] } = Astro.props;
+---
+
+<article
+  data-entry-id={entry.id}
+  class="min-w-0"
+  style={`--tilt: ${rotationFromSeed(entry.id)}deg;`}
+>
+  <Card>
+    <div class="flex flex-col gap-3 h-full">
+      <p
+        data-entry-message
+        class="text-darkslate-100 text-sm leading-relaxed whitespace-pre-wrap flex-1"
+      >
+        {entry.message}
+      </p>
+      <footer
+        class="flex items-center gap-2.5 pt-2 border-t border-darkslate-400/50"
+      >
+        <GuestbookEntryMeta entry={entry} />
+      </footer>
+      <GuestbookThread parentId={entry.id} replies={replies} />
+    </div>
+  </Card>
+</article>
+
+<script>
+  import { HEARTBEAT, play } from "../../lib/sound";
+
+  const STORAGE_KEY = "guestbookHearts";
+
+  const readHearted = (): string[] => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? (parsed as string[]) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writeHearted = (ids: string[]): void => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+    } catch {}
+  };
+
+  const playHeartbeat = () => play(HEARTBEAT);
+
+  const fireAnimation = (button: HTMLButtonElement): void => {
+    button.classList.remove("is-firing");
+    void button.offsetWidth;
+    button.classList.add("is-firing");
+    window.setTimeout(() => button.classList.remove("is-firing"), 700);
+  };
+
+  const initButtonState = (button: HTMLButtonElement): void => {
+    const article = button.closest<HTMLElement>("article[data-entry-id]");
+    const entryId = article?.dataset.entryId;
+    if (!entryId) return;
+    const hearted = readHearted();
+    if (hearted.includes(entryId)) button.classList.add("is-active");
+  };
+
+  const handleHeartClick = async (button: HTMLButtonElement): Promise<void> => {
+    const article = button.closest<HTMLElement>("article[data-entry-id]");
+    const entryId = article?.dataset.entryId;
+    if (!entryId) return;
+
+    const hearted = readHearted();
+    fireAnimation(button);
+    playHeartbeat();
+
+    if (hearted.includes(entryId)) return;
+
+    writeHearted([...hearted, entryId]);
+    button.classList.add("is-active");
+
+    const countEl = button.querySelector<HTMLElement>(".heart-count");
+    const optimistic = parseInt(button.dataset.heartCount ?? "0", 10) + 1;
+    button.dataset.heartCount = String(optimistic);
+    if (countEl) countEl.textContent = String(optimistic);
+
+    try {
+      const response = await fetch("/api/reactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: parseInt(entryId, 10) }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const updated = (await response.json()) as {
+        heartCount: number | null;
+      };
+      const serverCount = updated.heartCount ?? optimistic;
+      button.dataset.heartCount = String(serverCount);
+      if (countEl) countEl.textContent = String(serverCount);
+    } catch {
+      const rollback = readHearted().filter((id) => id !== entryId);
+      writeHearted(rollback);
+      button.classList.remove("is-active");
+      const fallback = Math.max(0, optimistic - 1);
+      button.dataset.heartCount = String(fallback);
+      if (countEl) countEl.textContent = String(fallback);
+    }
+  };
+
+  function attachHeartDelegation(): void {
+    if (document.body.dataset.guestbookHeartsHandler === "1") return;
+    document.body.dataset.guestbookHeartsHandler = "1";
+
+    document.addEventListener("click", (clickEvent) => {
+      const target = clickEvent.target as HTMLElement | null;
+      const button = target?.closest<HTMLButtonElement>("[data-heart-button]");
+      if (!button) return;
+      clickEvent.preventDefault();
+      void handleHeartClick(button);
+    });
+  }
+
+  function hydrateHeartButtons(): void {
+    document
+      .querySelectorAll<HTMLButtonElement>("[data-heart-button]")
+      .forEach(initButtonState);
+  }
+
+  attachHeartDelegation();
+  hydrateHeartButtons();
+  document.addEventListener("astro:page-load", hydrateHeartButtons);
+</script>

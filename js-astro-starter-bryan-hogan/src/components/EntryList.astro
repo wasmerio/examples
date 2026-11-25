@@ -1,0 +1,155 @@
+---
+import type { CollectionKey } from "astro:content";
+import { SITE } from "../config";
+import { getEntries } from "../utils/getEntries";
+
+interface Props {
+    /** Content collection to list. Entries link to `/<collection>/<id>`. */
+    collection: CollectionKey;
+    /** Maximum number of entries to display. Omit to show every entry. */
+    limit?: number;
+    /** Heading level used for each entry title. */
+    headingLevel?: "h2" | "h3" | "h4";
+    /** Whether to display each entry description. */
+    showDescription?: boolean;
+}
+
+const {
+    collection,
+    limit,
+    headingLevel: Heading = "h2",
+    showDescription = true,
+} = Astro.props;
+
+if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
+    throw new Error("EntryList `limit` must be a positive integer.");
+}
+
+const headingLevels = ["h2", "h3", "h4"] as const;
+
+if (!headingLevels.includes(Heading)) {
+    throw new Error("EntryList `headingLevel` must be h2, h3, or h4.");
+}
+
+const dateFormatter = new Intl.DateTimeFormat(SITE.locale, {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+});
+
+const entries = (await getEntries(collection)).slice(0, limit);
+---
+
+{
+    entries.length > 0 ? (
+        <ul class="entry-list" role="list">
+            {entries.map((entry) => (
+                <li class="entry-list-item">
+                    <a class="entry-list-link" href={`/${collection}/${entry.id}`}>
+                        <div class="entry-list-content">
+                            <Heading class="entry-list-title">
+                                {entry.data.title}
+                            </Heading>
+                            {showDescription && (
+                                <p class="entry-list-description">
+                                    {entry.data.description}
+                                </p>
+                            )}
+                        </div>
+                        {"pubDate" in entry.data && (
+                            <time
+                                class="entry-list-date"
+                                datetime={entry.data.pubDate
+                                    .toISOString()
+                                    .slice(0, 10)}
+                            >
+                                {dateFormatter.format(entry.data.pubDate)}
+                            </time>
+                        )}
+                    </a>
+                </li>
+            ))}
+        </ul>
+    ) : (
+        <p class="entry-list-empty">Nothing here yet.</p>
+    )
+}
+
+<style>
+    .entry-list {
+        display: grid;
+        gap: var(--space-2xs);
+        padding: 0;
+    }
+
+    .entry-list-item {
+        margin: 0;
+    }
+
+    .entry-list-link {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-2xs);
+        align-items: start;
+        margin-inline: calc(var(--space-s) * -1);
+        padding: var(--space-s);
+        color: var(--color-text-strong);
+        border-radius: var(--border-radius-m);
+        text-decoration: none;
+        transition:
+            color var(--transition-normal),
+            background-color var(--transition-normal);
+    }
+
+    @media (hover: hover) {
+        .entry-list-link:hover {
+            color: var(--color-link-hover);
+            background-color: var(--color-surface);
+        }
+    }
+
+    .entry-list-link:focus-visible {
+        color: var(--color-link-hover);
+        background-color: var(--color-surface);
+    }
+
+    .entry-list-content {
+        min-width: 0;
+    }
+
+    .entry-list-title {
+        color: inherit;
+        font-size: var(--font-size-base);
+        font-weight: var(--font-weight-semi-bold);
+    }
+
+    .entry-list-description {
+        margin-block-start: var(--space-2xs);
+        color: var(--color-text-subtle);
+        font-size: var(--font-size-base);
+    }
+
+    .entry-list-date {
+        grid-row: 1;
+        padding-block-start: 0;
+        color: var(--color-text-muted);
+        font-size: var(--font-size-s);
+        white-space: nowrap;
+    }
+
+    .entry-list-empty {
+        color: var(--color-text-muted);
+    }
+
+    @media (min-width: 48rem) {
+        .entry-list-link {
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: var(--space-l);
+        }
+
+        .entry-list-date {
+            grid-row: auto;
+            padding-block-start: 0.1em;
+        }
+    }
+</style>

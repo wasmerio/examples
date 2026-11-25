@@ -1,0 +1,278 @@
+---
+import { Image } from "astro:assets";
+import { SITE } from "../config";
+import Icon from "./Icon.astro";
+/* If using image in /src: import Logo from "../assets/logo.svg"; // Then do "src={Logo}" */
+
+const navigationLinks = SITE.header.links;
+const currentPath = Astro.url.pathname.replace(/\/$/, "") || "/";
+const isExternal = (link: { readonly href: string; readonly external?: boolean }) =>
+    link.external ?? false;
+---
+
+<div class="header-backdrop">
+    <div class="header-container base-layout">
+        <header>
+            <a href="/"
+                ><Image
+                    src="/favicon.svg"
+                    alt={SITE.name}
+                    height="25"
+                    width="25"
+                /></a
+            >
+            {navigationLinks.length > 0 && (
+                <Fragment>
+                    <button
+                        type="button"
+                        aria-label="Navigation menu"
+                        aria-controls="primary-navigation"
+                        aria-expanded="false"
+                        class="header-menu-toggle-button"
+                    >
+                        <Icon
+                            name="bars"
+                            size="var(--icon-size-l)"
+                            class="header-hamburger-icon"
+                        />
+                        <Icon
+                            name="close"
+                            size="var(--icon-size-l)"
+                            class="header-close-icon"
+                        />
+                    </button>
+                    <nav id="primary-navigation" class="header-navigation" aria-label="Primary">
+                        <ul role="list">
+                            {
+                                navigationLinks.map((link) => {
+                                    const external = isExternal(link);
+                                    const isCurrent =
+                                        !external &&
+                                        (currentPath === link.href ||
+                                            currentPath.startsWith(`${link.href}/`));
+
+                                    return (
+                                        <li>
+                                            <a
+                                                href={link.href}
+                                                target={external ? "_blank" : undefined}
+                                                aria-current={isCurrent ? "page" : undefined}
+                                            >
+                                                {link.label}
+                                                {external && (
+                                                    <span class="visually-hidden">
+                                                        {" "}(opens in a new tab)
+                                                    </span>
+                                                )}
+                                            </a>
+                                        </li>
+                                    );
+                                })
+                            }
+                        </ul>
+                    </nav>
+                </Fragment>
+            )}
+        </header>
+    </div>
+</div>
+
+<style>
+    .header-backdrop {
+        width: 100%;
+        height: var(--navbar-height);
+    }
+    .header-container {
+        width: 100%;
+        position: fixed;
+        z-index: 10;
+        background-color: var(--color-background);
+        background-color: color-mix(
+            in srgb,
+            var(--color-background) 95%,
+            transparent
+        );
+    }
+    .header-container::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        backdrop-filter: blur(5px);
+        z-index: -1;
+    }
+
+    header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-block: var(--space-xs);
+        height: var(--navbar-height);
+    }
+    .header-navigation ul {
+        display: flex;
+        gap: 1rem;
+        & li a {
+            padding: var(--space-s);
+            color: var(--color-text-muted);
+            text-decoration: none;
+            transition: var(--transition-normal) color;
+            font-weight: var(--font-weight-semi-bold);
+            @media (hover: hover) {
+                &:hover {
+                    color: var(--color-link-hover);
+                }
+            }
+            &:focus-visible {
+                color: var(--color-link-hover);
+            }
+            &:active {
+                color: var(--color-link-active);
+            }
+            &[aria-current="page"] {
+                color: var(--color-text-subtle);
+                text-decoration-line: underline;
+                text-decoration-color: var(--color-link);
+                text-decoration-thickness: var(--border-width-m);
+                text-underline-offset: var(--space-2xs);
+            }
+        }
+    }
+    .header-menu-toggle-button {
+        display: none;
+    }
+
+    @media only screen and (max-width: 47.999rem) {
+        .header-navigation {
+            display: none;
+        }
+        .header-menu-toggle-button {
+            display: block;
+            position: absolute;
+            z-index: 30;
+            right: var(--side-gap-padding);
+            background-color: transparent;
+            padding: 0.5rem 0 0.5rem 0.5rem;
+            border: 0;
+            cursor: pointer;
+            .header-hamburger-icon {
+                display: block;
+            }
+            .header-close-icon {
+                display: none;
+            }
+        }
+        [aria-expanded="true"] {
+            .header-close-icon {
+                display: block;
+            }
+            .header-hamburger-icon {
+                display: none;
+            }
+        }
+        [aria-expanded="true"] ~ nav {
+            display: block;
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            width: 80%;
+            overflow-y: auto;
+            padding-block-end: var(--space-l);
+            margin-left: auto;
+            box-shadow: 0 0 0 100vmax hsl(0 0 0 / 0.7);
+            background-color: var(--color-background);
+            z-index: 20;
+            ul {
+                margin-top: 20vh;
+                display: grid;
+                gap: 2rem;
+                margin-left: max(3rem, 20vw);
+            }
+        }
+    }
+</style>
+
+<script>
+    const desktopNavigation = window.matchMedia("(min-width: 48rem)");
+
+    // Query the current page so delegated handlers also work after Astro navigation.
+    function getNavigation() {
+        const toggle = document.querySelector<HTMLButtonElement>(
+            '[aria-controls="primary-navigation"]',
+        );
+        const navigation = document.querySelector<HTMLElement>(
+            "#primary-navigation",
+        );
+
+        return toggle && navigation ? { toggle, navigation } : null;
+    }
+
+    function closeNavigation(restoreFocus = false) {
+        const menu = getNavigation();
+        if (!menu) return;
+
+        const shouldRestoreFocus =
+            !desktopNavigation.matches &&
+            (restoreFocus || menu.navigation.contains(document.activeElement));
+
+        menu.toggle.setAttribute("aria-expanded", "false");
+        if (shouldRestoreFocus) {
+            menu.toggle.focus();
+        }
+    }
+
+    document.addEventListener("click", (event) => {
+        const menu = getNavigation();
+        const target = event.target;
+        if (!menu || !(target instanceof Element)) return;
+
+        if (menu.toggle.contains(target)) {
+            if (menu.toggle.getAttribute("aria-expanded") === "true") {
+                closeNavigation(true);
+            } else {
+                menu.toggle.setAttribute("aria-expanded", "true");
+                menu.toggle.focus();
+            }
+            return;
+        }
+
+        if (!menu.navigation.contains(target) || target.closest("a[href]")) {
+            closeNavigation();
+        }
+    });
+
+    document.addEventListener("focusin", (event) => {
+        const menu = getNavigation();
+        const target = event.target;
+        if (!menu || !(target instanceof Node)) return;
+
+        // This is a disclosure: leaving it reveals the newly focused page content.
+        if (!menu.toggle.contains(target) && !menu.navigation.contains(target)) {
+            closeNavigation();
+        }
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (
+            event.key === "Escape" &&
+            !desktopNavigation.matches &&
+            getNavigation()?.toggle.getAttribute("aria-expanded") === "true"
+        ) {
+            event.preventDefault();
+            closeNavigation(true);
+        }
+    });
+
+    desktopNavigation.addEventListener("change", () => {
+        const menu = getNavigation();
+        if (!menu) return;
+
+        if (desktopNavigation.matches && document.activeElement === menu.toggle) {
+            menu.navigation.querySelector<HTMLAnchorElement>("a[href]")?.focus();
+        }
+        closeNavigation();
+    });
+</script>

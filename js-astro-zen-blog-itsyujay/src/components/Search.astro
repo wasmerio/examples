@@ -1,0 +1,183 @@
+<button id="search-button" class="text-gray-700 dark:text-gray-100 hover:text-gray-900 dark:hover:text-white" aria-label="Search">
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="11" cy="11" r="8"></circle>
+    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+  </svg>
+</button>
+
+<div id="search-modal" class="fixed inset-0 bg-gray-500 bg-opacity-75 z-50 hidden flex items-start justify-center pt-24">
+  <div class="flex items-start bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 flex-col">
+    <input type="text" id="search-input" class="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white mb-4" placeholder="Search posts..." autocomplete="off" />
+    <div id="search-results" class="max-h-96 overflow-y-auto w-full">
+      <div class="p-4 text-gray-500 dark:text-gray-400">No results found</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let searchData = []
+  let searchInput
+  let searchResults
+  let searchModal
+  let searchButton
+  let closeButton
+  let searchDebounceTimeout
+
+  function debounce(func, wait) {
+    return (...args) => {
+      clearTimeout(searchDebounceTimeout)
+      searchDebounceTimeout = setTimeout(() => func(...args), wait)
+    }
+  }
+
+  async function initialize() {
+    const response = await fetch('/api/search.json')
+    searchData = await response.json()
+
+    searchInput = document.getElementById('search-input')
+    searchResults = document.getElementById('search-results')
+    searchModal = document.getElementById('search-modal')
+    searchButton = document.getElementById('search-button')
+    closeButton = document.getElementById('close-search')
+
+    const debouncedSearch = debounce(handleSearch, 300)
+    searchInput?.addEventListener('input', debouncedSearch)
+    searchButton?.addEventListener('click', openModal)
+    closeButton?.addEventListener('click', closeModal)
+
+    // Close modal on outside click
+    searchModal?.addEventListener('click', (e) => {
+      if (e.target === searchModal) {
+        closeModal()
+      }
+    })
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !searchModal?.classList.contains('hidden')) {
+        closeModal()
+      }
+    })
+
+    // Cleanup function
+    return () => {
+      clearTimeout(searchDebounceTimeout)
+    }
+  }
+
+  function openModal() {
+    searchModal?.classList.remove('hidden')
+    searchInput?.focus()
+  }
+
+  function closeModal() {
+    searchModal?.classList.add('hidden')
+    searchInput.value = ''
+    searchResults.innerHTML = `
+            <div class="p-4 text-gray-500 dark:text-gray-400">
+          No results found
+        </div>
+  `
+  }
+
+  function highlightText(text, query) {
+    if (!query) return text
+    const regex = new RegExp(`(${query})`, 'gi')
+    return text.replace(regex, '<mark class="bg-yellow-200 dark:bg-yellow-800">$1</mark>')
+  }
+
+  function handleSearch(e) {
+    const query = e.target.value.toLowerCase()
+
+    if (!query) {
+      searchResults.innerHTML = `
+        <div class="p-4 text-gray-500 dark:text-gray-400">
+          No results found
+        </div>
+      `
+      return
+    }
+
+    const results = searchData
+      .filter((post) => {
+        const searchContent = `${post.title} ${post.description} ${post.content} ${post.tags?.join(' ')}`.toLowerCase()
+        return searchContent.includes(query)
+      })
+      .map((post) => {
+        // Find content match
+        const contentMatch = post.content.toLowerCase().indexOf(query.toLowerCase())
+        let matchedContent = ''
+        if (contentMatch !== -1) {
+          const start = Math.max(0, contentMatch - 50)
+          const end = Math.min(post.content.length, contentMatch + query.length + 50)
+          matchedContent = post.content.slice(start, end)
+          if (start > 0) matchedContent = '...' + matchedContent
+          if (end < post.content.length) matchedContent = matchedContent + '...'
+        }
+
+        // Highlight matches in title and content
+        const highlightedTitle = highlightText(post.title, query)
+        const highlightedContent = highlightText(matchedContent, query)
+
+        return {
+          ...post,
+          matchedContent: highlightedContent,
+          matchedTitle: highlightedTitle,
+        }
+      })
+      .slice(0, 5)
+
+    displayResults(results)
+  }
+
+  function displayResults(results) {
+    if (results.length === 0) {
+      searchResults.innerHTML = `
+        <div class="p-4 text-gray-500 dark:text-gray-400">
+          No results found
+        </div>
+      `
+    } else {
+      searchResults.innerHTML = results
+        .map(
+          (post) => `
+            <a
+              href="/blog/${post.slug}"
+              class="block p-4 hover:bg-gray-100 dark:hover:bg-gray-700 hover:rounded transition-all duration-200 transform"
+            >
+              <h3 class="font-medium text-gray-900 dark:text-white">
+                ${post.matchedTitle || post.title}
+              </h3>
+              <p class="text-sm text-gray-500 dark:text-gray-400">
+                ${post.description || ''}
+              </p>
+              ${
+                post.matchedContent
+                  ? `
+                <p class="text-sm text-gray-600 dark:text-gray-300 mt-2 font-mono">
+                  ${post.matchedContent}
+                </p>
+              `
+                  : ''
+              }
+              ${post.tags
+                ?.map(
+                  (tag) => `
+                  <span class="inline-block bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 text-xs px-2 py-1 rounded-full mt-2 mr-2">
+                    ${tag}
+                  </span>
+                  `
+                )
+                .join('')}
+            </a>
+          `
+        )
+        .join('')
+    }
+
+    searchResults.classList.remove('hidden')
+  }
+
+  // Initialize search functionality
+  document.addEventListener('astro:page-load', initialize)
+</script>

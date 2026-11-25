@@ -255,6 +255,11 @@ export function evaluateRow(row, meta, ctx) {
     report.reason = 'adapter unknown';
     return report;
   }
+  if (choice.adapter === 'stdio-bridge' && (meta.launchMissing || []).length) {
+    report.status = 'needs-review';
+    report.reason = `launch argument needs a value: ${meta.launchMissing.join(', ')}`;
+    return report;
+  }
   if (choice.adapter === 'in-process' && !meta.importSymbol) {
     report.status = 'needs-review';
     report.reason = 'in-process export seen but the import path is unknown';
@@ -520,7 +525,7 @@ const entry = path.join(here, 'node_modules', ${JSON.stringify(row.pkg)}, ${JSON
 startMcpHttp({
   ...${JSON.stringify(fields, null, 2)},
   command: process.execPath,
-  args: [entry],
+  args: [entry, ...${JSON.stringify(meta.launchArgs || [])}],
 });
 `;
     } else if (report.adapter === 'in-process') {
@@ -848,7 +853,10 @@ export async function runLocalCheck(folder, token) {
   try {
     const ready = await waitHealth(`http://127.0.0.1:${port}/healthz`, 30000);
     if (!ready) return { ok: false, tools: [], error: `healthz did not answer: ${localError(logs)}` };
-    return await checkMcpUrl(`http://127.0.0.1:${port}/mcp`, token);
+    const result = await checkMcpUrl(`http://127.0.0.1:${port}/mcp`, token);
+    // "stdio server exited" alone doesn't say why; keep the child's own output in the reason.
+    if (!result.ok) result.error = `${String(result.error).slice(0, 100)} | ${localError(logs)}`;
+    return result;
   } finally {
     killGroup(child);
   }
@@ -1104,6 +1112,35 @@ function entryFromPackage(body) {
   return typeof file === 'string' ? file.replace(/^\.\//, '') : 'dist/index.js';
 }
 
+// Launch arguments from the package's official MCP Registry entry (server.json `packageArguments`),
+// e.g. repomix needs `--mcp` and many CLIs need an `mcp` subcommand. Fixed values are passed through;
+// a required argument that needs the user's own value can't run unattended.
+export function launchArgs(registryPackage) {
+  const args = [];
+  const missing = [];
+  for (const item of (registryPackage && registryPackage.packageArguments) || []) {
+    const value = item.value ?? item.default;
+    if (value == null || String(value).includes('${')) {
+      if (item.isRequired) missing.push(item.name || item.description || 'argument');
+      continue;
+    }
+    if (item.type === 'named') args.push(item.name, String(value));
+    else args.push(String(value));
+  }
+  return { args, missing };
+}
+
+async function registryPackage(row) {
+  if (!row.name) return null;
+  try {
+    const body = await fetchJson(`https://registry.modelcontextprotocol.io/v0/servers/${encodeURIComponent(row.name)}/versions/${row.version}`);
+    const packages = (body.server && body.server.packages) || [];
+    return packages.find((item) => item.identifier === row.pkg) || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchMetadata(row) {
   if (row.pkgType === 'npm') {
     const spec = row.pkg.startsWith('@') ? row.pkg.replace('/', '%2f') : row.pkg;
@@ -1121,6 +1158,9 @@ export async function fetchMetadata(row) {
       binFile: binFile(body),
       entryExcerpt: '',
     };
+    const launch = launchArgs(await registryPackage(row));
+    meta.launchArgs = launch.args;
+    meta.launchMissing = launch.missing;
     try {
       const fileUrl = `https://cdn.jsdelivr.net/npm/${row.pkg}@${row.version}/${meta.entryFile}`;
       const response = await fetch(fileUrl, { signal: AbortSignal.timeout(15000) });

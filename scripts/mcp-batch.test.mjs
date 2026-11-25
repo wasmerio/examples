@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  acceptLocal, applyProbe, autobuildInput, binFile, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
+  acceptLocal, applyProbe, autobuildInput, binFile, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, launchArgs, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
 } from './mcp-batch.mjs';
 import { generatedCopy } from './sync-mcp-http.mjs';
 
@@ -242,4 +242,33 @@ test('dry-run CLI prints one object per fixture row', () => {
   assert.equal(lines.length, 5);
   assert.equal(lines[2].adapter, 'stdio-bridge');
   assert.equal(lines[4].status, 'rejected-provenance');
+});
+
+test('launchArgs passes fixed registry arguments and flags ones that need a value', () => {
+  assert.deepEqual(launchArgs(null), { args: [], missing: [] });
+  assert.deepEqual(launchArgs({ packageArguments: [{ type: 'positional', value: '--mcp', isRequired: true }] }), { args: ['--mcp'], missing: [] });
+  assert.deepEqual(launchArgs({ packageArguments: [
+    { type: 'positional', value: 'serve' },
+    { type: 'named', name: '--transport', default: 'stdio' },
+    { type: 'named', name: '--storage-path', value: '${STORAGE}' },
+  ] }), { args: ['serve', '--transport', 'stdio'], missing: [] });
+  assert.deepEqual(launchArgs({ packageArguments: [{ type: 'named', name: '--root', isRequired: true }] }), { args: [], missing: ['--root'] });
+});
+
+test('stdio-bridge passes launch arguments to the child', () => {
+  const ctx = { seen: new Map(), slugs: new Set(), folders: new Set(), templates: new Set() };
+  const row = queue[2];
+  const rowMeta = { ...meta[String(row.rank)], pkgType: row.pkgType, launchArgs: ['--mcp'] };
+  const decision = evaluateRow(row, rowMeta, ctx);
+  assert.equal(decision.adapter, 'stdio-bridge');
+  const server = Object.entries(renderTemplate(row, rowMeta, decision).files).find(([name]) => name.endsWith('/server.mjs'))[1];
+  assert.match(server, /args: \[entry, \.\.\.\["--mcp"\]\]/);
+});
+
+test('a stdio-bridge row with a required argument it cannot fill needs review', () => {
+  const ctx = { seen: new Map(), slugs: new Set(), folders: new Set(), templates: new Set() };
+  const row = queue[2];
+  const decision = evaluateRow(row, { ...meta[String(row.rank)], pkgType: row.pkgType, launchMissing: ['--root'] }, ctx);
+  assert.equal(decision.status, 'needs-review');
+  assert.match(decision.reason, /--root/);
 });

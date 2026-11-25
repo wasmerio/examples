@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  acceptLocal, applyProbe, autobuildInput, binFile, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, launchArgs, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
+  acceptLocal, applyProbe, autobuildInput, binFile, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, launchArgs, localError, nativeBinary, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
 } from './mcp-batch.mjs';
 import { generatedCopy } from './sync-mcp-http.mjs';
 
@@ -271,4 +271,26 @@ test('a stdio-bridge row with a required argument it cannot fill needs review', 
   const decision = evaluateRow(row, { ...meta[String(row.rank)], pkgType: row.pkgType, launchMissing: ['--root'] }, ctx);
   assert.equal(decision.status, 'needs-review');
   assert.match(decision.reason, /--root/);
+});
+
+test('nativeBinary spots per-platform binary packages only', () => {
+  assert.match(nativeBinary({ optionalDependencies: { '@vshulcz/deja-vu-linux-amd64': '1.0.0' } }), /deja-vu-linux-amd64/);
+  assert.match(nativeBinary({ optionalDependencies: { '@fallow-cli/darwin-x64': '1.0.0' } }), /darwin-x64/);
+  assert.equal(nativeBinary({ optionalDependencies: { 'fsevents': '2.3.3', 'linux-tools': '1.0.0' } }), '');
+  assert.equal(nativeBinary({}), '');
+});
+
+test('a package that wraps a native binary is blocked before deploy', () => {
+  const ctx = { seen: new Map(), slugs: new Set(), folders: new Set(), templates: new Set() };
+  const row = queue[2];
+  const decision = evaluateRow(row, { ...meta[String(row.rank)], pkgType: row.pkgType, nativeBinary: 'optional dependency x-linux-x64' }, ctx);
+  assert.equal(decision.status, 'blocked');
+  assert.equal(decision.blocker.where, 'edgejs');
+  assert.match(decision.reason, /native binary/);
+});
+
+test('localError prefers the stdio child output', () => {
+  const logs = 'mcp-http stdio-bridge listening\nstdio: Error: ENOENT: no such file ~/.claude\nmcp request failed Error: stdio server exited\n';
+  assert.match(localError(logs), /ENOENT/);
+  assert.match(localError('Error: boom\n'), /boom/);
 });

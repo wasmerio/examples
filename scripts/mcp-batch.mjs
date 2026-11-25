@@ -219,6 +219,12 @@ export function evaluateRow(row, meta, ctx) {
     report.reason = ctx.folders.has(folder) ? `folder ${folder} exists` : `template mcp-${slug} exists`;
     return report;
   }
+  if (meta.nativeBinary) {
+    report.status = 'blocked';
+    report.blocker = { where: 'edgejs', what: 'npm package wraps a native binary', evidence: meta.nativeBinary };
+    report.reason = `${report.blocker.what}: ${meta.nativeBinary}`;
+    return report;
+  }
   const blocked = blockedDependency({ ...meta, pkgType: row.pkgType });
   if (blocked) {
     report.status = 'blocked';
@@ -821,8 +827,11 @@ export function ensureLocalJsShared(dir) {
   cpSync(path.join(ROOT, '_shared/mcp-http/js/wasmer-starter-ui.js'), path.join(dest, 'wasmer-starter-ui.js'));
 }
 
-function localError(logs) {
+export function localError(logs) {
   const text = String(logs || '');
+  // The bridge prefixes the child server's stderr with "stdio: "; that says why the child exited.
+  const child = text.split('\n').filter((line) => line.startsWith('stdio: ')).slice(-3).join(' ');
+  if (child) return child.slice(0, 280);
   const match = text.match(/(?:Cannot find module|Error:)[^\n]{0,220}/);
   if (match) return match[0].slice(0, 280);
   return text.slice(-280);
@@ -1094,6 +1103,14 @@ async function fetchJson(url) {
   return response.json();
 }
 
+// npm wrappers that ship a per-platform native binary (e.g. deja-vu-linux-amd64, @fallow-cli/darwin-x64)
+// pass the local check on macOS but can't run on Edge, which only runs WebAssembly.
+export function nativeBinary(body) {
+  const platform = Object.keys((body && body.optionalDependencies) || {})
+    .find((name) => /(linux|darwin|win32|windows)-(x64|x86_64|amd64|arm64|aarch64|ia32|arm)\b/.test(name));
+  return platform ? `optional dependency ${platform}` : '';
+}
+
 export function binFile(body) {
   const bin = body && body.bin;
   if (!bin) return '';
@@ -1156,6 +1173,7 @@ export async function fetchMetadata(row) {
       readme: body.readme || '',
       entryFile: entryFromPackage(body),
       binFile: binFile(body),
+      nativeBinary: nativeBinary(body),
       entryExcerpt: '',
     };
     const launch = launchArgs(await registryPackage(row));
@@ -1214,12 +1232,21 @@ async function probeHttp(url, options = {}) {
 
 async function deployBuilt(row, report, owner, token) {
   const appName = report.catalog.slug;
-  const built = await withBackoff(report, () => deployAutobuild({
+  const deploy = () => withBackoff(report, () => deployAutobuild({
     folder: report.folder,
     appName,
     owner,
     token,
   }));
+  let built;
+  try {
+    built = await deploy();
+  } catch (error) {
+    // An autobuild sometimes fails once and then builds the same commit (seen with repomix), so retry once.
+    if (!/ FAILED$/.test(String(error.message))) throw error;
+    built = await deploy();
+    if (error.existed === false) built.existed = false;
+  }
   if (!built.existed) report.createdApp = `${owner}/${appName}`;
   report.tests.setup503 = 'not run';
   report.demo = built.appUrl.replace(/\/$/, '');

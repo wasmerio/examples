@@ -1,0 +1,645 @@
+# Changelog
+
+All notable changes to AstroDeck are documented in this file.
+
+## [4.0.1] - 2026-11-06 — Accessibility and canonical URL fixes
+
+### Fixed
+
+- Demo site canonical, Open Graph, sitemap and `robots.txt` URLs use `https://www.astrodeck.dev`, the host the site is served on (the apex domain redirects)
+- Comparison section: the yes/no icons are announced as images (`role="img"`), and the scrollable table can be reached with the keyboard
+- Code blocks on the docs and components pages and scrollable demo regions can be reached with the keyboard
+- Changelog page: the breaking-changes heading meets the contrast minimum; 404 page: the contact link is underlined, not marked by color alone
+- Changelog page lists the four 4.0.0 "Added" entries that were only in `CHANGELOG.md`; a test now keeps both changelogs in sync
+
+## [4.0.0] - 2026-11-06 — Agent-first website builder kit
+
+### Added
+
+- Agent-first workflow: download AstroDeck, open it in your coding agent, describe your site. The `astrodeck-build-site` skill runs adaptive intake, a structured brief in `PROJECT.md`, demo cleanup, site config, theme, pages composed from registry sections, `npm run verify`, the vibe2prod audit and a handover summary
+- `AGENTS.md` rewritten as a compact index (golden rules, commands, task → skill, Astro 7 / Tailwind 4 notes). Read natively by Codex, Cursor, GitHub Copilot and Windsurf, by Claude Code via `@AGENTS.md` in `CLAUDE.md`, by Gemini CLI via `.gemini/settings.json`
+- Portable Agent Skills in `.agents/skills/`: `astrodeck-build-site` (intake, brief template, content rules, design system, quality checklist, five site recipes), `astrodeck-new-page`, `astrodeck-new-section`, `astrodeck-theme`, `astrodeck-cleanup`. `.claude/skills/` is a generated mirror (`npm run sync:agents`)
+- `brief/` drop folder for briefing material (texts, PDFs, `DESIGN.md`, logos, images, links)
+- vibe2prod v0.9.2 bundled in `.agents/skills/vibe2prod/` (MIT, license included); `npm run setup:audit` installs its runtime (Lighthouse, axe CLI, Playwright + Chromium)
+- Central site config `src/config/site.ts` and `src/config/site-url.mjs`: name, URL, description, language, title template, logo, navigation, footer, social links, contact, OG image, feature flags
+- `npm run theme`: OKLCH color tokens for light and dark mode from a brand color or a `DESIGN.md`, with a WCAG contrast gate and suggestions
+- `npm run starter:clean` (`--dry-run`, `--yes`, `--keep-blog`): removes the demo in one step, driven by `starter.manifest.json`
+- `npm run verify`: Prettier, ESLint, astro check, design lint, docs lint, registry check, skills mirror check, tests, build and checks on the built HTML (one h1, unique titles, meta descriptions, internal links, alt text). `npm run verify -- --starter` also fails on demo leftovers
+- `npm run lint:design` (rules shared with the Claude Code hook), `npm run lint:docs` (dead paths, version and count drift, skill front matter), `npm run check:registry` (files, props, page templates, recipes)
+- Registry entries with `useWhen` hints and usage examples; `IntegrationGrid` section; icon set in `src/lib/icons.ts`
+- `.mcp.json` with the Astro Docs MCP and shadcn MCP servers; setup for Codex, Cursor and VS Code in `docs/agents/mcp-setup.md`; supported agents in `docs/agents/supported-agents.md`
+- Eval cases in `evals/` (one-sentence brief, Markdown brief, `DESIGN.md`) for rerunning the workflow with any agent
+- Optional Claude Code review subagent `astrodeck-reviewer`
+- `npm run icons`: renders the PNG icons and a social image (`public/og.png`, brand color + logo mark) from `public/favicon.svg`
+- `src/config/ui.ts`: built-in interface text (skip link, menu and theme buttons, contact labels and form, 404 page) in one place, so non-English sites need no component edits
+- Contact section: `hours` (opening hours) and `mapUrl` props; Hero: `plain` prop without the decorative grid; Features: `columns` prop (2 or 3)
+- Built-HTML checks: `link-scheme` (spaces in `tel:`/`mailto:` links) and `meta-length` (home title 30–60 characters, descriptions 50–160, as in vibe2prod)
+
+### Changed
+
+- All sections are data-driven: content comes in through props, no AstroDeck copy inside components; forms post to an endpoint you configure
+- Demo pages use fictional brands and mark demo-only content with `data-demo`; demo CTAs link where their label says
+- astrodeck.dev rewritten for 4.0: home page, docs (workflow, config, theme, cleanup, verify, vibe2prod, supported agents, migration), pages overview, section library with the registry snippet per component, `llms.txt`
+- README rewritten user-first; CONTRIBUTING points to `AGENTS.md` and the skill references; maintainer docs in `docs/maintainers/`
+- Design rules consolidated into `.agents/skills/astrodeck-build-site/references/design-system.md`, aligned with the code
+
+### Fixed
+
+- Missing or duplicate h1 on several demo pages, dead demo links and decorative icons with alt text (found by the built-HTML check)
+- Found in the 4.0 dogfood runs (`docs/maintainers/dogfood-4.0.md`): `npm test` no longer fails after `npm run theme` or with a template-literal `titleTemplate`; `.vibe2prod/` audit output is ignored by Git, Prettier and ESLint; Contact `tel:` links strip spaces (invalid HTML); the skip link is no longer hidden behind the sticky header when focused; scroll-reveal content is visible without JavaScript; long words in Hero and Features headings no longer overflow on narrow phones; the starter's placeholder values in `src/config/site.ts` carry `TODO(brief)` markers, so a forgotten "Your Site" shows up in the handover check
+- Contact section without a form no longer leaves an empty column; IntegrationGrid opens only external links in a new tab and renders items without `href` as plain cards
+- RSS language is derived from `site.locale` instead of a hardcoded `-us` suffix
+- Footer renders `site.social` and `site.contact` (email, phone) when set, as documented
+- `npm run theme` also checks the primary color as text on the background (WCAG AA 4.5:1) and suggests a darker shade when it fails; `npm run theme` and `npm run icons` accept a `globals.css` with Windows (CRLF) line endings
+- `npm run sync:agents` no longer deletes your own skills in `.claude/skills/`; it only mirrors the skills that exist in `.agents/skills/`
+- Contact and Newsletter forms use native browser validation (no `novalidate`), so required fields cannot be sent empty
+
+### Breaking changes / Migrating from 3.x
+
+- Brand, URL, navigation and footer moved from Header, Footer and SEO components into `src/config/site.ts` and `src/config/site-url.mjs`. Pages pass plain titles; the layout applies `titleTemplate`
+- Section props: Hero and HeroGradient `badge` is an object, LogoCloud requires `logos`, `AIFeature` is replaced by `IntegrationGrid`, Contact renders a form only with a `form` prop, Newsletter requires `action`, ContentBlock takes an optional `image`, Features icons are `IconName` values
+- Removed `.cursorrules`, `.windsurfrules` and `.cursor/rules`: Cursor and Windsurf read `AGENTS.md`
+- Removed the Claude Code slash commands (`/new-page`, `/new-section`, `/theme`, `/audit`, `/launch-check`, `/plenum`), the old Claude skills, the `astrodeck` agent and the six review agents: use the skills in `.agents/skills/` and the optional `astrodeck-reviewer` subagent
+- `.claude/skills/` is generated: edit `.agents/skills/`, then run `npm run sync:agents`. Your own Claude-only skills can live directly in `.claude/skills/`; the sync leaves folders it does not manage alone
+- `site.social` entries no longer take an `icon` field (it was never rendered); social links render as text links in the footer
+- `npm run theme` now fails on light-mode primaries that are too bright for text on the background (for example `#f97316`) and prints a darker suggestion
+- `npm run check:kpis` is replaced by `npm run verify`; `npm run validate` is now verify without the build
+- The `system/` design docs are replaced by `.agents/skills/astrodeck-build-site/references/design-system.md`
+
+#### Site config
+
+Before (3.x):
+
+```astro
+// 3.x: hardcoded in Header.astro, Footer.astro, SEO.astro
+const navItems = [{ href: '/', label: 'Home' }, ...];
+```
+
+After (4.0):
+
+```astro
+// 4.0: src/config/site.ts
+export const site: SiteConfig = {
+  name: 'Brand', url: SITE_URL, titleTemplate: '%s | Brand',
+  nav: [{ href: '/', label: 'Home' }], footer: { ... },
+};
+```
+
+#### Hero and HeroGradient badge
+
+Before (3.x):
+
+```astro
+<Hero badge="true" ... />
+<HeroGradient badge="New in v2" ... />
+```
+
+After (4.0):
+
+```astro
+<Hero badge={{ label: 'New: online booking', href: '/news' }} ... />
+<HeroGradient badge={{ label: 'New in v2', href: '/changelog' }} ... />
+```
+
+#### LogoCloud
+
+Before (3.x):
+
+```astro
+<LogoCloud />
+```
+
+After (4.0):
+
+```astro
+<LogoCloud title="Built with:" logos={[
+  { name: 'Astro', src: '/icons/tech/astro.svg', href: 'https://astro.build' },
+]} />
+```
+
+#### AIFeature → IntegrationGrid
+
+Before (3.x):
+
+```astro
+<AIFeature />
+```
+
+After (4.0):
+
+```astro
+<IntegrationGrid title="Works with your tools" items={[
+  { name: 'GitHub', href: 'https://github.com', icon: 'code' },
+]} />
+```
+
+#### Contact form
+
+Before (3.x):
+
+```astro
+<Contact email="hello@example.com" />
+```
+
+After (4.0):
+
+```astro
+<Contact email="hello@example.com"
+  form={{ action: 'https://your-form-backend.example/submit' }} />
+```
+
+#### Newsletter
+
+Before (3.x):
+
+```astro
+<Newsletter title="Stay in the loop" />
+```
+
+After (4.0):
+
+```astro
+<Newsletter action="https://your-provider.example/subscribe" title="Stay in the loop" />
+```
+
+#### ContentBlock image
+
+Before (3.x):
+
+```astro
+<ContentBlock title="..." description="..." />
+```
+
+After (4.0):
+
+```astro
+<ContentBlock title="..." description="..."
+  image={{ src: photo, alt: 'What the photo shows' }} />
+```
+
+#### Commands → skills
+
+Before (3.x):
+
+```text
+/new-page, /new-section, /theme
+/audit, /launch-check, /plenum
+npm run check:kpis
+```
+
+After (4.0):
+
+```text
+astrodeck-new-page, astrodeck-new-section, astrodeck-theme
+vibe2prod, astrodeck-reviewer (Claude Code)
+npm run verify
+```
+
+## [3.5.1] - 2026-11-06 — Astro 7.4.7 & Tailwind CSS 4.3.4 — Security Update
+
+### Changed
+
+- Updated Astro from 7.3.1 to 7.4.7 — includes fixes for XSS via unescaped script/style content in JSX/MDX rendering and CSS injection in View Transitions
+- Updated Tailwind CSS from 4.3.3 to 4.3.4
+- Updated @astrojs/react to 6.0.6 and @astrojs/sitemap to 3.7.4; markdown-it and sanitize-html patched
+- Patched postcss-selector-parser (used by @tailwindcss/typography) against a CPU exhaustion issue
+- Now requires Node.js 22.23.4 or higher (Astro 7.4 requirement) — engines field and README updated
+
+## [3.5.0] - 2026-09-05 — React 19, LLM-Readable Docs, CI & Blog Extras
+
+### Added
+
+- `/llms.txt` and `/llms-full.txt` — the latter is generated from AGENTS.md and README.md at build time, so AI agents can read the docs directly
+- GitHub Actions CI workflow (`.github/workflows/ci.yml`): runs `npm run validate` and the build on every push and pull request
+- `npm run check` (astro check) and `npm run validate` (check:kpis + lint + format:check + check)
+- Registry drift check in `npm run check:kpis`: every section, UI component, and layout must be catalogued in `src/registry.json`
+- Blog: reading time on posts and the post list, related posts by shared tags, full article content and tag categories in the RSS feed
+- Shared `Head.astro` component used by all layouts; `noindex` prop on BaseLayout and FullWidthLayout
+- Web manifest, PNG favicon fallback (32px), apple-touch-icon, and 192/512px icons
+- Security headers via `vercel.json` (nosniff, frame deny, referrer policy, permissions policy, HSTS)
+- `engines.node >= 22` and `.nvmrc`
+
+### Changed
+
+- Upgraded React and React DOM from 18.3 to 19.2; shadcn/ui components use `React.ComponentRef` and `React.SubmitEvent`
+- Blog cover images use the `image()` schema helper and `<Image />` with responsive widths (reference images relative to the markdown file)
+- Sitemap no longer sets `lastmod` to the build date
+- ESLint config uses `defineConfig` from `eslint/config`
+
+### Fixed
+
+- Tag pages rendered nested links with a no-op `onclick` string (invalid HTML)
+- Auth layout had no `<main>` landmark
+- Dead dropdown code in the Header caused three type errors under `astro check`
+
+## [3.4.1] - 2026-09-04 — Astro 7.3.1, Blog SEO & Registry Completion
+
+### Changed
+
+- Updated Astro from 7.2.0 to 7.3.1, @astrojs/react to 6.0.5, @astrojs/sitemap to 3.7.4, and all Radix UI packages to their latest patches (npm audit: 0 vulnerabilities)
+- Documentation now references the current stack (Astro 7, Vite 8) in AGENTS.md, README.md, CONTRIBUTING.md, and the AI agent definitions
+- Build output (`dist/`) is no longer tracked in git
+
+### Added
+
+- Blog posts emit article Open Graph metadata (`og:type`, `article:published_time`, `article:author`) and BlogPosting JSON-LD structured data
+- Component registry (`src/registry.json`) completed: HeroGradient, HeroSplit, Accordion, Dialog, DropdownMenu, Select, Tabs, and Tooltip added; Hero `prompt` prop documented
+
+### Fixed
+
+- Accessibility: icon button and select demo on the Components page had no accessible name (Lighthouse Accessibility 95 → 100)
+
+## [3.4.0] - 2026-08-07 — Astro 7.2 & Tailwind CSS 4.3.3 Update
+
+### Changed
+
+- Updated Astro from 6.4.4 to 7.2.0 (new Rust-based compiler, Vite 8)
+- Updated Tailwind CSS from 4.3.0 to 4.3.3
+- Updated @astrojs/react from 5.x to 6.0.2, @astrojs/rss to 4.0.19, @astrojs/sitemap to 3.7.3
+
+### Added
+
+- Demo video embedded on the homepage and at the top of the README
+
+## [3.3.0] - 2026-06-11 — AI-First Homepage
+
+### Added
+
+- Copyable starter prompt in the hero — hand your coding agent a working kickoff prompt instead of downloading manually (new optional `prompt` prop on the Hero section)
+- New FAQ section on the homepage, including FAQPage structured data
+
+### Changed
+
+- Homepage repositioned around AI-assisted websites: new headline and audience-focused copy (company sites, blogs, portfolios)
+- Feature cards now explain the real differentiators: guardrails, one design system, dual With-AI/Manual docs, one-command quality checks
+- AI section reframed from standards talk to problem/solution, with an honest note on tool integration depth
+- Stats section now shows Lighthouse-100 proof instead of repeating the AI tool list
+
+## [3.2.0] - 2026-06-11 — AI Layer v2 & Production-Readiness Pass
+
+### Added
+
+- New convention guard hook for Claude Code — blocks deprecated Astro patterns and design-system drift automatically
+- New npm run check:kpis — one command for all static convention checks (colors, inline styles, deprecated imports, alt texts, meta descriptions)
+- Browser theming (theme-color light/dark, color-scheme) and WebSite JSON-LD structured data
+- sitemap.xml now emitted alongside sitemap-index.xml
+- CLAUDE.md entry point for Claude Code (AGENTS.md + PROJECT.md remain the source of truth)
+
+### Changed
+
+- Geist brand fonts now active site-wide (were loaded but never applied)
+- Slash commands accept arguments (/new-page, /new-section, /theme, /plenum); review agents are now strictly read-only
+- AI layer (.claude/) unified in English; measure-and-learn loop scoped to build-relevant changes
+- ESLint and Prettier pass cleanly across the entire codebase
+
+### Fixed
+
+- Accessibility & validity: 0 W3C errors, Lighthouse Accessibility and Best Practices at 100, WCAG 2.5.8 tap-target sizes on all nav and footer links
+- Vercel Analytics only renders on Vercel deployments — no more 404 console error on local preview or other hosts
+- AuthLayout panel uses semantic tokens (bg-primary) instead of hardcoded bg-zinc-900
+
+## [3.1.5] - 2026-06-09
+
+### Changed
+
+- Updated Astro from 6.1.10 to 6.4.4
+- Updated Tailwind CSS from 4.2.4 to 4.3.0
+
+## [3.1.4] - 2026-04-29
+
+### Changed
+
+- Updated Astro from 6.1.7 to 6.1.10
+- Updated Tailwind CSS from 4.2.2 to 4.2.4
+
+### Added
+
+- DESIGN.md handling note in `AGENTS.md` — instructs AI agents how to apply a [Google Stitch DESIGN.md](https://github.com/google-labs-code/design.md) when a user drops one in (one-off translation into `globals.css` `@theme` tokens, no sync infrastructure)
+
+## [3.1.3] - 2026-04-16
+
+### Changed
+
+- Updated Astro from 6.1.5 to 6.1.7
+
+## [3.1.1] - 2026-04-06
+
+### Changed
+
+- Updated Astro from 6.0.6 to 6.1.3
+- Updated Tailwind CSS from 4.2.1 to 4.2.2
+
+## [3.1.0] - 2026-03-26
+
+### Added
+
+- Hybrid AI Architecture combining AstroDeck skills with centralized design knowledge and multi-agent reviews
+- `system/globals/` — 8 canonical design knowledge files (colors, typography, spacing, interaction, imagery, effects, responsiveness, accessibility)
+- `system/prompts/` — 7 standalone self-audit prompts that work in any AI tool (ChatGPT, Gemini, Cursor, Windsurf, Copilot)
+- Plenum multi-agent review — `/plenum` command spawns 6 domain-specific review agents (Design, UX, Accessibility, Performance, SEO, Code) with scope-based auto-selection
+- 6 review agent definitions in `.claude/agents/` for parallel quality reviews
+- New skill chains: Pre-Launch Review, Design System Change, New globals Token
+- Plenum documentation in AGENTS.md
+- AI Architecture and Quality Gates sections in docs page
+- AI tool pathways in README (Claude Code, Cursor, Windsurf, Copilot, ChatGPT)
+
+### Changed
+
+- Skills slimmed down — design knowledge moved to `system/globals/`, skills now reference canonical sources
+- Updated `.cursor/rules`, `.windsurfrules`, `.github/copilot-instructions.md` with globals references
+- Stats on homepage: "5 AI Agents" → "8+ AI Tools" for accuracy
+
+## [3.0.5] - 2026-03-19
+
+### Added
+
+- Live interactive demos for all 6 React components on /components page (Dialog, Accordion, Tabs, Tooltip, Select, Dropdown Menu)
+- New page creation defaults to adding Header + Footer navigation
+- New section creation requires placement on a page
+- AI test framework with dynamic test cases from docs and variance rules
+
+### Fixed
+
+- Pricing section: rounded-lg → rounded-xl, font-bold → font-semibold on h3, py-24 → py-20 px-6, added md:grid-cols-2 tablet step, lg:scale-105 only in 3-col grid, aria-hidden on decorative SVGs
+- FAQ section: removed unused index parameter
+- Components page: removed unused catch parameter
+
+## [3.0.4] - 2026-03-19
+
+### Fixed
+
+- Hero badge and changelog page stuck at v3.0.1 after v3.0.2/v3.0.3 releases
+
+### Added
+
+- Release process documentation in AGENTS.md with all 4 required update locations
+- Release entry in Skill Chains table
+- Clarification that release process applies to AstroDeck framework only
+
+## [3.0.3] - 2026-03-19
+
+### Added
+
+- Non-Negotiable sections in all 6 domain skills — pressure-resistant rules that prevent common rationalizations ("dark mode later", "just a quick hardcoded color", "only a prototype")
+- Skill Chains table in AGENTS.md — mandatory skill execution order per task type (e.g. new section = ui-design → tailwind → accessibility → qa)
+
+### Changed
+
+- Optimized all 7 skill descriptions to trigger-only format (no content summary) for better skill discovery
+- Inspired by [superpowers](https://github.com/obra/superpowers) agent framework patterns
+
+## [3.0.2] - 2026-03-19
+
+### Changed
+
+- Updated Astro from 6.0.4 to 6.0.6
+
+## [3.0.1] - 2026-03-16
+
+### Added
+
+- Components page (`/components`) with full-width layout, sticky sidebar navigation, and live demos for Button, Badge, Card, Input & Label
+- Code snippets with copy-to-clipboard for all 11 UI components
+- Three-tier architecture documentation (Components / Sections / Pages) in README, AGENTS.md, docs, and Claude agent
+- CTA section on homepage with Download and GitHub buttons
+- Stats section on homepage showing project metrics (16 sections, 11 components, 11 pages, 5 AI agents)
+
+### Changed
+
+- Download button now uses `/releases/latest` URL — never needs updating on new releases
+- Navigation order: Home, Pages, Sections, Components, Docs, Changelog
+- Team section grid auto-centers when 3 or fewer members
+
+## [3.0.0] - 2026-03-16
+
+### Added
+
+- **6 new section components**: FAQ (with Schema.org LD+JSON), Stats, Team, Comparison, Newsletter, Contact
+- **2 new Hero variants**: HeroSplit (split layout with visual mockup) and HeroGradient (animated gradient glow orbs)
+- **6 new shadcn/ui components**: Dialog, Accordion, Tabs, Tooltip, Select, DropdownMenu (all via Radix UI)
+- **4 page templates**: SaaS Landing, Portfolio/Agency, Startup/Product Launch, Contact — each with unique Hero variant
+- **Pages overview** (`/pages`): central page gallery with screenshot previews for all pages
+- **Multi-agent compatibility**: `.cursor/rules`, `.github/copilot-instructions.md`, `.windsurfrules` generated from AGENTS.md
+- **Component registry**: `src/registry.json` — machine-readable catalog of all sections, UI components, layouts, and page templates
+- **CSS animation system**: `data-animate` attributes with scroll-triggered animations (fade, slide-left, slide-right, scale) and stagger delays
+- **Section background variants**: `section-muted` (gray) and `section-inverted` (dark bg/light text, auto-inverts in dark mode)
+- **AnimationObserver component**: IntersectionObserver-based animation trigger with `prefers-reduced-motion` support
+
+### Changed
+
+- Tailwind CSS updated from v4.1.18 to v4.2.1
+- All template pages use BaseLayout (boxed header/footer) instead of FullWidthLayout
+- Navigation simplified: "Pages" is now a direct link to `/pages` overview (no dropdown)
+- "Templates" added as separate dropdown in header with 4 template links
+- Template pages now use alternating section backgrounds (muted, inverted) for visual rhythm
+- Contact template reduced to essentials: inverted contact form + FAQ only
+- `tailwindcss-animate` plugin removed (incompatible with Tailwind v4), replaced with pure CSS animation utilities
+
+### Breaking
+
+- Navigation restructured — "Pages" dropdown removed, replaced with flat link + "Templates" dropdown
+- FullWidthLayout no longer used for template pages
+
+## [2.0.4] - 2026-03-15
+
+### Added
+
+- Changelog: latest release highlighted with larger pulsing timeline dot and "Latest" badge
+- Hero version badge now links to `/changelog` page
+- 5 new funny fictional blog posts (Unicorn Startup, Kraken Plumber, Centaur Delivery, Medusa Hairstylist, Yeti Ski Instructor)
+
+### Changed
+
+- Footer restructured into "AstroDeck" (Home, Docs, Sections, Changelog) and "Pages" (Blog, Content, Login) columns
+- Changelog badges use semi-transparent foreground colors for dark mode visibility
+- All changelog dates corrected to match actual GitHub release dates
+- Blog post dates spread from November 2025 to March 2026
+
+### Removed
+
+- 5 real tutorial blog posts replaced with fictional examples
+- "Built With" column removed from footer
+
+## [2.0.3] - 2026-03-15
+
+### Added
+
+- Documentation page (`/docs`) with AI-first two-column layout — each task shown as AI prompt and manual steps
+- 9 docs sections: Getting Started, Create Page, Add Section, Custom Component, Theme & Colors, Design Tokens, Blog Post, Build & Deploy, Project Structure
+- Design Tokens reference table with all CSS custom properties and Tailwind utility mappings
+- Mobile collapsible "On this page" sub-navigation for `/docs` and `/sections` pages
+- Header navigation dropdown: Blog, Content, Login grouped under "Pages"
+- Active page highlighting in main navigation (`aria-current="page"`)
+- Responsive design checks added to AstroDeck agent and QA/UI-design skills
+
+### Changed
+
+- `/docs` and `/sections` use FullWidthLayout with consistent `px-6 md:px-12` padding
+- Sidebar nav hover respects active state (no more unreadable text on hover)
+- All cards and code blocks use `rounded-xl` per design system
+- Touch targets increased to 44px minimum on nav links
+- Scroll margin accounts for dual sticky bars on mobile (`scroll-mt-32 lg:scroll-mt-20`)
+
+## [2.0.2] - 2026-03-15
+
+### Added
+
+- Self-improving skill system with 6 domain skills (ui-design, tailwind, astro, accessibility, qa, content-seo)
+- `/launch-check` command for production-readiness checks across all skill KPIs
+- Footer: "for templatedeck.com" link in creator section
+
+### Fixed
+
+- Title redundancy: "AstroDeck" no longer appears twice in `<title>` tag
+- Inline styles replaced with Tailwind utilities (`z-0`, `z-10`)
+- Hardcoded RGBA shadow replaced with themeable `shadow-primary/40`
+- ESLint errors: empty interfaces, triple-slash reference
+- TypeScript error in `rss.xml.ts`
+- Section padding consistency (`py-32` → `py-20 px-6`)
+- Card border-radius consistency (`rounded-lg` → `rounded-xl`)
+- Heading font-weight hierarchy (`font-bold` → `font-semibold` for h3)
+- External links: added `noreferrer` to `rel` attribute
+
+---
+
+## [2.0.1] - 2026-03-14
+
+### Added
+
+- Changelog page with timeline design at `/changelog`
+- Changelog link in main navigation
+
+---
+
+## [2.0.0] - 2026-03-14
+
+### Breaking Changes
+
+- **Astro 6.0** - Upgraded from Astro 5.x to 6.0.4 (requires Vite 7)
+- **Node.js 22+** - Minimum Node.js version raised from 18 to 22
+- **@astrojs/react 5.0** - Upgraded from 4.x to 5.0.0
+
+### Migration Guide
+
+These changes are required when upgrading from v1.x:
+
+1. **Update Node.js** to version 22 or higher
+2. **Zod imports** - Change `import { z } from 'astro:content'` to `import { z } from 'astro/zod'`
+3. **View Transitions** - Change `ViewTransitions` to `ClientRouter` from `astro:transitions`
+4. Run `npm install` to update all dependencies
+
+### Changed
+
+- Migrated all layouts from `ViewTransitions` to `ClientRouter` (BaseLayout, FullWidthLayout, AuthLayout, MinimalLayout)
+- Updated content config to import `z` from `astro/zod`
+- Updated all documentation for Astro 6 (README, AGENTS.md, CONTRIBUTING.md, blog posts)
+- Rewrote `/theme` command for OKLCH/Tailwind v4 (`--color-` prefix, `@theme` directive)
+- Enhanced `/audit` command with Astro 6 deprecation checks
+- Improved AstroDeck agent with tech stack context, migration checklist, and deprecated pattern detection
+- Fixed AGENTS.md theme system docs from HSL to OKLCH format
+- Updated CSS examples in blog posts from `:root` to `@theme` directive
+
+### Dependency Updates
+
+| Package | From | To |
+|---------|------|-----|
+| astro | ^5.16.6 | ^6.0.4 |
+| @astrojs/react | ^4.4.2 | ^5.0.0 |
+| @astrojs/sitemap | ^3.6.0 | ^3.7.1 |
+| @astrojs/rss | ^4.0.14 | ^4.0.17 |
+
+---
+
+## [1.5.2] - 2025-12-28
+
+### Fixed
+
+- Refactored dark mode system and theme architecture
+- Fixed TypeScript error with HTMLElement generic on querySelectorAll (TS2339)
+
+## [1.5.1] - 2025-12-27
+
+### Fixed
+
+- Improved muted-foreground contrast in light mode
+- Dark mode contrast improvements and theme persistence fix
+- Updated cover.png for OG preview and README
+
+## [1.5.0] - 2025-12-26
+
+### Added
+
+- Functional copy-code buttons to sections page with imports
+
+### Changed
+
+- Updated dependencies (Astro 5.16.15, security fixes)
+
+### Fixed
+
+- README download link and installation option numbering
+
+## [1.4.0] - 2025-12-25
+
+### Added
+
+- Content Layer API migration for future Astro v6 compatibility
+
+## [1.3.0] - 2025-12-24
+
+### Added
+
+- MinimalLayout for standalone pages (404, maintenance, landing)
+- Comprehensive SEO support (OpenGraph, Twitter Cards, canonical URLs, sitemap, RSS)
+- PROJECT.md for user-specific AI instructions
+- Responsive header with hamburger menu
+- MCP server documentation (Astro Docs, shadcn/ui)
+
+### Fixed
+
+- Handle undefined Astro.site in SEO component
+
+### Changed
+
+- Phase 2-4 improvements: content, pages, DX, code quality, performance
+
+## [1.2.0] - 2025-12-22
+
+### Added
+
+- Claude Code AI Agent for project assistance
+- AI tools grid with Gemini CLI and VS Code support
+- Git workflow rules to AGENTS.md
+- AI feature section on homepage
+
+### Changed
+
+- Consolidated AI guidelines into AGENTS.md standard
+- Redesigned AI tools grid to match Features section style
+
+## [1.1.0] - 2025-12-20
+
+### Added
+
+- AI-friendly development documentation (AGENTS.md)
+- Vercel Analytics integration
+- Comprehensive README documentation
+
+### Changed
+
+- Migrated to Tailwind CSS v4.1.18
+- Redesigned features section with grid layout
+- Updated footer with Pages, Built With, and Creator sections
+
+## [1.0.0] - 2025-12-18
+
+### Added
+
+- Initial release
+- Pre-built sections: Hero, CTA, Features, Pricing, Testimonials, Newsletter, LogoCloud
+- Layouts: BaseLayout, FullWidthLayout, AuthLayout
+- shadcn/ui components: Button, Card, Badge, Input, Label
+- Dark mode with theme persistence
+- Blog with Content Collections
+- TypeScript support
+- ESLint and Prettier configuration

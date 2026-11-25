@@ -1,0 +1,235 @@
+---
+/**
+ * Hero Section Component
+ *
+ * A large, centered hero section with title, subtitle, CTA buttons, and an optional badge.
+ * Features a decorative GitHub contribution-style grid pattern background.
+ *
+ * @example
+ * ```astro
+ * <Hero
+ *   title="Build amazing products faster"
+ *   subtitle="Pre-built components for Astro.js"
+ *   badge={{ label: "v1.0 — Open Source", href: "/changelog" }}
+ *   primaryCta={{ href: "/sections", label: "Browse Components" }}
+ *   secondaryCta={{ href: "https://github.com/holger1411/astrodeck", label: "GitHub" }}
+ * />
+ * ```
+ *
+ * @customization
+ * - Edit title/subtitle props for custom content
+ * - Change CTA buttons by modifying primaryCta/secondaryCta props
+ * - Remove badge by omitting the badge prop
+ * - Adjust grid pattern by modifying gridSize, squareSize variables
+ * - Customize colors via Tailwind classes (background uses currentColor for theme support)
+ */
+interface Props {
+  title: string;
+  subtitle: string;
+  primaryCta?: { href: string; label: string };
+  secondaryCta?: { href: string; label: string };
+  /** Small pill above the title. Omit to hide it. Rendered as a link when `href` is set. */
+  badge?: { label: string; href?: string };
+  /** Optional copy-to-clipboard starter prompt rendered above the CTA buttons */
+  prompt?: string;
+  /** Hide the decorative contribution-grid background (quiet, text-led hero, e.g. local businesses). */
+  plain?: boolean;
+}
+
+const { title, subtitle, primaryCta, secondaryCta, badge, prompt, plain = false } = Astro.props;
+
+// Optimized grid generation - reduced size and deterministic pattern
+// Using seeded pseudo-random for consistent SSR output
+const gridSize = 50; // Reduced from 80 for better performance
+const centerX = gridSize / 2;
+const centerY = gridSize / 2;
+const squareSize = 14;
+const gap = 2;
+
+// Deterministic pseudo-random based on position (no Math.random for SSR consistency)
+const seededRandom = (x: number, y: number): number => {
+  const seed = x * 1000 + y;
+  const a = Math.sin(seed * 12.9898 + seed * 78.233) * 43758.5453;
+  return a - Math.floor(a);
+};
+
+const getCircularIntensity = (x: number, y: number): number => {
+  const dx = x - centerX;
+  const dy = y - centerY;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  // Create concentric circles effect
+  const angle = Math.atan2(dy, dx);
+  const circlePattern = Math.sin(distance * 0.25 + angle * 2) * 2 + 2;
+  const randomFactor = seededRandom(x, y) * 1.5;
+
+  // Fade out towards edges
+  const maxRadius = gridSize / 2;
+  const fadeFactor = Math.max(0, 1 - distance / maxRadius);
+
+  const combined = (circlePattern + randomFactor) * fadeFactor;
+  return Math.floor(Math.min(4, combined));
+};
+
+// Generate SVG rects - only include visible ones
+const rects: Array<{ x: number; y: number; opacity: number }> = [];
+for (let y = 0; y < gridSize; y++) {
+  for (let x = 0; x < gridSize; x++) {
+    const intensity = getCircularIntensity(x, y);
+    if (intensity > 0) {
+      const opacity = intensity * 0.25;
+      const xPos = x * (squareSize + gap);
+      const yPos = y * (squareSize + gap);
+      rects.push({ x: xPos, y: yPos, opacity });
+    }
+  }
+}
+
+const svgWidth = gridSize * (squareSize + gap);
+const svgHeight = gridSize * (squareSize + gap);
+---
+
+<section
+  class="min-h-[70vh] flex items-center py-[10vh] md:py-[12vh] px-6 relative overflow-hidden"
+>
+  {/* GitHub Contribution Grid Background as SVG (omitted with `plain`) */}
+  {
+    !plain && (
+      <div class="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none z-0">
+        <svg
+          width={svgWidth}
+          height={svgHeight}
+          viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+          xmlns="http://www.w3.org/2000/svg"
+          class="text-foreground"
+          aria-hidden="true"
+        >
+          {rects.map((rect) => (
+            <rect
+              x={rect.x}
+              y={rect.y}
+              width={squareSize}
+              height={squareSize}
+              rx="2"
+              fill="currentColor"
+              opacity={rect.opacity}
+            />
+          ))}
+        </svg>
+      </div>
+    )
+  }
+
+  <div
+    class="container max-w-5xl mx-auto flex flex-col items-center gap-6 text-center relative z-10"
+    data-animate="fade"
+  >
+    {
+      badge &&
+        (badge.href ? (
+          <a
+            href={badge.href}
+            class="inline-flex items-center rounded-full border px-4 py-1.5 text-sm font-medium hover:bg-muted transition-colors"
+          >
+            {badge.label}
+          </a>
+        ) : (
+          <span class="inline-flex items-center rounded-full border px-4 py-1.5 text-sm font-medium">
+            {badge.label}
+          </span>
+        ))
+    }
+    <h1
+      class="text-4xl font-bold leading-tight tracking-tight hyphens-auto md:hyphens-manual break-words sm:text-5xl md:text-7xl lg:text-8xl lg:leading-[1.1] max-w-5xl"
+    >
+      {title}
+    </h1>
+    <p class="max-w-[800px] text-xl text-muted-foreground md:text-2xl" set:html={subtitle} />
+    {
+      prompt && (
+        <div class="w-full max-w-2xl mt-2 px-6 sm:px-0">
+          <div class="flex items-start gap-2 rounded-xl border bg-card p-4 text-left shadow-sm">
+            <code
+              id="hero-prompt-text"
+              class="flex-1 min-w-0 break-words font-mono text-sm leading-relaxed text-foreground whitespace-pre-wrap"
+            >
+              {prompt}
+            </code>
+            <button
+              type="button"
+              data-copy-prompt
+              class="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-accent hover:text-accent-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Copy prompt to clipboard"
+            >
+              <svg
+                class="h-3.5 w-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              <span data-copy-label>Copy</span>
+            </button>
+          </div>
+          <p class="text-center text-sm text-muted-foreground mt-5 -mb-2" aria-hidden="true">
+            or
+          </p>
+        </div>
+      )
+    }
+    <div class="flex flex-col sm:flex-row gap-4 mt-4">
+      {
+        primaryCta && (
+          <a
+            href={primaryCta.href}
+            class="group relative inline-flex items-center justify-center whitespace-nowrap rounded-md text-base font-semibold ring-offset-background transition-[background-color,transform,box-shadow] duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 bg-primary text-primary-foreground hover:bg-primary/90 hover:scale-105 h-12 px-6 sm:px-12 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 overflow-hidden"
+          >
+            {/* Shine effect overlay */}
+            <span class="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-primary-foreground/30 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out" />
+
+            {/* Button text */}
+            <span class="relative z-10 inline-block transition-transform duration-300 group-hover:translate-x-0.5">
+              {primaryCta.label}
+            </span>
+          </a>
+        )
+      }
+      {
+        secondaryCta && (
+          <a
+            href={secondaryCta.href}
+            class="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-12 px-6 sm:px-8"
+          >
+            {secondaryCta.label}
+          </a>
+        )
+      }
+    </div>
+  </div>
+</section>
+
+<script>
+  // Event delegation so the handler survives ClientRouter view transitions
+  document.addEventListener('click', async (event) => {
+    const button = (event.target as HTMLElement).closest('[data-copy-prompt]');
+    if (!button) return;
+
+    const promptEl = document.getElementById('hero-prompt-text');
+    const label = button.querySelector('[data-copy-label]');
+    if (!promptEl || !label) return;
+
+    try {
+      await navigator.clipboard.writeText(promptEl.textContent?.trim() ?? '');
+      label.textContent = 'Copied!';
+      setTimeout(() => {
+        label.textContent = 'Copy';
+      }, 2000);
+    } catch {
+      label.textContent = 'Press Ctrl+C';
+    }
+  });
+</script>

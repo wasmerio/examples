@@ -1,0 +1,257 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { render } from 'astro:content';
+import { getPublishedPosts } from '@/lib/blog';
+import type { CollectionEntry } from 'astro:content';
+import { Image } from 'astro:assets';
+import { getReadingTime } from '@/lib/reading-time';
+
+export async function getStaticPaths() {
+  const blogPosts = await getPublishedPosts();
+  const sortedPosts = blogPosts.sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+  return sortedPosts.map((post, index) => {
+    // Related posts: most shared tags first, newest first on ties, max 3
+    const relatedPosts = sortedPosts
+      .filter((other) => other.id !== post.id)
+      .map((other) => ({
+        post: other,
+        shared: other.data.tags.filter((tag) => post.data.tags.includes(tag)).length,
+      }))
+      .filter(({ shared }) => shared > 0)
+      .sort((a, b) => b.shared - a.shared)
+      .slice(0, 3)
+      .map(({ post }) => post);
+
+    return {
+      params: { slug: post.id },
+      props: {
+        post,
+        prevPost: index < sortedPosts.length - 1 ? sortedPosts[index + 1] : null,
+        nextPost: index > 0 ? sortedPosts[index - 1] : null,
+        relatedPosts,
+      },
+    };
+  });
+}
+
+interface Props {
+  post: CollectionEntry<'blog'>;
+  prevPost: CollectionEntry<'blog'> | null;
+  nextPost: CollectionEntry<'blog'> | null;
+  relatedPosts: CollectionEntry<'blog'>[];
+}
+
+const { post, prevPost, nextPost, relatedPosts } = Astro.props;
+const { Content } = await render(post);
+const readingTime = getReadingTime(post.body ?? '');
+
+// Format date helper
+function formatDate(date: Date) {
+  return new Date(date).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+---
+
+<BaseLayout
+  title={post.data.title}
+  description={post.data.description}
+  image={post.data.image?.src}
+  type="article"
+  publishedTime={post.data.pubDate}
+  author={post.data.author}
+>
+  <article class="pb-12">
+    <div class="container max-w-3xl mx-auto pt-12 mb-8">
+      <a
+        href="/blog"
+        class="inline-flex items-center text-sm text-muted-foreground hover:text-primary transition-colors"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="mr-2"
+        >
+          <path d="m15 18-6-6 6-6"></path>
+        </svg>
+        Back to Blog
+      </a>
+    </div>
+
+    <header class="mb-12">
+      <div class="container max-w-3xl mx-auto mb-8 space-y-4">
+        <h1 class="text-5xl font-bold tracking-tight">{post.data.title}</h1>
+
+        <p class="text-xl text-muted-foreground">{post.data.description}</p>
+
+        <div class="flex items-center gap-4 text-sm text-muted-foreground pt-2">
+          <time datetime={post.data.pubDate.toISOString()}>
+            {formatDate(post.data.pubDate)}
+          </time>
+          <span>•</span>
+          <span>{post.data.author}</span>
+          <span>•</span>
+          <span>{readingTime.text}</span>
+        </div>
+
+        {
+          post.data.tags.length > 0 && (
+            <div class="flex flex-wrap gap-2 pt-2">
+              {post.data.tags.map((tag) => (
+                <a
+                  href={`/tags/${tag}`}
+                  class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                >
+                  {tag}
+                </a>
+              ))}
+            </div>
+          )
+        }
+      </div>
+
+      <div class="container max-w-5xl mx-auto">
+        <div
+          class="w-full aspect-[4/3] bg-gradient-to-br from-primary/20 via-primary/10 to-transparent relative overflow-hidden rounded-lg"
+        >
+          {
+            post.data.image ? (
+              <Image
+                src={post.data.image}
+                alt={post.data.title}
+                widths={[640, 1024, 1280]}
+                sizes="(max-width: 1024px) 100vw, 1024px"
+                loading="eager"
+                class="w-full h-full object-cover"
+              />
+            ) : (
+              <div class="w-full h-full flex items-center justify-center">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="64"
+                  height="64"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  class="text-primary/40"
+                >
+                  <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                  <circle cx="9" cy="9" r="2" />
+                  <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                </svg>
+              </div>
+            )
+          }
+        </div>
+      </div>
+    </header>
+
+    <div class="container max-w-3xl mx-auto">
+      <div class="prose prose-neutral dark:prose-invert max-w-none">
+        <Content />
+      </div>
+
+      {
+        relatedPosts.length > 0 && (
+          <aside class="mt-16 pt-8 border-t" aria-labelledby="related-heading">
+            <h2 id="related-heading" class="text-xl font-bold tracking-tight mb-6">
+              Related posts
+            </h2>
+            <ul class="grid gap-4 sm:grid-cols-3">
+              {relatedPosts.map((related) => (
+                <li>
+                  <a
+                    href={`/blog/${related.id}`}
+                    class="group block h-full rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent/50"
+                  >
+                    <time
+                      datetime={related.data.pubDate.toISOString()}
+                      class="text-xs text-muted-foreground"
+                    >
+                      {formatDate(related.data.pubDate)}
+                    </time>
+                    <span class="mt-2 block text-sm font-medium leading-snug group-hover:text-primary transition-colors">
+                      {related.data.title}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </aside>
+        )
+      }
+
+      <footer class="mt-12 pt-8 border-t">
+        <nav class="flex items-center justify-between gap-8">
+          {
+            prevPost ? (
+              <a href={`/blog/${prevPost.id}`} class="group flex-1 text-left">
+                <div class="text-xs text-muted-foreground mb-1">Previous</div>
+                <div class="text-sm font-medium group-hover:text-primary transition-colors">
+                  {prevPost.data.title}
+                </div>
+              </a>
+            ) : (
+              <div class="flex-1" />
+            )
+          }
+
+          <a
+            href="/blog"
+            class="inline-flex items-center text-sm text-muted-foreground hover:text-primary transition-colors"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="mr-2"
+            >
+              <rect width="3" height="3" x="3" y="3" rx="1"></rect>
+              <rect width="3" height="3" x="10" y="3" rx="1"></rect>
+              <rect width="3" height="3" x="17" y="3" rx="1"></rect>
+              <rect width="3" height="3" x="3" y="10" rx="1"></rect>
+              <rect width="3" height="3" x="10" y="10" rx="1"></rect>
+              <rect width="3" height="3" x="17" y="10" rx="1"></rect>
+              <rect width="3" height="3" x="3" y="17" rx="1"></rect>
+              <rect width="3" height="3" x="10" y="17" rx="1"></rect>
+              <rect width="3" height="3" x="17" y="17" rx="1"></rect>
+            </svg>
+            All posts
+          </a>
+
+          {
+            nextPost ? (
+              <a href={`/blog/${nextPost.id}`} class="group flex-1 text-right">
+                <div class="text-xs text-muted-foreground mb-1">Next</div>
+                <div class="text-sm font-medium group-hover:text-primary transition-colors">
+                  {nextPost.data.title}
+                </div>
+              </a>
+            ) : (
+              <div class="flex-1" />
+            )
+          }
+        </nav>
+      </footer>
+    </div>
+  </article>
+</BaseLayout>

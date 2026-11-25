@@ -1,0 +1,84 @@
+---
+import { getCollection, getEntry } from 'astro:content';
+import { Image } from 'astro:assets';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Badge from '../../components/Badge.astro';
+import { resolvePath } from '../../utils/navigation';
+
+const posts = await getCollection('blog', ({ data }) => {
+  return data.draft !== true;
+});
+
+// Sort posts by date descending
+posts.sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+// Resolve authors for all posts
+const postsWithAuthors = await Promise.all(posts.map(async (post) => {
+  const author = await getEntry(post.data.author);
+  const authorName = author?.data.name ?? 'Zenix Author';
+  const authorInitials = authorName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase();
+
+  return { ...post, authorData: author?.data, authorName, authorInitials };
+}));
+---
+
+<BaseLayout title="Blog" description="Latest updates, thoughts, and tutorials from the Zenix team.">
+  <div class="bg-slate-50 dark:bg-[#0c0c0f] border-b border-slate-200 dark:border-slate-800 py-16 md:py-24">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl text-center">
+      <h1 class="text-4xl md:text-5xl font-heading font-extrabold text-slate-900 dark:text-white mb-4">The Zenix Blog</h1>
+      <p class="text-xl text-slate-600 dark:text-slate-400">
+        Insights, updates, and resources for SaaS founders and indie hackers.
+      </p>
+    </div>
+  </div>
+
+  <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 max-w-5xl">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+      {postsWithAuthors.map(post => (
+        <article class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden hover:shadow-xl transition-all duration-300 flex flex-col hover-glow">
+          <div class="p-8 flex-grow flex flex-col">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4 text-sm leading-6 text-slate-500 dark:text-slate-400">
+              <time datetime={post.data.pubDate.toISOString()}>
+                {post.data.pubDate.toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })}
+              </time>
+              <span class="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700"></span>
+              <span class="min-w-0 inline-flex items-center gap-2">
+                <span class="relative inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-100 text-[9px] font-bold text-primary-700 ring-1 ring-primary-200 dark:bg-primary-900/40 dark:text-primary-300 dark:ring-primary-800">
+                  <span>{post.authorInitials}</span>
+                  {post.authorData?.avatar && (
+                    <Image src={post.authorData.avatar} alt={`${post.authorName} avatar`} width={20} height={20} class="absolute inset-0 h-full w-full rounded-full object-cover" loading="lazy" />
+                  )}
+                </span>
+                <span>{post.authorName}</span>
+              </span>
+            </div>
+            
+            <h2 class="text-2xl font-heading font-bold text-slate-900 dark:text-white mb-3 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+              <a href={resolvePath(`/blog/${post.id}`)}>{post.data.title}</a>
+            </h2>
+            
+            <p class="text-slate-600 dark:text-slate-400 mb-6 flex-grow">
+              {post.data.description}
+            </p>
+            
+            <div class="flex flex-wrap gap-2 mt-auto">
+              {post.data.tags.map(tag => (
+                <Badge variant="neutral">{tag}</Badge>
+              ))}
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  </div>
+</BaseLayout>

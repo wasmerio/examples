@@ -1,0 +1,180 @@
+---
+import '@fontsource-variable/inter';
+import '@fontsource-variable/space-grotesk';
+import { ClientRouter } from 'astro:transitions';
+import '../styles/global.css';
+import Navbar from '../components/Navbar.astro';
+import Footer from '../components/Footer.astro';
+import CommandPalette from '../components/CommandPalette.astro';
+import { SITE_TITLE, SITE_DESCRIPTION, SITE_URL } from '../config';
+import { resolvePath } from '../utils/navigation';
+
+interface Props {
+  title: string;
+  description?: string;
+  image?: string;
+  type?: 'website' | 'article';
+  publishedDate?: Date;
+  modifiedDate?: Date;
+  author?: string;
+}
+
+const {
+  title,
+  description = SITE_DESCRIPTION,
+  image = '/og-image.png',
+  type = 'website',
+  publishedDate,
+  modifiedDate,
+  author,
+} = Astro.props;
+
+const siteURL = SITE_URL.endsWith('/') ? SITE_URL : `${SITE_URL}/`;
+const canonicalPath = Astro.url.pathname.endsWith('/') ? Astro.url.pathname : `${Astro.url.pathname}/`;
+const canonicalURL = new URL(canonicalPath, siteURL).href;
+const imageURL = new URL(image, siteURL).href;
+const fullTitle = `${title} | ${SITE_TITLE}`;
+const robotsContent = 'index, follow';
+const structuredData =
+  type === 'article'
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: title,
+        description,
+        image: imageURL,
+        url: canonicalURL,
+        datePublished: publishedDate?.toISOString(),
+        dateModified: (modifiedDate ?? publishedDate)?.toISOString(),
+        author: author
+          ? {
+              '@type': 'Person',
+              name: author,
+            }
+          : undefined,
+        publisher: {
+          '@type': 'Organization',
+          name: SITE_TITLE,
+          logo: {
+            '@type': 'ImageObject',
+            url: new URL('/favicon.svg', siteURL).href,
+          },
+        },
+      }
+    : {
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: SITE_TITLE,
+        description,
+        url: siteURL,
+      };
+---
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href={resolvePath('/favicon.svg')} />
+    <link rel="canonical" href={canonicalURL} />
+    <link rel="sitemap" href={resolvePath('/sitemap.xml')} />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <meta name="robots" content={robotsContent} />
+    
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content={type} />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:image" content={imageURL} />
+    <meta property="og:site_name" content={SITE_TITLE} />
+    {type === 'article' && publishedDate && (
+      <meta property="article:published_time" content={publishedDate.toISOString()} />
+    )}
+    {type === 'article' && (modifiedDate ?? publishedDate) && (
+      <meta property="article:modified_time" content={(modifiedDate ?? publishedDate)?.toISOString()} />
+    )}
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@farrosfr_" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={imageURL} />
+
+    <script type="application/ld+json" set:html={JSON.stringify(structuredData)} />
+    
+    <title>{fullTitle}</title>
+
+    <ClientRouter />
+
+    <!-- Dark Mode initialization script to prevent FOUC and preserve theme across routes -->
+    <script is:inline data-astro-rerun>
+      (() => {
+        const getPreferredTheme = () => {
+          if (typeof localStorage !== 'undefined' && localStorage.getItem('theme')) {
+            return localStorage.getItem('theme');
+          }
+          if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            return 'dark';
+          }
+          return 'light';
+        };
+
+        const applyTheme = (theme, root = document.documentElement) => {
+          root.classList.toggle('dark', theme === 'dark');
+          window.localStorage.setItem('theme', theme);
+        };
+
+        applyTheme(getPreferredTheme());
+
+        if (!window.__zenixThemeBound) {
+          window.__zenixThemeBound = true;
+
+          document.addEventListener('astro:before-swap', (event) => {
+            const theme = localStorage.getItem('theme') || getPreferredTheme();
+            event.newDocument.documentElement.classList.toggle('dark', theme === 'dark');
+          });
+
+          document.addEventListener('astro:after-swap', () => {
+            applyTheme(localStorage.getItem('theme') || getPreferredTheme());
+          });
+
+          document.addEventListener('astro:page-load', () => {
+            applyTheme(localStorage.getItem('theme') || getPreferredTheme());
+          });
+        }
+      })();
+    </script>
+  </head>
+  <body class="flex flex-col min-h-screen bg-slate-50 text-slate-900 transition-colors duration-300 dark:bg-[#09090b] dark:text-slate-100">
+    <CommandPalette />
+    <Navbar />
+    <main class="flex-grow">
+      <slot />
+    </main>
+    <Footer />
+
+    <!-- Global Intersection Observer for Scroll Animations -->
+    <script>
+      document.addEventListener('astro:page-load', () => {
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-revealed');
+              // Optional: Stop observing once revealed
+              // observer.unobserve(entry.target);
+            }
+          });
+        }, {
+          root: null,
+          rootMargin: '0px',
+          threshold: 0.1
+        });
+
+        document.querySelectorAll('.reveal-on-scroll').forEach((el) => {
+          observer.observe(el);
+        });
+      });
+    </script>
+  </body>
+</html>

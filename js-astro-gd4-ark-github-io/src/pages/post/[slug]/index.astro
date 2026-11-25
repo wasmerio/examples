@@ -1,0 +1,79 @@
+---
+import { type CollectionEntry, getCollection } from "astro:content";
+import Posts from "@layouts/Posts.astro";
+import PostDetails from "@layouts/PostDetails.astro";
+import getSortedPosts from "@utils/getSortedPosts";
+import getPageNumbers from "@utils/getPageNumbers";
+import getPagination from "@utils/getPagination";
+
+export interface Props {
+  post: CollectionEntry<"blog">;
+}
+
+export async function getStaticPaths() {
+  const posts = await getCollection(
+    "blog",
+    ({ data }) =>
+      !data.draft &&
+      (data.permalink || data.permalinks?.length) &&
+      !data.permalink?.includes("posts/")
+  );
+
+  let postResult = posts
+    .map(post => {
+      let result = [];
+
+      if (post.data?.permalink) {
+        result.push({
+          params: {
+            slug: post.data.permalink!.replace("/post/", ""),
+          },
+          props: { post },
+        });
+      }
+
+      if (post.data?.permalinks.length) {
+        result = [
+          ...result,
+          ...(post?.data?.permalinks || [])
+            .filter(link => link.startsWith("/post/"))
+            .map(link => ({
+              params: {
+                slug: link?.replace("/post/", ""),
+              },
+              props: { post },
+            })),
+        ];
+      }
+
+      return result;
+    })
+    .flat();
+
+  const pagePaths = getPageNumbers(posts.length).map(pageNum => ({
+    params: { slug: String(pageNum) },
+  }));
+
+  return [...postResult, ...pagePaths];
+}
+
+const { slug } = Astro.params;
+const { post } = Astro.props;
+
+const posts = await getCollection(
+  "blog",
+  ({ data }) =>
+    !data.draft &&
+    (data.permalink || data.permalinks?.length) &&
+    !data.permalink?.includes("posts/")
+);
+
+const sortedPosts = getSortedPosts(posts);
+
+const pagination = getPagination({
+  posts: sortedPosts,
+  page: slug,
+});
+---
+
+{post ? <PostDetails post={post} /> : <Posts {...pagination} />}

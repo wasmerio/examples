@@ -1,0 +1,81 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Section from '../../components/Section.astro';
+import MediaWindow from '../../components/MediaWindow.astro';
+import Cover from '../../components/Cover.astro';
+import { site } from '../../data/site';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post, posts } }));
+}
+
+const { post, posts } = Astro.props;
+const { Content, headings } = await render(post);
+const toc = headings.filter((h) => h.depth === 2);
+const related = posts.filter((p) => p.id !== post.id).sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf()).slice(0, 3);
+const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const initials = post.data.author.split(' ').map((w) => w[0]).join('');
+const url = new URL(`/blog/${post.id}`, Astro.site ?? site.url).href;
+const ld = { '@context': 'https://schema.org', '@type': 'BlogPosting', headline: post.data.title, description: post.data.excerpt, datePublished: post.data.date.toISOString(), author: { '@type': 'Person', name: post.data.author }, publisher: { '@type': 'Organization', name: site.name }, mainEntityOfPage: url };
+---
+
+<Base title={post.data.title} description={post.data.excerpt} type="article" image={post.data.cover ?? '/og.png'}>
+  <script slot="head" type="application/ld+json" set:html={JSON.stringify(ld)} />
+  <Section top={false} inner="px-6 pt-[72px] pb-10 max-md:px-5 max-md:pt-8 max-md:pb-6" label="Post header">
+    <p class="flex items-center gap-2 text-[12px] text-smoke"><a href="/blog" class="hover:text-ink">Blog</a> / <span class="pill bg-ink text-canvas uppercase tracking-[0.06em] !text-[10px]">{post.data.category}</span></p>
+    <h1 class="mt-6 text-[clamp(32px,4.6vw,56px)] leading-[1.04] font-bold tracking-[-0.045em] max-w-[22ch]">{post.data.title}</h1>
+    <p class="mt-5 text-[18px] max-md:text-[15px] leading-[1.5] text-steel max-w-[60ch]">{post.data.excerpt}</p>
+    <div class="mt-7 pt-[18px] border-t border-rule flex flex-wrap items-center gap-x-6 gap-y-3">
+      <span class="flex items-center gap-3"><span class="flex size-9 items-center justify-center rounded-full bg-ink text-canvas text-[11px] font-bold" aria-hidden="true">{initials}</span><span class="text-[13px]"><span class="block font-bold text-ink">{post.data.author}</span></span></span>
+      <span class="text-[13px] text-smoke">{fmt(post.data.date)} · {post.data.readingTime} min read</span>
+      <span class="ml-auto flex gap-2 max-md:ml-0">
+        <button type="button" class="border border-rule px-2.5 py-1.5 text-[12px] text-steel hover:text-ink" data-copy-link={url}>copy link</button>
+        <a class="border border-rule px-2.5 py-1.5 text-[12px] text-steel hover:text-ink" href={`https://x.com/intent/post?url=${encodeURIComponent(url)}`} target="_blank" rel="noopener">X</a>
+        <a class="border border-rule px-2.5 py-1.5 text-[12px] text-steel hover:text-ink" href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`} target="_blank" rel="noopener">in</a>
+      </span>
+    </div>
+  </Section>
+  <Section top={false} inner="px-6 pb-14 max-md:px-5 max-md:pb-6" label="Cover">
+    <MediaWindow title="fig. 01 / cover">{post.data.cover ? <img src={post.data.cover} alt="" class="aspect-[16/9] w-full object-cover" /> : <Cover kind={0} label="fig. 01" class="!aspect-[12/5] max-md:!aspect-[16/10]" />}</MediaWindow>
+  </Section>
+  <Section top={false} inner="px-6 pb-24 max-md:px-5 max-md:pb-12" label="Article">
+    <div class="grid grid-cols-[200px_minmax(0,680px)_220px] max-xl:grid-cols-[minmax(0,680px)_220px] max-lg:grid-cols-1 gap-14 max-lg:gap-6 justify-between">
+      <aside class="max-xl:hidden space-y-[18px] pt-1.5 text-[13px]">
+        {[['Written by', post.data.author], ['Published', fmt(post.data.date)], ['Reading time', `${post.data.readingTime} minutes`]].map(([k, v]) => <div><p class="label">{k}</p><p class="mt-1 text-ink">{v}</p></div>)}
+      </aside>
+      <div class="prose-runlog min-w-0"><Content /></div>
+      {toc.length > 0 && (
+        <aside class="max-lg:order-first lg:sticky lg:top-20 h-fit">
+          <details class="lg:hidden border border-rule bg-tint"><summary class="flex px-4 py-3 text-[12px] font-bold text-ink">On this page<span class="ml-auto">+</span></summary><ul class="px-4 pb-3 space-y-2 text-[13px]">{toc.map((h) => <li><a href={`#${h.slug}`} class="text-steel">{h.text}</a></li>)}</ul></details>
+          <div class="max-lg:hidden"><p class="label">On this page</p><ul class="mt-3 space-y-2.5 text-[13px]">{toc.map((h) => <li><a href={`#${h.slug}`} class="text-steel hover:text-ink">{h.text}</a></li>)}</ul></div>
+        </aside>
+      )}
+    </div>
+  </Section>
+  <Section label="Keep reading">
+    <div class="flex items-center gap-5 border border-ink p-6 max-w-[760px] max-md:p-4">
+      <span class="flex size-14 max-md:size-10 shrink-0 items-center justify-center rounded-full bg-ink text-canvas text-[14px] font-bold" aria-hidden="true">{initials}</span>
+      <p><span class="block text-[16px] font-bold text-ink">{post.data.author}</span><span class="block mt-1 text-[13px] leading-[1.5] text-steel">Writes about reliability, evals and the boring parts of shipping agents.</span></p>
+    </div>
+    <p class="label mt-12"><b>[01]</b> keep reading</p>
+    <ul class="mt-4 border-t border-rule">
+      {related.map((p) => (
+        <li><a href={`/blog/${p.id}`} class="group grid grid-cols-[130px_1fr_auto_auto] max-md:grid-cols-[1fr_auto] gap-6 items-center py-[18px] border-b border-rule">
+          <span class="text-[11px] uppercase tracking-[0.06em] text-steel max-md:hidden">{p.data.category}</span>
+          <span class="text-[16px] max-md:text-[15px] text-ink group-hover:underline underline-offset-4">{p.data.title}</span>
+          <span class="text-[12px] text-smoke max-md:hidden">{p.data.readingTime} min</span>
+          <span class="text-stone font-bold group-hover:text-ink" aria-hidden="true">-&gt;</span>
+        </a></li>
+      ))}
+    </ul>
+  </Section>
+</Base>
+
+<script>
+  document.querySelector<HTMLButtonElement>('[data-copy-link]')?.addEventListener('click', async (e) => {
+    const b = e.currentTarget as HTMLButtonElement;
+    try { await navigator.clipboard.writeText(b.dataset.copyLink!); b.textContent = 'copied'; } catch {}
+  });
+</script>

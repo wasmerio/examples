@@ -1,0 +1,38 @@
+---
+title: Why every agent needs a verify step
+excerpt: Most agent failures are not model failures. They are missing checks. Here is how we gate every result with evals, and what it cost us in latency.
+date: 2026-09-24
+category: engineering
+author: Mara Okafor
+readingTime: 9
+featured: true
+---
+
+When an agent goes wrong in production, the instinct is to blame the model. In our logs, 4 out of 5 incidents had a different cause: nothing checked the result before it shipped.
+
+A verify step is a small function that runs after the last tool call. It looks at the outcome, not the reasoning, and returns a yes or a no.
+
+## What a verify step looks like
+
+```ts
+verify: async (run) => {
+  const tests = await run.tool("ci.tests");
+  return tests.passed && run.cost.usd < 0.10;
+}
+```
+
+> Checking the output is cheaper than explaining the incident.
+
+## Picking a threshold
+
+We tried three thresholds before settling on 0.90. Lower let bad pull requests through; higher retried runs that were fine.
+
+## What it cost
+
+| metric | before | after |
+| --- | --- | --- |
+| incidents / month | 23 | 4 |
+| median latency | 5.9s | 6.4s |
+| cost per run | $0.028 | $0.031 |
+
+A half-second of latency bought us an 80% drop in incidents. We would make that trade again.

@@ -1,0 +1,110 @@
+---
+// Hero console: a live replay of one agent run. Edit `steps` to tell your own story.
+const steps = [
+  { kind: 'plan', call: 'split "flaky checkout test" into 3 tasks', ms: 420, tokens: 1840 },
+  { kind: 'tool', call: 'repo.search(q: "checkout timeout")', ms: 1180, tokens: 2310 },
+  { kind: 'tool', call: 'ci.logs(run: 4821, tail: 200)', ms: 870, tokens: 3925 },
+  { kind: 'think', call: 'root cause: cache warmup race', ms: 2030, tokens: 3402 },
+  { kind: 'tool', call: 'repo.create_pr(branch: "fix/cache-race")', ms: 1360, tokens: 1615 },
+  { kind: 'eval', call: 'tests 48/48 passed, score 0.97', ms: 640, tokens: 1120 },
+];
+const totalTokens = steps.reduce((s, x) => s + x.tokens, 0);
+---
+
+<div class="runlog relative bg-canvas text-[13px] leading-none" aria-label="Example agent run log">
+  <div class="flex items-center gap-3 px-4 h-11 border-b border-ink">
+    <span class="text-ink font-semibold">run_8f3a21</span>
+    <span class="text-smoke hidden sm:inline">agent: triage-bot</span>
+    <span class="ml-auto pill border border-rule text-steel" data-status>
+      <span class="size-1.5 rounded-full bg-ok" aria-hidden="true"></span>
+      <span data-status-text>verified</span>
+    </span>
+  </div>
+
+  <ol class="py-2">
+    {steps.map((s, i) => (
+      <li class="step grid grid-cols-[2.5ch_1fr_auto_2ch] sm:grid-cols-[2.5ch_5.5ch_1fr_auto_2ch] items-center gap-3 px-4 h-9" data-ms={s.ms} data-tokens={s.tokens}>
+        <span class="text-smoke">{String(i + 1).padStart(2, '0')}</span>
+        <span class="text-smoke hidden sm:block">{s.kind}</span>
+        <span class="text-ink truncate">{s.call}</span>
+        <span class="text-smoke tabular-nums" data-time>{(s.ms / 1000).toFixed(2)}s</span>
+        <span class="text-ok text-right" data-mark aria-hidden="true">✓</span>
+      </li>
+    ))}
+  </ol>
+
+  <div class="grid grid-cols-3 border-t border-ink text-[12px]">
+    <p class="px-4 py-3 border-r border-rule"><span class="label block mb-1.5">tokens</span><span class="text-ink tabular-nums" data-tokens-total>{totalTokens.toLocaleString('en-US')}</span></p>
+    <p class="px-4 py-3 border-r border-rule"><span class="label block mb-1.5">cost</span><span class="text-ink tabular-nums" data-cost>${(totalTokens * 0.0000022).toFixed(3)}</span></p>
+    <p class="px-4 py-3"><span class="label block mb-1.5">steps</span><span class="text-ink tabular-nums" data-steps>{steps.length}/{steps.length}</span></p>
+  </div>
+</div>
+
+<style>
+  .step { transition: opacity 200ms ease-out; }
+  .runlog.playing .step.pending { opacity: 0; }
+  .runlog.playing .step.active { background: var(--tint); }
+  .spin { display: inline-block; animation: spin 0.8s steps(8) infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  document.querySelectorAll<HTMLElement>('.runlog').forEach((root) => {
+    if (reduce) return; // static, fully rendered log
+    const rows = [...root.querySelectorAll<HTMLElement>('.step')];
+    const statusText = root.querySelector('[data-status-text]')!;
+    const tokensEl = root.querySelector('[data-tokens-total]')!;
+    const costEl = root.querySelector('[data-cost]')!;
+    const stepsEl = root.querySelector('[data-steps]')!;
+    let run = 0; // bumping it cancels the replay in flight
+
+    const fmt = (n: number) => n.toLocaleString('en-US');
+    const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+
+    async function play(id: number) {
+      root.classList.add('playing');
+      rows.forEach((r) => {
+        r.classList.add('pending');
+        r.classList.remove('active');
+        r.querySelector('[data-mark]')!.textContent = '';
+      });
+      statusText.textContent = 'live';
+      let tokens = 0;
+      tokensEl.textContent = '0';
+      costEl.textContent = '$0.000';
+
+      for (const [i, row] of rows.entries()) {
+        const ms = Number(row.dataset.ms);
+        const time = row.querySelector('[data-time]')!;
+        const mark = row.querySelector('[data-mark]')!;
+        row.classList.remove('pending');
+        row.classList.add('active');
+        mark.innerHTML = '<span class="spin text-smoke">/</span>';
+        stepsEl.textContent = `${i + 1}/${rows.length}`;
+        const start = performance.now();
+        const tick = window.setInterval(() => {
+          time.textContent = `${((performance.now() - start) / 1000).toFixed(2)}s`;
+        }, 50);
+        await wait(ms);
+        window.clearInterval(tick);
+        if (id !== run) return;
+        time.textContent = `${(ms / 1000).toFixed(2)}s`;
+        mark.textContent = '✓';
+        row.classList.remove('active');
+        tokens += Number(row.dataset.tokens);
+        tokensEl.textContent = fmt(tokens);
+        costEl.textContent = `$${(tokens * 0.0000022).toFixed(3)}`;
+      }
+      statusText.textContent = 'verified';
+      await wait(4000);
+      if (id === run) play(id);
+    }
+
+    new IntersectionObserver(([e]) => {
+      run++;
+      if (e.isIntersecting) play(run);
+    }).observe(root);
+  });
+</script>

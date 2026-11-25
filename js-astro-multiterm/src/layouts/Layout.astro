@@ -1,0 +1,168 @@
+---
+import '~/styles/global.css'
+import Header from '~/components/Header.astro'
+import Footer from '~/components/Footer.astro'
+import LightDarkAutoThemeLoader from '~/components/LightDarkAutoThemeLoader.astro'
+import SelectThemeLoader from '~/components/SelectThemeLoader.astro'
+import siteConfig from '~/site.config'
+import { pick, resolveThemeColorStyles } from '~/utils'
+import crypto from 'crypto'
+
+interface Props {
+  title?: string
+  description?: string
+  tags?: string[]
+  author?: string
+}
+
+const { title, description, tags, author } = Astro.props
+const pageUrl = new URL(Astro.url.pathname, Astro.site).href.replace(/\/$/, '') // Remove trailing slash for consistency
+const pageType = Astro.url.pathname.startsWith('/posts') ? 'article' : 'website'
+const pageTitle = title ? `${title} - ${siteConfig.title}` : siteConfig.title
+const pageDescription = description || siteConfig.description
+const pageAuthor = author || siteConfig.author
+const pageImage =
+  pageType === 'article'
+    ? Astro.url.origin +
+      Astro.url.pathname.replace(/\/posts\//, '/social-cards/') +
+      '.png'
+    : `${Astro.url.origin}/social-cards/__default.png`
+const pageKeywords = [
+  ...new Set(siteConfig.tags.concat(tags || []).map((word) => word.toLowerCase())),
+].join(', ')
+const baseCssVars: { [key: string]: string } = {
+  'theme-font': siteConfig.font,
+  'ec-frm-frameBoxShdCssVal': 'none',
+  'ec-frm-edTabBrdRad': '0',
+  'ec-frm-edTabBarBrdCol':
+    'color-mix(in srgb, var(--theme-foreground), 10%, transparent)',
+  'ec-brdCol': 'color-mix(in srgb, var(--theme-foreground), 10%, transparent)',
+}
+
+let themeMode = siteConfig.themes.mode
+if (siteConfig.themes.include.length < 1) {
+  throw new Error('No themes defined in site.config. Please add at least one theme.')
+}
+if (themeMode === 'light-dark-auto' && siteConfig.themes.include.length < 2) {
+  console.warn(
+    'Theme mode "dark-light-auto" requires at least two themes. Defaulting to "single".',
+  )
+  themeMode = 'single'
+}
+let defaultTheme = siteConfig.themes.default || siteConfig.themes.include[0]
+let includedThemes = siteConfig.themes.include as string[]
+const themeNotIncluded = !includedThemes.includes(defaultTheme)
+if (
+  (themeMode !== 'light-dark-auto' && themeNotIncluded) ||
+  (themeMode === 'light-dark-auto' && defaultTheme !== 'auto' && themeNotIncluded)
+) {
+  console.warn(
+    `Default theme "${defaultTheme}" not found in themes. Using first theme: "${siteConfig.themes.include[0]}".`,
+  )
+  defaultTheme = siteConfig.themes.include[0]
+}
+let lightTheme = themeMode === 'light-dark-auto' ? includedThemes[0] : undefined
+let darkTheme = themeMode === 'light-dark-auto' ? includedThemes[1] : undefined
+
+// Generate a hash to use for cache busting the theme settings in localStorage.
+const themeHash = crypto
+  .createHash('md5')
+  .update(themeMode + defaultTheme + includedThemes.join(''))
+  .digest('hex')
+  .slice(0, 8) // Truncate to the first 8 characters
+
+const resolvedThemes = await resolveThemeColorStyles(
+  siteConfig.themes.include,
+  siteConfig.themes.overrides,
+)
+
+let cssLines: string[] = []
+for (const [themeId, themeStyles] of Object.entries(resolvedThemes)) {
+  const relevantStyles = pick(themeStyles, [
+    'foreground',
+    'background',
+    'accent',
+    'heading1',
+    'heading2',
+    'heading3',
+    'heading4',
+    'heading5',
+    'heading6',
+    'list',
+    'italic',
+    'link',
+    'separator',
+    'note',
+    'tip',
+    'important',
+    'caution',
+    'warning',
+    'blue',
+    'green',
+    'red',
+    'yellow',
+    'magenta',
+    'cyan',
+  ])
+  cssLines.push(`:root[data-theme="${themeId}"] {`)
+  for (const [key, value] of Object.entries(relevantStyles)) {
+    cssLines.push(`--theme-${key}: ${value};`)
+  }
+  cssLines.push(`}`)
+}
+let generatedCss: string = cssLines.join('\n')
+---
+
+<!doctype html>
+<html
+  lang="en"
+  data-theme={defaultTheme}
+  data-dark-theme={darkTheme}
+  data-light-theme={lightTheme}
+  data-theme-mode={themeMode}
+  data-theme-hash={themeHash}
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="title" content={pageTitle} />
+    <meta name="description" content={pageDescription} />
+    <meta name="author" content={pageAuthor} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDescription} />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:type" content={pageType} />
+    {pageImage && <meta property="og:image" content={pageImage} />}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDescription} />
+    {pageImage && <meta name="twitter:image" content={pageImage} />}
+    <meta name="keywords" content={pageKeywords} />
+    <link rel="canonical" href={pageUrl} />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={siteConfig.title}
+      href={new URL('rss.xml', Astro.site)}
+    />
+    <title>{pageTitle}</title>
+    <style is:global define:vars={baseCssVars}></style>
+    <style is:inline set:html={generatedCss}></style>
+    {themeMode === 'light-dark-auto' && <LightDarkAutoThemeLoader />}
+    {themeMode === 'select' && <SelectThemeLoader />}
+  </head>
+  <body class="w-full h-full m-0 bg-background text-foreground">
+    <div
+      class="flex flex-col max-w-3xl min-h-screen border-accent/10 m-auto p-3 sm:py-5 sm:px-6 md:py-10"
+    >
+      <Header />
+      <main class="flex flex-col py-1">
+        <slot />
+      </main>
+      <Footer />
+    </div>
+  </body>
+</html>

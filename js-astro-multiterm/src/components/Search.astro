@@ -1,0 +1,221 @@
+---
+import '@pagefind/default-ui/css/ui.css'
+import IconCircleX from '~/icons/circle-x.svg'
+import IconSearch from '~/icons/search.svg'
+
+const { trailingSlashes = false } = Astro.props
+---
+
+<site-search class="ms-auto" id="search" data-trailing-slashes={trailingSlashes}>
+  <button
+    class="hover:text-accent flex cursor-pointer items-center justify-center rounded-md"
+    aria-keyshortcuts="Control+K Meta+K"
+    data-open-modal
+    disabled
+  >
+    <IconSearch class="size-6 text-accent" />
+    <span class="sr-only">Open Search</span>
+  </button>
+  <dialog
+    aria-label="search"
+    class="text-foreground! bg-background max-h-5/6 min-h-48 w-7/8 sm:w-5/6 max-w-xl border-double! border-4 border-accent/30 shadow-sm backdrop:backdrop-blur-sm open:flex mx-auto mt-10 sm:mt-16 mb-auto rounded-xl"
+  >
+    <div class="dialog-frame flex grow flex-col gap-4 p-6 pt-6 max-w-full">
+      <button class="cursor-pointer fixed top-2 right-2 rounded-full" data-close-modal>
+        <IconCircleX class="size-6 text-accent/50" />
+      </button>
+      {
+        import.meta.env.DEV ? (
+          <div class="mx-auto text-center">
+            <p>
+              Search is only available in production builds. <br />
+              Try building and previewing the site to test it out locally.
+            </p>
+          </div>
+        ) : (
+          <div class="search-container">
+            <div id="pagefind-search" class="max-w-full" />
+          </div>
+        )
+      }
+    </div>
+  </dialog>
+</site-search>
+
+<style is:global>
+  :root {
+    --pagefind-ui-font: inherit;
+    --pagefind-ui-primary: var(--theme-accent);
+    --pagefind-ui-text: var(--theme-foreground);
+    --pagefind-ui-background: var(--theme-background);
+    --pagefind-ui-border: var(--theme-accent);
+    --pagefind-ui-border-width: 2px;
+  }
+
+  .pagefind-ui__results-area {
+    margin: 16px 0;
+  }
+  .pagefind-ui__result {
+    overflow-x: scroll !important;
+  }
+
+  .pagefind-ui__result-inner {
+    max-width: 100% !important;
+  }
+
+  .pagefind-ui__result-inner mark {
+    background-color: var(--theme-accent) !important;
+    color: var(--theme-background) !important;
+    font-weight: 600 !important;
+    padding: 0 3px !important;
+    border-radius: 6px !important;
+  }
+
+  .pagefind-ui__result-nested .pagefind-ui__result-link:before {
+    content: '>' !important;
+    left: -16px !important;
+    right: unset !important;
+    color: var(--theme-accent) !important;
+    font-weight: 600 !important;
+  }
+</style>
+
+<script>
+  class SiteSearch extends HTMLElement {
+    #closeBtn: HTMLButtonElement | null
+    #dialog: HTMLDialogElement | null
+    #dialogFrame: HTMLDivElement | null
+    #openBtn: HTMLButtonElement | null
+    #controller: AbortController
+    trailingSlashes: boolean
+    stripTrailingSlash: (path: string) => string
+    formatURL: (path: string) => string
+
+    constructor() {
+      super()
+      this.#openBtn = this.querySelector<HTMLButtonElement>('button[data-open-modal]')
+      this.#closeBtn = this.querySelector<HTMLButtonElement>('button[data-close-modal]')
+      this.#dialog = this.querySelector<HTMLDialogElement>('dialog')
+      this.#dialogFrame = this.querySelector('.dialog-frame')
+      this.#controller = new AbortController()
+
+      this.trailingSlashes = this.dataset.trailingSlashes === 'true' ? true : false
+      this.stripTrailingSlash = (path: string) => path.replace(/(.)\/(#.*)?$/, '$1$2')
+      this.formatURL = !this.trailingSlashes
+        ? this.stripTrailingSlash
+        : (path: string) => path
+
+      // Set up events
+      if (this.#openBtn) {
+        this.#openBtn.addEventListener('click', this.openModal)
+        this.#openBtn.disabled = false
+      } else {
+        console.warn('Search button not found')
+      }
+
+      if (this.#closeBtn) {
+        this.#closeBtn.addEventListener('click', this.closeModal)
+      } else {
+        console.warn('Close button not found')
+      }
+
+      if (this.#dialog) {
+        this.#dialog.addEventListener('close', () => {
+          window.removeEventListener('click', this.onWindowClick)
+          const body = document.querySelector('body')
+          body?.classList.remove('overflow-hidden')
+        })
+      } else {
+        console.warn('Dialog not found')
+      }
+
+      // only add pagefind in production
+      if (import.meta.env.DEV) return
+      const onIdle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1))
+      onIdle(async () => {
+        const { PagefindUI } = await import('@pagefind/default-ui')
+
+        new PagefindUI({
+          baseUrl: import.meta.env.BASE_URL,
+          bundlePath: import.meta.env.BASE_URL.replace(/\/$/, '') + '/pagefind/',
+          element: '#pagefind-search',
+          showImages: false,
+          showSubResults: true,
+          processResult: (result: {
+            url: string
+            sub_results: Array<{ url: string }>
+          }) => {
+            // Ensure links in search results match the trailing slashes setting
+            result.url = this.formatURL(result.url)
+
+            result.sub_results = result.sub_results.map((res) => {
+              res.url = this.formatURL(res.url)
+              return res
+            })
+
+            return result
+          },
+        })
+      })
+    }
+
+    connectedCallback() {
+      // window events, requires cleanup
+      window.addEventListener('keydown', this.onWindowKeydown, {
+        signal: this.#controller.signal,
+      })
+    }
+
+    disconnectedCallback() {
+      this.#controller.abort()
+    }
+
+    openModal = (event?: MouseEvent) => {
+      if (!this.#dialog) {
+        console.warn('Dialog not found')
+        return
+      }
+
+      const body = document.querySelector('body')
+      body?.classList.add('overflow-hidden')
+
+      this.#dialog.showModal()
+      this.querySelector('input')?.focus()
+      event?.stopPropagation()
+      window.addEventListener('click', this.onWindowClick, {
+        signal: this.#controller.signal,
+      })
+    }
+
+    closeModal = () => {
+      this.#dialog?.close()
+    }
+
+    onWindowClick = (event: MouseEvent) => {
+      // check if it's a link
+      const isLink = 'href' in (event.target || {})
+      // make sure the click is either a link or outside of the dialog
+      if (
+        isLink ||
+        (document.body.contains(event.target as Node) &&
+          !this.#dialogFrame?.contains(event.target as Node))
+      ) {
+        this.closeModal()
+      }
+    }
+
+    onWindowKeydown = (e: KeyboardEvent) => {
+      if (!this.#dialog) {
+        console.warn('Dialog not found')
+        return
+      }
+      // check if it's the Control+K or ⌘+K shortcut
+      if ((e.metaKey === true || e.ctrlKey === true) && e.key === 'k') {
+        this.#dialog.open ? this.closeModal() : this.openModal()
+        e.preventDefault()
+      }
+    }
+  }
+
+  customElements.define('site-search', SiteSearch)
+</script>

@@ -1,0 +1,193 @@
+---
+import '@pagefind/default-ui/css/ui.css'
+import IconPalette from '~/icons/palette.svg'
+import IconCircleX from '~/icons/circle-x.svg'
+import siteConfig from '~/site.config'
+
+function kebabToTitleCase(str: string): string {
+  return str
+    .split('-') // Split the string into words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1)) // Capitalize each word
+    .join(' ') // Join the words with a space
+}
+---
+
+<select-theme class="ms-auto" id="search">
+  <button
+    class="hover:text-accent flex cursor-pointer items-center justify-center rounded-md"
+    aria-keyshortcuts="Control+K Meta+K"
+    data-open-modal
+    disabled
+  >
+    <IconPalette class="size-6 text-accent" />
+    <span class="sr-only">Select Theme</span>
+  </button>
+  <dialog
+    aria-label="select-theme"
+    class="text-foreground! bg-background max-h-5/6 max-w-5/6 border-double! border-4 border-accent/30 shadow-sm backdrop:backdrop-blur-sm open:flex mx-auto mt-16 mb-auto rounded-xl"
+  >
+    <div class="dialog-frame flex grow flex-col gap-4 px-10 py-1 max-w-full">
+      <button
+        aria-roledescription="close"
+        class="cursor-pointer fixed top-2 right-2 rounded-full"
+        data-close-modal
+      >
+        <IconCircleX class="size-6 text-accent/50" />
+      </button>
+      <ul
+        id="theme-change-list"
+        class="flex flex-col bg-background text-accent m-0 p-2 rounded-xl"
+      >
+        {
+          siteConfig.themes.include.map((theme) => (
+            <li>
+              <button class="w-full rounded-lg py-1 px-2" data-theme={theme}>
+                {kebabToTitleCase(theme)}
+              </button>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </dialog>
+</select-theme>
+
+<style>
+  button.current-theme {
+    background-color: color-mix(in srgb, var(--theme-accent) 8%, transparent 92%);
+  }
+</style>
+
+<script>
+  class SelectTheme extends HTMLElement {
+    #closeBtn: HTMLButtonElement | null
+    #dialog: HTMLDialogElement | null
+    #dialogFrame: HTMLDivElement | null
+    #openBtn: HTMLButtonElement | null
+    #controller: AbortController
+
+    constructor() {
+      super()
+      this.#openBtn = this.querySelector<HTMLButtonElement>('button[data-open-modal]')
+      this.#closeBtn = this.querySelector<HTMLButtonElement>('button[data-close-modal]')
+      this.#dialog = this.querySelector<HTMLDialogElement>('dialog')
+      this.#dialogFrame = this.querySelector('.dialog-frame')
+      this.#controller = new AbortController()
+
+      // Set up events
+      if (this.#openBtn) {
+        this.#openBtn.addEventListener('click', this.openModal)
+        this.#openBtn.disabled = false
+      } else {
+        console.warn('Select theme button not found')
+      }
+
+      if (this.#closeBtn) {
+        this.#closeBtn.addEventListener('click', this.closeModal)
+      } else {
+        console.warn('Close button not found')
+      }
+
+      if (this.#dialog) {
+        this.#dialog.addEventListener('close', () => {
+          window.removeEventListener('click', this.onWindowClick)
+          const body = document.querySelector('body')
+          body?.classList.remove('overflow-hidden')
+        })
+      } else {
+        console.warn('Dialog not found')
+      }
+
+      let themeChangeButtons = this.querySelectorAll('#theme-change-list button')
+      themeChangeButtons?.forEach((button) => {
+        button.addEventListener('click', (ev) => {
+          ev.preventDefault()
+          let themeId = button.getAttribute('data-theme')
+          if (themeId) {
+            document.documentElement.setAttribute('data-theme', themeId)
+            localStorage.setItem('data-theme', themeId)
+            this.closeModal()
+          }
+        })
+      })
+    }
+
+    connectedCallback() {
+      // window events, requires cleanup
+      window.addEventListener('keydown', this.onWindowKeydown, {
+        signal: this.#controller.signal,
+      })
+    }
+
+    disconnectedCallback() {
+      this.#controller.abort()
+    }
+
+    openModal = (event?: MouseEvent) => {
+      if (!this.#dialog) {
+        console.warn('Dialog not found')
+        return
+      }
+      this.highlightCurrentTheme()
+      const body = document.querySelector('body')
+      body?.classList.add('overflow-hidden')
+      this.#dialog.showModal()
+      event?.stopPropagation()
+      window.addEventListener('click', this.onWindowClick, {
+        signal: this.#controller.signal,
+      })
+    }
+
+    closeModal = () => {
+      this.#dialog?.close()
+    }
+
+    onWindowClick = (event: MouseEvent) => {
+      // check if it's a link
+      const isLink = 'href' in (event.target || {})
+      // make sure the click is either a link or outside of the dialog
+      if (
+        isLink ||
+        (document.body.contains(event.target as Node) &&
+          !this.#dialogFrame?.contains(event.target as Node))
+      ) {
+        this.closeModal()
+      }
+    }
+
+    onWindowKeydown = (e: KeyboardEvent) => {
+      if (!this.#dialog) {
+        console.warn('Dialog not found')
+        return
+      }
+      // check if it's the Control+K or ⌘+K shortcut
+      if ((e.metaKey === true || e.ctrlKey === true) && e.key === 'k') {
+        this.#dialog.open ? this.closeModal() : this.openModal()
+        e.preventDefault()
+      }
+    }
+
+    highlightCurrentTheme() {
+      const currentTheme = document.documentElement.getAttribute('data-theme')
+      if (!currentTheme) {
+        console.warn('No theme set in data-theme attribute.')
+        return
+      }
+      const themeChangeListItems = this.querySelectorAll('#theme-change-list li')
+      themeChangeListItems?.forEach((listItem) => {
+        let button = listItem.querySelector('button')
+        if (!button) {
+          console.warn('No button found in theme change list item.')
+          return
+        }
+        if (button.getAttribute('data-theme') === currentTheme) {
+          button.classList.add('current-theme')
+        } else {
+          button.classList.remove('current-theme')
+        }
+      })
+    }
+  }
+
+  customElements.define('select-theme', SelectTheme)
+</script>

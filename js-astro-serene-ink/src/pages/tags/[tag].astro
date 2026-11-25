@@ -1,0 +1,82 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "@/layouts/Layout.astro";
+import Badge from "@/components/ui/Badge.astro";
+import { siteConfig } from "@/config";
+import { calcReadTime } from "@/utils/reading-time";
+
+export async function getStaticPaths() {
+    const entries = await getCollection("post");
+    const posts = entries.filter((entry) => !entry.data.draft);
+
+    const tags = new Set<string>();
+    posts.forEach((post) => {
+        post.data.tags.forEach((tag) => tags.add(tag));
+    });
+
+    return [...tags].map((tag) => ({
+        params: { tag },
+        props: { tag },
+    }));
+}
+
+const { tag } = Astro.props;
+
+const entries = await getCollection("post");
+const posts = entries
+    .filter((entry) => !entry.data.draft && entry.data.tags.includes(tag))
+    .map((entry) => ({
+        id: entry.id,
+        slug: entry.id,
+        readTime: calcReadTime(entry.body ?? ""),
+        ...entry.data,
+    }))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+---
+
+<Layout title={`Posts tagged "${tag}" | ${siteConfig.title}`}>
+    <main class="page">
+        <div class="mb-10">
+            <a
+                href="/tags"
+                class="text-sm font-medium text-muted-foreground hover:text-primary transition-colors flex items-center gap-2"
+            >
+                <span>←</span> All tags
+            </a>
+        </div>
+
+        <span class="uppercase text-primary font-medium tracking-widest"
+            >tag</span
+        >
+        <h1 class="text-4xl mt-10">#{tag}</h1>
+        <p class="text-lg text-muted-foreground">
+            {posts.length}
+            {posts.length === 1 ? "post" : "posts"} tagged with &ldquo;{tag}&rdquo;
+        </p>
+
+        <section class="mt-20 flex flex-col gap-3">
+            {
+                posts.map((post) => (
+                    <section class="flex flex-col gap-2 group hover:bg-muted px-3 py-8 rounded-md transition-all duration-300">
+                        <div class="flex flex-col md:flex-row gap-2 md:justify-between md:items-start">
+                            <a href={`/posts/${post.slug}`}>
+                                <h2 class="text-2xl group-hover:text-primary leading-tight">
+                                    {post.title}
+                                </h2>
+                            </a>
+                            <span class="text-muted-foreground text-xs shrink-0 whitespace-nowrap md:mt-1 md:text-right text-left mt-1">
+                                {post.readTime} min read
+                            </span>
+                        </div>
+                        <p class="text-muted-foreground">{post.frontmatter}</p>
+                        <section class="flex gap-2 flex-wrap">
+                            {post.tags.map((t) => (
+                                <Badge content={t} href={`/tags/${t}`} />
+                            ))}
+                        </section>
+                    </section>
+                ))
+            }
+        </section>
+    </main>
+</Layout>

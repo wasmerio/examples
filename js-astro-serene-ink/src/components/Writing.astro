@@ -1,0 +1,161 @@
+---
+import { getCollection } from "astro:content";
+import Badge from "./ui/Badge.astro";
+import { siteConfig } from "@/config";
+import { calcReadTime } from "@/utils/reading-time";
+
+interface Props {
+    page?: number;
+}
+
+const { page = 1 } = Astro.props;
+
+const entries = await getCollection("post");
+const allPosts = entries
+    .filter((entry) => !entry.data.draft)
+    .map((entry) => ({
+        id: entry.id,
+        slug: entry.id,
+        readTime: calcReadTime(entry.body!),
+        ...entry.data,
+    }))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+const totalPages = Math.ceil(allPosts.length / siteConfig.postsPerPage);
+const posts = allPosts.slice(
+    (page - 1) * siteConfig.postsPerPage,
+    page * siteConfig.postsPerPage,
+);
+
+type MappedPost = (typeof posts)[number];
+
+const monthName = (n: number) =>
+    new Date(2000, n - 1).toLocaleString("en", { month: "short" });
+
+const dateRange = (postsInMonth: MappedPost[]) => {
+    const days = postsInMonth.map((p) => Number(p.date.split("/")[1]));
+    const min = Math.min(...days);
+    const max = Math.max(...days);
+    return min === max ? String(min) : `${min} - ${max}`;
+};
+
+const grouped = posts.reduce(
+    (acc, post) => {
+        const [m, , y] = post.date.split("/");
+        const month = monthName(Number(m));
+        if (!acc[y]) acc[y] = {};
+        if (!acc[y][month]) acc[y][month] = [];
+        acc[y][month].push(post);
+        return acc;
+    },
+    {} as Record<string, Record<string, MappedPost[]>>,
+);
+
+const pageUrl = (p: number) => (p === 1 ? "/" : `/page/${p}`);
+---
+
+<main class="page">
+    <span class="uppercase text-primary font-medium tracking-widest"
+        >notebook</span
+    >
+
+    <h1 class="text-4xl mt-10">Writing</h1>
+    <p class="text-lg max-w-122 text-muted-foreground">
+        Thoughts on systems, craft, and the quiet details of building things
+        well.
+    </p>
+
+    <section class="mt-20 my-5">
+        {
+            Object.keys(grouped)
+                .sort((a, b) => Number(b) - Number(a))
+                .map((year) => (
+                    <section>
+                        <h2 class="text-2xl">{year}</h2>
+                        {Object.entries(grouped[year]).map(
+                            ([month, monthPosts]) => (
+                                <section>
+                                    <h3 class="text-sm text-muted-foreground uppercase font-medium tracking-widest">
+                                        {month} {dateRange(monthPosts)}
+                                    </h3>
+                                    <hr class="mt-2" />
+                                    <section class="flex flex-col gap-3 my-5">
+                                        {monthPosts.map((post) => (
+                                            <section class="flex flex-col gap-2 group hover:bg-muted px-3 py-8 rounded-md transition-all duration-300 relative overflow-hidden">
+                                                <div class="flex flex-col md:flex-row gap-2 md:justify-between md:items-start">
+                                                    <a
+                                                        href={`/posts/${post.slug}`}
+                                                    >
+                                                        <h2 class="text-2xl group-hover:text-primary leading-tight">
+                                                            {post.title}
+                                                        </h2>
+                                                    </a>
+                                                    <span class="text-muted-foreground text-xs shrink-0 whitespace-nowrap md:mt-1 md:text-right text-left mt-1">
+                                                        {post.readTime} min read
+                                                    </span>
+                                                </div>
+                                                <p class="text-muted-foreground">
+                                                    {post.frontmatter}
+                                                </p>
+                                                <section class="flex gap-2 flex-wrap">
+                                                    {post.tags.map((tag) => (
+                                                        <Badge
+                                                            content={tag}
+                                                            href={`/tags/${tag}`}
+                                                        />
+                                                    ))}
+                                                </section>
+                                            </section>
+                                        ))}
+                                    </section>
+                                </section>
+                            ),
+                        )}
+                    </section>
+                ))
+        }
+    </section>
+
+    {
+        totalPages > 1 && (
+            <nav
+                class="flex items-center justify-center gap-2 mt-16 mb-10"
+                aria-label="Pagination"
+            >
+                {page > 1 && (
+                    <a
+                        href={pageUrl(page - 1)}
+                        class="text-sm text-muted-foreground hover:text-primary transition-colors px-3 py-2"
+                        aria-label="Previous page"
+                    >
+                        ←
+                    </a>
+                )}
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                    (p) => (
+                        <a
+                            href={pageUrl(p)}
+                            class={`text-sm px-3 py-2 rounded-md transition-colors ${
+                                p === page
+                                    ? "bg-primary text-primary-foreground font-medium"
+                                    : "text-muted-foreground hover:text-primary hover:bg-muted"
+                            }`}
+                            aria-current={p === page ? "page" : undefined}
+                        >
+                            {p}
+                        </a>
+                    ),
+                )}
+                {page < totalPages && (
+                    <a
+                        href={pageUrl(page + 1)}
+                        class="text-sm text-muted-foreground hover:text-primary transition-colors px-3 py-2"
+                        aria-label="Next page"
+                    >
+                        →
+                    </a>
+                )}
+            </nav>
+        )
+    }
+</main>

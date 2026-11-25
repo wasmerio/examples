@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  blockedDependency, chooseAdapter, evaluateRow, parseCsv, renderTemplate,
+  acceptLocal, applyProbe, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
 } from './mcp-batch.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -81,6 +82,112 @@ test('native-http template does not open Python pipes', () => {
   const readme = rendered.files[`${rows[1].folder}/README.md`];
   assert.match(readme, /openssl rand -hex 32/);
   assert.match(readme, /Settings/);
+});
+
+test('python import probe selects in-process', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'mcp-probe-test-'));
+  try {
+    mkdirSync(path.join(dir, 'samplepkg'));
+    writeFileSync(path.join(dir, 'samplepkg/__init__.py'), '');
+    writeFileSync(path.join(dir, 'samplepkg/server.py'), [
+      'class FastMCP:',
+      '    def __init__(self, name):',
+      '        self.name = name',
+      '    def list_tools(self):',
+      '        return []',
+      'app = FastMCP("x")',
+      'def register_all_tools():',
+      '    return None',
+      '',
+    ].join('\n'));
+    const result = spawnSync('python3', ['-c', PROBE_SOURCE], {
+      encoding: 'utf8',
+      env: { ...process.env, PYTHONPATH: dir, MCP_PROBE_MODULE: 'samplepkg', MCP_PROBE_DIST: 'samplepkg' },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const parsed = JSON.parse(result.stdout.trim().split('\n').filter(Boolean).pop());
+    assert.equal(parsed.found.symbol, 'app');
+    assert.equal(parsed.found.module, 'samplepkg.server');
+    assert.equal(parsed.found.register, 'register_all_tools');
+    const meta = {
+      pkgType: 'pypi',
+      repository: 'https://github.com/example/plain-stdio',
+      dependencies: [],
+      readme: 'stdio only',
+      entryExcerpt: 'def main():\n    pass\n',
+    };
+    applyProbe(meta, parsed.found);
+    const ctx = { seen: new Map(), slugs: new Set(), folders: new Set(), templates: new Set() };
+    const row = { ...queue[1], rank: 90, pkg: 'plain-stdio', gh: 'example/plain-stdio', description: 'Adds numbers' };
+    const decision = evaluateRow(row, meta, ctx);
+    assert.equal(decision.status, 'build');
+    assert.equal(decision.adapter, 'in-process');
+    const rendered = renderTemplate(row, meta, decision);
+    assert.match(rendered.files[`${decision.folder}/main.py`], /register_all_tools\(\)/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a failed local check blocks the row and skips deploy', async () => {
+  const report = {
+    rank: 7,
+    folder: 'js-mcp-closed-port',
+    adapter: 'stdio-bridge',
+    status: 'build',
+    reason: '',
+    tests: { local: 'not run' },
+    blocker: null,
+    tools: [],
+  };
+  const accepted = acceptLocal(report, { ok: false, error: 'healthz did not answer' });
+  assert.equal(accepted, false);
+  assert.equal(report.status, 'blocked');
+  assert.equal(report.tests.local, 'failed');
+  assert.equal(report.blocker.where, 'edgejs');
+  assert.equal(report.blocker.what, 'local MCP check failed');
+  const checked = await checkMcpUrl('http://127.0.0.1:9/mcp', 'local-check-token');
+  assert.equal(checked.ok, false);
+  assert.match(String(checked.error), /\S/);
+});
+
+test('secretEnv counts are not required variable names', () => {
+  const ctx = { seen: new Map(), slugs: new Set(), folders: new Set(), templates: new Set() };
+  const row = {
+    ...queue[2],
+    rank: 92,
+    pkg: 'context-docs',
+    gh: 'example/context-docs',
+    description: 'Docs lookup',
+    tier: 'B-needs-secrets',
+    secretEnv: '1',
+    envVars: 'CONTEXT7_API_KEY',
+  };
+  const decision = evaluateRow(row, {
+    pkgType: 'npm',
+    repository: 'https://github.com/example/context-docs',
+    dependencies: ['@modelcontextprotocol/sdk'],
+    devDependencies: [],
+    readme: 'stdio',
+    entryExcerpt: 'const server = new McpServer();\n',
+    license: 'MIT',
+  }, ctx);
+  assert.equal(decision.status, 'build');
+  assert.deepEqual(decision.secrets, ['MCP_AUTH_TOKEN']);
+  assert.deepEqual(decision.upstreamEnv, ['CONTEXT7_API_KEY']);
+  assert.deepEqual(upstreamEnv({ envVars: 'PORT MCP_AUTH_TOKEN BRAVE_API_KEY' }), ['BRAVE_API_KEY']);
+});
+
+test('local JavaScript check can see the shared server beside node_modules', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'mcp-local-js-'));
+  try {
+    ensureLocalJsShared(dir);
+    const source = readFileSync(path.join(dir, 'mcp-http/app.mjs'), 'utf8');
+    assert.match(source, /@modelcontextprotocol\/sdk/);
+    assert.equal(readFileSync(path.join(dir, 'mcp-http/wasmer-starter-ui.js'), 'utf8').length > 0, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('dry-run CLI prints one object per fixture row', () => {

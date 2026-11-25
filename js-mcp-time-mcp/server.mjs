@@ -1,11 +1,8 @@
-import { existsSync } from 'node:fs';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const local = path.join(here, 'mcp-http', 'app.mjs');
-const shared = path.join(here, '..', '_shared', 'mcp-http', 'js', 'app.mjs');
-const { startMcpHttp } = await import(pathToFileURL(existsSync(local) ? local : shared).href);
+const { startMcpHttp } = await import(pathToFileURL(path.join(here, 'mcp-http', 'app.mjs')).href);
 const entry = path.join(here, 'node_modules', 'time-mcp', 'dist', 'index.js');
 
 startMcpHttp({

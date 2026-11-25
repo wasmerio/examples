@@ -6,8 +6,9 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  acceptLocal, applyProbe, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
+  acceptLocal, applyProbe, autobuildInput, binFile, blockedDependency, checkMcpUrl, chooseAdapter, ensureLocalJsShared, evaluateRow, parseCsv, PROBE_SOURCE, renderTemplate, upstreamEnv,
 } from './mcp-batch.mjs';
+import { generatedCopy } from './sync-mcp-http.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixtureDir = path.join(here, 'fixtures/mcp-batch');
@@ -76,6 +77,8 @@ test('native-http template does not open Python pipes', () => {
   const main = rendered.files[`${rows[1].folder}/main.py`];
   assert.match(main, /adapter="native-http"/);
   assert.doesNotMatch(main, /PIPE/);
+  assert.doesNotMatch(main, /\.\.\//);
+  assert.doesNotMatch(rendered.files[`Anybuild.${rows[1].folder}`], /\.\.\//);
   const shared = readFileSync(path.join(here, '../_shared/mcp-http/python/mcp_http/app.py'), 'utf8');
   assert.match(shared, /stdout=asyncio\.subprocess\.DEVNULL/);
   assert.match(shared, /stderr=asyncio\.subprocess\.DEVNULL/);
@@ -188,6 +191,41 @@ test('local JavaScript check can see the shared server beside node_modules', () 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('catalog deploy input points at the template folder', () => {
+  const input = autobuildInput({
+    folder: 'js-mcp-time-mcp',
+    branch: 'ayush/mcp-self-contained',
+    appName: 'cat-test-mcp-time-2',
+    owner: 'ayushojha',
+    token: 'not-a-real-token',
+    perishAt: 'PT48H',
+  });
+  assert.equal(input.repoUrl, 'https://github.com/wasmerio/examples');
+  assert.equal(input.rootDir, 'js-mcp-time-mcp');
+  assert.equal(input.branch, 'ayush/mcp-self-contained');
+  assert.equal(input.perishAt, 'PT48H');
+  assert.equal(input.envVars[0].name, 'MCP_AUTH_TOKEN');
+  assert.equal(input.envVars[0].sensitive, true);
+  assert.equal(input.envVars[0].runtime, true);
+  assert.equal(Object.hasOwn(input, 'package'), false);
+  const copy = generatedCopy('js/app.mjs', 'export const marker = 1;\n');
+  assert.match(copy.text, /^\/\/ Generated from _shared\/mcp-http\/js\/app\.mjs; SHA256 [a-f0-9]{64}\n/);
+  assert.match(copy.text, /export const marker = 1/);
+});
+
+test('stdio bridge runs the package bin and lockfiles stay untracked', () => {
+  assert.equal(binFile({ name: 'repomix', bin: { repomix: './bin/repomix.cjs' } }), 'bin/repomix.cjs');
+  assert.equal(binFile({ name: 'chrome-devtools-mcp', bin: { 'chrome-devtools': 'a.js', 'chrome-devtools-mcp': 'b.js' } }), 'b.js');
+  assert.equal(binFile({ name: 'plain', main: 'dist/index.js' }), '');
+  const rows = decideAll();
+  const js = renderTemplate(queue[2], { ...meta['3'], pkgType: 'npm', binFile: 'bin/cli.js' }, rows[2]);
+  assert.match(js.files[`${rows[2].folder}/server.mjs`], /bin\/cli\.js/);
+  assert.match(js.files[`${rows[2].folder}/.gitignore`], /package-lock\.json/);
+  const py = renderTemplate(queue[1], { ...meta['2'], pkgType: 'pypi' }, rows[1]);
+  assert.match(py.files[`${rows[1].folder}/main.py`], /import sys/);
+  assert.match(py.files[`${rows[1].folder}/.gitignore`], /uv\.lock/);
 });
 
 test('dry-run CLI prints one object per fixture row', () => {

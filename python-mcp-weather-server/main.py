@@ -1,11 +1,3 @@
-import sys
-from pathlib import Path
-
-here = Path(__file__).resolve().parent
-shared = here.parent / "_shared" / "mcp-http" / "python"
-if not (here / "mcp_http" / "__init__.py").exists() and (shared / "mcp_http").is_dir():
-    sys.path.insert(0, str(shared))
-
 from mcp_weather_server.server import app, register_all_tools
 from mcp_http import serve
 

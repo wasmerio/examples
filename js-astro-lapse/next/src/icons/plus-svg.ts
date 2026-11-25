@@ -1,0 +1,2 @@
+// GENERATED from src/icons/plus.svg
+export default "<svg aria-hidden=\"true\" viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 0 0 L 16.5 0\" fill=\"transparent\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" stroke=\"currentColor\" transform=\"translate(3.75 12)\"/><path d=\"M 0 0 L 0 16.5\" fill=\"transparent\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" stroke=\"currentColor\" transform=\"translate(12 3.75)\"/></svg>";

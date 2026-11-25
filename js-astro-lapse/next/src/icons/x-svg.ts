@@ -1,0 +1,2 @@
+// GENERATED from src/icons/x.svg
+export default "<svg viewBox=\"0 0 24 24\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\"><path d=\"M 18.75 5.25 L 5.25 18.75 M 18.75 18.75 L 5.25 5.25\" fill=\"transparent\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.5\" stroke=\"currentColor\"/></svg>";

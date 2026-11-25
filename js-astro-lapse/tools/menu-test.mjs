@@ -1,0 +1,11 @@
+import { chromium, executable } from './pw.mjs';
+const b = await chromium.launch({ executablePath: executable(), headless: true });
+const p = await (await b.newContext({ viewport: { width: 390, height: 800 } })).newPage();
+const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+await p.goto('http://localhost:4322/', { waitUntil: 'networkidle' });
+const st = async () => p.evaluate(() => { const m = document.querySelector('.menu'); const t = document.querySelector('.toggle'); return { op: getComputedStyle(m).opacity, pe: getComputedStyle(m).pointerEvents, exp: t.getAttribute('aria-expanded'), top: Math.round(m.getBoundingClientRect().top) }; });
+console.log('closed', await st());
+await p.click('.toggle'); await p.waitForTimeout(500); console.log('open', await st());
+await p.click('.menu-link >> nth=1', { noWaitAfter: true }).catch(() => {}); await p.waitForTimeout(300);
+console.log('url', p.url(), 'errors', errs);
+await b.close();

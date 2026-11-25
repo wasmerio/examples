@@ -1,0 +1,108 @@
+---
+/**
+ * A row of post cards: cover photo with a frosted copy panel.
+ *
+ * Desktop (>= 1200): hover accordion. The pointed card opens to the featured
+ * width (530/307 of a collapsed card) and shows its panel; the others shrink
+ * to covers. The first card is open at rest.
+ * Tablet: a sideways scroller with every card open. Phone: stacked cards.
+ * Behaviour lives in src/scripts/fx/blog-accordion.js; this markup and CSS is
+ * the resting state, so the row reads correctly without JavaScript.
+ *
+ * Props
+ *   posts  blog collection entries, in display order (pass at most 3).
+ *   class  optional extra class on the row, for spacing from the parent.
+ *
+ * Usage: <BlogRow posts={(await getPosts()).slice(0, 3)} />
+ */
+import Badge from '../blog/Badge.astro';
+import PostMeta from '../blog/PostMeta.astro';
+import { postUrl, type Post } from '../../lib/blog';
+
+interface Props { posts: Post[]; class?: string; }
+const { posts, class: cls } = Astro.props;
+---
+<div class:list={['blog-row', cls]} data-fx="blog-accordion" style={`--cards: ${posts.length}`}>
+  {posts.map((post, i) => (
+    <a class="bp-card" href={postUrl(post)} data-card>
+      <img
+        class="bp-cover"
+        src={post.data.cover}
+        alt={post.data.coverAlt}
+        width="530"
+        height="440"
+        loading="lazy"
+        decoding="async"
+      />
+      <div class="bp-panel" data-panel>
+        <div class="bp-copy" data-copy>
+          <Badge label={post.data.category} variant="white" />
+          <h3 class="bp-title t-h4">{post.data.title}</h3>
+          <PostMeta date={post.data.date} readTime={post.data.readTime} tone="light" />
+        </div>
+      </div>
+    </a>
+  ))}
+</div>
+
+<style>
+  /* Row: 440px tall, 8px gaps. The open card is worth OPEN_SHARE collapsed
+     cards, all driven by flex-grow so the proportions hold at any width. */
+  .blog-row {
+    --open-share: calc(530 / 307);
+    --panel-pad: 32px;
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; height: 440px;
+    container-type: inline-size;
+  }
+  .bp-card {
+    position: relative; display: flex; align-items: flex-start;
+    flex: 1 1 0px; min-width: 0; height: 100%;
+    border-radius: 16px; overflow: clip; cursor: pointer;
+    isolation: isolate;
+  }
+  .bp-cover {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; border-radius: inherit; z-index: -1;
+  }
+  .bp-panel {
+    display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start;
+    flex: 1 1 0px; min-width: 0; height: 100%; padding: var(--panel-pad);
+    background: var(--surface);
+    -webkit-backdrop-filter: blur(9px); backdrop-filter: blur(9px);
+  }
+  .bp-copy {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 20px;
+    /* Held at the open card's inner width so the title keeps its line breaks
+       while the card resizes (the script writes the same value in px). */
+    width: calc((100cqw - 8px * (var(--cards) - 1)) * var(--open-share) / (var(--open-share) + var(--cards) - 1) - var(--panel-pad) * 2);
+    flex-shrink: 0;
+  }
+  .bp-title { width: 100%; }
+
+  /* Desktop resting state: first card open, the rest collapsed to covers. */
+  @media (min-width: 1200px) {
+    .bp-card:first-child { flex-grow: var(--open-share); }
+    .bp-card:not(:first-child) .bp-panel { opacity: 0; pointer-events: none; }
+  }
+
+  /* Tablet: every card open at a fixed width, scrolled sideways. */
+  @media (min-width: 810px) and (max-width: 1199.98px) {
+    .blog-row {
+      overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none;
+    }
+    .blog-row::-webkit-scrollbar { display: none; }
+    .bp-card {
+      /* CARD_SHARE 0.46 of the row, clamped to CARD_MIN..CARD_MAX. */
+      flex: 0 0 clamp(280px, 46cqw, 420px); scroll-snap-align: start;
+    }
+    .bp-copy { width: calc(clamp(280px, 46cqw, 420px) - var(--panel-pad) * 2); }
+  }
+
+  /* Phone: stacked, 320px cards. */
+  @media (max-width: 809.98px) {
+    .blog-row { flex-direction: column; gap: 12px; height: auto; }
+    .bp-card { flex: none; width: 100%; height: 320px; }
+    .bp-copy { width: 100%; flex-shrink: 1; }
+  }
+</style>

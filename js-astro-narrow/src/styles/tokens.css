@@ -1,0 +1,221 @@
+/*
+ * Design tokens: Paper · Ink · Seed.
+ *
+ * The whole palette is mixed from three colors:
+ *
+ *   --paper  shared page white / near-black (flips with `.dark`)
+ *   --ink    shared text black / near-white (flips with `.dark`)
+ *   --seed   ONE color per theme — the only thing a theme declares
+ *
+ * Every other token derives from the seed with modern CSS color math:
+ *
+ *   color-mix(in oklch)      washes, hovers, borders — seed diluted into
+ *                            paper/ink, so it recedes or gains contrast
+ *   oklch(from var(--seed))  accent text — the seed made mode-adaptive via
+ *                            relative color syntax (darker in light, lifted
+ *                            in dark), Radix step-11 semantics
+ *   contrast-color()         accent text on solid fills — native black/white
+ *                            pick, Radix step-9 semantics
+ *
+ * So one seed yields a full accent ladder, always in tune with both modes.
+ * Adding a theme is a single recipe (`--seed-recipe-*`). A scheme
+ * (`data-scheme`) re-tunes a few knobs of that same recipe — never a second
+ * palette.
+ */
+
+:root {
+  /* Layout */
+  --layout-content-width: 56rem;
+
+  /* Radius: one base for boxes, one micro for inline chips (code, kbd). */
+  --radius: 0.5rem;
+  --radius-xs: 0.25rem;
+
+  /* Appearance controls (Dock display settings). --glass is a unitless
+     frost strength (0–24): it drives both the backdrop blur radius and the
+     shell translucency in global.css, so 0 means a fully solid shell. */
+  --glass: 16;
+  --grain: 0;
+
+  /*
+   * Utopia fluid type scale — https://utopia.fyi/type/calculator/?c=320,16,1.2,1120,18,1.25,3,1
+   * 320px→1120px viewport, 16px→18px base, minor third → major third.
+   */
+  --step--1: clamp(0.8333rem, 0.8067rem + 0.1333vi, 0.9rem);
+  --step-0: clamp(1rem, 0.95rem + 0.25vi, 1.125rem);
+  --step-1: clamp(1.2rem, 1.1175rem + 0.4125vi, 1.4063rem);
+  --step-2: clamp(1.44rem, 1.3129rem + 0.6356vi, 1.7578rem);
+  --step-3: clamp(1.728rem, 1.5403rem + 0.9385vi, 2.1973rem);
+
+  /*
+   * Utopia fluid space scale — https://utopia.fyi/space/calculator/?c=320,16,1.2,1120,18,1.25&s=0.75|0.5|0.25,1.5|2|3|4
+   */
+  --space-3xs: clamp(0.25rem, 0.2375rem + 0.0625vi, 0.2813rem);
+  --space-2xs: clamp(0.5rem, 0.475rem + 0.125vi, 0.5625rem);
+  --space-xs: clamp(0.75rem, 0.7125rem + 0.1875vi, 0.8438rem);
+  --space-s: clamp(1rem, 0.95rem + 0.25vi, 1.125rem);
+  --space-m: clamp(1.5rem, 1.425rem + 0.375vi, 1.6875rem);
+  --space-l: clamp(2rem, 1.9rem + 0.5vi, 2.25rem);
+  --space-xl: clamp(3rem, 2.85rem + 0.75vi, 3.375rem);
+  --space-2xl: clamp(4rem, 3.8rem + 1vi, 4.5rem);
+
+  /* Axioms: warm paper, cool ink (temperatures invert in dark mode). */
+  --paper: oklch(99.1% 0.003 95);
+  --ink: oklch(23% 0.012 280);
+
+  /*
+   * Seed recipe — the ONE color a theme declares, split into channels. The
+   * Dock picker writes `--seed-recipe-*` inline (or presets do at click
+   * time); schemes re-tune how much chroma the seed is *used with*
+   * (`--scheme-chroma`), never the recipe itself.
+   */
+  --seed-recipe-l: 0.3;
+  --seed-recipe-c: 0.01;
+  --seed-recipe-h: 285;
+  --seed-l: var(--seed-recipe-l);
+  --seed-c: min(calc(var(--seed-recipe-c) * var(--scheme-chroma)), var(--picker-chroma-max));
+  --seed-h: var(--seed-recipe-h);
+  --seed: oklch(var(--seed-l) var(--seed-c) var(--seed-h));
+
+  /* Picker limits — mirror `seedLimits` in theme.ts. */
+  --picker-chroma-max: 0.34;
+  --picker-lightness-min: 0.3;
+  --picker-lightness-max: 0.7;
+  /* Chroma used to paint the hue track (never 0, so ink still shows a rainbow). */
+  --seed-c-display: max(var(--seed-c), 0.18);
+
+  --accent: var(--seed);
+  /* Native contrast pick: black or white, whichever reads better on the seed. */
+  --accent-contrast: contrast-color(var(--seed));
+
+  /*
+   * Accent ramp — a Radix-style ladder derived from the one seed:
+   *   9  solid fills  = the seed itself; `contrast-color()` picks the text
+   *   11 accent text  = the seed made mode-adaptive with relative color
+   *                     syntax (darker in light, lifted in dark), so links
+   *                     and hovers stay readable for any pickable seed
+   *   2–4 washes      = accent text diluted into transparent/canvas below
+   * No guard formulas: these transforms are safe by construction.
+   */
+  --accent-text: oklch(from var(--seed) max(0.35, calc(l * 0.7)) calc(c * var(--scheme-text-c)) h);
+
+  /*
+   * Scheme knobs: the only recipe percentages a color scheme may vary.
+   * Defaults reproduce the shipped look. Contrast-critical mixes (border,
+   * fg, fg-muted) are deliberately not exposed.
+   */
+  --scheme-chroma: 1; /* how much of the seed's chroma is used */
+  --scheme-wash: 2.5%; /* seed wash in the canvas */
+  --scheme-hover: 10%; /* accent-text share in hover surfaces */
+  --scheme-text-c: 1; /* chroma of accent text (1 = the seed's own) */
+  --scheme-accent-veil: 88%; /* transparency of accent washes */
+
+  /* Surfaces */
+  --canvas: color-mix(in oklch, var(--paper), var(--seed) var(--scheme-wash));
+  --muted: color-mix(in oklch, var(--canvas), var(--fg) 6%);
+  --hover: color-mix(in oklch, var(--canvas), var(--accent-text) var(--scheme-hover));
+
+  /* Lines: ink diluted in paper. */
+  --border: color-mix(in oklch, var(--canvas), var(--fg) 15%);
+  --border-strong: color-mix(in oklch, var(--canvas), var(--fg) 30%);
+
+  /* Text */
+  --fg: color-mix(in oklch, var(--ink), var(--seed) 6%);
+  --fg-muted: color-mix(in oklch, var(--fg), var(--canvas) 36%);
+
+  /* Accent washes (selection, marks, active TOC, reading progress). */
+  --accent-bg: color-mix(in oklch, var(--accent-text), transparent var(--scheme-accent-veil));
+  --accent-bg-hover: color-mix(
+    in oklch,
+    var(--accent-text),
+    transparent calc(var(--scheme-accent-veil) - 8%)
+  );
+
+  /* Alerts: five fixed seeds run through the same recipe. */
+  --note-seed: oklch(60% 0.14 245);
+  --tip-seed: oklch(58% 0.13 150);
+  --important-seed: oklch(58% 0.14 295);
+  --warning-seed: oklch(66% 0.13 75);
+  --caution-seed: oklch(60% 0.16 25);
+
+  --alert-note: var(--note-seed);
+  --alert-note-text: color-mix(in oklch, var(--note-seed), var(--fg) 30%);
+  --alert-tip: var(--tip-seed);
+  --alert-tip-text: color-mix(in oklch, var(--tip-seed), var(--fg) 30%);
+  --alert-important: var(--important-seed);
+  --alert-important-text: color-mix(in oklch, var(--important-seed), var(--fg) 30%);
+  --alert-warning: var(--warning-seed);
+  --alert-warning-text: color-mix(in oklch, var(--warning-seed), var(--fg) 30%);
+  --alert-caution: var(--caution-seed);
+  --alert-caution-text: color-mix(in oklch, var(--caution-seed), var(--fg) 30%);
+}
+
+.dark {
+  --paper: oklch(17% 0.008 280);
+  --ink: oklch(92.5% 0.004 95);
+  /* Accent text lifts toward paper (Radix step-11, dark) — with a floor so
+     even deep blue/violet seeds keep readable links on the dark canvas. */
+  --accent-text: oklch(
+    from var(--seed) min(1, max(0.72, calc(l + 0.35))) calc(c * var(--scheme-text-c)) h
+  );
+}
+
+/*
+ * Themes. `ink` is the monochrome default and binds the solid accent to the
+ * ink itself (it would otherwise vanish on the dark canvas). Any other seed
+ * comes from the Dock picker at runtime (`data-theme="custom"` + inline
+ * `--seed-recipe-*`), falling through to the generic :root recipe above.
+ * Hard-code a theme the same way: set the recipe channels, not `--seed`, so
+ * color schemes can still re-tune it.
+ */
+[data-theme='ink'] {
+  --seed-recipe-l: 0.3;
+  --seed-recipe-c: 0.01;
+  --seed-recipe-h: 285;
+  --accent: var(--fg);
+  --accent-contrast: var(--canvas);
+  --accent-text: var(--fg);
+}
+
+/*
+ * Color schemes: named overrides of the scheme knobs above. `plain` is the
+ * default and has no block. Visitors switch schemes from the Dock; register
+ * ids and labels in `src/config/theme.ts` (`schemes`) to surface a button.
+ */
+[data-scheme='tinted'] {
+  /* The paper takes the seed: a clearly colored page. */
+  --scheme-chroma: 1.1;
+  --scheme-wash: 9%;
+  --scheme-hover: 12%;
+  --scheme-text-c: 0.95;
+  --scheme-accent-veil: 85%;
+}
+
+[data-scheme='vivid'] {
+  /* More chroma and rawer text: color genuinely steps forward. */
+  --scheme-chroma: 1.5;
+  --scheme-hover: 11%;
+  --scheme-text-c: 1.35;
+  --scheme-accent-veil: 82%;
+}
+
+[data-scheme='soft'] {
+  /* Less chroma, quieter hovers: color almost whispers. */
+  --scheme-chroma: 0.5;
+  --scheme-wash: 1%;
+  --scheme-hover: 6%;
+  --scheme-text-c: 0.55;
+  --scheme-accent-veil: 92%;
+}
+
+/*
+ * Custom scheme template — copy, rename, and register in theme.ts:
+ *
+ * [data-scheme='mine'] {
+ *   --scheme-chroma: 1;
+ *   --scheme-wash: 3%;
+ *   --scheme-hover: 10%;
+ *   --scheme-text-c: 1;
+ *   --scheme-accent-veil: 85%;
+ * }
+ */

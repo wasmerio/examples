@@ -1,0 +1,162 @@
+---
+import '../../styles/global.css';
+import { defaultLocale, getLocalePath, localeMeta, type Locale } from '../../config/i18n';
+import { siteConfig } from '../../config/site';
+import { defaultScheme, defaultTheme } from '../../config/theme';
+import ContextBar from './ContextBar.astro';
+import type { Crumb } from './ContextBar.astro';
+import Footer from './Footer.astro';
+import Dock from '../ui/Dock.astro';
+import SearchModal from '../features/SearchModal.astro';
+import type { TocSubposts } from '../features/TocPanel.astro';
+import Comments from '../features/Comments.astro';
+import Analytics from '../features/Analytics.astro';
+import GalleryLightbox from '../features/GalleryLightbox.astro';
+import { useTranslations } from '../../i18n/utils';
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  title?: string;
+  description?: string;
+  locale?: Locale;
+  headings?: Heading[];
+  toc?: boolean;
+  subposts?: TocSubposts;
+  comments?: boolean;
+  breadcrumbs?: Crumb[];
+}
+
+const {
+  title = siteConfig.name,
+  description = siteConfig.description,
+  locale = defaultLocale,
+  headings = [],
+  toc = true,
+  subposts,
+  comments = false,
+  breadcrumbs
+} = Astro.props;
+
+const t = useTranslations(locale);
+const contextCrumbs: Crumb[] | undefined = breadcrumbs
+  ? [
+      { label: t('nav.home'), href: getLocalePath(locale, '/'), icon: 'lucide:home' },
+      ...breadcrumbs
+    ]
+  : undefined;
+const pageTitle = title === siteConfig.name ? title : `${title} | ${siteConfig.name}`;
+const htmlLang = localeMeta[locale].htmlLang;
+const assetBase = import.meta.env.BASE_URL || '/';
+const faviconSvg = `${assetBase.replace(/\/?$/, '/')}favicon.svg`;
+const faviconIco = `${assetBase.replace(/\/?$/, '/')}favicon.ico`;
+/*
+ * Whether the TOC panel starts pinned open. `ASTRO_TOC_PIN` (build time, so it
+ * can be flipped per deployment) overrides the config default; anything other
+ * than a recognised truthy/falsy word falls back to the config.
+ */
+const tocPinEnv = import.meta.env.ASTRO_TOC_PIN ?? process.env.ASTRO_TOC_PIN;
+const tocPinFlag = String(tocPinEnv ?? '').toLowerCase();
+const tocPinDefault = ['1', 'true', 'yes', 'on'].includes(tocPinFlag)
+  ? true
+  : ['0', 'false', 'no', 'off'].includes(tocPinFlag)
+    ? false
+    : siteConfig.ui.toc.defaultPin;
+const themeInit = `
+(() => {
+  const root = document.documentElement;
+  try {
+    const seed = JSON.parse(localStorage.getItem('seed') || 'null');
+    if (seed && typeof seed.l === 'number') {
+      root.dataset.theme = 'custom';
+      root.style.setProperty('--seed-recipe-l', String(seed.l));
+      root.style.setProperty('--seed-recipe-c', String(seed.c));
+      root.style.setProperty('--seed-recipe-h', String(seed.h));
+    } else {
+      root.dataset.theme = '${defaultTheme}';
+    }
+    const glass = localStorage.getItem('glass-blur');
+    if (glass !== null) root.style.setProperty('--glass', glass);
+    const grain = localStorage.getItem('grain');
+    if (grain !== null) root.style.setProperty('--grain', String(Number(grain) / 100));
+    const scheme = localStorage.getItem('scheme');
+    if (scheme !== null) root.dataset.scheme = scheme;
+    const mode = localStorage.getItem('color-mode');
+    const contentWidth = localStorage.getItem('content-width');
+    if (contentWidth && /^\\d+(?:\\.\\d+)?rem$/.test(contentWidth)) {
+      root.style.setProperty('--layout-content-width', contentWidth);
+    }
+    const tocPin = localStorage.getItem('toc-pin');
+    if (tocPin === 'true' || (tocPin === null && ${tocPinDefault})) root.dataset.tocPin = 'true';
+    if (mode === 'dark' || (!mode && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      root.classList.add('dark');
+    }
+  } catch {
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) root.classList.add('dark');
+  }
+})();
+`;
+---
+
+<!doctype html>
+<html
+  lang={htmlLang}
+  data-theme={defaultTheme}
+  data-scheme={defaultScheme}
+  style={`--layout-content-width: ${siteConfig.contentWidth}`}
+>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href={faviconSvg} />
+    <link rel="icon" href={faviconIco} />
+    <title>{pageTitle}</title>
+    <script is:inline set:html={themeInit} />
+  </head>
+  <body class="min-h-screen bg-canvas text-fg antialiased">
+    <div class="reading-progress" data-reading-progress aria-hidden="true"></div>
+    {
+      contextCrumbs && (
+        <ContextBar locale={locale} items={contextCrumbs} title={title} subposts={subposts} />
+      )
+    }
+    <main
+      class:list={[
+        'mx-auto min-h-screen w-full max-w-[var(--layout-content-width)] px-4',
+        !contextCrumbs && 'pt-8 sm:pt-12'
+      ]}
+    >
+      <slot />
+      {comments && <Comments />}
+      <Footer locale={locale} />
+    </main>
+    {
+      siteConfig.ui.dock.enabled && (
+        <Dock
+          locale={locale}
+          headings={toc ? headings : []}
+          subposts={toc ? subposts : undefined}
+        />
+      )
+    }
+    <SearchModal locale={locale} />
+    <GalleryLightbox locale={locale} />
+    <Analytics />
+    <script>
+      import '../../scripts/theme-controls.ts';
+      import '../../scripts/reading-progress.ts';
+      import '../../scripts/search.ts';
+      import '../../scripts/gallery.ts';
+      import '../../scripts/mermaid.ts';
+      import '../../scripts/dock.ts';
+      import '../../scripts/toc.ts';
+      import '../../scripts/tabs.ts';
+    </script>
+  </body>
+</html>

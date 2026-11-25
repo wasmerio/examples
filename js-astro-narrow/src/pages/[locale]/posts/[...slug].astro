@@ -1,0 +1,122 @@
+---
+import { render } from 'astro:content';
+import BaseLayout from '../../../components/layout/BaseLayout.astro';
+import PostMeta from '../../../components/content/PostMeta.astro';
+import PostLicense from '../../../components/content/PostLicense.astro';
+import PostNavigation from '../../../components/content/PostNavigation.astro';
+import RelatedPosts from '../../../components/content/RelatedPosts.astro';
+import SubpostList from '../../../components/content/SubpostList.astro';
+import { defaultLocale, getLocalePath, locales, type Locale } from '../../../config/i18n';
+import { siteConfig } from '../../../config/site';
+import {
+  adjacentEntries,
+  entrySlug,
+  excludeSubposts,
+  getLocalizedEntries,
+  getSubpostContext,
+  localizedEntryPath,
+  relatedPosts
+} from '../../../lib/content/entries';
+import { useTranslations } from '../../../i18n/utils';
+
+export async function getStaticPaths() {
+  const paths = [];
+  for (const locale of locales.filter((item) => item !== defaultLocale)) {
+    const posts = await getLocalizedEntries('posts', locale);
+    paths.push(
+      ...posts.map((entry) => ({ params: { locale, slug: entrySlug(entry) }, props: { entry } }))
+    );
+  }
+  return paths;
+}
+
+const locale = Astro.params.locale as Locale;
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+const posts = await getLocalizedEntries('posts', locale);
+const listPosts = excludeSubposts(posts);
+const t = useTranslations(locale);
+
+const subpostContext = getSubpostContext(entry, posts);
+const adjacent = subpostContext
+  ? { previous: subpostContext.previous, next: subpostContext.next }
+  : adjacentEntries(listPosts, entry);
+const related = relatedPosts(listPosts, entry, siteConfig.post.relatedCount);
+
+const subpostMeta = subpostContext
+  ? {
+      title: subpostContext.parent.data.title,
+      href: localizedEntryPath('posts', subpostContext.parent),
+      position: subpostContext.position,
+      total: subpostContext.subposts.length
+    }
+  : undefined;
+
+const tocSubposts =
+  subpostContext && subpostMeta
+    ? {
+        ...subpostMeta,
+        items: subpostContext.sequence.map((item, index) => ({
+          title: index === 0 ? t('subpost.overview') : item.data.title,
+          href: localizedEntryPath('posts', item),
+          current: item.id === entry.id,
+          position: index
+        }))
+      }
+    : undefined;
+
+const breadcrumbs = [
+  { label: t('posts.title'), href: getLocalePath(locale, '/posts/'), icon: 'lucide:file-text' },
+  ...(subpostContext && subpostMeta && subpostContext.position > 0
+    ? [{ label: subpostMeta.title, href: subpostMeta.href, icon: 'lucide:list-ordered' }]
+    : [])
+];
+---
+
+<BaseLayout
+  title={entry.data.title}
+  description={entry.data.description}
+  locale={locale}
+  headings={headings}
+  toc={entry.data.toc}
+  subposts={tocSubposts}
+  comments={entry.data.comments}
+  breadcrumbs={breadcrumbs}
+>
+  {
+    entry.data.cover && (
+      <div class="mb-8 overflow-hidden rounded-base">
+        <img
+          src={entry.data.cover}
+          alt={entry.data.title}
+          class="aspect-video max-h-[60vh] w-full object-cover"
+          loading="eager"
+        />
+      </div>
+    )
+  }
+  <PostMeta
+    title={entry.data.title}
+    description={entry.data.description}
+    date={entry.data.date}
+    updatedDate={entry.data.updatedDate}
+    locale={locale}
+    tags={entry.data.tags}
+  />
+  <article class="prose mb-12">
+    <Content />
+  </article>
+  {
+    subpostContext && subpostContext.position === 0 && (
+      <SubpostList subposts={subpostContext.subposts} locale={locale} />
+    )
+  }
+  <PostLicense locale={locale} />
+  <PostNavigation
+    previous={adjacent.previous}
+    next={adjacent.next}
+    locale={locale}
+    kind={subpostContext ? 'subpost' : 'post'}
+  />
+  <RelatedPosts posts={related} locale={locale} />
+</BaseLayout>

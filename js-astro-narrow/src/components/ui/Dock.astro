@@ -1,0 +1,450 @@
+---
+import { Icon } from 'astro-icon/components';
+import {
+  getLocalePath,
+  localeMeta,
+  locales,
+  switchLocalePath,
+  type Locale
+} from '../../config/i18n';
+import { getNavigation } from '../../config/navigation';
+import { siteConfig } from '../../config/site';
+import { defaultScheme, schemes, seedColor, seedLimits, seedPresets } from '../../config/theme';
+import { useTranslations } from '../../i18n/utils';
+import TocPanel from '../features/TocPanel.astro';
+import type { TocHeading, TocSubposts } from '../features/TocPanel.astro';
+
+interface Props {
+  locale: Locale;
+  headings?: TocHeading[];
+  subposts?: TocSubposts;
+}
+
+const { locale, headings = [], subposts } = Astro.props;
+const t = useTranslations(locale);
+const navigation = getNavigation(locale);
+const currentPath = Astro.url.pathname;
+const commentsEnabled =
+  siteConfig.comments.enabled && siteConfig.comments.provider === 'giscus';
+const tocHeadings = headings
+  .filter((heading) => heading.depth >= 2 && heading.depth <= 4)
+  .map((heading) => ({ ...heading, text: heading.text.replace(/#$/, '').trim() }));
+const hasToc = tocHeadings.length > 0 || Boolean(subposts);
+const labels = {
+  back: t('dock.back'),
+  comments: t('dock.comments'),
+  display: t('dock.display'),
+  displayClose: t('dock.display.close'),
+  displayReset: t('dock.display.reset'),
+  displayWidth: t('dock.display.width'),
+  glass: t('dock.glass'),
+  grain: t('dock.grain'),
+  home: t('dock.home'),
+  language: t('nav.language'),
+  menu: t('nav.menu'),
+  scheme: t('dock.scheme'),
+  seedChroma: t('dock.seedChroma'),
+  seedHue: t('dock.seedHue'),
+  seedLightness: t('dock.seedLightness'),
+  seedWheel: t('dock.seedWheel'),
+  theme: t('nav.theme'),
+  colorMode: t('nav.colorMode'),
+  top: t('dock.top'),
+  toc: t('toc.label'),
+  tocClose: t('toc.close'),
+  tocPin: t('toc.pin'),
+  tocUnpin: t('toc.unpin')
+};
+
+function isActive(href: string) {
+  if (/^(https?:)?\/\//.test(href) || href.startsWith('mailto:')) return false;
+  if (href === getLocalePath(locale, '/')) return currentPath === href;
+  return currentPath === href || currentPath.startsWith(href);
+}
+const colorSchemes = [
+  { value: 'light', icon: 'lucide:sun', label: t('colorMode.light') },
+  { value: 'auto', icon: 'lucide:monitor', label: t('colorMode.auto') },
+  { value: 'dark', icon: 'lucide:moon', label: t('colorMode.dark') }
+] as const;
+const homeHref = getLocalePath(locale, '/');
+const inkSeed = seedPresets[0];
+const parsedContentWidth = /^\d+(?:\.\d+)?rem$/.test(siteConfig.contentWidth)
+  ? Number.parseFloat(siteConfig.contentWidth)
+  : 56;
+const defaultContentWidth = Number.isFinite(parsedContentWidth) ? parsedContentWidth : 56;
+const minimumContentWidth = Math.max(32, Math.floor(defaultContentWidth - 16));
+const maximumContentWidth = Math.ceil(defaultContentWidth + 24);
+---
+
+<div class="dock-shell" data-dock data-placement="bottom" aria-orientation="horizontal">
+  <button
+    type="button"
+    data-history-back
+    data-fallback={homeHref}
+    class="dock-control"
+    aria-label={labels.back}
+    title={labels.back}
+  >
+    <Icon name="lucide:arrow-left" class="h-4 w-4" />
+  </button>
+
+  <a href={homeHref} class="dock-control" aria-label={labels.home} title={labels.home}>
+    <Icon name="lucide:home" class="h-4 w-4" />
+  </a>
+
+  <span class="dock-divider" aria-hidden="true"></span>
+
+  <button
+    type="button"
+    data-menu-toggle
+    aria-expanded="false"
+    class="dock-control"
+    aria-label={labels.menu}
+    title={labels.menu}
+  >
+    <Icon name="lucide:menu" class="h-4 w-4" />
+  </button>
+
+  <div data-menu-panel class="dock-popover glass hidden text-sm" aria-label={labels.menu}>
+    <div class="dock-panel-section">
+      <span class="dock-panel-title">{labels.menu}</span>
+      <nav class="dock-link-grid" aria-label={labels.menu}>
+        {
+          navigation.map((item) => (
+            <a
+              href={item.href}
+              class="dock-link"
+              target={item.external ? '_blank' : undefined}
+              rel={item.external ? 'noopener noreferrer' : undefined}
+              aria-current={isActive(item.href) ? 'page' : undefined}
+            >
+              {item.icon && <Icon name={item.icon} class="h-4 w-4 shrink-0" />}
+              <span class="truncate">{item.label}</span>
+            </a>
+          ))
+        }
+      </nav>
+    </div>
+
+    {
+      locales.length > 1 && (
+        <div class="dock-panel-section">
+          <span class="dock-panel-title">{labels.language}</span>
+          <div class="dock-link-grid">
+            {locales.map((item) => (
+              <a
+                href={switchLocalePath(item, currentPath)}
+                class="dock-link"
+                aria-current={item === locale ? 'page' : undefined}
+              >
+                <span class="truncate">{localeMeta[item].label}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )
+    }
+  </div>
+
+  <button
+    type="button"
+    data-search-open
+    class="dock-control"
+    aria-label={t('nav.search')}
+    title={t('nav.search')}
+  >
+    <Icon name="lucide:search" class="h-4 w-4" />
+  </button>
+
+  {
+    hasToc && (
+      <>
+        <button
+          type="button"
+          data-toc-toggle
+          aria-expanded="false"
+          aria-controls="toc-panel"
+          class="dock-control"
+          aria-label={labels.toc}
+          title={labels.toc}
+        >
+          <Icon name="lucide:list" class="h-4 w-4" />
+        </button>
+
+        <nav
+          id="toc-panel"
+          data-toc-panel
+          class="dock-popover dock-toc glass hidden text-sm"
+          aria-label={labels.toc}
+        >
+          <div class="dock-toc-head">
+            <span class="dock-panel-title">{labels.toc}</span>
+            <div class="flex items-center gap-1">
+              <button
+                type="button"
+                data-toc-pin-toggle
+                class="dock-toc-pin"
+                aria-pressed="false"
+                aria-label={labels.tocPin}
+                title={labels.tocPin}
+                data-label-pin={labels.tocPin}
+                data-label-unpin={labels.tocUnpin}
+              >
+                <Icon name="lucide:pin" class="toc-pin-on h-3.5 w-3.5" />
+                <Icon name="lucide:pin-off" class="toc-pin-off h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                data-toc-close
+                class="grid h-7 w-7 cursor-pointer place-items-center rounded-xs text-fg-muted transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                aria-label={labels.tocClose}
+              >
+                <Icon name="lucide:x" class="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <div data-toc-scroll class="dock-toc-scroll">
+            <TocPanel headings={tocHeadings} subposts={subposts} />
+          </div>
+        </nav>
+      </>
+    )
+  }
+
+  {
+    commentsEnabled && (
+      <button
+        type="button"
+        data-comments-jump
+        class="dock-control"
+        aria-label={labels.comments}
+        title={labels.comments}
+      >
+        <Icon name="lucide:message-circle" class="h-4 w-4" />
+      </button>
+    )
+  }
+
+  <span class="dock-divider" aria-hidden="true"></span>
+
+  <button
+    type="button"
+    data-display-menu
+    aria-expanded="false"
+    class="dock-control"
+    aria-label={labels.display}
+    title={labels.display}
+  >
+    <Icon name="lucide:palette" class="h-4 w-4" />
+  </button>
+
+  <div
+    data-display-panel
+    class="dock-popover glass hidden text-sm"
+    aria-label={labels.display}
+  >
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <span class="font-semibold">{labels.display}</span>
+        <button
+          type="button"
+          data-display-close
+          class="grid h-7 w-7 cursor-pointer place-items-center rounded-base text-fg-muted transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          aria-label={labels.displayClose}
+        >
+          <Icon name="lucide:x" class="h-4 w-4" />
+        </button>
+      </div>
+
+      <div class="space-y-1">
+        <span class="text-xs font-medium text-fg-muted">{labels.colorMode}</span>
+        <div
+          class="grid grid-cols-3 gap-1 rounded-base bg-muted p-1"
+          role="group"
+          aria-label={labels.colorMode}
+        >
+          {
+            colorSchemes.map((scheme) => (
+              <button
+                type="button"
+                data-color-mode={scheme.value}
+                aria-pressed="false"
+                class="flex cursor-pointer items-center justify-center gap-1.5 rounded-xs px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-pressed:bg-accent aria-pressed:text-accent-contrast aria-pressed:hover:bg-accent aria-pressed:hover:text-accent-contrast"
+              >
+                <Icon name={scheme.icon} class="h-3.5 w-3.5" />
+                <span>{scheme.label}</span>
+              </button>
+            ))
+          }
+        </div>
+      </div>
+
+      <div class="my-3 h-px bg-border" aria-hidden="true"></div>
+
+      <div class="space-y-2.5">
+        <div class="space-y-1.5">
+          <span class="text-xs font-medium text-fg-muted">{labels.theme}</span>
+          <div class="flex items-center gap-2" role="group" aria-label={labels.theme}>
+            {
+              seedPresets.map((preset) => (
+                <button
+                  type="button"
+                  data-seed-preset={preset.id}
+                  aria-pressed="false"
+                  aria-label={preset.name[locale]}
+                  title={preset.name[locale]}
+                  class="h-6 w-6 cursor-pointer rounded-full border border-border transition-shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-pressed:ring-2 aria-pressed:ring-accent aria-pressed:ring-offset-2 aria-pressed:ring-offset-canvas"
+                  style={`background: ${seedColor(preset)}`}
+                />
+              ))
+            }
+          </div>
+          <div class="space-y-2">
+            <div class="flex items-center gap-4">
+              <div
+                data-seed-wheel
+                class="seed-wheel h-32 w-32 shrink-0"
+                tabindex="0"
+                role="slider"
+                aria-label={labels.seedWheel}
+                aria-valuemin={seedLimits.hue.min}
+                aria-valuemax={seedLimits.hue.max}
+                aria-valuenow={Math.round(inkSeed.h)}
+              >
+                <span class="seed-wheel-thumb" aria-hidden="true"></span>
+              </div>
+              <div class="flex min-w-0 flex-1 flex-col gap-1.5 text-xs text-fg-muted">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium">{labels.seedHue}</span>
+                  <output data-seed-h-output class="tabular-nums">{Math.round(inkSeed.h)}°</output>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-medium">{labels.seedChroma}</span>
+                  <output data-seed-c-output class="tabular-nums">{inkSeed.c.toFixed(2)}</output>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <label for="seed-lightness" class="w-14 shrink-0 text-xs font-medium text-fg-muted"
+                >{labels.seedLightness}</label
+              >
+              <input
+                id="seed-lightness"
+                data-seed-l
+                type="range"
+                min={seedLimits.lightness.min}
+                max={seedLimits.lightness.max}
+                step="0.01"
+                value={inkSeed.l}
+                class="seed-slider min-w-0 flex-1"
+                aria-label={labels.seedLightness}
+              />
+              <output
+                data-seed-l-output
+                for="seed-lightness"
+                class="w-12 shrink-0 text-right text-xs text-fg-muted tabular-nums"
+                >{Math.round(inkSeed.l * 100)}%</output
+              >
+            </div>
+          </div>
+        </div>
+        <div class="space-y-1">
+          <span class="text-xs font-medium text-fg-muted">{labels.scheme}</span>
+          <div
+            class="grid grid-cols-4 gap-1 rounded-base bg-muted p-1"
+            role="group"
+            aria-label={labels.scheme}
+          >
+            {
+              schemes.map((scheme) => (
+                <button
+                  type="button"
+                  data-scheme-preset={scheme.id}
+                  aria-pressed={scheme.id === defaultScheme ? 'true' : 'false'}
+                  class="flex cursor-pointer items-center justify-center rounded-xs px-2 py-1.5 text-xs font-medium text-fg-muted transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-pressed:bg-accent aria-pressed:text-accent-contrast aria-pressed:hover:bg-accent aria-pressed:hover:text-accent-contrast"
+                >
+                  {scheme.name[locale]}
+                </button>
+              ))
+            }
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <label for="glass-blur" class="w-20 shrink-0 text-xs font-medium text-fg-muted"
+            >{labels.glass}</label
+          >
+          <input
+            id="glass-blur"
+            data-glass-blur
+            type="range"
+            min="0"
+            max="24"
+            step="1"
+            value="16"
+            class="min-w-0 flex-1 cursor-pointer accent-accent"
+          />
+        </div>
+        <div class="flex items-center gap-3">
+          <label for="grain" class="w-20 shrink-0 text-xs font-medium text-fg-muted"
+            >{labels.grain}</label
+          >
+          <input
+            id="grain"
+            data-grain
+            type="range"
+            min="0"
+            max="20"
+            step="1"
+            value="0"
+            class="min-w-0 flex-1 cursor-pointer accent-accent"
+          />
+        </div>
+      </div>
+
+      <div class="my-3 h-px bg-border" aria-hidden="true"></div>
+
+      <div class="space-y-2">
+        <div class="flex items-center justify-between gap-3">
+          <label for="layout-width" class="font-medium">{labels.displayWidth}</label>
+          <output data-layout-width-output for="layout-width" class="text-fg-muted tabular-nums"
+            >{siteConfig.contentWidth}</output
+          >
+        </div>
+        <input
+          id="layout-width"
+          data-layout-width
+          data-default-width={defaultContentWidth}
+          type="range"
+          min={minimumContentWidth}
+          max={maximumContentWidth}
+          step="1"
+          value={defaultContentWidth}
+          class="w-full cursor-pointer accent-accent"
+        />
+        <div class="flex items-center justify-between gap-3 text-xs text-fg-muted">
+          <span>{minimumContentWidth}rem</span>
+          <span>{maximumContentWidth}rem</span>
+        </div>
+        <button
+          type="button"
+          data-layout-width-reset
+          class="flex w-full cursor-pointer items-center justify-center gap-2 rounded-base border border-border bg-muted px-3 py-2 font-medium text-fg transition-colors hover:bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50 disabled:hover:bg-muted disabled:hover:text-fg"
+        >
+          <Icon name="lucide:rotate-ccw" class="h-4 w-4" />
+          <span>{labels.displayReset}</span>
+          <span class="rounded-xs bg-canvas/70 px-1.5 py-0.5 text-xs font-normal text-fg-muted"
+            >{siteConfig.contentWidth}</span
+          >
+        </button>
+      </div>
+  </div>
+
+  <button
+    type="button"
+    data-back-top
+    class="dock-control"
+    aria-label={labels.top}
+    title={labels.top}
+  >
+    <Icon name="lucide:arrow-up" class="h-4 w-4" />
+  </button>
+</div>

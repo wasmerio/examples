@@ -1,0 +1,335 @@
+@import 'tailwindcss';
+@import 'katex/dist/katex.min.css';
+@import './tokens.css';
+@import './chrome.css';
+@import './prose.css';
+
+/* Utility classes emitted by the rehype image plugin live in .mjs files. */
+@source '../lib/markdown';
+
+/*
+ * Map the semantic tokens (tokens.css) into Tailwind utility namespaces.
+ * `inline` makes utilities reference the runtime custom properties, so
+ * theme and dark-mode switches flow through without extra variants.
+ */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-muted: var(--muted);
+  --color-hover: var(--hover);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-accent-text: var(--accent-text);
+  --color-accent-bg: var(--accent-bg);
+  --color-accent-bg-hover: var(--accent-bg-hover);
+
+  --radius-base: var(--radius);
+  --radius-xs: var(--radius-xs);
+
+  --text-step--1: var(--step--1);
+  --text-step-0: var(--step-0);
+  --text-step-1: var(--step-1);
+  --text-step-2: var(--step-2);
+  --text-step-3: var(--step-3);
+
+  /*
+   * Fluid spacing utilities (p-fl-s, gap-fl-m, …). The `fl-` prefix keeps
+   * these clear of Tailwind's named container sizes (max-w-2xl etc.).
+   */
+  --spacing-fl-3xs: var(--space-3xs);
+  --spacing-fl-2xs: var(--space-2xs);
+  --spacing-fl-xs: var(--space-xs);
+  --spacing-fl-s: var(--space-s);
+  --spacing-fl-m: var(--space-m);
+  --spacing-fl-l: var(--space-l);
+  --spacing-fl-xl: var(--space-xl);
+  --spacing-fl-2xl: var(--space-2xl);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5.5rem;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--canvas);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+::selection {
+  background: var(--accent-bg-hover);
+}
+
+/*
+ * Scrollbars: thin and tinted with the border token, invisible until the
+ * thumb is needed. Scroll regions that want no bar at all (breadcrumbs, the
+ * subpost strip) still set `scrollbar-width: none` on themselves.
+ */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 0.625rem;
+  height: 0.625rem;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 0.1875rem solid transparent;
+  border-radius: 9999px;
+  background-color: var(--border-strong);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--fg-muted);
+}
+
+/* Film grain: a fixed noise overlay, dialed from the Dock (0 = off). */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: var(--grain);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/*
+ * Seed picker: three native sliders (hue / chroma / lightness). Each track
+ * is painted from the current `--seed-*` channels, so tracks re-render live
+ * as the other axes move; the thumb is always the actual seed color.
+ */
+.seed-slider {
+  appearance: none;
+  height: 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.seed-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  border: 2px solid var(--canvas);
+  background: var(--seed);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.seed-slider::-moz-range-thumb {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  border: 2px solid var(--canvas);
+  background: var(--seed);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.seed-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * Seed wheel (Zen-style): angle = hue, distance from center = chroma, painted
+ * from the live `--seed-*` channels so it tracks the lightness slider. The
+ * conic rainbow starts at 3 o'clock going clockwise, matching atan2() with
+ * screen-down y in theme-controls.ts. The radial grey-to-transparent overlay
+ * fades chroma toward the center.
+ */
+.seed-wheel {
+  position: relative;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  touch-action: none;
+  background:
+    radial-gradient(circle closest-side, oklch(var(--seed-l) 0 var(--seed-h)), transparent),
+    conic-gradient(
+      from 90deg in oklch,
+      oklch(var(--seed-l) var(--picker-chroma-max) 0),
+      oklch(var(--seed-l) var(--picker-chroma-max) 40),
+      oklch(var(--seed-l) var(--picker-chroma-max) 80),
+      oklch(var(--seed-l) var(--picker-chroma-max) 120),
+      oklch(var(--seed-l) var(--picker-chroma-max) 160),
+      oklch(var(--seed-l) var(--picker-chroma-max) 200),
+      oklch(var(--seed-l) var(--picker-chroma-max) 240),
+      oklch(var(--seed-l) var(--picker-chroma-max) 280),
+      oklch(var(--seed-l) var(--picker-chroma-max) 320),
+      oklch(var(--seed-l) var(--picker-chroma-max) 360)
+    );
+}
+
+.seed-wheel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.seed-wheel-thumb {
+  position: absolute;
+  left: var(--wheel-x, 50%);
+  top: var(--wheel-y, 50%);
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 999px;
+  border: 2px solid var(--canvas);
+  background: var(--seed);
+  box-shadow: 0 0 0 1px var(--border-strong);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* Lightness track: black → current color → white. */
+[data-seed-l] {
+  background: linear-gradient(
+    to right,
+    oklch(var(--picker-lightness-min) 0 var(--seed-h)),
+    oklch(var(--seed-l) var(--seed-c) var(--seed-h)),
+    oklch(var(--picker-lightness-max) 0 var(--seed-h))
+  );
+}
+/*
+ * Project card GitHub link. `a { color: inherit }` above is unlayered, so a
+ * `text-fg-muted` utility on the link would lose the cascade; this keeps the
+ * muted-to-foreground hover pair explicit.
+ */
+.project-github {
+  color: var(--fg-muted);
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.project-github:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-github {
+    transition: none;
+  }
+}
+
+/* Markdown tabs (remark-directive) */
+.markdown-tabs {
+  margin-block: var(--space-m);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--canvas);
+  color: var(--fg);
+}
+
+.tabs-nav-shell {
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 0.55rem 0.45rem;
+  scrollbar-width: none;
+}
+
+.tabs-nav-shell::-webkit-scrollbar {
+  display: none;
+}
+
+.tabs-nav {
+  display: inline-flex;
+  min-width: max-content;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  padding: 0.25rem;
+}
+
+.tabs-trigger {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: var(--step--1);
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.tabs-trigger:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.tabs-trigger[aria-selected='true'] {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.tabs-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tabs-panels {
+  padding: var(--space-s);
+}
+
+.tabs-panel > :first-child {
+  margin-top: 0;
+}
+
+.tabs-panel > :last-child {
+  margin-bottom: 0;
+}
+
+/* Table of contents */
+[data-toc-panel] a.toc-active {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  font-weight: 500;
+}

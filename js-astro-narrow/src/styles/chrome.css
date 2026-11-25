@@ -1,0 +1,946 @@
+/*
+ * Page chrome: the dock, the context bar, and the reading progress.
+ *
+ * These are structural styles that need small geometry calculations, so they
+ * live in plain CSS instead of long Tailwind class strings. Colors still come
+ * exclusively from the semantic tokens in tokens.css.
+ */
+
+:root {
+  /* Room under the bottom dock so the footer never scrolls beneath it. */
+  --dock-clearance: 5.5rem;
+}
+
+/*
+ * Floating layers share one treatment: translucent canvas over a blur — the
+ * same paper as the page. One strength value (--glass) drives both the blur
+ * radius and how much shows through; an opaque shell would render any blur
+ * invisible. This lives above the component rules so popovers can strengthen
+ * their own surface without fighting the cascade.
+ */
+.glass,
+.dock-shell {
+  border-color: var(--border);
+  background: color-mix(
+    in oklch,
+    var(--canvas),
+    transparent clamp(0%, calc(var(--glass) * 1.5%), 40%)
+  );
+  backdrop-filter: blur(calc(var(--glass) * 1px));
+}
+
+@supports not (backdrop-filter: blur(4px)) {
+  .glass,
+  .dock-shell {
+    background: var(--canvas);
+  }
+}
+
+body {
+  padding-bottom: var(--dock-clearance);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass: 0 !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --glass: 0 !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Dock
+   -------------------------------------------------------------------------- */
+
+.dock-shell {
+  position: fixed;
+  z-index: 40;
+  bottom: max(env(safe-area-inset-bottom), 1rem);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--fg);
+  overflow: visible;
+  transform: translateX(-50%);
+}
+
+.dock-control {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.dock-control:hover,
+.dock-control[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.dock-control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dock-divider {
+  width: 1px;
+  height: 1.25rem;
+  flex-shrink: 0;
+  background: var(--border);
+}
+
+.dock-popover {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  left: 50%;
+  z-index: 10;
+  width: min(20rem, calc(100vw - 2rem));
+  max-height: min(75dvh, 36rem);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  background: color-mix(
+    in oklch,
+    var(--canvas),
+    transparent clamp(0%, calc(var(--glass) * 0.5%), 8%)
+  );
+  backdrop-filter: blur(calc(var(--glass) * 1px));
+  transform: translateX(-50%);
+}
+
+.dock-panel-title {
+  display: block;
+  margin-bottom: 0.375rem;
+  padding-inline: 0.25rem;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.dock-panel-section + .dock-panel-section {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.dock-link {
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-xs);
+  padding: 0.25rem 0.625rem;
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.dock-link:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.dock-link[aria-current='page'] {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  font-weight: 500;
+}
+
+.dock-link-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+/* Table of contents panel: a header that stays put plus its own scroll box. */
+.dock-toc {
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: min(75dvh, 30rem);
+  overflow: hidden;
+  padding: 0.5rem;
+}
+
+.dock-toc:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+}
+
+.dock-toc-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.25rem 0.5rem;
+}
+
+.dock-toc-head .dock-panel-title {
+  margin-bottom: 0;
+}
+
+.dock-toc-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dock-toc-pin {
+  display: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.dock-toc-pin:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.dock-toc-pin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Pinning only makes sense beside the article: in the bottom capsule the panel
+   would cover the text it is pinning open. */
+.dock-shell[data-placement='side'] .dock-toc-pin {
+  display: grid;
+}
+
+html[data-toc-pin] .dock-toc-pin {
+  color: var(--accent-text);
+}
+
+.toc-pin-off,
+html[data-toc-pin] .toc-pin-on {
+  display: none;
+}
+
+html[data-toc-pin] .toc-pin-off {
+  display: inline-block;
+}
+
+/*
+ * Reading progress: a hairline on the viewport edge, independent of the dock.
+ * The dock itself is too small to carry it once the side capsule collapses.
+ */
+.reading-progress {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  z-index: 45;
+  width: 100%;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  transform: scaleX(var(--reading-progress, 0));
+  transform-origin: left center;
+  transition: transform 120ms linear;
+}
+
+/* Floating side capsule: wide landscape or a horizontally folded viewport. */
+/* Keep in sync with SIDE_DOCK_QUERY in src/scripts/dock.ts. */
+@media (min-aspect-ratio: 4 / 3) and (min-width: 75rem), (horizontal-viewport-segments: 2) {
+  body {
+    padding-bottom: 0;
+  }
+
+  .dock-shell {
+    top: 50%;
+    right: max(env(safe-area-inset-right), 1rem);
+    bottom: auto;
+    left: auto;
+    flex-direction: column;
+    border-radius: var(--radius);
+    transform: translateY(-50%);
+    transition: padding 180ms ease;
+  }
+
+  .dock-divider {
+    width: 1.25rem;
+    height: 1px;
+  }
+
+  .dock-control,
+  .dock-divider {
+    transition:
+      width 180ms ease,
+      height 180ms ease,
+      opacity 180ms ease,
+      background-color 180ms ease,
+      color 180ms ease;
+  }
+
+  .dock-shell[data-collapsed='true'] {
+    gap: 0;
+    padding: 0.25rem;
+  }
+
+  /* Collapsed, the capsule is just the menu button: bring both down a notch. */
+  .dock-shell[data-collapsed='true'] [data-menu-toggle] {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .dock-shell[data-collapsed='true'] [data-menu-toggle] svg {
+    width: 0.875rem;
+    height: 0.875rem;
+    transition:
+      width 180ms ease,
+      height 180ms ease;
+  }
+
+  .dock-shell[data-collapsed='true'] .dock-control:not([data-menu-toggle]) {
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .dock-shell[data-collapsed='true'] .dock-divider {
+    width: 1px;
+    height: 0;
+    opacity: 0;
+  }
+
+  .dock-popover {
+    top: 50%;
+    right: calc(100% + 0.5rem);
+    bottom: auto;
+    left: auto;
+    max-height: calc(100dvh - 2rem);
+    transform: translateY(-50%);
+  }
+
+  .reading-progress {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: 2px;
+    height: auto;
+    transform: scaleY(var(--reading-progress, 0));
+    transform-origin: center top;
+  }
+}
+
+/* Vertical fold keeps the floating bottom capsule. Keep this rule last. */
+@media (vertical-viewport-segments: 2) {
+  body {
+    padding-bottom: var(--dock-clearance);
+  }
+
+  .dock-shell {
+    top: auto;
+    right: auto;
+    bottom: max(env(safe-area-inset-bottom), 1rem);
+    left: 50%;
+    flex-direction: row;
+    border-radius: var(--radius);
+    transform: translateX(-50%);
+  }
+
+  .dock-divider {
+    width: 1px;
+    height: 1.25rem;
+  }
+
+  .dock-popover {
+    top: auto;
+    right: auto;
+    bottom: calc(100% + 0.5rem);
+    left: 50%;
+    max-height: min(75dvh, 36rem);
+    transform: translateX(-50%);
+  }
+
+  .reading-progress {
+    top: auto;
+    right: auto;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    transform: scaleX(var(--reading-progress, 0));
+    transform-origin: left center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-shell,
+  .dock-control,
+  .dock-divider,
+  .dock-shell[data-collapsed='true'] [data-menu-toggle] svg,
+  .reading-progress {
+    transition: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Context bar
+   -------------------------------------------------------------------------- */
+
+#context-bar {
+  position: sticky;
+  top: calc(env(safe-area-inset-top) + 0.75rem);
+  z-index: 40;
+  display: flex;
+  width: 100%;
+  max-width: var(--layout-content-width);
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-block: 0.75rem 0.5rem;
+  margin-inline: auto;
+  padding-inline: 1rem;
+  pointer-events: none;
+}
+
+#context-bar .context-shell,
+#context-bar .context-crumbs,
+#context-bar .context-pill,
+#context-bar .subpost-bar {
+  pointer-events: auto;
+}
+
+/* Breadcrumbs and the subpost strip share one glass card; the strip is
+   separated by a divider rather than a second surface. */
+.context-shell {
+  width: 100%;
+  margin-inline: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition:
+    width 280ms cubic-bezier(0.2, 0, 0, 1),
+    border-radius 280ms cubic-bezier(0.2, 0, 0, 1),
+    border-color 280ms ease,
+    box-shadow 280ms ease;
+}
+
+.context-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  transition: padding-inline 280ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* The trail and the capsule share one grid cell; the trail keeps the row
+   height while the capsule fades in over it. */
+.context-top > * {
+  grid-area: 1 / 1;
+}
+
+.context-crumbs {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  transition:
+    opacity 180ms ease,
+    visibility 180ms ease;
+}
+
+.context-crumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.crumb-trail {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crumb-node {
+  display: inline-flex;
+  min-width: 0;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.crumb-sep {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  color: var(--fg-muted);
+  opacity: 0.6;
+}
+
+.crumb {
+  display: inline-flex;
+  min-height: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: calc(var(--radius) - 0.125rem);
+  padding: 0.25rem 0.5rem;
+  color: var(--fg-muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.crumb:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.crumb-current {
+  display: inline-flex;
+  min-height: 2rem;
+  flex-shrink: 0;
+  align-items: center;
+  border-radius: calc(var(--radius) - 0.125rem);
+  padding: 0.25rem 0.5rem;
+  color: var(--fg);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.crumb-label {
+  display: block;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crumb-node:first-child .crumb-label {
+  max-width: 8rem;
+}
+
+.context-pill {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  gap: 0.5rem;
+  border: 0;
+  background: transparent;
+  padding: 0.25rem 0.75rem;
+  color: var(--fg);
+  font-size: 0.875rem;
+  font-weight: 500;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    visibility 180ms ease;
+}
+
+.context-pill:focus-visible {
+  border-radius: 9999px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.context-pill-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-pill-badge {
+  flex-shrink: 0;
+  border-radius: var(--radius-xs);
+  padding: 0.125rem 0.375rem;
+  background: var(--muted);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+#context-bar[data-collapsed='true'] {
+  gap: 0;
+}
+
+#context-bar[data-collapsed='true'] .context-shell {
+  width: var(--context-pill-width, 100%);
+  border-color: var(--border-strong);
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px -2px rgb(0 0 0 / 0.12);
+}
+
+#context-bar[data-collapsed='true'] .context-top {
+  padding-inline: 0;
+}
+
+#context-bar[data-collapsed='true'] .context-crumbs {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#context-bar[data-collapsed='true'] .context-pill {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+#context-bar[data-collapsed='true'] .subpost-bar {
+  max-height: 0;
+  overflow: hidden;
+  border-top-width: 0;
+  padding-block: 0;
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Measuring the capsule width must happen against the full-width surface. */
+#context-bar[data-measuring='true'] .context-shell {
+  width: 100%;
+  transition: none;
+}
+
+/* Measure the capsule's natural width even while the shell constrains it. */
+#context-bar[data-measuring='true'] .context-pill {
+  width: max-content;
+  max-width: none;
+}
+
+#context-bar[data-measuring='true'] .context-crumbs,
+#context-bar[data-measuring='true'] .context-pill {
+  transition: none;
+}
+
+/* Skip transitions on the first paint. */
+#context-bar:not([data-ready]),
+#context-bar:not([data-ready]) .context-shell,
+#context-bar:not([data-ready]) .context-top,
+#context-bar:not([data-ready]) .context-crumbs,
+#context-bar:not([data-ready]) .context-pill,
+#context-bar:not([data-ready]) .subpost-bar {
+  transition: none;
+}
+
+/* --------------------------------------------------------------------------
+   Subpost bar and popover
+   -------------------------------------------------------------------------- */
+
+.subpost-bar {
+  display: flex;
+  max-height: 4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+  transition:
+    max-height 180ms ease,
+    border-top-width 180ms ease,
+    padding 180ms ease,
+    opacity 180ms ease,
+    visibility 180ms ease;
+}
+
+.subpost-trigger {
+  display: inline-flex;
+  max-width: 15rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  align-items: center;
+  gap: 0.375rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 0.125rem);
+  background: transparent;
+  padding: 0.25rem 0.5rem;
+  color: inherit;
+  text-align: left;
+  transition: background-color 180ms ease;
+}
+
+.subpost-trigger:hover {
+  background: var(--hover);
+}
+
+.subpost-trigger-title {
+  overflow: hidden;
+  color: var(--fg);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subpost-trigger-badge {
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.subpost-chevron {
+  flex-shrink: 0;
+  color: var(--fg-muted);
+  transition: transform 150ms ease;
+}
+
+.subpost-trigger[aria-expanded='true'] .subpost-chevron {
+  transform: rotate(180deg);
+}
+
+.subpost-steps {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  list-style: none;
+}
+
+.subpost-steps::-webkit-scrollbar {
+  display: none;
+}
+
+.subpost-step-item {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.subpost-step-line {
+  height: 2px;
+  min-width: 0.75rem;
+  flex: 1 1 1rem;
+  border-radius: var(--radius-xs);
+  background: var(--border);
+  transition: background-color 180ms ease;
+}
+
+.subpost-step-line-active {
+  background: color-mix(in oklch, var(--accent) 55%, var(--border));
+}
+
+.subpost-dot {
+  position: relative;
+  display: inline-flex;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--canvas);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
+}
+
+.subpost-dot:hover {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.subpost-dot-past {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent-text);
+}
+
+.subpost-dot-current {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.subpost-dot-current:hover {
+  color: var(--accent-contrast);
+}
+
+.subpost-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.subpost-step {
+  display: inline-flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--radius) - 0.125rem);
+  color: var(--fg-muted);
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.subpost-step:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.subpost-step[aria-disabled='true'] {
+  pointer-events: none;
+  opacity: 0.3;
+}
+
+.context-popover {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 1rem;
+  z-index: 50;
+  width: min(22rem, calc(100% - 2rem));
+  max-height: 24rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.375rem;
+  background: color-mix(
+    in oklch,
+    var(--canvas),
+    transparent clamp(0%, calc(var(--glass) * 0.5%), 8%)
+  );
+  backdrop-filter: blur(calc(var(--glass) * 1px));
+  pointer-events: auto;
+}
+
+.subpost-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0.625rem 0.625rem;
+}
+
+.subpost-popover-list {
+  margin: 0;
+  padding: 0.375rem 0;
+  list-style: none;
+}
+
+.subpost-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  border-radius: calc(var(--radius) - 0.125rem);
+  padding: 0.5rem 0.625rem;
+  color: var(--fg-muted);
+  font-size: 0.8125rem;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.subpost-popover-item:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.subpost-popover-item[aria-current='page'] {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+  font-weight: 500;
+}
+
+.subpost-popover-index {
+  display: inline-flex;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-xs);
+  background: var(--muted);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.subpost-popover-item[aria-current='page'] .subpost-popover-index {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/* Without a backdrop filter the almost-opaque popovers lose the blur that
+   explains the faint show-through, so fall back to a solid surface. */
+@supports not (backdrop-filter: blur(4px)) {
+  .dock-popover,
+  .context-popover {
+    background: var(--canvas);
+  }
+}
+
+@media (max-width: 40rem) {
+  .subpost-steps {
+    display: none;
+  }
+
+  .subpost-bar {
+    justify-content: space-between;
+  }
+
+  .crumb-label {
+    max-width: 8rem;
+  }
+
+  .crumb-node:first-child .crumb-label {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-shell,
+  .context-top,
+  .context-crumbs,
+  .context-pill,
+  .subpost-bar,
+  .subpost-chevron {
+    transition: none;
+  }
+}

@@ -1,0 +1,137 @@
+---
+import { getCollection } from "astro:content";
+import SiteFooter from "@/components/SiteFooter.astro";
+import SiteHeader from "@/components/SiteHeader.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { siteConfig } from "@/config/site";
+import { formatDate, postHref, readingLabel, visiblePosts } from "@/lib/posts";
+
+const allPosts = visiblePosts(await getCollection("posts"));
+const searchItems = allPosts.map((post) => ({
+  title: post.data.title,
+  excerpt: post.data.excerpt,
+  href: postHref(post),
+  author: post.data.author.name,
+  category: post.data.category,
+  date: formatDate(post.data.date),
+  reading: readingLabel(post),
+}));
+---
+
+<BaseLayout
+  title="Search"
+  description={`Search every post published on ${siteConfig.name}.`}
+  noindex
+>
+  <SiteHeader posts={allPosts} />
+  <main id="content" class="outer">
+    <div class="canvas">
+      <header class="pagehead">
+        <p class="eyebrow">Search</p>
+        <h1 class="pagehead-title">Search posts</h1>
+
+        <form class="mt-8" role="search" aria-label="Post search" action="/search/" method="get">
+          <label class="sr-only" for="search-page-input">Search posts</label>
+          <div class="flex gap-2">
+            <input
+              id="search-page-input"
+              name="q"
+              type="search"
+              class="field"
+              placeholder="Title, category, or author..."
+              autocomplete="off"
+              data-search-page-input
+            />
+            <button type="submit" class="btn btn-solid shrink-0">Search</button>
+          </div>
+        </form>
+
+        <p class="search-page-summary mt-4 text-sm text-muted-foreground" data-search-page-summary></p>
+      </header>
+
+      <div class="feed" data-search-page-results></div>
+    </div>
+  </main>
+  <SiteFooter />
+
+  <script is:inline type="application/json" id="search-page-data" set:html={JSON.stringify(searchItems)} />
+  <script is:inline>
+    (() => {
+      const input = document.querySelector("[data-search-page-input]");
+      const results = document.querySelector("[data-search-page-results]");
+      const summary = document.querySelector("[data-search-page-summary]");
+      const items = JSON.parse(document.getElementById("search-page-data")?.textContent || "[]");
+
+      if (!input || !results || !summary) return;
+
+      const escapeHtml = (value) =>
+        String(value).replace(/[&<>"']/g, (character) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[character]);
+
+      const matches = (item, query) =>
+        [item.title, item.excerpt, item.author, item.category]
+          .join(" ")
+          .toLowerCase()
+          .includes(query);
+
+      /* Nothing is listed until there is a query — this page is for searching,
+         not for browsing. The archive covers browsing. */
+      const render = () => {
+        const raw = input.value.trim();
+        const query = raw.toLowerCase();
+        const found = query ? items.filter((item) => matches(item, query)) : [];
+
+        summary.textContent = query
+          ? `${found.length} ${found.length === 1 ? "result" : "results"} for “${raw}”.`
+          : "";
+
+        results.innerHTML = found
+          .map(
+            (item) => `
+              <article>
+                <a href="${escapeHtml(item.href)}" class="link-title">
+                  <h2 class="search-page-title link-title__text">${escapeHtml(item.title)}</h2>
+                  <p class="search-page-excerpt">${escapeHtml(item.excerpt)}</p>
+                  <p class="meta mt-4"><span class="meta-accent">${escapeHtml(item.category)}</span><time>${escapeHtml(item.date)}</time><span>${escapeHtml(item.reading)}</span></p>
+                </a>
+              </article>
+            `,
+          )
+          .join("");
+      };
+
+      input.value = new URLSearchParams(window.location.search).get("q") || "";
+      render();
+      input.addEventListener("input", render);
+    })();
+  </script>
+
+  <style is:global>
+    .search-page-summary:empty {
+      display: none;
+    }
+
+    .search-page-title {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(1.5rem, 3.2vw, 1.875rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      text-wrap: balance;
+    }
+
+    .search-page-excerpt {
+      margin: 0.75rem 0 0;
+      color: color-mix(in srgb, var(--foreground) 88%, transparent);
+      font-size: 1.0625rem;
+      line-height: 1.55;
+      text-wrap: pretty;
+    }
+  </style>
+</BaseLayout>

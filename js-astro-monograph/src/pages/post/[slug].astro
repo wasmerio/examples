@@ -1,0 +1,374 @@
+---
+import { Image } from "astro:assets";
+import { getCollection, render } from "astro:content";
+import LocalIcon from "@/components/LocalIcon.astro";
+import PostCard from "@/components/PostCard.astro";
+import SiteFooter from "@/components/SiteFooter.astro";
+import SiteHeader from "@/components/SiteHeader.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import Callout from "@/components/mdx/Callout.astro";
+import CodeGroup from "@/components/mdx/CodeGroup.astro";
+import CodeGroupItem from "@/components/mdx/CodeGroupItem.astro";
+import { siteConfig } from "@/config/site";
+import {
+  authorSlug,
+  categoryHref,
+  formatDate,
+  getAdjacent,
+  getRelated,
+  postHref,
+  postSlug,
+  readingLabel,
+  visiblePosts,
+  type Post,
+} from "@/lib/posts";
+
+export async function getStaticPaths() {
+  const allPosts = visiblePosts(await getCollection("posts"));
+  return allPosts.map((post) => ({
+    params: { slug: postSlug(post) },
+    props: { post, allPosts },
+  }));
+}
+
+interface Props {
+  post: Post;
+  allPosts: Post[];
+}
+
+const { post, allPosts } = Astro.props;
+const { Content } = await render(post);
+const mdxComponents = { Callout, CodeGroup, CodeGroupItem };
+const data = post.data;
+const related = getRelated(allPosts, post);
+const { newer, older } = getAdjacent(allPosts, post);
+const authorHref = `/author/${authorSlug(data.author.name)}/`;
+const articleUrl = new URL(postHref(post), siteConfig.siteUrl).toString();
+const socialImage = data.cover
+  ? new URL(data.cover.src.src, siteConfig.siteUrl).toString()
+  : new URL(siteConfig.socialImage, siteConfig.siteUrl).toString();
+const encodedUrl = encodeURIComponent(articleUrl);
+const encodedTitle = encodeURIComponent(data.title);
+const shareLinks: { label: string; icon: "twitter-x" | "facebook" | "linkedin"; href: string }[] = [
+  {
+    label: "X",
+    icon: "twitter-x",
+    href: `https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedTitle}`,
+  },
+  {
+    label: "Facebook",
+    icon: "facebook",
+    href: `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`,
+  },
+  {
+    label: "LinkedIn",
+    icon: "linkedin",
+    href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`,
+  },
+];
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  headline: data.title,
+  description: data.excerpt,
+  image: socialImage,
+  datePublished: data.date.toISOString(),
+  dateModified: (data.updatedDate ?? data.date).toISOString(),
+  author: { "@type": "Person", name: data.author.name },
+  publisher: { "@type": "Organization", name: siteConfig.authorName },
+  mainEntityOfPage: articleUrl,
+};
+---
+
+<BaseLayout
+  title={data.title}
+  description={data.excerpt}
+  image={socialImage}
+  type="article"
+  structuredData={structuredData}
+>
+  <SiteHeader posts={allPosts} />
+  <main id="content" class="outer">
+    <article>
+      <header class="canvas pt-10 md:pt-14">
+        <p class="meta post-meta">
+          <span class="post-meta__byline">
+            By <a href={authorHref} class="link-sweep post-meta__link">{data.author.name}</a> in{" "}
+            <a href={categoryHref(data.category)} class="link-sweep post-meta__link">{data.category}</a>
+          </span>
+          <span class="post-meta__dates">
+            <span class="meta-accent"><time datetime={data.date.toISOString()}>{formatDate(data.date, "long")}</time></span>
+            <span>{readingLabel(post)}</span>
+          </span>
+        </p>
+
+        <h1 class="article-title">{data.title}</h1>
+        <p class="article-excerpt">{data.excerpt}</p>
+
+        {data.updatedDate && (
+          <p class="meta mt-5">
+            <span>Updated <time datetime={data.updatedDate.toISOString()}>{formatDate(data.updatedDate)}</time></span>
+          </p>
+        )}
+
+        <div class="mt-8 flex flex-wrap items-center gap-2 border-t border-border pt-6" role="group" aria-labelledby="share-heading">
+          <h2 id="share-heading" class="eyebrow mr-1">Share</h2>
+          {shareLinks.map((link) => (
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noreferrer"
+              class="share-btn"
+              aria-label={`Share ${data.title} on ${link.label}`}
+            >
+              <LocalIcon name={link.icon} className="h-4 w-4" />
+            </a>
+          ))}
+          <button
+            type="button"
+            class="share-btn"
+            data-copy-link
+            data-copy-url={articleUrl}
+            aria-label={`Copy link to ${data.title}`}
+          >
+            <LocalIcon name="link-45deg" className="h-4 w-4" />
+          </button>
+          <p class="ml-1 text-xs text-muted-foreground" aria-live="polite" data-copy-status></p>
+        </div>
+      </header>
+
+      {data.cover && (
+        <figure class="article-image inner">
+          <Image
+            src={data.cover.src}
+            alt={data.cover.alt}
+            widths={[640, 960, 1200, 1600, 2000]}
+            sizes="(min-width: 1200px) 1200px, 100vw"
+            loading="eager"
+            decoding="async"
+            class="w-full"
+          />
+          {data.cover.creditName && (
+            <figcaption>
+              {data.cover.creditUrl ? (
+                <a href={data.cover.creditUrl} rel="noreferrer" class="underline underline-offset-2">
+                  {data.cover.creditName}
+                </a>
+              ) : (
+                data.cover.creditName
+              )}
+            </figcaption>
+          )}
+        </figure>
+      )}
+
+      <div class="prose canvas mt-12">
+        <Content components={mdxComponents} />
+      </div>
+
+      {(newer || older) && (
+        <footer class="canvas mt-16 border-t border-border pt-8">
+          <nav class="grid gap-8 sm:grid-cols-2" aria-label="Post navigation">
+            <div>
+              {older && (
+                <a href={postHref(older)} class="link-title link-nudge">
+                  <span class="eyebrow">
+                    <span class="link-nudge__arrow link-nudge__arrow--prev">&larr;</span> Previous
+                  </span>
+                  <span class="link-title__text mt-2 block font-semibold leading-snug">{older.data.title}</span>
+                </a>
+              )}
+            </div>
+            <div class="sm:text-right">
+              {newer && (
+                <a href={postHref(newer)} class="link-title link-nudge">
+                  <span class="eyebrow">
+                    Next <span class="link-nudge__arrow link-nudge__arrow--next">&rarr;</span>
+                  </span>
+                  <span class="link-title__text mt-2 block font-semibold leading-snug">{newer.data.title}</span>
+                </a>
+              )}
+            </div>
+          </nav>
+        </footer>
+      )}
+    </article>
+
+    {related.length > 0 && (
+      <section class="canvas mt-[var(--space-section)]" aria-labelledby="keep-reading">
+        <h2 id="keep-reading" class="section-title">Keep reading</h2>
+        <div class="grid gap-7">
+          {related.map((item) => <PostCard post={item} variant="compact" headingLevel="h3" />)}
+        </div>
+      </section>
+    )}
+  </main>
+  <SiteFooter />
+
+  <script is:inline>
+    document.querySelectorAll("[data-copy-link]").forEach((button) => {
+      const status = button.parentElement?.querySelector("[data-copy-status]");
+
+      button.addEventListener("click", async () => {
+        const url = button.getAttribute("data-copy-url");
+        if (!url) return;
+
+        try {
+          if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+          await navigator.clipboard.writeText(url);
+          if (status) status.textContent = "Link copied";
+        } catch {
+          if (status) status.textContent = "Copy failed";
+        }
+      });
+    });
+
+    /* Progressive enhancement: every code block in the article body gets a copy
+       button, added client-side so the rendered HTML stays plain. */
+    document.querySelectorAll(".prose pre").forEach((pre, index) => {
+      if (pre.closest(".code-copy-frame")) return;
+
+      const code = pre.querySelector("code");
+      const frame = document.createElement("div");
+      const button = document.createElement("button");
+      const liveRegion = document.createElement("span");
+      const labelId = `code-copy-${index}`;
+
+      frame.className = "code-copy-frame";
+      button.type = "button";
+      button.className = "code-copy-button";
+      button.setAttribute("aria-describedby", labelId);
+      button.textContent = "Copy";
+      liveRegion.id = labelId;
+      liveRegion.className = "sr-only";
+      liveRegion.setAttribute("aria-live", "polite");
+
+      pre.parentNode?.insertBefore(frame, pre);
+      frame.append(pre, button, liveRegion);
+
+      button.addEventListener("click", async () => {
+        try {
+          if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
+          await navigator.clipboard.writeText(code?.textContent ?? pre.textContent ?? "");
+          button.textContent = "Copied";
+          liveRegion.textContent = "Code copied";
+        } catch {
+          button.textContent = "Failed";
+          liveRegion.textContent = "Copy failed";
+        }
+        window.setTimeout(() => {
+          button.textContent = "Copy";
+        }, 1800);
+      });
+    });
+  </script>
+
+  <style>
+    .post-meta {
+      column-gap: 0.55rem;
+    }
+
+    /* The byline is a sentence, not a list of dotted items, so it lays out as
+       inline text and keeps normal word spacing instead of the flex gap. */
+    .post-meta__byline {
+      display: inline;
+    }
+
+    .post-meta__link {
+      color: var(--foreground);
+    }
+
+    /* Mirrors `.meta > *`: the dot only takes its 2px box inside a flex item. */
+    .post-meta__dates > * {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .post-meta__dates > * + *::before {
+      width: 2px;
+      height: 2px;
+      content: "";
+      background: var(--muted-foreground);
+      border-radius: 50%;
+    }
+
+    /* Once the row no longer fits, date and read time drop to a line of their
+       own rather than orphaning the read time under the byline. */
+    @media (max-width: 40rem) {
+      .post-meta__dates {
+        flex-basis: 100%;
+      }
+
+      .post-meta__dates::before {
+        display: none;
+      }
+    }
+
+    .article-title {
+      margin: 1.25rem 0 0;
+      font-family: var(--font-display);
+      font-size: clamp(2.25rem, 6.5vw, 4rem);
+      font-weight: 600;
+      letter-spacing: -0.035em;
+      line-height: 1.02;
+      text-wrap: balance;
+      word-break: break-word;
+    }
+
+    .article-excerpt {
+      margin: 1.25rem 0 0;
+      color: color-mix(in srgb, var(--foreground) 82%, transparent);
+      font-size: clamp(1.125rem, 2.4vw, 1.4rem);
+      line-height: 1.45;
+      text-wrap: pretty;
+    }
+
+    /* Only the block margins are set here: the inline `auto` margins come from
+       `.inner` and must survive, or the wide feature image stops centering. */
+    .article-image {
+      margin-top: 3rem;
+      margin-bottom: 0;
+    }
+
+    /* Capped so an unusually tall cover cannot push the article's first
+       paragraph below the fold. */
+    .article-image :global(img) {
+      max-height: 32rem;
+      width: 100%;
+      object-fit: cover;
+      border-radius: var(--radius-md);
+    }
+
+    .article-image figcaption {
+      max-width: var(--layout-content);
+      margin: 0.75rem auto 0;
+      color: var(--muted-foreground);
+      font-size: 0.8125rem;
+    }
+
+    .share-btn {
+      display: inline-grid;
+      width: 2.5rem;
+      height: 2.5rem;
+      place-items: center;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      padding: 0;
+      border-radius: var(--radius-full);
+      transition:
+        border-color var(--duration) var(--ease-out),
+        color var(--duration) var(--ease-out),
+        transform var(--duration) var(--ease-out);
+    }
+
+    .share-btn:hover,
+    .share-btn:focus-visible {
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      color: var(--accent);
+      transform: translateY(-2px);
+    }
+  </style>
+</BaseLayout>

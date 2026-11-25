@@ -1,0 +1,135 @@
+---
+import { siteConfig } from "@/config/site";
+import "@/styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+  type?: "website" | "article";
+  noindex?: boolean;
+  prevUrl?: string;
+  nextUrl?: string;
+  structuredData?: Record<string, unknown> | Record<string, unknown>[];
+}
+
+const {
+  title = siteConfig.title,
+  description = siteConfig.description,
+  image = siteConfig.socialImage,
+  type = "website",
+  noindex = false,
+  prevUrl,
+  nextUrl,
+  structuredData,
+} = Astro.props;
+
+const canonical = new URL(Astro.url.pathname, siteConfig.siteUrl).toString();
+const absoluteImage = new URL(image, siteConfig.siteUrl).toString();
+const pageTitle = title === siteConfig.title ? title : `${title} | ${siteConfig.name}`;
+const defaultStructuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: siteConfig.name,
+  url: siteConfig.siteUrl,
+  description: siteConfig.description,
+  publisher: {
+    "@type": "Organization",
+    name: siteConfig.authorName,
+  },
+};
+const schema = structuredData ?? defaultStructuredData;
+---
+
+<!doctype html>
+<html lang={siteConfig.language} data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preload" href="/fonts/geist/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href={canonical} />
+    {prevUrl && <link rel="prev" href={new URL(prevUrl, siteConfig.siteUrl).toString()} />}
+    {nextUrl && <link rel="next" href={new URL(nextUrl, siteConfig.siteUrl).toString()} />}
+    <link rel="alternate" type="application/rss+xml" title={`${siteConfig.name} RSS`} href={new URL("/rss.xml", siteConfig.siteUrl).toString()} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <meta property="og:locale" content={siteConfig.locale} />
+    <meta property="og:type" content={type} />
+    <meta property="og:site_name" content={siteConfig.name} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={absoluteImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={absoluteImage} />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(schema)} />
+    <script is:inline>
+      /*
+       * Runs before first paint so the stored reading mode is applied without a
+       * flash. Falls back to the system preference until the reader picks a side.
+       */
+      (() => {
+        const storageKey = "monograph-theme";
+        const root = document.documentElement;
+        const systemDark = window.matchMedia("(prefers-color-scheme: dark)");
+        let storedTheme;
+
+        try {
+          storedTheme = localStorage.getItem(storageKey);
+        } catch {
+          storedTheme = null;
+        }
+
+        const updateToggles = (theme) => {
+          const isDark = theme === "dark";
+          document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+            button.setAttribute("aria-checked", String(isDark));
+            button.setAttribute("aria-label", isDark ? "Switch to light mode" : "Switch to dark mode");
+          });
+        };
+
+        const setTheme = (theme, persist = false) => {
+          root.dataset.theme = theme;
+          if (persist) {
+            storedTheme = theme;
+            try {
+              localStorage.setItem(storageKey, theme);
+            } catch {}
+          }
+          updateToggles(theme);
+        };
+
+        const preferredTheme =
+          storedTheme === "light" || storedTheme === "dark"
+            ? storedTheme
+            : systemDark.matches
+              ? "dark"
+              : "light";
+
+        setTheme(preferredTheme);
+
+        systemDark.addEventListener("change", (event) => {
+          if (storedTheme === "light" || storedTheme === "dark") return;
+          setTheme(event.matches ? "dark" : "light");
+        });
+
+        window.addEventListener("DOMContentLoaded", () => {
+          updateToggles(root.dataset.theme || preferredTheme);
+          document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+            button.addEventListener("click", () => {
+              setTheme(root.dataset.theme === "dark" ? "light" : "dark", true);
+            });
+          });
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <slot />
+  </body>
+</html>

@@ -1,0 +1,169 @@
+<div class="code-group" data-code-group>
+  <div class="code-group-tabs" role="tablist"></div>
+  <div class="code-group-panels">
+    <slot />
+  </div>
+</div>
+
+<style>
+  .code-group {
+    margin: 1.75rem 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+
+  .code-group-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--muted);
+    padding: 0.4rem 0.4rem 0;
+  }
+
+  .code-group-tabs:empty {
+    display: none;
+  }
+
+  .code-group :global(.code-group-tab) {
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    padding: 0.5rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--muted-foreground);
+    transition:
+      color 160ms ease,
+      border-color 160ms ease;
+  }
+
+  .code-group :global(.code-group-tab:hover) {
+    color: var(--foreground);
+  }
+
+  .code-group :global(.code-group-tab[aria-selected="true"]) {
+    border-bottom-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .code-group :global(.code-group-tab:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+
+  .code-group-panels :global(pre) {
+    margin: 0 !important;
+    border: 0 !important;
+  }
+
+  /* [slug].astro wraps every `.prose pre` in a .code-copy-frame; that adds its
+     own margin and reserves top padding on the pre so the copy button has room
+     above the code. Both stack badly on top of this panel's own compact
+     padding, so collapse them: the button can sit over the code's normal
+     padding instead of pushing it down. */
+  .code-group-panels :global(.code-copy-frame) {
+    margin: 0 !important;
+  }
+
+  .code-group-panels :global(.code-copy-frame pre) {
+    padding-top: 1rem !important;
+  }
+
+  .code-group-panels :global(.code-copy-button) {
+    top: 0.5rem !important;
+    right: 0.5rem !important;
+  }
+
+  .code-group.is-enhanced :global([data-code-tab-panel]) {
+    padding: 0.75rem;
+  }
+
+  .code-group:not(.is-enhanced) :global([data-code-tab-panel]) {
+    border-top: 1px solid var(--border);
+    padding: 0.75rem;
+  }
+
+  .code-group:not(.is-enhanced) :global([data-code-tab-panel]:first-child) {
+    border-top: 0;
+  }
+
+  .code-group.is-enhanced :global(.code-group-fallback-label) {
+    display: none;
+  }
+</style>
+
+<script>
+  function activateTab(panels: HTMLElement[], tabs: HTMLButtonElement[], activeIndex: number) {
+    panels.forEach((panel, index) => {
+      panel.hidden = index !== activeIndex;
+    });
+    tabs.forEach((tab, index) => {
+      const active = index === activeIndex;
+      tab.setAttribute("aria-selected", String(active));
+      tab.tabIndex = active ? 0 : -1;
+    });
+  }
+
+  function setupCodeGroup(group: HTMLElement, groupId: string) {
+    const tabsWrap = group.querySelector<HTMLElement>(":scope > .code-group-tabs");
+    const panelsWrap = group.querySelector<HTMLElement>(":scope > .code-group-panels");
+    if (!tabsWrap || !panelsWrap) return;
+
+    const panels = Array.from(panelsWrap.querySelectorAll<HTMLElement>(":scope > [data-code-tab-panel]"));
+    if (panels.length < 2) return;
+
+    const tabs: HTMLButtonElement[] = panels.map((panel, index) => {
+      const label = panel.getAttribute("data-code-tab-label") || `Option ${index + 1}`;
+      const tabId = `${groupId}-tab-${index}`;
+      const panelId = `${groupId}-panel-${index}`;
+
+      panel.id = panelId;
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", tabId);
+
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.id = tabId;
+      tab.className = "code-group-tab";
+      tab.textContent = label;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-controls", panelId);
+      tabsWrap.appendChild(tab);
+      return tab;
+    });
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => {
+        activateTab(panels, tabs, index);
+        tab.focus();
+      });
+    });
+
+    tabsWrap.addEventListener("keydown", (event) => {
+      const currentIndex = tabs.indexOf(document.activeElement as HTMLButtonElement);
+      if (currentIndex === -1) return;
+
+      let nextIndex: number | null = null;
+      if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % tabs.length;
+      else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+      else if (event.key === "Home") nextIndex = 0;
+      else if (event.key === "End") nextIndex = tabs.length - 1;
+
+      if (nextIndex === null) return;
+      event.preventDefault();
+      activateTab(panels, tabs, nextIndex);
+      tabs[nextIndex].focus();
+    });
+
+    activateTab(panels, tabs, 0);
+    group.classList.add("is-enhanced");
+  }
+
+  document.querySelectorAll<HTMLElement>("[data-code-group]").forEach((group, index) => {
+    setupCodeGroup(group, `code-group-${index}`);
+  });
+</script>

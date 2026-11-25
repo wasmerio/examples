@@ -342,6 +342,10 @@ export function escapingRefs(root) {
   const textExt = /\.(m?[jt]sx?|c[jt]s|astro|vue|svelte|json|ya?ml|toml|css|scss|md|mdx|html)$/i;
   for (const file of walk(root, SKIP_SIZE)) {
     if (!textExt.test(file.full) || file.size > 1024 * 1024) continue;
+    const rel = path.relative(root, file.full).split(path.sep).join('/');
+    // Markdown outside src/ (README, CHANGELOG, docs) and test files are not part of the site build.
+    if (/\.mdx?$/i.test(rel) && !rel.startsWith('src/')) continue;
+    if (/(^|\/)(tests?|__tests__|e2e)\/|\.(test|spec)\.[cm]?[jt]sx?$/.test(rel)) continue;
     let text = '';
     try { text = readFileSync(file.full, 'utf8'); } catch { continue; }
     for (const match of text.matchAll(/['"`(]((?:\.\.\/)+[^'"`)\s]*)/g)) {
@@ -387,12 +391,13 @@ function archiveUrl(row) {
   return `https://codeload.github.com/${row.repo}/tar.gz/${row.commit}`;
 }
 
-// The archive's top folder must be <repo name>-<commit> (or <repo name> on Codeberg): proof the source is
-// this row's repo at this commit and not a base theme or another fork.
+// The archive's top folder must end in -<commit> (or be <repo name> on Codeberg): proof the archive GitHub served
+// for this row's repo is that exact commit, not a base theme's or another branch's.
+// A renamed repo keeps its commits, so the commit, not the folder name, is what proves the source.
 export function archiveTopOk(row, top) {
   const name = String(row.repo).split('/').pop().toLowerCase();
   const value = String(top || '').replace(/\/$/, '').toLowerCase();
-  return value === `${name}-${String(row.commit).toLowerCase()}` || (row.host === 'codeberg.org' && value === name);
+  return value.endsWith(`-${String(row.commit).toLowerCase()}`) || (row.host === 'codeberg.org' && value === name);
 }
 
 async function fetchSource(row, work) {
@@ -674,7 +679,7 @@ function classify(stage, text) {
   const body = String(text || '');
   if (/heap out of memory/i.test(body)) return 'out-of-memory';
   if (/ETIMEDOUT|timed out|SIGTERM/i.test(body) && (stage === 'install' || stage === 'build')) return `${stage}-timeout`;
-  if (/(SUPABASE|CLERK|DATABASE_URL|API_KEY|SECRET|TOKEN)[A-Z_]*\b.*(missing|required|undefined|not set)|(missing|required).*env(ironment)? var/i.test(body)) return 'needs-secrets';
+  if (/Missing clientId|tina\.io\/docs|(SUPABASE|CLERK|DATABASE_URL|API_KEY|SECRET|TOKEN)[A-Z_]*\b.*(missing|required|undefined|not set)|(missing|required).*env(ironment)? var/i.test(body)) return 'needs-secrets';
   if (/workspace:|ERR_PNPM_WORKSPACE|No matching version found for .*workspace/i.test(body)) return 'workspace-deps';
   if (/ERR_PNPM_OUTDATED_LOCKFILE|lockfile.*(out of date|not up to date)|npm ci.*in sync|can only install packages when your package\.json and package-lock\.json/i.test(body)) return 'lockfile-mismatch';
   return `${stage}-failed`;
@@ -762,7 +767,11 @@ async function liveChecksOnce(demo, local) {
     const response = await fetchText(target);
     if (response.status === 200) { checks.innerPage = 'passed'; detail.push(`inner ${new URL(target).pathname}`); break; }
   }
-  if (checks.innerPage === 'failed' && !refs.some(isPageRef)) detail.push('home links to no inner page');
+  if (checks.innerPage === 'failed' && !refs.some(isPageRef)) {
+    detail.push('home links to no inner page');
+    // A one-page theme has no inner page to check; the local build proves it has no other HTML page.
+    if (local.singlePage) checks.innerPage = 'n/a';
+  }
   const missing = await fetchText(`${demo.replace(/\/$/, '')}/wasmer-missing-page-check-${Date.now()}`);
   checks.notFound = missing.status === 404 ? 'passed' : missing.status >= 500 ? 'failed' : 'passed';
   detail.push(`missing path HTTP ${missing.status}`);
@@ -1046,6 +1055,14 @@ async function processRow(row, plan, ctx) {
     }
     info.output = detectOutput(build);
     if (!info.output) throw Object.assign(new Error('the build produced neither dist/index.html nor dist/server/entry.mjs'), { stage: 'build', code: 'no-dist' });
+    const builtPkg = readJson(path.join(dest, 'package.json')) || {};
+    if (info.output === 'server' && !(builtPkg.scripts || {}).start) {
+      // Anybuild needs a start command for a server build; js-astro-ssr declares the same one.
+      builtPkg.scripts = { ...(builtPkg.scripts || {}), start: 'node ./dist/server/entry.mjs' };
+      writeFileSync(path.join(dest, 'package.json'), `${JSON.stringify(builtPkg, null, 2)}\n`);
+      info.wasmerChanges.push('Added a `start` script (`node ./dist/server/entry.mjs`) to package.json so Wasmer can start the Node server.');
+    }
+    const pages = walk(path.join(build, 'dist'), new Set(['_astro', 'server'])).filter((file) => file.full.endsWith('.html') && !/\/404(\/index)?\.html$/.test(file.full));
     const localHome = info.output === 'static' ? readFileSync(path.join(build, 'dist', 'index.html'), 'utf8')
       : existsSync(path.join(build, 'dist', 'client', 'index.html')) ? readFileSync(path.join(build, 'dist', 'client', 'index.html'), 'utf8') : '';
     const demoUrl = `https://${appName}.wasmer.app`;
@@ -1089,7 +1106,7 @@ async function processRow(row, plan, ctx) {
     record.demo = demoUrl;
 
     stage = 'live';
-    const live = await liveChecks(demoUrl, { output: info.output, title: localTitle });
+    const live = await liveChecks(demoUrl, { output: info.output, title: localTitle, singlePage: info.output === 'static' && pages.length <= 1 });
     record.checks = live.checks;
     const failed = Object.entries(live.checks).filter(([key, value]) => key !== 'coldStartMs' && value !== 'passed' && value !== 'n/a').map(([key]) => key);
     if (failed.length) throw Object.assign(new Error(`live checks failed: ${failed.join(', ')} (${live.detail})`), { code: 'live-check' });

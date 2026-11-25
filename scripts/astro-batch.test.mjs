@@ -145,7 +145,8 @@ test('license check: standard grants pass, missing or restrictive terms are reje
 test('provenance: the archive must be this repo at this commit', () => {
   assert.equal(archiveTopOk(row(), `fuwari-${COMMIT}`), true);
   assert.equal(archiveTopOk(row(), `Fuwari-${COMMIT.toUpperCase()}/`), true);
-  assert.equal(archiveTopOk(row(), `paper-mod-${COMMIT}`), false);
+  // GitHub serves a renamed repo under its new name; the commit still has to match.
+  assert.equal(archiveTopOk(row(), `fuwari-renamed-${COMMIT}`), true);
   assert.equal(archiveTopOk(row(), 'fuwari-ffffffffffffffffffffffffffffffffffffffff'), false);
 });
 
@@ -182,10 +183,15 @@ test('folder check rejects paths outside the folder, extra lockfiles and missing
     writeFolder(dir, { archiveSha256: '' });
     writeFileSync(path.join(dir, 'package-lock.json'), '{}');
     writeFileSync(path.join(dir, 'astro.config.mjs'), "import x from '../../shared/x.mjs';\n");
+    // Docs and tests are not built, so their relative links do not count.
+    writeFileSync(path.join(dir, 'CHANGELOG.md'), '![x](../../assets/x.png)\n');
+    mkdirSync(path.join(dir, 'test'));
+    writeFileSync(path.join(dir, 'test', 'a.test.ts'), "import '../../../x';\n");
     const errors = checkFolder(dir);
     assert.ok(errors.some((item) => /archiveSha256/.test(item)));
     assert.ok(errors.some((item) => /2 lockfiles/.test(item)));
-    assert.ok(errors.some((item) => /outside the folder/.test(item)));
+    assert.ok(errors.some((item) => /outside the folder: astro\.config\.mjs/.test(item)));
+    assert.ok(!errors.some((item) => /CHANGELOG|a\.test/.test(item)));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

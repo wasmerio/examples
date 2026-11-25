@@ -1,0 +1,82 @@
+---
+/**
+ * Progress Component
+ * A bar indicator showing determinate or indeterminate progress.
+ */
+import type { HTMLAttributes } from 'astro/types';
+import { cn } from '@/lib/cn';
+import { progressTrackVariants, progressBarVariants } from './progress.variants';
+import { t, getLocaleFromPath } from '@/i18n';
+
+interface Props extends HTMLAttributes<'div'> {
+  /** Progress value between 0 and 100. Omit for indeterminate mode. */
+  value?: number;
+  /** Maximum value (default 100) */
+  max?: number;
+  variant?: 'default' | 'brand' | 'success' | 'warning' | 'error';
+  size?: 'sm' | 'md' | 'lg';
+  /** Show percentage label */
+  showLabel?: boolean;
+  /**
+   * Accessible name for the bar. Only needed when there is no visible label:
+   * with `showLabel` the slotted text names the bar already.
+   */
+  label?: string;
+}
+
+const {
+  value,
+  max = 100,
+  variant = 'default',
+  size = 'md',
+  showLabel = false,
+  label,
+  class: className,
+  ...attrs
+} = Astro.props;
+
+const isIndeterminate = value === undefined;
+const percentage = isIndeterminate || max <= 0 ? 0 : Math.min(100, Math.max(0, (value / max) * 100));
+
+// A `progressbar` needs an accessible name of its own: with only `aria-valuenow`
+// a screen reader announces a bare number and nothing about what is loading.
+// Point at the visible label when there is one, so what is announced matches
+// what is on screen, and fall back to a generic name when there is neither.
+const hasVisibleLabel = showLabel && !isIndeterminate && Astro.slots.has('default');
+const labelId = hasVisibleLabel ? `progress-label-${Math.random().toString(36).slice(2, 9)}` : undefined;
+const ariaLabel = label ?? (hasVisibleLabel ? undefined : t('common.progress', getLocaleFromPath(Astro.url.pathname)));
+const ariaLabelledBy = !label && hasVisibleLabel ? labelId : undefined;
+---
+
+<div class={cn('w-full', className)} {...attrs}>
+  {showLabel && !isIndeterminate && (
+    <div class="flex justify-between mb-1.5">
+      <span id={labelId}><slot /></span>
+      <span class="text-xs font-medium text-foreground-muted">{Math.round(percentage)}%</span>
+    </div>
+  )}
+  <div
+    class={cn(progressTrackVariants({ size }))}
+    role="progressbar"
+    aria-label={ariaLabel}
+    aria-labelledby={ariaLabelledBy}
+    aria-valuenow={isIndeterminate ? undefined : Math.round(percentage)}
+    aria-valuemin={0}
+    aria-valuemax={max}
+  >
+    <div
+      class={cn(progressBarVariants({ variant, indeterminate: isIndeterminate }))}
+      style={!isIndeterminate ? `width: ${percentage}%` : undefined}
+    />
+  </div>
+</div>
+
+<style>
+  @keyframes indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+  .animate-indeterminate {
+    animation: indeterminate 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  }
+</style>

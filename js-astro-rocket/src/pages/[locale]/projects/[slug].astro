@@ -1,0 +1,61 @@
+---
+import ProjectLayout from '@/layouts/ProjectLayout.astro';
+import { getCollection, render } from 'astro:content';
+import { getProjectSlug, getSecondaryLocales, getVisibleProjects, getRoutableProjects } from '@/lib/projects';
+
+// Locale-prefixed project detail pages (`/<locale>/projects/<slug>`). One page
+// per (non-default locale × visible project in that locale). Emits nothing when
+// i18n is off. The default-locale projects are served by
+// `src/pages/projects/[slug].astro`, which also runs the build-time
+// content-integrity guard across every locale, so it is not repeated here.
+export async function getStaticPaths() {
+  const paths: {
+    params: { locale: string; slug: string };
+    props: {
+      project: Awaited<ReturnType<typeof getCollection<'projects'>>>[number];
+      related: Awaited<ReturnType<typeof getVisibleProjects>>;
+    };
+  }[] = [];
+
+  for (const locale of getSecondaryLocales()) {
+    const visibleProjects = await getVisibleProjects(locale);
+    const routableProjects = await getRoutableProjects(locale);
+
+    for (const project of routableProjects) {
+      paths.push({
+        params: { locale, slug: getProjectSlug(project.id, locale) },
+        props: {
+          project,
+          related: visibleProjects
+            .filter((p) => p.id !== project.id)
+            .sort((a, b) => a.data.order - b.data.order)
+            .slice(0, 3),
+        },
+      });
+    }
+  }
+
+  return paths;
+}
+
+const { project, related } = Astro.props;
+const { Content, headings } = await render(project);
+---
+
+<ProjectLayout
+  title={project.data.title}
+  description={project.data.description}
+  meta={project.data.meta}
+  url={project.data.url}
+  repo={project.data.repo}
+  image={project.data.image}
+  imageAlt={project.data.imageAlt}
+  gallery={project.data.gallery}
+  tags={project.data.tags}
+  slug={project.id}
+  related={related}
+  headings={headings}
+  toc={project.data.toc}
+>
+  <Content />
+</ProjectLayout>

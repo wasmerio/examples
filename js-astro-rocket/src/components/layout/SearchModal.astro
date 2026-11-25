@@ -1,0 +1,317 @@
+---
+/**
+ * SearchModal — header search trigger + command-palette style modal,
+ * powered by Pagefind's static index.
+ *
+ * - The index is generated at build time by the `pagefind` hook in
+ *   `astro.config.mjs`, so search ships zero JS until the modal is opened —
+ *   the Pagefind bundle (~6 kB) is imported lazily on first open.
+ * - In `astro dev` the index does not exist; the modal explains how to
+ *   build it instead of failing silently.
+ * - The dialog node is portalled to <body> on init so the fixed overlay
+ *   escapes the header's transform (auto-hide) and backdrop-filter.
+ * - Keyboard: Cmd/Ctrl+K opens, Escape closes, ↑/↓ move through results.
+ */
+import { cn } from '@/lib/cn';
+import { t, getLocaleFromPath } from '@/i18n';
+
+interface Props {
+  class?: string;
+}
+
+const { class: className } = Astro.props;
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+const modalId = `search-modal-${Math.random().toString(36).slice(2, 9)}`;
+---
+
+<div class={cn('search-wrapper', className)} data-search-modal-id={modalId}>
+  <!-- Trigger — a round icon button. Equal padding around the square icon
+       makes it a true circle at the same 30px height as the pills beside it;
+       the header's floating/returned state CSS targets the wrapper > trigger
+       pair, so it recolours with the other pills in every mode. -->
+  <button
+    type="button"
+    class={cn(
+      'search-trigger inline-flex items-center justify-center rounded-full border border-border-strong p-1.5',
+      'text-foreground-muted hover:text-foreground hover:bg-secondary',
+      'transition-colors duration-(--transition-fast)',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+    )}
+    aria-haspopup="dialog"
+    aria-controls={modalId}
+    aria-label={t('common.search', locale)}
+  >
+    <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path stroke-linecap="round" d="m20 20-3.5-3.5" />
+    </svg>
+  </button>
+
+  <!-- Modal (moved to <body> by the init script) -->
+  <div
+    id={modalId}
+    class="search-modal fixed inset-0 z-[100] hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-label={t('common.search', locale)}
+    data-pagefind-ignore
+  >
+    <div class="search-backdrop absolute inset-0 bg-black/60 backdrop-blur-sm" data-search-close></div>
+
+    <div class="relative mx-auto mt-[12vh] w-[calc(100%-2rem)] max-w-xl overflow-hidden rounded-xl border border-border bg-background shadow-2xl">
+      <!-- Input row -->
+      <div class="flex items-center gap-3 border-b border-border px-4">
+        <svg class="h-5 w-5 shrink-0 text-foreground-muted" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path stroke-linecap="round" d="m20 20-3.5-3.5" />
+        </svg>
+        <input
+          type="search"
+          class="search-input w-full bg-transparent py-4 text-base text-foreground placeholder:text-foreground-subtle focus:outline-none"
+          placeholder={t('search.placeholder', locale)}
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+          aria-label={t('search.inputLabel', locale)}
+        />
+        <button
+          type="button"
+          class="shrink-0 rounded-md border border-border-strong px-1.5 py-0.5 text-[10px] font-medium text-foreground-muted hover:bg-secondary hover:text-foreground transition-colors"
+          data-search-close
+        >
+          ESC
+        </button>
+      </div>
+
+      <!-- Results -->
+      <div
+        class="search-results max-h-[55vh] overflow-y-auto overscroll-contain p-2"
+        role="listbox"
+        aria-label={t('search.resultsLabel', locale)}
+        data-i18n-hint={t('search.hint', locale)}
+        data-i18n-empty={t('search.noResults', locale)}
+        data-i18n-unavailable={t('search.unavailable', locale)}
+      >
+        <p class="search-hint px-3 py-8 text-center text-sm text-foreground-muted">
+          {t('search.hint', locale)}
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Highlighted terms in Pagefind excerpts (injected at runtime) */
+  :global(.search-results mark) {
+    background: transparent;
+    color: var(--color-brand-500);
+    font-weight: 600;
+  }
+  /* Hide the native WebKit clear button — the ESC affordance covers it */
+  .search-input::-webkit-search-cancel-button {
+    display: none;
+  }
+</style>
+
+<script>
+  import { trapFocus } from '@/lib/focus-trap';
+
+  interface PagefindResultData {
+    url: string;
+    excerpt: string;
+    meta: { title?: string };
+  }
+  interface PagefindResult {
+    data: () => Promise<PagefindResultData>;
+  }
+  interface Pagefind {
+    search: (query: string) => Promise<{ results: PagefindResult[] }>;
+  }
+
+  const MAX_RESULTS = 8;
+
+  let pagefind: Pagefind | null = null;
+  let pagefindFailed = false;
+
+  // Per-modal open/close controllers so the global Cmd/Ctrl+K hotkey drives
+  // the same code path as the trigger button (focus trap + focus return).
+  const controllers = new WeakMap<HTMLElement, { open: () => void; close: () => void }>();
+
+  async function loadPagefind(): Promise<Pagefind | null> {
+    if (pagefind || pagefindFailed) return pagefind;
+    try {
+      // Generated at build time (`astro:build:done` hook in astro.config.mjs).
+      // The variable indirection + @vite-ignore keep Vite from trying to
+      // resolve the module at bundle time.
+      const url = '/pagefind/pagefind.js';
+      pagefind = (await import(/* @vite-ignore */ url)) as Pagefind;
+    } catch {
+      pagefindFailed = true;
+    }
+    return pagefind;
+  }
+
+  function escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function initSearchModals() {
+    const wrappers = document.querySelectorAll<HTMLElement>(
+      '.search-wrapper:not([data-search-init])'
+    );
+
+    wrappers.forEach((wrapper) => {
+      wrapper.dataset.searchInit = 'true';
+
+      const trigger = wrapper.querySelector<HTMLButtonElement>('.search-trigger');
+      const modal = wrapper.querySelector<HTMLElement>('.search-modal');
+      if (!trigger || !modal) return;
+
+      // Portal the dialog to <body>: the header animates with a transform
+      // (auto-hide), which would turn it into the containing block for this
+      // fixed overlay and drag the modal off-screen with it.
+      document.body.appendChild(modal);
+
+      const input = modal.querySelector<HTMLInputElement>('.search-input');
+      const results = modal.querySelector<HTMLElement>('.search-results');
+      if (!input || !results) return;
+
+      let releaseTrap: (() => void) | null = null;
+
+      const open = () => {
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+        input.focus();
+        input.select();
+        // Fence Tab inside the dialog while it's open — otherwise focus
+        // walks out behind the backdrop into the page underneath.
+        releaseTrap?.();
+        releaseTrap = trapFocus(modal);
+      };
+
+      const close = () => {
+        releaseTrap?.();
+        releaseTrap = null;
+        modal.classList.add('hidden');
+        document.body.style.overflow = '';
+        trigger.focus();
+      };
+
+      controllers.set(modal, { open, close });
+
+      const renderMessage = (html: string) => {
+        results.innerHTML = `<p class="px-3 py-8 text-center text-sm text-foreground-muted">${html}</p>`;
+      };
+
+      const renderResults = async (query: string) => {
+        const pf = await loadPagefind();
+        if (!pf) {
+          renderMessage(
+            results.dataset.i18nUnavailable ??
+              'The search index is generated at build time and isn’t available in <code class="rounded bg-secondary px-1.5 py-0.5 text-xs">astro dev</code>.<br />Run <code class="rounded bg-secondary px-1.5 py-0.5 text-xs">pnpm build &amp;&amp; pnpm preview</code> to try it locally.'
+          );
+          return;
+        }
+
+        const search = await pf.search(query);
+        // A newer keystroke may have superseded this query while we awaited
+        if (input.value.trim() !== query) return;
+
+        if (search.results.length === 0) {
+          const tmpl = results.dataset.i18nEmpty ?? 'No results for “{query}”';
+          // Pass a function so the escaped query is inserted literally — a string
+          // replacement would interpret $&, $`, $', $$ in the query specially.
+          renderMessage(tmpl.replace('{query}', () => escapeHtml(query)));
+          return;
+        }
+
+        const items = await Promise.all(
+          search.results.slice(0, MAX_RESULTS).map((r) => r.data())
+        );
+
+        results.innerHTML = items
+          .map(
+            (item) => `
+              <a
+                href="${item.url}"
+                class="search-result block rounded-lg px-3 py-2.5 hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                role="option"
+              >
+                <span class="block text-sm font-semibold text-foreground">${escapeHtml(item.meta.title ?? item.url)}</span>
+                <span class="mt-0.5 block text-xs leading-relaxed text-foreground-muted [&_mark]:bg-transparent">${item.excerpt}</span>
+              </a>`
+          )
+          .join('');
+      };
+
+      let debounce: number | undefined;
+      input.addEventListener('input', () => {
+        if (debounce) window.clearTimeout(debounce);
+        const query = input.value.trim();
+        if (!query) {
+          renderMessage(results.dataset.i18nHint ?? 'Start typing to search the site.');
+          return;
+        }
+        debounce = window.setTimeout(() => renderResults(query), 150);
+      });
+
+      trigger.addEventListener('click', open);
+      modal.querySelectorAll('[data-search-close]').forEach((el) => {
+        el.addEventListener('click', close);
+      });
+
+      // ↑/↓ between input and results, Escape to close
+      modal.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          close();
+          return;
+        }
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        const links = Array.from(modal.querySelectorAll<HTMLAnchorElement>('.search-result'));
+        if (links.length === 0) return;
+        e.preventDefault();
+        const active = document.activeElement;
+        const index = links.indexOf(active as HTMLAnchorElement);
+        if (e.key === 'ArrowDown') {
+          (index === -1 ? links[0] : links[Math.min(index + 1, links.length - 1)]).focus();
+        } else if (index <= 0) {
+          input.focus();
+        } else {
+          links[index - 1].focus();
+        }
+      });
+
+    });
+
+    // Cmd/Ctrl+K toggles the first search modal on the page. Bound once per
+    // session (window survives view-transition swaps; the listener queries
+    // the live DOM instead of closing over a node that a swap may replace).
+    const w = window as unknown as { __searchHotkeyInit?: boolean };
+    if (!w.__searchHotkeyInit) {
+      w.__searchHotkeyInit = true;
+      document.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return;
+        const modal = document.querySelector<HTMLElement>('.search-modal');
+        if (!modal) return;
+        const controller = controllers.get(modal);
+        if (!controller) return;
+        e.preventDefault();
+        if (modal.classList.contains('hidden')) {
+          controller.open();
+        } else {
+          controller.close();
+        }
+      });
+    }
+  }
+
+  initSearchModals();
+  document.addEventListener('astro:page-load', initSearchModals);
+  document.addEventListener('astro:after-swap', initSearchModals);
+</script>

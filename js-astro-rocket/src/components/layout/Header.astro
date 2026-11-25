@@ -1,0 +1,1331 @@
+---
+/**
+ * Header Component
+ * Flexible navigation header with variant-based configuration
+ *
+ * Variants:
+ * - layout: 'default' | 'centered' | 'minimal'
+ * - position: 'fixed' | 'sticky' | 'static'
+ * - size: 'sm' | 'md' | 'lg'
+ * - variant: 'default' | 'solid' | 'transparent'
+ * - colorScheme: 'default' | 'invert' (use 'invert' for dark backgrounds)
+ * - shape: 'bar' | 'floating' (use 'floating' for capsule header)
+ *
+ * Features:
+ * - Dynamic navigation from nav.config.ts (default) or custom nav prop
+ * - Optional CTA button with customization
+ * - Mobile menu with Escape key support
+ * - Theme toggle
+ * - GitHub/action buttons
+ * - Full slot support for customization
+ * - Inverted color scheme for use on dark/image backgrounds
+ * - Floating capsule shape with scroll-reactive bg + color flip
+ */
+import type { HTMLAttributes } from 'astro/types';
+import { cn } from '@/lib/cn';
+import { getNavItems, getLogoHref } from '@/config/nav.config';
+import { headerVariants, headerInnerVariants } from './header.variants';
+import Button from '@/components/ui/form/Button/Button.astro';
+import Icon from '@/components/ui/primitives/Icon/Icon.astro';
+import Logo from '@/components/ui/marketing/Logo/Logo.astro';
+import SearchModal from '@/components/layout/SearchModal.astro';
+import ThemeModeDropdown from '@/components/layout/ThemeModeDropdown.astro';
+import ThemeSelector from '@/components/layout/ThemeSelector.astro';
+import ThemeSelectorDropdown from '@/components/layout/ThemeSelectorDropdown.astro';
+import LanguageSwitcher from '@/components/layout/LanguageSwitcher.astro';
+import siteConfig from '@/config/site.config';
+import { isEnabled as i18nIsEnabled, getLocaleFromPath, stripLocaleFromPath, t } from '@/i18n';
+
+export interface NavItem {
+  label: string;
+  href: string;
+}
+
+export interface HeaderAction {
+  icon: string;
+  href: string;
+  label: string;
+  iconOnly?: boolean;
+  target?: string;
+}
+
+interface Props extends HTMLAttributes<'header'> {
+  layout?: 'default' | 'centered' | 'minimal';
+  position?: 'fixed' | 'sticky' | 'static';
+  size?: 'sm' | 'md' | 'lg';
+  variant?: 'default' | 'solid' | 'transparent';
+  colorScheme?: 'default' | 'invert';
+  shape?: 'bar' | 'floating';
+  nav?: NavItem[];
+  extraNav?: NavItem[];
+  showCta?: boolean;
+  cta?: { label?: string; href?: string; icon?: string; trailingIcon?: string };
+  actions?: HeaderAction[];
+  showSearch?: boolean;
+  showThemeToggle?: boolean;
+  showThemeSelector?: boolean;
+  showMobileMenu?: boolean;
+  showActiveState?: boolean;
+  logoText?: string;
+  hideLogo?: boolean;
+  showLanguageSwitcher?: boolean;
+  /**
+   * Optional `locale -> URL` map forwarded to the LanguageSwitcher so it can
+   * link to the same content in each locale (e.g. a blog post's real
+   * per-locale URLs) instead of swapping the current path's locale segment.
+   */
+  languageAlternates?: Record<string, string>;
+  showSocialLinks?: boolean;
+  showScrollProgress?: boolean;
+  scrollProgressPosition?: 'top' | 'bottom';
+  autoHide?: boolean;
+  invertOnReturn?: boolean;
+  /**
+   * Max width of the inner container (only applies when `shape='bar'`).
+   * Defaults to `'6xl'` (the historical width).
+   */
+  maxWidth?: '4xl' | '5xl' | '6xl' | '7xl' | 'full';
+}
+
+const {
+  layout = 'default',
+  position = 'fixed',
+  size = 'lg',
+  variant = 'solid',
+  colorScheme = 'default',
+  shape = 'bar',
+  nav,
+  extraNav = [],
+  showCta = false,
+  cta = { label: 'Start a project', href: '/contact' },
+  actions = [],
+  showSearch = true,
+  showThemeToggle = true,
+  showThemeSelector = true,
+  showMobileMenu = true,
+  showSocialLinks = siteConfig.header?.showSocialLinks ?? false,
+  showLanguageSwitcher = i18nIsEnabled(),
+  languageAlternates,
+  showActiveState = true,
+  showScrollProgress = false,
+  scrollProgressPosition = 'bottom',
+  autoHide = true,
+  invertOnReturn = true,
+  logoText,
+  hideLogo = false,
+  maxWidth = '6xl',
+  class: className,
+  ...attrs
+} = Astro.props;
+
+const isFloating = shape === 'floating';
+const maxWidthClass = {
+  '4xl': 'max-w-4xl',
+  '5xl': 'max-w-5xl',
+  '6xl': 'max-w-6xl',
+  '7xl': 'max-w-7xl',
+  full: 'max-w-full',
+}[maxWidth];
+const effectiveShowScrollProgress = showScrollProgress || (isFloating && !autoHide);
+const isInvert = colorScheme === 'invert';
+
+const currentPath = Astro.url.pathname;
+const locale = getLocaleFromPath(currentPath);
+const isLandingPage = currentPath === '/';
+
+// Localized for the active locale: hrefs are locale-prefixed and labels
+// translated (see nav.config.ts). Explicit `nav`/`extraNav` props are used
+// as-is so callers keep full control.
+const defaultNav = getNavItems(locale).map((item) => ({
+  label: item.label,
+  href: item.href,
+}));
+const navItems: NavItem[] = nav || [...extraNav, ...defaultNav];
+const logoHref = getLogoHref(locale);
+const ctaHref = cta.href?.startsWith('#') && !isLandingPage ? `/${cta.href}` : cta.href;
+
+const hasLogoSlot = Astro.slots.has('logo');
+const hasNavSlot = Astro.slots.has('nav');
+const hasActionsSlot = Astro.slots.has('actions');
+const hasMobileMenuSlot = Astro.slots.has('mobile-menu');
+
+// Dev-time guard: Header renders only its named slots (logo, nav, actions,
+// mobile-menu) — it has no default <slot/>. So any default-slot content is
+// silently dropped. The usual culprit is a misplaced </Header> that swallows
+// the layout's page <slot /> and <Footer>, leaving the page blank below the
+// navbar with no error. Warn loudly in dev so this fails fast instead of
+// silently. No-op in production.
+if (import.meta.env.DEV && Astro.slots.has('default')) {
+  console.warn(
+    '[Header] Received content in the default slot, which Header does not render — ' +
+    'it only outputs the named slots (logo, nav, actions, mobile-menu), so this content is dropped. ' +
+    'A common cause is a misplaced </Header> wrapping the page <slot /> or <Footer>: ' +
+    'make sure those sit OUTSIDE <Header> and that only slotted children (e.g. <img slot="logo" />) sit inside it.'
+  );
+}
+
+const headerClasses = cn(
+  headerVariants({ position, variant, shape }),
+  isInvert && !isFloating && 'invert-section',
+  className
+);
+
+const innerClasses = cn(headerInnerVariants({ size, shape }), !isFloating && maxWidthClass);
+
+function isActive(href: string): boolean {
+  if (!showActiveState) return false;
+  if (href.startsWith('#')) return false;
+  // The home item — site root `/` or a locale root like `/nl` — must match
+  // exactly: the startsWith check below would light it up on every page of
+  // its locale.
+  if (stripLocaleFromPath(href) === '/') {
+    return currentPath === href || currentPath === `${href}/`;
+  }
+  return currentPath === href || currentPath.startsWith(href + '/');
+}
+
+function getSocialIconData(url: string): { icon: string; label: string } {
+  if (url.includes('github.com'))    return { icon: 'github',    label: 'GitHub' };
+  if (url.includes('instagram.com')) return { icon: 'instagram', label: 'Instagram' };
+  if (url.includes('x.com') || url.includes('twitter.com')) return { icon: 'x-twitter', label: 'X' };
+  if (url.includes('linkedin.com'))  return { icon: 'linkedin',  label: 'LinkedIn' };
+  if (url.includes('bsky.app'))      return { icon: 'bluesky',   label: 'Bluesky' };
+  if (url.includes('youtube.com'))   return { icon: 'youtube',   label: 'YouTube' };
+  return { icon: 'link', label: 'Social' };
+}
+
+function getNavIcon(href: string): string {
+  if (href === '/' || href === '') return 'home';
+  if (href.startsWith('/blog'))     return 'pen-line';
+  if (href.startsWith('/projects')) return 'layers';
+  if (href.startsWith('/services')) return 'sparkles';
+  if (href.startsWith('/about'))    return 'user';
+  if (href.startsWith('/contact'))  return 'mail';
+  if (href.startsWith('#'))         return 'hash';
+  if (href.startsWith('http'))      return 'arrow-up-right';
+  return 'chevron-right';
+}
+
+const mobileSocialOrder = ['x.com', 'instagram.com', 'bsky.app', 'github.com', 'linkedin.com', 'youtube.com'];
+const mobileSocialLinks = mobileSocialOrder
+  .map((host) => siteConfig.socialLinks.find((u) => u.includes(host)))
+  .filter((u): u is string => Boolean(u));
+
+const menuId = `mobile-menu-${Math.random().toString(36).slice(2, 9)}`;
+const buttonId = `${menuId}-button`;
+---
+
+<header
+  class={headerClasses}
+  data-pagefind-ignore
+  data-menu-id={menuId}
+  data-button-id={buttonId}
+  data-header-shape={shape}
+  data-header-variant={variant}
+  data-header-color-scheme={colorScheme}
+  data-header-auto-hide={autoHide ? 'true' : 'false'}
+  data-header-invert-on-return={invertOnReturn ? 'true' : 'false'}
+  {...attrs}
+>
+  <div class={cn(innerClasses, 'hdr-inner')}>
+    {
+      !hideLogo &&
+        (hasLogoSlot ? (
+          <slot name="logo" />
+        ) : (
+          <a href={logoHref} class="flex items-center gap-2">
+            <Logo size={size === 'sm' ? 'md' : 'lg'} forceDark={isInvert} class="bg-brand-600" />
+            {/* One line at every width: the wordmark never wraps, and it eases
+                20px → 16px between 345px and 320px so it clears the header
+                icons on the smallest screens. From 345px up the clamp
+                resolves to exactly text-xl (20px). */}
+            <span
+              class={cn(
+                'font-display text-[clamp(1rem,16vw_-_2.2rem,1.25rem)] font-bold tracking-tight whitespace-nowrap',
+                isFloating ? 'hdr-logo-text' : (isInvert ? 'text-brand-700 dark:text-foreground lg:text-on-invert' : 'text-brand-700 dark:text-foreground')
+              )}
+            >
+              {logoText || siteConfig.name}
+            </span>
+          </a>
+        ))
+    }
+
+    {
+      layout !== 'minimal' &&
+        (hasNavSlot ? (
+          <nav class="hidden items-center gap-1 lg:flex" aria-label={t('nav.mainNav', locale)}>
+            <slot name="nav" />
+          </nav>
+        ) : (
+          <nav class="hidden items-center gap-1 lg:flex" aria-label={t('nav.mainNav', locale)}>
+            {navItems.map(({ label, href }) => (
+              <a
+                href={href.startsWith('#') && !isLandingPage ? `/${href}` : href}
+                class={cn(
+                  'nav-link relative rounded-md px-3 py-2 text-sm',
+                  'transition-all duration-(--transition-fast)',
+                  isFloating && 'hdr-invert-text',
+                  isFloating
+                    ? (isActive(href)
+                        ? 'hdr-nav-active font-semibold'
+                        : 'font-medium')
+                    : (isActive(href)
+                        ? 'nav-link-active font-semibold text-foreground bg-secondary'
+                        : 'nav-link-inactive font-medium text-foreground-muted hover:text-foreground hover:bg-secondary/70')
+                )}
+                aria-current={isActive(href) ? 'page' : undefined}
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
+        ))
+    }
+
+    <div class="flex items-center gap-2 justify-self-end">
+      {
+        hasActionsSlot ? (
+          <slot name="actions" />
+        ) : (
+          <>
+            {/* On phones the search trigger lives in the menu drawer instead —
+                three icons squeezed the brand onto two lines below 390px. The
+                modal itself stays mounted here at every size: the drawer row
+                clicks this (hidden) trigger. */}
+            {showSearch && (
+              <div class="hidden lg:flex">
+                <SearchModal class={isFloating ? 'hdr-invert-text' : undefined} />
+              </div>
+            )}
+
+            {showThemeToggle && (
+              <div class="flex">
+                <ThemeModeDropdown class={isFloating ? 'hdr-invert-text' : undefined} />
+              </div>
+            )}
+
+            {showThemeSelector && (
+              <div class="hidden lg:flex">
+                <ThemeSelectorDropdown class={isFloating ? 'hdr-invert-text' : undefined} />
+              </div>
+            )}
+
+            {showLanguageSwitcher && (
+              <div class="hidden lg:flex">
+                <LanguageSwitcher class={isFloating ? 'hdr-invert-text' : undefined} alternates={languageAlternates} />
+              </div>
+            )}
+
+            {showSocialLinks && siteConfig.socialLinks.length > 0 && (
+              <div class="hidden lg:flex items-center gap-0.5">
+                {siteConfig.socialLinks.map((url) => {
+                  const { icon, label } = getSocialIconData(url);
+                  return (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={label}
+                      class={cn(
+                        'rounded-md p-2 transition-colors duration-(--transition-fast)',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                        isFloating
+                          ? 'hdr-invert-text'
+                          : 'text-foreground-muted hover:text-foreground hover:bg-secondary/70'
+                      )}
+                    >
+                      <Icon name={icon} size="md" />
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+
+            {actions.map((action) => (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={action.iconOnly}
+                href={action.href}
+                target={action.target}
+                aria-label={action.label}
+                class={isFloating ? 'hdr-invert-text' : undefined}
+              >
+                <Icon name={action.icon} size="sm" />
+                {!action.iconOnly && action.label}
+              </Button>
+            ))}
+
+            {showCta && (
+              <div class="hidden lg:flex">
+                <Button
+                  size="sm"
+                  href={ctaHref}
+                  target={ctaHref?.startsWith('http') ? '_blank' : undefined}
+                  class={cn('hdr-cta-brand', isFloating ? 'hdr-invert-cta' : undefined)}
+                >
+                  {cta.icon && <Icon name={cta.icon} size="sm" />}
+                  {cta.label}
+                  {cta.trailingIcon && <Icon name={cta.trailingIcon} size="sm" />}
+                </Button>
+              </div>
+            )}
+          </>
+        )
+      }
+
+      {
+        showMobileMenu && layout !== 'minimal' && (
+          <button
+            type="button"
+            id={buttonId}
+            class={cn(
+              'hdr-hamburger inline-flex items-center justify-center rounded-md p-2 lg:hidden',
+              'text-foreground',
+              'transition-colors',
+              'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+              isFloating ? 'hover:bg-secondary/40' : 'hover:bg-secondary'
+            )}
+            aria-expanded="false"
+            aria-controls={menuId}
+            aria-label={t('nav.toggleMenu', locale)}
+          >
+            <span class="menu-icon">
+              <Icon name="menu" size="md" />
+            </span>
+            <span class="close-icon hidden">
+              <Icon name="x" size="md" />
+            </span>
+          </button>
+        )
+      }
+    </div>
+  </div>
+
+  {effectiveShowScrollProgress && (
+    isFloating ? (
+      <div
+        class={`absolute inset-x-3 h-[2px] overflow-hidden rounded-full ${scrollProgressPosition === 'top' ? 'top-[2px]' : 'bottom-[2px]'}`}
+        aria-hidden="true"
+      >
+        <div
+          id="scroll-progress-bar"
+          class="absolute left-0 top-0 h-full w-0 bg-brand-500 transition-none"
+        />
+      </div>
+    ) : (
+      <div
+        id="scroll-progress-bar"
+        class={`absolute left-0 h-[2px] w-0 bg-brand-500 transition-none ${scrollProgressPosition === 'top' ? 'top-0' : 'bottom-0'}`}
+        aria-hidden="true"
+      />
+    )
+  )}
+
+  {
+    showMobileMenu &&
+      layout !== 'minimal' &&
+      (hasMobileMenuSlot ? (
+        <div
+          id={menuId}
+          class={cn(
+            'hidden origin-top scale-y-0 opacity-0 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.12)] lg:hidden',
+            isFloating
+              ? 'rounded-b-2xl bg-background/95 backdrop-blur-xl'
+              : 'border-border bg-background border-t'
+          )}
+          role="navigation"
+          aria-label={t('nav.mobileNav', locale)}
+        >
+          <slot name="mobile-menu" />
+        </div>
+      ) : (
+        <div
+          id={menuId}
+          class={cn(
+            'hidden origin-top scale-y-0 opacity-0 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.12)] lg:hidden',
+            isFloating
+              ? 'rounded-b-2xl bg-background/95 backdrop-blur-xl'
+              : 'border-border bg-background border-t'
+          )}
+          role="navigation"
+          aria-label={t('nav.mobileNav', locale)}
+        >
+          <div class={cn(
+            'mobile-menu-body py-3',
+            isFloating ? 'px-3' : cn('mx-auto px-4', maxWidthClass)
+          )}>
+            {showSearch && (
+              <section class="mobile-menu-section">
+                <button
+                  type="button"
+                  class="mobile-menu-search mobile-menu-stagger flex w-full items-center gap-3 rounded-xl border border-border-strong px-3 py-3 text-base text-foreground-muted transition-colors hover:text-foreground hover:border-brand-500"
+                  style="--stagger-index: 0"
+                  aria-haspopup="dialog"
+                >
+                  <span class="mobile-menu-tile">
+                    <Icon name="search" size="sm" />
+                  </span>
+                  <span class="flex-1 text-left">{t('nav.searchSite', locale)}</span>
+                  <kbd class="hidden sm:inline-block rounded border border-border-strong px-1.5 py-0.5 text-xs text-foreground-muted">⌘K</kbd>
+                </button>
+              </section>
+            )}
+
+            <section class="mobile-menu-section">
+              <p class="mobile-menu-label">{t('nav.sectionNavigate', locale)}</p>
+              <ul class="space-y-0.5">
+                {navItems.map(({ label, href }, idx) => {
+                  const active = isActive(href);
+                  const resolvedHref = href.startsWith('#') && !isLandingPage ? `/${href}` : href;
+                  return (
+                    <li>
+                      <a
+                        href={resolvedHref}
+                        class={cn(
+                          'mobile-menu-row mobile-menu-stagger group flex items-center gap-3 rounded-xl px-3 py-3 text-base transition-colors',
+                          active
+                            ? 'mobile-menu-row-active'
+                            : 'mobile-menu-row-inactive'
+                        )}
+                        style={`--stagger-index: ${idx}`}
+                        aria-current={active ? 'page' : undefined}
+                      >
+                        <span class="mobile-menu-tile">
+                          <Icon name={getNavIcon(href)} size="sm" />
+                        </span>
+                        <span class="flex-1">{label}</span>
+                        <Icon name="chevron-right" size="sm" class="mobile-menu-chevron" />
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+
+            {showThemeSelector && (
+              <section class="mobile-menu-section">
+                <p class="mobile-menu-label">{t('nav.sectionTheme', locale)}</p>
+                <div
+                  class="mobile-menu-stagger flex items-center justify-between rounded-xl px-3 py-2.5"
+                  style={`--stagger-index: ${navItems.length}`}
+                >
+                  <span class="text-sm text-foreground-muted">{t('theme.colourTheme', locale)}</span>
+                  <ThemeSelector />
+                </div>
+              </section>
+            )}
+
+            {showLanguageSwitcher && (
+              <section class="mobile-menu-section">
+                <p class="mobile-menu-label">{t('nav.sectionLanguage', locale)}</p>
+                <div
+                  class="mobile-menu-stagger flex items-center justify-between rounded-xl px-3 py-2.5"
+                  style={`--stagger-index: ${navItems.length + (showThemeSelector ? 1 : 0)}`}
+                >
+                  <span class="text-sm text-foreground-muted">{t('nav.sectionLanguage', locale)}</span>
+                  <LanguageSwitcher alternates={languageAlternates} />
+                </div>
+              </section>
+            )}
+
+            {mobileSocialLinks.length > 0 && (
+              <section class="mobile-menu-section">
+                <p class="mobile-menu-label">{t('nav.sectionConnect', locale)}</p>
+                <div class="flex flex-wrap items-center gap-2 px-2 pt-1 pb-2">
+                  {mobileSocialLinks.map((url, sIdx) => {
+                    const { icon, label } = getSocialIconData(url);
+                    return (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={label}
+                        title={label}
+                        class="mobile-menu-social mobile-menu-stagger inline-flex h-11 w-11 items-center justify-center rounded-full border border-border-strong text-foreground-muted transition-colors"
+                        style={`--stagger-index: ${navItems.length + (showThemeSelector ? 1 : 0) + (showLanguageSwitcher ? 1 : 0) + sIdx}`}
+                      >
+                        <Icon name={icon} size="md" />
+                      </a>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {showCta && (
+              <div
+                class="mobile-menu-stagger mobile-menu-cta-wrap pt-2"
+                style={`--stagger-index: ${navItems.length + (showThemeSelector ? 1 : 0) + (showLanguageSwitcher ? 1 : 0) + mobileSocialLinks.length}`}
+              >
+                <Button fullWidth href={ctaHref} target={ctaHref?.startsWith('http') ? '_blank' : undefined}>
+                  {cta.icon && <Icon name={cta.icon} size="sm" />}
+                  {cta.label}
+                  {cta.trailingIcon && <Icon name={cta.trailingIcon} size="sm" />}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      ))
+  }
+</header>
+
+{
+  showMobileMenu && layout !== 'minimal' && (
+    <div
+      id={`${menuId}-backdrop`}
+      class="pointer-events-none fixed inset-0 z-40 opacity-0 transition-opacity duration-200 lg:hidden"
+      aria-hidden="true"
+    />
+  )
+}
+
+<script>
+  import { trapFocus } from '@/lib/focus-trap';
+
+  function initMobileMenu() {
+    const menuHeaders = document.querySelectorAll<HTMLElement>('header[data-menu-id]');
+    menuHeaders.forEach((header) => {
+      const menuId = header.dataset.menuId!;
+      const buttonId = header.dataset.buttonId!;
+      const isFloating = header.dataset.headerShape === 'floating';
+
+      const button = document.getElementById(buttonId);
+      const menu = document.getElementById(menuId);
+      const backdrop = document.getElementById(`${menuId}-backdrop`);
+      const menuIcon = button?.querySelector('.menu-icon');
+      const closeIcon = button?.querySelector('.close-icon');
+
+      if (!button || !menu || !menuIcon || !closeIcon) return;
+      if (button.dataset.menuInit) return;
+      button.dataset.menuInit = 'true';
+
+      let isOpen = false;
+      let isAnimating = false;
+      let releaseTrap: (() => void) | null = null;
+
+      function open() {
+        if (isOpen || isAnimating) return;
+        isAnimating = true;
+        isOpen = true;
+
+        button!.setAttribute('aria-expanded', 'true');
+        menuIcon!.classList.add('hidden');
+        closeIcon!.classList.remove('hidden');
+
+        if (isFloating) {
+          header.setAttribute('data-scrolled', '');
+          header.classList.remove('rounded-2xl');
+          header.classList.add('rounded-t-2xl');
+        } else {
+          header.classList.add('!bg-background');
+        }
+
+        const mainContent = document.querySelector('main');
+        const footer = document.querySelector('footer');
+        if (mainContent) mainContent.classList.add('mobile-menu-blur');
+        if (footer) footer.classList.add('mobile-menu-blur');
+
+        menu!.classList.remove('hidden', 'animate-menu-up', 'opacity-0', 'scale-y-0');
+        menu!.classList.add('animate-menu-down');
+        if (backdrop) {
+          backdrop.classList.remove('pointer-events-none', 'animate-backdrop-out');
+          backdrop.classList.add('animate-backdrop');
+        }
+
+        // Fence Tab inside the header (toggle + menu + header controls)
+        // while the drawer is open — the page behind is blurred and blocked
+        // for pointer users, so keyboard focus shouldn't reach it either.
+        releaseTrap?.();
+        releaseTrap = trapFocus(header);
+
+        isAnimating = false;
+      }
+
+      function close() {
+        if (!isOpen || isAnimating) return;
+        isAnimating = true;
+
+        releaseTrap?.();
+        releaseTrap = null;
+        // Return focus to the toggle so Escape / backdrop close doesn't
+        // strand keyboard focus inside the now-hidden menu.
+        button!.focus();
+
+        button!.setAttribute('aria-expanded', 'false');
+        menuIcon!.classList.remove('hidden');
+        closeIcon!.classList.add('hidden');
+
+        menu!.classList.remove('animate-menu-down');
+        menu!.classList.add('animate-menu-up');
+        if (backdrop) {
+          backdrop.classList.remove('animate-backdrop');
+          backdrop.classList.add('animate-backdrop-out');
+        }
+
+        const mainContent = document.querySelector('main');
+        const footer = document.querySelector('footer');
+        if (mainContent) mainContent.classList.remove('mobile-menu-blur');
+        if (footer) footer.classList.remove('mobile-menu-blur');
+
+        setTimeout(() => {
+          menu!.classList.add('hidden', 'opacity-0', 'scale-y-0');
+          if (backdrop) {
+            backdrop.classList.add('pointer-events-none');
+          }
+
+          if (isFloating) {
+            header.classList.remove('rounded-t-2xl');
+            header.classList.add('rounded-2xl');
+            // Written by measureFlipPoint() in the scroll-watcher script
+            // below. Read straight off the element because each <script>
+            // block is its own module — the helper there is not in scope here.
+            if (window.scrollY <= (Number(header.dataset.flipAt) || 60)) {
+              header.removeAttribute('data-scrolled');
+            }
+          } else {
+            header.classList.remove('!bg-background');
+          }
+
+          isOpen = false;
+          isAnimating = false;
+        }, 200);
+      }
+
+      function toggle() {
+        if (isOpen) {
+          close();
+        } else {
+          open();
+        }
+      }
+
+      button.addEventListener('click', toggle);
+
+      if (backdrop) {
+        backdrop.addEventListener('click', close);
+      }
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && isOpen) {
+          close();
+        }
+      });
+
+      menu.querySelectorAll('a').forEach((link) => {
+        link.addEventListener('click', close);
+      });
+
+      // The in-menu search row closes the drawer and opens the site search
+      // modal (the same modal the desktop header trigger uses — clicking its
+      // hidden trigger reuses all of its logic).
+      const searchRow = menu.querySelector<HTMLButtonElement>('.mobile-menu-search');
+      if (searchRow) {
+        searchRow.addEventListener('click', () => {
+          close();
+          window.setTimeout(() => {
+            const trigger = document.querySelector<HTMLButtonElement>('.search-trigger');
+            trigger?.click();
+          }, 210);
+        });
+      }
+    });
+  }
+
+  initMobileMenu();
+  document.addEventListener('astro:page-load', initMobileMenu);
+  document.addEventListener('astro:after-swap', initMobileMenu);
+</script>
+
+<script>
+  // Header scroll behaviour + scroll-progress bar driven by a single rAF.
+  // All layout reads are taken before any DOM writes. `docMaxScrollY` is
+  // cached; the first read is deferred to a rAF so it runs AFTER first
+  // paint instead of forcing a synchronous layout before it. ResizeObserver
+  // handles subsequent changes (font swap, image loads, reveal animations)
+  // without re-introducing a critical-path reflow.
+  const SCROLL_THRESHOLD = 60;
+  const AUTO_HIDE_THRESHOLD = 150;
+
+  /* WHERE THE HEADER FLIPS.
+     60px of scroll by default. On a page with a full-height hero that is
+     wrong: the header's at-rest look is built to sit ON the hero — dark glass
+     in light mode, no shadow — so flipping to the light, shadowed state after
+     60px leaves it in the wrong costume for the remaining height of the hero.
+
+     A page overrides it by marking the element the header should stay over:
+
+         <section data-header-flip-anchor>
+
+     The flip then happens when that element's bottom edge reaches the header's
+     own bottom edge, which is the moment the next section arrives underneath
+     the header. Not before it — a light bar over the last of a dark hero is
+     the same mismatch, just briefer — and not after.
+
+     `offsetTop + offsetHeight` rather than a bounding rect: the header is
+     fixed, so offsetTop resolves to its CSS `top`, and neither value moves
+     when the auto-hide transform runs. Re-measured on resize, because the
+     anchor's height is viewport-dependent. */
+  function measureFlipPoint(header: HTMLElement) {
+    const anchor = document.querySelector<HTMLElement>('[data-header-flip-anchor]');
+    if (!anchor) {
+      header.dataset.flipAt = String(SCROLL_THRESHOLD);
+      return;
+    }
+    const anchorBottom = anchor.getBoundingClientRect().bottom + window.scrollY;
+    const headerBottom = header.offsetTop + header.offsetHeight;
+    header.dataset.flipAt = String(Math.max(SCROLL_THRESHOLD, Math.round(anchorBottom - headerBottom)));
+  }
+
+  /** The scroll position this header changes costume at. */
+  const flipPoint = (header: HTMLElement) => Number(header.dataset.flipAt) || SCROLL_THRESHOLD;
+  const BAR_SCROLLED_CLASSES = ['bg-background/80', 'backdrop-blur-lg', 'border-b', 'border-border/50'];
+
+  let docMaxScrollY = 0;
+  let docMetricsInited = false;
+  function updateDocMaxScrollY() {
+    docMaxScrollY = document.documentElement.scrollHeight - window.innerHeight;
+  }
+  function initDocMetrics() {
+    if (docMetricsInited) return;
+    docMetricsInited = true;
+    window.addEventListener('resize', updateDocMaxScrollY, { passive: true });
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(updateDocMaxScrollY).observe(document.documentElement);
+    }
+  }
+
+  function initScrollDriven() {
+    initDocMetrics();
+
+    const scrollHeaders = document.querySelectorAll<HTMLElement>(
+      'header[data-header-shape="floating"], header[data-header-shape="bar"]'
+    );
+    const progressBar = document.getElementById('scroll-progress-bar');
+
+    scrollHeaders.forEach((header) => {
+      if (header.dataset.scrollInit) return;
+      header.dataset.scrollInit = 'true';
+
+      measureFlipPoint(header);
+      window.addEventListener('resize', () => measureFlipPoint(header), { passive: true });
+
+      const isBar = header.dataset.headerShape === 'bar';
+      const isFloating = header.dataset.headerShape === 'floating';
+      const isAutoHide = header.dataset.headerAutoHide !== 'false';
+      const isTransparentBar = isBar && header.dataset.headerVariant === 'transparent';
+      let ticking = false;
+      let lastScrollY = window.scrollY;
+      let lastShownAtY = 0;
+
+      function onScroll() {
+        if (ticking) return;
+        ticking = true;
+
+        requestAnimationFrame(() => {
+          // ── READS (gather everything before touching the DOM) ──
+          const currentScrollY = window.scrollY;
+          const menuId = header.dataset.menuId;
+          const menu = menuId ? document.getElementById(menuId) : null;
+          const menuOpen = menu && !menu.classList.contains('hidden');
+          const wasHidden = header.hasAttribute('data-header-hidden');
+
+          // ── WRITES ──
+          if (currentScrollY > flipPoint(header)) {
+            header.setAttribute('data-scrolled', '');
+            if (isTransparentBar) {
+              header.classList.add(...BAR_SCROLLED_CLASSES);
+              header.classList.remove('bg-transparent');
+            }
+          } else {
+            if (!menuOpen) {
+              header.removeAttribute('data-scrolled');
+              header.removeAttribute('data-header-hidden');
+              lastShownAtY = 0;
+              if (isTransparentBar) {
+                header.classList.remove(...BAR_SCROLLED_CLASSES);
+                header.classList.add('bg-transparent');
+              }
+            }
+          }
+
+          if (isFloating && isAutoHide && !menuOpen) {
+            if (currentScrollY > AUTO_HIDE_THRESHOLD) {
+              if (currentScrollY > lastScrollY) {
+                if (currentScrollY - lastShownAtY >= AUTO_HIDE_THRESHOLD) {
+                  header.setAttribute('data-header-hidden', '');
+                }
+              } else {
+                if (wasHidden) {
+                  lastShownAtY = Math.min(
+                    currentScrollY,
+                    Math.max(0, docMaxScrollY - AUTO_HIDE_THRESHOLD),
+                  );
+                  header.setAttribute('data-header-returned', '');
+                }
+                header.removeAttribute('data-header-hidden');
+              }
+            } else {
+              header.removeAttribute('data-header-hidden');
+              header.removeAttribute('data-header-returned');
+              lastShownAtY = 0;
+            }
+          }
+
+          // Drive the scroll-progress bar in the same frame, using the
+          // already-read currentScrollY and the cached docMaxScrollY.
+          if (progressBar) {
+            const pct = docMaxScrollY > 0 ? (currentScrollY / docMaxScrollY) * 100 : 0;
+            progressBar.style.width = `${pct}%`;
+          }
+
+          lastScrollY = currentScrollY;
+          ticking = false;
+        });
+      }
+
+      window.addEventListener('scroll', onScroll, { passive: true });
+      // Defer the first read+write to the next frame so layout reads
+      // happen AFTER the browser has committed initial paint.
+      requestAnimationFrame(() => {
+        updateDocMaxScrollY();
+        onScroll();
+      });
+    });
+
+    // Edge case: a progress bar exists without a header scroll-watcher.
+    // Drive it with its own minimal rAF so the bar still updates.
+    if (progressBar && scrollHeaders.length === 0 && !progressBar.dataset.progressInit) {
+      progressBar.dataset.progressInit = 'true';
+      let pTicking = false;
+      const updateProgress = () => {
+        const pct = docMaxScrollY > 0 ? (window.scrollY / docMaxScrollY) * 100 : 0;
+        progressBar.style.width = `${pct}%`;
+        pTicking = false;
+      };
+      window.addEventListener(
+        'scroll',
+        () => {
+          if (!pTicking) {
+            pTicking = true;
+            requestAnimationFrame(updateProgress);
+          }
+        },
+        { passive: true },
+      );
+      requestAnimationFrame(() => {
+        updateDocMaxScrollY();
+        updateProgress();
+      });
+    }
+  }
+
+  initScrollDriven();
+  document.addEventListener('astro:page-load', initScrollDriven);
+  document.addEventListener('astro:after-swap', initScrollDriven);
+</script>
+
+<style is:global>
+  .mobile-menu-blur {
+    opacity: 0.3;
+    filter: blur(4px);
+    transition: opacity 200ms, filter 200ms;
+  }
+
+  [data-header-shape="floating"] {
+    transition-property: translate, background, border-color, box-shadow, width, max-width, border-radius, margin-top;
+    transition-duration: 300ms;
+    transition-timing-function: ease;
+  }
+
+  [data-header-shape="floating"][data-header-hidden] {
+    translate: -50% calc(-100% - 1.5rem) !important;
+  }
+
+  [data-header-shape="floating"][data-scrolled] {
+    background: color-mix(in oklch, var(--color-background) 92%, transparent);
+    backdrop-filter: blur(24px);
+    border-color: var(--color-border);
+    box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.14), 0 2px 8px -2px rgba(0, 0, 0, 0.08);
+  }
+
+  [data-header-shape="floating"] .hdr-inner {
+    max-width: 72rem;
+    margin-left: auto;
+    margin-right: auto;
+    transition: box-shadow 300ms;
+  }
+
+  [data-header-shape="floating"][data-header-color-scheme="invert"] .hdr-invert-text {
+    color: var(--color-on-invert);
+    transition: color 300ms;
+  }
+  [data-header-shape="floating"][data-header-color-scheme="invert"][data-scrolled] .hdr-invert-text {
+    color: var(--color-foreground);
+  }
+
+  [data-header-shape="floating"][data-header-color-scheme="invert"] .hdr-logo-text {
+    color: var(--color-on-invert);
+    transition: color 300ms;
+  }
+  [data-header-shape="floating"][data-header-color-scheme="invert"][data-scrolled] .hdr-logo-text {
+    color: var(--color-brand-600);
+  }
+
+  [data-header-shape="floating"][data-header-color-scheme="default"] .hdr-logo-text {
+    color: var(--color-brand-600);
+  }
+  [data-header-shape="floating"][data-header-color-scheme="default"] .hdr-invert-text {
+    color: var(--color-foreground-muted);
+    transition: color 300ms;
+  }
+  [data-header-shape="floating"][data-header-color-scheme="default"] .hdr-invert-text:hover {
+    color: var(--color-foreground);
+  }
+
+  /* Nav pills — the same treatment the fixed bar uses (bg-secondary pill on
+     the active item, softer pill on hover). While the capsule floats over the
+     hero gradient the pill is a translucent tint of the current text colour,
+     so it reads on the brand blue; once the header gains its solid background
+     on scroll ([data-scrolled]) it switches to the fixed bar's exact colours. */
+  [data-header-shape="floating"] .nav-link:hover {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+  [data-header-shape="floating"] .nav-link.hdr-nav-active {
+    background: color-mix(in srgb, currentColor 16%, transparent);
+  }
+  [data-header-shape="floating"][data-scrolled] .nav-link:hover {
+    background: color-mix(in srgb, var(--color-secondary) 70%, transparent);
+  }
+  [data-header-shape="floating"][data-scrolled] .nav-link.hdr-nav-active {
+    background: var(--color-secondary);
+  }
+
+  [data-header-shape="floating"][data-header-color-scheme="invert"] .hdr-invert-cta {
+    background: white;
+    color: #111;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    transition: background 300ms, color 300ms, border-color 300ms;
+  }
+  [data-header-shape="floating"][data-header-color-scheme="invert"] .hdr-invert-cta:hover {
+    background: rgba(255, 255, 255, 0.9);
+  }
+  [data-header-shape="floating"][data-header-color-scheme="invert"][data-scrolled] .hdr-invert-cta {
+    background: var(--color-primary);
+    color: var(--color-primary-foreground);
+  }
+  [data-header-shape="floating"][data-header-color-scheme="invert"][data-scrolled] .hdr-invert-cta:hover {
+    opacity: 0.9;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-header-shape="floating"],
+    [data-header-shape="floating"] .hdr-inner,
+    [data-header-shape="floating"] .hdr-invert-text,
+    [data-header-shape="floating"] .hdr-logo-text,
+    [data-header-shape="floating"] .hdr-invert-cta,
+    [data-header-shape="floating"] .nav-link {
+      transition: none !important;
+    }
+    [data-header-shape="floating"][data-header-hidden] {
+      translate: -50% calc(-100% - 1.5rem) !important;
+    }
+  }
+
+  .dark [data-header-shape="floating"] {
+    background: color-mix(in oklch, var(--color-background) 65%, transparent);
+    border-color: color-mix(in oklch, var(--color-brand-400) 35%, transparent);
+    box-shadow: none;
+  }
+  .dark [data-header-shape="floating"][data-scrolled] {
+    background: color-mix(in oklch, var(--color-background) 88%, transparent);
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 4px 32px rgba(255, 255, 255, 0.07), 0 12px 40px -8px rgba(0, 0, 0, 0.6), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Light-mode floating header at rest: dark-glass capsule, mirroring the
+     dark-mode look so it reads cleanly over the home hero's black→brand
+     gradient. A neutral 18% white hairline sits below the badge and pill
+     borders so the header reads as the quiet frame those chips live in. */
+  html:not(.dark) [data-header-shape="floating"]:not([data-scrolled]) {
+    background: color-mix(in oklch, var(--surface-invert) 70%, transparent);
+    border-color: color-mix(in oklch, var(--color-on-invert) 18%, transparent);
+    box-shadow: none;
+  }
+  html:not(.dark) [data-header-shape="floating"][data-scrolled] {
+    box-shadow: 0 8px 32px -8px rgba(0, 0, 0, 0.14), 0 2px 8px -2px rgba(0, 0, 0, 0.08);
+  }
+
+  html:not(.dark) [data-header-shape="floating"][data-header-color-scheme="default"]:not([data-scrolled]) .hdr-logo-text {
+    color: oklch(91% 0.008 250);
+  }
+  html:not(.dark) [data-header-shape="floating"][data-header-color-scheme="default"]:not([data-scrolled]) .hdr-invert-text {
+    color: oklch(68% 0.01 250);
+  }
+  html:not(.dark) [data-header-shape="floating"][data-header-color-scheme="default"]:not([data-scrolled]) .hdr-invert-text:hover {
+    color: oklch(91% 0.008 250);
+  }
+
+  html:not(.dark) [data-header-shape="floating"]:not([data-scrolled]) .ttg-wrapper > .ttg-trigger,
+  html:not(.dark) [data-header-shape="floating"]:not([data-scrolled]) .theme-dropdown-wrapper > button,
+  html:not(.dark) [data-header-shape="floating"]:not([data-scrolled]) .search-wrapper > .search-trigger {
+    border-color: oklch(58% 0.008 250 / 0.6);
+    color: oklch(68% 0.01 250);
+    box-shadow: none;
+  }
+  html:not(.dark) [data-header-shape="floating"]:not([data-scrolled]) .ttg-wrapper > .ttg-trigger:hover,
+  html:not(.dark) [data-header-shape="floating"]:not([data-scrolled]) .theme-dropdown-wrapper > button:hover,
+  html:not(.dark) [data-header-shape="floating"]:not([data-scrolled]) .search-wrapper > .search-trigger:hover {
+    border-color: oklch(58% 0.008 250 / 0.85);
+    background-color: rgb(255 255 255 / 0.06);
+    color: oklch(91% 0.008 250);
+  }
+
+  html:not(.dark) [data-header-shape="floating"][data-header-color-scheme="default"]:not([data-scrolled]) .hdr-hamburger,
+  html:not(.dark) [data-header-shape="floating"][data-header-color-scheme="default"]:not([data-scrolled]) .hdr-hamburger svg {
+    color: oklch(68% 0.01 250);
+  }
+  html:not(.dark) [data-header-shape="floating"][data-header-color-scheme="default"]:not([data-scrolled]) .hdr-hamburger:hover,
+  html:not(.dark) [data-header-shape="floating"][data-header-color-scheme="default"]:not([data-scrolled]) .hdr-hamburger:hover svg {
+    background-color: rgb(255 255 255 / 0.06);
+    color: oklch(91% 0.008 250);
+  }
+
+  .dark [data-header-shape="floating"] .theme-dropdown-wrapper button,
+  .dark [data-header-shape="floating"] .ttg-wrapper .ttg-trigger,
+  .dark [data-header-shape="floating"] .search-wrapper .search-trigger {
+    border-color: var(--color-foreground-subtle);
+  }
+
+  [data-header-shape="floating"][data-header-color-scheme="invert"][data-scrolled] .hdr-logo-text {
+    color: var(--color-brand-600);
+  }
+  .dark [data-header-shape="floating"][data-header-color-scheme="invert"][data-scrolled] .hdr-logo-text {
+    color: var(--color-foreground);
+  }
+  [data-header-shape="floating"][data-header-color-scheme="default"] .hdr-logo-text {
+    color: var(--color-brand-600);
+  }
+  .dark [data-header-shape="floating"][data-header-color-scheme="default"] .hdr-logo-text {
+    color: var(--color-foreground);
+  }
+
+  [data-header-shape="floating"][data-header-color-scheme="default"] .hdr-invert-text {
+    color: var(--color-foreground-muted);
+    transition: color 300ms;
+  }
+  .dark [data-header-shape="floating"][data-header-color-scheme="default"] .hdr-invert-text {
+    color: var(--color-foreground-muted);
+  }
+  [data-header-shape="floating"][data-header-color-scheme="default"] .hdr-invert-text:hover {
+    color: var(--color-foreground);
+  }
+
+  @media (max-width: 1023px) {
+    html:not(.dark) [data-header-shape="floating"][data-header-color-scheme="invert"] .hdr-logo-text {
+      color: var(--color-brand-500);
+    }
+    html:not(.dark) [data-header-shape="floating"][data-header-color-scheme="invert"][data-scrolled] .hdr-logo-text {
+      color: var(--color-brand-500);
+    }
+  }
+
+  /* ===== Returned state: color flip only when header comes back after being hidden ===== */
+
+  /* Dark mode: flip to white capsule */
+  .dark [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(0, 0, 0, 0.06);
+    box-shadow: 0 4px 32px rgba(255, 255, 255, 0.12), 0 8px 24px -4px rgba(0, 0, 0, 0.25);
+  }
+  .dark [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .hdr-invert-text {
+    color: oklch(20% 0.005 250);
+    transition: color 300ms;
+  }
+  .dark [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .hdr-invert-text:hover {
+    color: oklch(8% 0 0);
+  }
+  .dark [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .hdr-logo-text {
+    color: var(--color-brand-700);
+  }
+  .dark [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .theme-dropdown-wrapper button,
+  .dark [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .ttg-wrapper .ttg-trigger,
+  .dark [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .search-wrapper .search-trigger {
+    border-color: rgba(0, 0, 0, 0.15);
+  }
+
+  /* Light mode: flip to dark capsule */
+  html:not(.dark) [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] {
+    background: oklch(12% 0.005 250 / 0.93);
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.45), 0 2px 8px -2px rgba(0, 0, 0, 0.25);
+  }
+  html:not(.dark) [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .hdr-invert-text {
+    color: rgba(255, 255, 255, 0.82);
+    transition: color 300ms;
+  }
+  html:not(.dark) [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .hdr-invert-text:hover {
+    color: rgba(255, 255, 255, 1);
+  }
+  html:not(.dark) [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .hdr-logo-text {
+    color: var(--color-brand-500);
+  }
+  html:not(.dark) [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .theme-dropdown-wrapper button,
+  html:not(.dark) [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .ttg-wrapper .ttg-trigger,
+  html:not(.dark) [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .search-wrapper .search-trigger {
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  /* ===== Returned state: fix button hover backgrounds ===== */
+  /* Dark mode: white header needs light hover, not dark-mode secondary */
+  .dark [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] button.hdr-invert-text:hover,
+  .dark [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .theme-dropdown-wrapper > button:hover {
+    background-color: rgba(0, 0, 0, 0.08);
+    color: oklch(8% 0 0);
+  }
+
+  /* Light mode: dark header needs dark hover, not light-mode secondary */
+  html:not(.dark) [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] button.hdr-invert-text:hover,
+  html:not(.dark) [data-header-shape="floating"][data-header-returned][data-header-invert-on-return="true"] .theme-dropdown-wrapper > button:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 1);
+  }
+
+  /* ============================================================
+     Mobile dropdown menu — sectioned layout with icons + socials
+     ============================================================ */
+
+  .mobile-menu-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .mobile-menu-section + .mobile-menu-section {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid color-mix(in oklch, var(--color-border) 60%, transparent);
+  }
+
+  .mobile-menu-label {
+    padding: 0.625rem 0.75rem 0.375rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-foreground-subtle);
+  }
+
+  .mobile-menu-row {
+    color: var(--color-foreground-muted);
+  }
+  .mobile-menu-row-inactive:hover {
+    background-color: color-mix(in oklch, var(--color-secondary) 60%, transparent);
+    color: var(--color-foreground);
+  }
+
+  .mobile-menu-row-active {
+    background-color: color-mix(in oklch, var(--color-brand-500) 10%, transparent);
+    color: var(--color-brand-700);
+    font-weight: 600;
+  }
+  html.dark .mobile-menu-row-active {
+    background-color: color-mix(in oklch, var(--color-brand-400) 14%, transparent);
+    color: var(--color-brand-300);
+  }
+
+  .mobile-menu-tile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex-shrink: 0;
+    border-radius: 0.625rem;
+    background-color: color-mix(in oklch, var(--color-secondary) 70%, transparent);
+    color: var(--color-foreground-muted);
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+  .mobile-menu-row-inactive:hover .mobile-menu-tile {
+    background-color: var(--color-secondary);
+    color: var(--color-foreground);
+  }
+  .mobile-menu-row-active .mobile-menu-tile {
+    background-color: color-mix(in oklch, var(--color-brand-500) 18%, transparent);
+    color: var(--color-brand-700);
+  }
+  html.dark .mobile-menu-row-active .mobile-menu-tile {
+    background-color: color-mix(in oklch, var(--color-brand-400) 22%, transparent);
+    color: var(--color-brand-300);
+  }
+
+  .mobile-menu-chevron {
+    opacity: 0.4;
+    transition: opacity 200ms ease, transform 200ms ease;
+  }
+  .mobile-menu-row:hover .mobile-menu-chevron {
+    opacity: 0.8;
+    transform: translateX(2px);
+  }
+  .mobile-menu-row-active .mobile-menu-chevron {
+    opacity: 0.9;
+  }
+
+  .mobile-menu-cta-wrap {
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid color-mix(in oklch, var(--color-border) 60%, transparent);
+  }
+
+  .mobile-menu-social {
+    border-color: var(--color-border-strong);
+  }
+  html:not(.dark) .mobile-menu-social:hover {
+    color: var(--color-foreground);
+    border-color: var(--color-border-strong);
+    background-color: color-mix(in oklch, var(--color-secondary) 60%, transparent);
+  }
+  html.dark .mobile-menu-social:hover {
+    color: var(--color-brand-300);
+    border-color: var(--color-brand-400);
+    background-color: color-mix(in oklch, var(--color-brand-400) 12%, transparent);
+  }
+  .mobile-menu-social:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .animate-menu-down .mobile-menu-stagger {
+      opacity: 0;
+      animation: mobileMenuItemIn 340ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+      animation-delay: calc(var(--stagger-index, 0) * 38ms + 90ms);
+    }
+  }
+
+  /* End at `transform: none` (not translateY(0)) so each row drops its
+     stacking context after the entry animation. Otherwise the
+     ThemeModeDropdown panel's z-50 is trapped inside its row and the
+     colour-theme swatches in the next row paint through it. */
+  @keyframes mobileMenuItemIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* While the theme-mode dropdown is open, promote its row to a positioned
+     stacking context above sibling rows. The row sits in a non-flex
+     <section>, so a bare `z-index` is inert — `position: relative` is what
+     lets the panel paint above the colour-theme swatches below it. */
+  .mobile-menu-stagger:has(.ttg-panel:not(.hidden)) {
+    position: relative;
+    z-index: 60;
+  }
+</style>

@@ -1,0 +1,162 @@
+---
+/**
+ * Comments — Giscus provider
+ *
+ * Renders nothing on the server except a placeholder section with a
+ * reserved height (prevents CLS). The Giscus script is only loaded when
+ * the user actually scrolls toward the comments — readers who never
+ * scroll that far pay zero network cost.
+ *
+ * Theme and language follow the site by default: leave `theme`/`lang`
+ * empty in `site.config.ts` and the embed mirrors the visitor's light/dark
+ * mode (live) and the page's locale. Set either to a specific value to
+ * override.
+ *
+ * Selected via `site.config.ts` → articleFeatures.comments.provider: 'giscus'
+ * and configured under articleFeatures.comments.giscus.
+ * Set up your repo at https://giscus.app to get the IDs.
+ */
+import siteConfig from '@/config/site.config';
+import { t, getLocaleFromPath } from '@/i18n';
+
+const giscus = siteConfig.articleFeatures?.comments?.giscus;
+
+// Don't render anything if config is incomplete — fail soft.
+const isConfigured =
+  giscus &&
+  giscus.repo &&
+  giscus.repoId &&
+  giscus.category &&
+  giscus.categoryId;
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+const commentsTitle = t('comments.title', locale);
+
+// An empty (or unset) `theme` means "follow the site's light/dark mode":
+// the client resolves it from the DOM before loading Giscus and keeps it in
+// sync as the visitor toggles. A non-empty value is passed through verbatim.
+const adaptiveTheme = !giscus?.theme;
+
+// An empty (or unset) `lang` means "follow the site's current locale".
+// Navigation is a full page load, so the server-resolved locale is always
+// correct — no client-side language swap needed.
+const lang = giscus?.lang && giscus.lang.length > 0 ? giscus.lang : locale;
+
+const dataAttrs = isConfigured
+  ? {
+      repo: giscus!.repo,
+      repoId: giscus!.repoId,
+      category: giscus!.category,
+      categoryId: giscus!.categoryId,
+      mapping: giscus!.mapping ?? 'pathname',
+      strict: giscus!.strict ? '1' : '0',
+      reactionsEnabled: giscus!.reactionsEnabled !== false ? '1' : '0',
+      emitMetadata: giscus!.emitMetadata ? '1' : '0',
+      inputPosition: giscus!.inputPosition ?? 'bottom',
+      // Placeholder for adaptive mode; the client computes the real theme.
+      theme: adaptiveTheme ? 'light' : giscus!.theme!,
+      lang,
+    }
+  : null;
+---
+
+{isConfigured && dataAttrs && (
+  <section
+    id="comments"
+    class="mx-auto max-w-4xl px-6 mt-12"
+    aria-label={commentsTitle}
+  >
+    <h2 class="text-xl font-semibold mb-4 text-foreground">{commentsTitle}</h2>
+    <div
+      class="giscus-mount"
+      data-giscus
+      data-repo={dataAttrs.repo}
+      data-repo-id={dataAttrs.repoId}
+      data-category={dataAttrs.category}
+      data-category-id={dataAttrs.categoryId}
+      data-mapping={dataAttrs.mapping}
+      data-strict={dataAttrs.strict}
+      data-reactions-enabled={dataAttrs.reactionsEnabled}
+      data-emit-metadata={dataAttrs.emitMetadata}
+      data-input-position={dataAttrs.inputPosition}
+      data-theme={dataAttrs.theme}
+      data-adaptive-theme={String(adaptiveTheme)}
+      data-lang={dataAttrs.lang}
+    >
+      <noscript>Comments require JavaScript to load.</noscript>
+    </div>
+  </section>
+)}
+
+<style>
+  .giscus-mount {
+    /* Reserve space so the iframe doesn't push content when it loads */
+    min-height: 360px;
+  }
+</style>
+
+<script>
+  // Lazy-load Giscus only when the comments area scrolls into view.
+  // Until then, zero network requests are made — keeps article pages fast
+  // for readers who don't scroll all the way to the bottom.
+  const mount = document.querySelector<HTMLElement>('[data-giscus]');
+  if (mount && !mount.dataset.loaded) {
+    const adaptiveTheme = mount.dataset.adaptiveTheme === 'true';
+    const resolveTheme = () =>
+      document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+
+    const load = () => {
+      if (mount.dataset.loaded) return;
+      mount.dataset.loaded = 'true';
+
+      const s = document.createElement('script');
+      s.src = 'https://giscus.app/client.js';
+      s.async = true;
+      s.crossOrigin = 'anonymous';
+      s.setAttribute('data-repo', mount.dataset.repo!);
+      s.setAttribute('data-repo-id', mount.dataset.repoId!);
+      s.setAttribute('data-category', mount.dataset.category!);
+      s.setAttribute('data-category-id', mount.dataset.categoryId!);
+      s.setAttribute('data-mapping', mount.dataset.mapping!);
+      s.setAttribute('data-strict', mount.dataset.strict!);
+      s.setAttribute('data-reactions-enabled', mount.dataset.reactionsEnabled!);
+      s.setAttribute('data-emit-metadata', mount.dataset.emitMetadata!);
+      s.setAttribute('data-input-position', mount.dataset.inputPosition!);
+      s.setAttribute('data-theme', adaptiveTheme ? resolveTheme() : mount.dataset.theme!);
+      s.setAttribute('data-lang', mount.dataset.lang!);
+      mount.appendChild(s);
+
+      // When following the site theme, push updates into the Giscus iframe
+      // whenever the visitor toggles light/dark (the <html> `dark` class).
+      if (adaptiveTheme) {
+        const sendTheme = () => {
+          const iframe = document.querySelector<HTMLIFrameElement>('iframe.giscus-frame');
+          iframe?.contentWindow?.postMessage(
+            { giscus: { setConfig: { theme: resolveTheme() } } },
+            'https://giscus.app',
+          );
+        };
+        new MutationObserver(sendTheme).observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ['class'],
+        });
+      }
+    };
+
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            load();
+            io.disconnect();
+          }
+        },
+        { rootMargin: '300px' },
+      );
+      io.observe(mount);
+    } else {
+      // Old browsers — just load it.
+      load();
+    }
+  }
+</script>

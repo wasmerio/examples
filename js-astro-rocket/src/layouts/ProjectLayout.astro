@@ -1,0 +1,257 @@
+---
+import type { ImageMetadata, MarkdownHeading } from 'astro';
+import type { CollectionEntry } from 'astro:content';
+import type { GallerySlide } from '@/lib/gallery';
+import BaseLayout from './BaseLayout.astro';
+import Header from '@/components/layout/Header.astro';
+import Footer from '@/components/layout/Footer.astro';
+import Breadcrumbs from '@/components/seo/Breadcrumbs.astro';
+import ProjectHero from '@/components/projects/ProjectHero.astro';
+import TableOfContents from '@/components/blog/TableOfContents.astro';
+import CtaBand from '@/components/patterns/CtaBand.astro';
+import ProjectCard from '@/components/projects/ProjectCard.astro';
+import Button from '@/components/ui/form/Button/Button.astro';
+import Icon from '@/components/ui/primitives/Icon/Icon.astro';
+import siteConfig from '@/config/site.config';
+import { getDefaultOgPath, getProjectOgPath, isShareableImage } from '@/lib/og/svg';
+import { t, getLocaleFromPath, localizedPath, getLocales } from '@/i18n';
+import {
+  getProjectSlug,
+  getProjectsBaseUrl,
+  getProjectTranslations,
+} from '@/lib/projects';
+
+interface Props {
+  title: string;
+  description: string;
+  meta?: string[];
+  url?: string;
+  repo?: string;
+  image?: ImageMetadata;
+  imageAlt?: string;
+  gallery?: GallerySlide[];
+  tags?: string[];
+  /** Project slug, used to resolve the per-project dynamic OG image. */
+  slug?: string;
+  related?: CollectionEntry<'projects'>[];
+  headings?: MarkdownHeading[];
+  /** Per-project override: hide table of contents on this project */
+  toc?: boolean;
+}
+
+const {
+  title,
+  description,
+  meta = [],
+  url,
+  repo,
+  image,
+  imageAlt,
+  gallery = [],
+  tags = [],
+  slug = '',
+  related = [],
+  headings = [],
+  toc: tocOverride,
+} = Astro.props;
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+// Raster only — see the note in BlogLayout: an SVG cover cannot serve as a
+// share image, so projects without a screenshot fall back to the card generated
+// at build time (see src/pages/og/projects/[slug].png.ts). `slug` is the full
+// (locale-prefixed) project id, so strip the locale to match the OG route.
+const ogImage =
+  image && isShareableImage(image.src)
+    ? image.src
+    : slug
+      ? getProjectOgPath(getProjectSlug(slug, locale))
+      : getDefaultOgPath();
+
+const ogImageAlt = ogImage === image?.src ? imageAlt || title : title;
+
+// Mirror the blog TOC wiring — projects use the same site-wide config.
+const tocConfig = siteConfig.articleFeatures?.toc;
+const showToc = !!tocConfig?.enabled && tocOverride !== false;
+const tocLayout = tocConfig?.layout ?? 'auto';
+const sidebarActive = showToc && (tocLayout === 'sidebar' || tocLayout === 'auto');
+// Inline TOC is now opt-in: 'auto' shows only the desktop sidebar so the
+// mobile/landscape/tablet experience isn't dominated by a TOC card the
+// majority of visitors don't use. Posts that want the inline TOC visible
+// everywhere can set `toc.layout: 'inline'` in frontmatter.
+const inlineActive = showToc && tocLayout === 'inline';
+const sidebarOnLeft = (tocConfig?.sidebarPosition ?? 'right') === 'left';
+
+const breadcrumbs = [
+  { label: t('common.home', locale), href: localizedPath('/', locale) },
+  { label: t('projects.title', locale), href: getProjectsBaseUrl(locale) },
+  { label: title },
+];
+
+const projectsHref = getProjectsBaseUrl(locale);
+const contactUrl = localizedPath('/contact', locale);
+
+// Resolve this project's real per-locale URLs so the hreflang tags and the
+// LanguageSwitcher point at the matching translation. Projects share one slug
+// across locales, so unlike the blog (which uses canonical uids) matching the
+// locale-stripped slug is enough. hreflang lists only verified translations;
+// the switcher shows every locale, falling back to a locale's projects index
+// when this project has no translation there, so switching never 404s.
+const projectTranslations = await getProjectTranslations(getProjectSlug(slug, locale), locale);
+const translationByLocale = new Map(projectTranslations.map((tr) => [tr.locale, tr.url]));
+const languageAlternates = Object.fromEntries(
+  getLocales().map((loc) => [loc, translationByLocale.get(loc) ?? getProjectsBaseUrl(loc)])
+);
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  image={ogImage}
+  imageAlt={ogImageAlt}
+  localeAlternates={projectTranslations}
+>
+  <Header
+    slot="header"
+    position="fixed"
+    shape="bar"
+    variant="solid"
+    size="lg"
+    showCta={false}
+    showScrollProgress
+    maxWidth="7xl"
+    languageAlternates={languageAlternates}
+  />
+
+  <div class="min-h-screen pt-16">
+    <ProjectHero
+      title={title}
+      description={description}
+      meta={meta}
+      url={url}
+      repo={repo}
+      image={image}
+      imageAlt={imageAlt}
+      gallery={gallery}
+      tags={tags}
+    />
+
+    <article class="pt-8 pb-[var(--space-section-md)]">
+      <div class:list={[
+        'mx-auto px-6 max-w-7xl',
+        sidebarActive && (sidebarOnLeft
+          ? 'xl:grid xl:grid-cols-[15rem_minmax(0,1fr)] xl:gap-10'
+          : 'xl:grid xl:grid-cols-[minmax(0,1fr)_15rem] xl:gap-10'),
+      ]}>
+        {sidebarActive && sidebarOnLeft && (
+          <aside class="hidden xl:block" aria-label={t('blog.tableOfContents', locale)}>
+            <TableOfContents
+              headings={headings}
+              maxDepth={tocConfig?.maxDepth ?? 3}
+              minHeadings={tocConfig?.minHeadings ?? 3}
+              sticky
+            />
+          </aside>
+        )}
+
+        <div class:list={['min-w-0 max-w-4xl w-full mx-auto', sidebarActive && 'xl:mx-0']}>
+          <Breadcrumbs items={breadcrumbs} class="mb-8" />
+
+          {sidebarActive && (
+            <div class="xl:hidden mb-10">
+              <TableOfContents
+                headings={headings}
+                maxDepth={tocConfig?.maxDepth ?? 3}
+                minHeadings={tocConfig?.minHeadings ?? 3}
+                collapsible
+              />
+            </div>
+          )}
+
+          {inlineActive && (
+            <div class="mb-10 rounded-xl border border-border bg-background-secondary p-5">
+              <TableOfContents
+                headings={headings}
+                maxDepth={tocConfig?.maxDepth ?? 3}
+                minHeadings={tocConfig?.minHeadings ?? 3}
+              />
+            </div>
+          )}
+
+          <!--
+            Framed reading surface, matching the TOC card. Starts at `sm` so
+            a phone held upright keeps the full screen width for the text.
+          -->
+          <div class="sm:rounded-xl sm:border sm:border-border sm:bg-card sm:p-8 lg:p-10">
+            <div class="prose prose-lg max-w-none" data-reveal-content>
+              <slot />
+            </div>
+          </div>
+
+          <footer class="border-border mt-12 border-t pt-8 flex justify-center" data-reveal>
+            <Button href={projectsHref} variant="brand-outline" size="sm">
+              <Icon name="arrow-left" size="sm" />
+              {t('projects.backToProjects', locale)}
+            </Button>
+          </footer>
+        </div>
+
+        {sidebarActive && !sidebarOnLeft && (
+          <aside class="hidden xl:block" aria-label={t('blog.tableOfContents', locale)}>
+            <TableOfContents
+              headings={headings}
+              maxDepth={tocConfig?.maxDepth ?? 3}
+              minHeadings={tocConfig?.minHeadings ?? 3}
+              sticky
+            />
+          </aside>
+        )}
+      </div>
+    </article>
+
+    {related.length > 0 && (
+      <section class="py-[var(--space-section-md)] bg-background-secondary border-t border-border" data-reveal>
+        <div class="mx-auto max-w-7xl px-6">
+          <h2 class="font-display text-2xl md:text-3xl font-bold text-foreground mb-8 text-center">{t('projects.moreProjects', locale)}</h2>
+          <div class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {/* The same card the projects index, the paginated pages, the tag
+                archives and the homepage use. `reveal={false}` because the
+                section above already carries the trigger. */}
+            {related.map((project, i) => (
+              <ProjectCard project={project} index={i} locale={locale} reveal={false} />
+            ))}
+          </div>
+        </div>
+      </section>
+    )}
+
+    <!-- Closing CTA -->
+    <section class="relative z-10 py-[var(--space-section-md)] bg-background border-t border-border">
+      <CtaBand maxWidth="7xl">
+        <h2 class="font-display text-4xl font-bold text-foreground mb-4 text-balance">
+          {t('projects.closingHeading', locale)}
+        </h2>
+        <p class="text-lg text-foreground-muted mb-8 text-balance">
+          {t('projects.closingLead', locale)}
+        </p>
+        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+          <Button size="lg" href={contactUrl}>
+            {t('projects.ctaPrimary', locale)}
+            <Icon name="arrow-right" size="sm" />
+          </Button>
+          <Button size="lg" variant="outline" class="cta-btn-brand" href={projectsHref}>
+            {t('projects.allProjects', locale)}
+            <Icon name="arrow-right" size="sm" />
+          </Button>
+        </div>
+      </CtaBand>
+    </section>
+  </div>
+
+  <Footer
+    slot="footer"
+    layout="columns"
+    background="secondary"
+    maxWidth="7xl"
+  />
+</BaseLayout>

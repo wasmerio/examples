@@ -1,0 +1,149 @@
+---
+/**
+ * Comments — Cusdis provider
+ *
+ * Privacy-friendly, lightweight alternative to Giscus. Like the Giscus
+ * provider, it renders only a reserved-height placeholder on the server and
+ * lazy-loads the widget when the comments scroll into view, so readers who
+ * never reach the bottom pay zero network cost.
+ *
+ * Theme follows the site by default: leave `theme` empty in `site.config.ts`
+ * and the embed mirrors the visitor's light/dark mode. Cusdis has no live
+ * theme API (unlike Giscus's postMessage), so on a toggle we re-render the
+ * widget — the thread briefly reloads. Set `theme` to 'auto' (OS preference),
+ * 'light', or 'dark' to opt out of that behaviour.
+ *
+ * Selected via `site.config.ts` → articleFeatures.comments.provider: 'cusdis'
+ * and configured under articleFeatures.comments.cusdis. Get your App ID from
+ * the Cusdis dashboard (https://cusdis.com), or self-host and set `host`.
+ */
+import siteConfig from '@/config/site.config';
+import { t, getLocaleFromPath } from '@/i18n';
+
+const cusdis = siteConfig.articleFeatures?.comments?.cusdis;
+
+// Fail soft: render nothing unless an App ID is configured.
+const isConfigured = !!(cusdis && cusdis.appId);
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+const commentsTitle = t('comments.title', locale);
+
+const host =
+  cusdis?.host && cusdis.host.length > 0 ? cusdis.host : 'https://cusdis.com';
+
+// Empty (or unset) `theme` => follow the site's light/dark mode: the client
+// resolves it from the DOM and re-renders on toggle. A specific value
+// ('auto' | 'light' | 'dark') is passed through verbatim.
+const adaptiveTheme = !cusdis?.theme;
+
+// Empty (or unset) `lang` => follow the site's current locale. Navigation is a
+// full page load, so the server-resolved locale is always correct.
+const lang = cusdis?.lang && cusdis.lang.length > 0 ? cusdis.lang : locale;
+---
+
+{isConfigured && (
+  <section
+    id="comments"
+    class="mx-auto max-w-4xl px-6 mt-12"
+    aria-label={commentsTitle}
+  >
+    <h2 class="text-xl font-semibold mb-4 text-foreground">{commentsTitle}</h2>
+    <div
+      class="cusdis-mount"
+      data-cusdis
+      data-host={host}
+      data-app-id={cusdis!.appId}
+      data-theme={adaptiveTheme ? 'light' : cusdis!.theme!}
+      data-cusdis-adaptive={String(adaptiveTheme)}
+      data-cusdis-lang={lang}
+    >
+      <noscript>Comments require JavaScript to load.</noscript>
+    </div>
+  </section>
+)}
+
+<style>
+  .cusdis-mount {
+    /* Reserve space so the iframe doesn't push content when it loads */
+    min-height: 360px;
+  }
+</style>
+
+<script>
+  // Lazy-load Cusdis only when the comments area scrolls into view. Until
+  // then, zero network requests are made.
+  const mount = document.querySelector<HTMLElement>('[data-cusdis]');
+  if (mount && !mount.dataset.loaded) {
+    const host = mount.dataset.host!;
+    const adaptiveTheme = mount.dataset.cusdisAdaptive === 'true';
+    const lang = mount.dataset.cusdisLang ?? '';
+    const resolveTheme = () =>
+      document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+
+    const load = () => {
+      if (mount.dataset.loaded) return;
+      mount.dataset.loaded = 'true';
+
+      // Cusdis auto-initialises the #cusdis_thread element when its script
+      // loads, reading the data-* attrs off it. The page id/url/title are only
+      // known at runtime, so set them now (host/app-id/theme are already set).
+      mount.id = 'cusdis_thread';
+      mount.setAttribute('data-page-id', location.pathname);
+      mount.setAttribute('data-page-url', location.href);
+      mount.setAttribute('data-page-title', document.title);
+      if (adaptiveTheme) mount.setAttribute('data-theme', resolveTheme());
+
+      const injectMain = () => {
+        const s = document.createElement('script');
+        s.src = `${host}/js/cusdis.es.js`;
+        s.async = true;
+        document.body.appendChild(s);
+      };
+
+      // Non-English locales need a Cusdis language pack, loaded before the
+      // widget. If the pack 404s the widget falls back to English (fail-soft).
+      if (lang && lang !== 'en') {
+        const l = document.createElement('script');
+        l.src = `${host}/js/widget/lang/${lang}.js`;
+        l.async = true;
+        l.onload = injectMain;
+        l.onerror = injectMain;
+        document.body.appendChild(l);
+      } else {
+        injectMain();
+      }
+
+      // Follow the site's light/dark toggle. Cusdis has no live setTheme, so
+      // update data-theme and re-render the thread (a brief reload).
+      if (adaptiveTheme) {
+        const w = window as unknown as {
+          renderCusdis?: (el: HTMLElement) => void;
+        };
+        const rerender = () => {
+          mount.setAttribute('data-theme', resolveTheme());
+          w.renderCusdis?.(mount);
+        };
+        new MutationObserver(rerender).observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ['class'],
+        });
+      }
+    };
+
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            load();
+            io.disconnect();
+          }
+        },
+        { rootMargin: '300px' },
+      );
+      io.observe(mount);
+    } else {
+      // Old browsers — just load it.
+      load();
+    }
+  }
+</script>

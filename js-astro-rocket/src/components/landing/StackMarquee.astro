@@ -1,0 +1,301 @@
+---
+/**
+ * StackMarquee
+ * A double-row, pure-CSS infinite marquee of tech-stack cards. Row one scrolls
+ * one way, row two scrolls the other (at a slightly different speed) for an
+ * organic, non-synced feel. Content is driven by src/content/stack/*.mdx by
+ * default, so adding or removing a tool is an MDX edit — no changes here.
+ *
+ * Reuses the existing Card and Icon components and the site's semantic colour
+ * tokens, so it themes automatically in light and dark mode. Zero JavaScript:
+ * the loop is a CSS keyframe animation on a duplicated track (GPU transform).
+ * It pauses on hover, hides the duplicate/decorative copies from assistive
+ * tech, and freezes under prefers-reduced-motion.
+ *
+ * Usage:
+ *   <StackMarquee />                         // pulls from content/stack, 2 rows
+ *   <StackMarquee rows={1} duration={30} />  // single strip
+ *   <StackMarquee items={[{ name: 'Vercel', icon: 'brand-vercel', url: '…' }]} />
+ */
+import { getCollection } from 'astro:content';
+import { cn } from '@/lib/cn';
+import Icon from '@/components/ui/primitives/Icon/Icon.astro';
+import Card from '@/components/ui/data-display/Card/Card.astro';
+import { t, getLocaleFromPath } from '@/i18n';
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+export interface StackItem {
+  /** Display name, e.g. "Astro". */
+  name: string;
+  /** Icon name resolved by Icon.astro, e.g. "brand-astro". */
+  icon: string;
+  /** Optional link target; when set (and `linked`), the card links here. */
+  url?: string;
+  /** Optional small sub-label, e.g. "v6". */
+  version?: string;
+  /** Optional per-tool OKLCH params for the logo colour, e.g. "62.5% 0.22 38". */
+  colorOklch?: string;
+}
+
+interface Props {
+  /** Items to show. Defaults to the src/content/stack collection (sorted by order). */
+  items?: StackItem[];
+  /** Number of rows. 2 = double, opposite-direction marquee (default). 1 = single strip. */
+  rows?: number;
+  /** Direction of the first row; each subsequent row alternates. Default "left". */
+  direction?: 'left' | 'right';
+  /** Seconds for one loop of the first row. Each further row is a touch faster. Default 40. */
+  duration?: number;
+  /** Pause a row while it is hovered so visitors can read or click. Default true. */
+  pauseOnHover?: boolean;
+  /** Gap between cards within a row. Default "1.5rem". */
+  gap?: string;
+  /** Gap between rows. Default "1rem". */
+  rowGap?: string;
+  /** Fixed card width. Default "230px". */
+  cardWidth?: string;
+  /** Gradient fade on the left/right edges. Default true. */
+  fade?: boolean;
+  /** Logo colour: "brand" tints every logo with the theme brand colour (default); "tool" uses each tool's own `colorOklch`. */
+  logoColor?: 'brand' | 'tool';
+  /** Wrap each card in its `url`. Default true. */
+  linked?: boolean;
+  /** Show the version sub-label when present. Default false — avoids version numbers that can go stale. */
+  showVersion?: boolean;
+  /** Extra classes on the wrapper. */
+  class?: string;
+}
+
+const {
+  items,
+  rows = 2,
+  direction = 'left',
+  duration = 40,
+  pauseOnHover = true,
+  gap = '1.5rem',
+  rowGap = '1rem',
+  cardWidth = '230px',
+  fade = true,
+  logoColor = 'brand',
+  linked = true,
+  showVersion = false,
+  class: className,
+} = Astro.props;
+
+// Default source: the MDX-driven stack collection, sorted by `order`.
+let data: StackItem[] = items ?? [];
+if (!items) {
+  const entries = await getCollection('stack');
+  data = entries
+    .sort((a, b) => a.data.order - b.data.order)
+    .map((e) => ({
+      name: e.data.name,
+      icon: e.data.icon,
+      url: e.data.url,
+      version: e.data.version,
+      colorOklch: e.data.colorOklch,
+    }));
+}
+
+const opposite = (d: 'left' | 'right'): 'left' | 'right' => (d === 'left' ? 'right' : 'left');
+const rowCount = Math.max(1, rows);
+const MIN_DURATION = 12;
+
+// Seamless looping duplicates each row once and scrolls it by -50%, which only
+// hides the join when a single copy is at least as wide as the container. With
+// a small collection (e.g. 4 tools) one copy is narrower than a wide desktop,
+// so the loop would flash a gap at the seam. Repeat the source list to a
+// minimum card count first; the -50% math is unchanged because the track is
+// still exactly two copies of the (now longer) list.
+const MIN_CARDS = 8;
+const fill = (list: StackItem[]): StackItem[] => {
+  if (list.length === 0) return list;
+  const out = [...list];
+  while (out.length < MIN_CARDS) out.push(...list);
+  return out;
+};
+
+// Per-row config: alternate direction, nudge the speed so lanes don't march in
+// lockstep, and reverse the order so the same logos don't line up vertically.
+const rowConfigs = Array.from({ length: rowCount }, (_, r) => {
+  const base = r % 2 === 0 ? data : [...data].reverse();
+  return {
+    items: fill(base),
+    uniqueCount: base.length, // expose only one set of each tool to assistive tech
+    direction: r % 2 === 0 ? direction : opposite(direction),
+    duration: Math.max(MIN_DURATION, duration - r * 4),
+    decorative: r > 0, // only the first row is exposed to assistive tech
+  };
+});
+---
+
+<div
+  class={cn('stack-marquee', className)}
+  data-fade={fade ? 'true' : 'false'}
+  data-pause={pauseOnHover ? 'true' : 'false'}
+  data-logo-color={logoColor}
+  style={`--card-width: ${cardWidth}; --row-gap: ${rowGap};`}
+  aria-label={t('common.techStack', locale)}
+>
+  {
+    rowConfigs.map((row) => (
+      <div
+        class="stack-marquee-row"
+        data-direction={row.direction}
+        style={`--marquee-duration: ${row.duration}s; --marquee-gap: ${gap};`}
+      >
+        <div class="stack-marquee-track">
+          {[...row.items, ...row.items].map((item, idx) => {
+            const hidden = idx >= row.uniqueCount || row.decorative;
+            return (
+              <div
+                class="stack-marquee-item"
+                style={logoColor === 'tool' && item.colorOklch ? `--tech-color: oklch(${item.colorOklch});` : undefined}
+              >
+                <Card
+                  variant="elevated"
+                  padding="md"
+                  href={linked ? item.url : undefined}
+                  target={linked && item.url ? '_blank' : undefined}
+                  rel={linked && item.url ? 'noopener noreferrer' : undefined}
+                  class="h-full w-full"
+                  aria-hidden={hidden ? 'true' : undefined}
+                  tabindex={hidden ? -1 : undefined}
+                >
+                  <div class="flex flex-col items-center justify-center gap-2 md:flex-row md:gap-3">
+                    <span class="stack-icon">
+                      <Icon name={item.icon} size="lg" />
+                    </span>
+                    <span class="flex min-w-0 flex-col">
+                      <span class="font-display text-foreground truncate text-base leading-tight font-bold">
+                        {item.name}
+                      </span>
+                      {showVersion && item.version && (
+                        <span class="text-foreground-muted text-xs font-medium">
+                          {item.version}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </Card>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    ))
+  }
+</div>
+
+<style>
+  .stack-marquee {
+    display: flex;
+    flex-direction: column;
+    gap: var(--row-gap, 1rem);
+    width: 100%;
+  }
+
+  .stack-marquee-row {
+    position: relative;
+    /* Clip horizontally but let card shadows breathe vertically. */
+    overflow-x: clip;
+    overflow-y: visible;
+    width: 100%;
+  }
+
+  /* Gradient fade on the leading/trailing edges. */
+  .stack-marquee[data-fade='true'] .stack-marquee-row {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      #000 8%,
+      #000 92%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(to right, transparent 0%, #000 8%, #000 92%, transparent 100%);
+  }
+
+  .stack-marquee-track {
+    display: flex;
+    gap: var(--marquee-gap, 1.5rem);
+    width: max-content;
+    animation: stack-marquee-scroll var(--marquee-duration, 40s) linear infinite;
+    will-change: transform;
+  }
+
+  .stack-marquee-row[data-direction='right'] .stack-marquee-track {
+    animation-direction: reverse;
+  }
+
+  /* Pause the hovered row so visitors can read or click a card. Hover-capable
+     devices only: on touch, :hover sticks after a tap and would freeze the
+     marquee until you tapped elsewhere. */
+  @media (hover: hover) {
+    .stack-marquee[data-pause='true'] .stack-marquee-row:hover .stack-marquee-track {
+      animation-play-state: paused;
+    }
+  }
+
+  .stack-marquee-item {
+    flex: none;
+    width: var(--card-width, 230px);
+  }
+
+  /* On phones, collapse to a single row. Two opposite-scrolling rows share the
+     same logos, so in a narrow viewport the same card lines up top-and-bottom
+     for too long. One row removes the collision and reads cleaner on mobile. */
+  @media (max-width: 767px) {
+    .stack-marquee-row:not(:first-child) {
+      display: none;
+    }
+  }
+
+  /* On touch devices (any orientation), make the cards non-interactive so
+     scrolling the page never triggers an accidental tap through to a logo's
+     website. Pointer-driven (desktop) devices keep the links. */
+  @media (pointer: coarse) {
+    .stack-marquee-item {
+      pointer-events: none;
+    }
+  }
+
+  .stack-icon {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 9999px;
+    /* Default: tint every logo with the active theme's brand colour for a cohesive look. */
+    color: var(--color-brand-500);
+    background: color-mix(in oklch, var(--color-brand-500) 12%, transparent);
+  }
+
+  /* Opt in to each tool's own colour via logoColor="tool" (falls back to foreground). */
+  .stack-marquee[data-logo-color='tool'] .stack-icon {
+    color: var(--tech-color, var(--color-foreground));
+    background: color-mix(in oklch, var(--tech-color, var(--color-foreground)) 12%, transparent);
+  }
+
+  @keyframes stack-marquee-scroll {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      /* -50% minus half a gap lands the duplicate exactly on the original for a seamless loop. */
+      transform: translate3d(calc(-50% - (var(--marquee-gap, 1.5rem) / 2)), 0, 0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stack-marquee-track {
+      animation: none;
+      transform: none;
+    }
+    .stack-marquee-row {
+      overflow-x: auto;
+    }
+  }
+</style>

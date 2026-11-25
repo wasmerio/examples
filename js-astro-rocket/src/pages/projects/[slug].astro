@@ -1,0 +1,48 @@
+---
+import ProjectLayout from '@/layouts/ProjectLayout.astro';
+import { render } from 'astro:content';
+import { assertNoSlugCollisions } from '@/lib/content-validation';
+import { getVisibleProjects, getRoutableProjects } from '@/lib/projects';
+import { defaultLocale } from '@/i18n';
+
+export async function getStaticPaths() {
+  // Fail the build early on content-integrity problems: two entries resolving
+  // to the same URL within a locale.
+  await assertNoSlugCollisions();
+
+  const visibleProjects = await getVisibleProjects(defaultLocale);
+  const routableProjects = await getRoutableProjects(defaultLocale);
+
+  return routableProjects.map((project) => ({
+    params: { slug: project.id.replace(new RegExp(`^${defaultLocale}/`), '') },
+    props: {
+      project,
+      related: visibleProjects
+        .filter((p) => p.id !== project.id)
+        .sort((a, b) => a.data.order - b.data.order)
+        .slice(0, 3),
+    },
+  }));
+}
+
+const { project, related } = Astro.props;
+const { Content, headings } = await render(project);
+---
+
+<ProjectLayout
+  title={project.data.title}
+  description={project.data.description}
+  meta={project.data.meta}
+  url={project.data.url}
+  repo={project.data.repo}
+  image={project.data.image}
+  imageAlt={project.data.imageAlt}
+  gallery={project.data.gallery}
+  tags={project.data.tags}
+  slug={project.id}
+  related={related}
+  headings={headings}
+  toc={project.data.toc}
+>
+  <Content />
+</ProjectLayout>

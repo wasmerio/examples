@@ -1,0 +1,310 @@
+---
+import { Image, getImage } from 'astro:assets';
+import { isVideoSlide, type GallerySlide } from '@/lib/gallery';
+import { t, getLocaleFromPath } from '@/i18n';
+
+const locale = getLocaleFromPath(Astro.url.pathname);
+
+type GalleryItem = GallerySlide & { caption?: string };
+
+interface Props {
+  images: GalleryItem[];
+}
+
+const { images } = Astro.props;
+const id = Math.random().toString(36).slice(2, 8);
+
+// Optimise video posters through the image pipeline, like regular slides.
+const posters = await Promise.all(
+  images.map((item) =>
+    isVideoSlide(item) ? getImage({ src: item.poster, width: 1280 }) : null
+  )
+);
+
+// Lightweight slide data for the lightbox script. Video slides play inline in
+// the track (no zoom), but the lightbox can still navigate across them.
+const slideData = images.map((item, i) =>
+  isVideoSlide(item)
+    ? { type: 'video', src: item.video, poster: posters[i]?.src ?? '', alt: item.alt, caption: item.caption ?? '' }
+    : { type: 'image', src: item.src.src, alt: item.alt, caption: item.caption ?? '' }
+);
+---
+
+<div class="not-prose my-12" id={`gallery-${id}`}>
+  <div class="relative">
+    <!-- Carousel track -->
+    <div
+      id={`track-${id}`}
+      class="flex overflow-x-auto snap-x snap-mandatory rounded-xl border border-border shadow-xl"
+      style="scrollbar-width: none;"
+    >
+      {images.map((item, i) => (
+        <div
+          class:list={['shrink-0 w-full snap-start', !isVideoSlide(item) && 'cursor-zoom-in']}
+          data-index={i}
+          data-gallery-slide={`gallery-${id}`}
+          data-slide-type={isVideoSlide(item) ? 'video' : 'image'}
+        >
+          {isVideoSlide(item) ? (
+            <video
+              class="aspect-video w-full object-cover"
+              src={item.video}
+              poster={posters[i]?.src}
+              controls
+              playsinline
+              preload="none"
+              aria-label={item.alt}
+            />
+          ) : (
+            <Image
+              src={item.src}
+              alt={item.alt}
+              class="aspect-video w-full object-cover"
+              loading="lazy"
+            />
+          )}
+        </div>
+      ))}
+    </div>
+
+    <!-- Prev button -->
+    <button
+      id={`prev-${id}`}
+      class="absolute left-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-background/80 border border-border shadow-md text-foreground backdrop-blur-sm transition-opacity disabled:opacity-30 disabled:cursor-not-allowed hover:bg-background"
+      aria-label={t('projects.galleryPreviousImage', locale)}
+      disabled
+    >
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+      </svg>
+    </button>
+
+    <!-- Next button -->
+    <button
+      id={`next-${id}`}
+      class="absolute right-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-background/80 border border-border shadow-md text-foreground backdrop-blur-sm transition-opacity disabled:opacity-30 disabled:cursor-not-allowed hover:bg-background"
+      aria-label={t('projects.galleryNextImage', locale)}
+    >
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+      </svg>
+    </button>
+  </div>
+
+  <!-- Dots + counter -->
+  <div class="mt-4 flex flex-col items-center gap-2">
+    {/* As in ProjectCarousel: the button carries a 24x24 touch target and the
+        span carries the 6px dot, so the control is thumb-sized without the
+        dot growing. The active state is an attribute rather than a rewritten
+        class list, so the target sizing cannot be overwritten at runtime. */}
+    <div id={`dots-${id}`} class="flex items-center" role="tablist">
+      {images.map((_, i) => (
+        <button
+          role="tab"
+          aria-label={`Go to slide ${i + 1}`}
+          data-dot={i}
+          data-dots-gallery={`gallery-${id}`}
+          data-active={i === 0 ? 'true' : 'false'}
+          aria-selected={i === 0 ? 'true' : 'false'}
+          class="group flex h-6 w-6 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <span class="h-1.5 w-1.5 rounded-full bg-border transition-all duration-300 group-data-[active=true]:w-4 group-data-[active=true]:bg-brand-500"></span>
+        </button>
+      ))}
+    </div>
+    <span id={`counter-${id}`} class="text-xs text-foreground-muted">
+      1 / {images.length}
+    </span>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div
+  id={`lightbox-${id}`}
+  class="fixed inset-0 z-50 hidden items-center justify-center bg-black/90"
+  role="dialog"
+  aria-modal="true"
+  aria-label={t('projects.galleryLabel', locale)}
+>
+  <button
+    id={`lb-close-${id}`}
+    class="absolute top-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+    aria-label={t('projects.galleryClose', locale)}
+  >
+    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  </button>
+
+  <button
+    id={`lb-prev-${id}`}
+    class="absolute left-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+    aria-label={t('projects.galleryPreviousImage', locale)}
+  >
+    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+    </svg>
+  </button>
+
+  <div class="mx-16 flex flex-col items-center gap-3 max-w-5xl w-full px-4">
+    <img id={`lb-img-${id}`} src="" alt="" class="max-h-[80vh] w-auto rounded-lg object-contain" />
+    <video
+      id={`lb-video-${id}`}
+      class="hidden max-h-[80vh] w-auto rounded-lg object-contain"
+      controls
+      playsinline
+      preload="none"
+    ></video>
+    <p id={`lb-caption-${id}`} class="text-sm text-white/70 text-center"></p>
+  </div>
+
+  <button
+    id={`lb-next-${id}`}
+    class="absolute right-4 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+    aria-label={t('projects.galleryNextImage', locale)}
+  >
+    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+    </svg>
+  </button>
+</div>
+
+<script define:vars={{ id, imageData: slideData }}>
+(function () {
+  const galleryId = id;
+  const track = document.getElementById('track-' + galleryId);
+  const prevBtn = document.getElementById('prev-' + galleryId);
+  const nextBtn = document.getElementById('next-' + galleryId);
+  const counter = document.getElementById('counter-' + galleryId);
+  const dotsContainer = document.getElementById('dots-' + galleryId);
+  const lightbox = document.getElementById('lightbox-' + galleryId);
+  const lbImg = document.getElementById('lb-img-' + galleryId);
+  const lbVideo = document.getElementById('lb-video-' + galleryId);
+  const lbCaption = document.getElementById('lb-caption-' + galleryId);
+  const lbClose = document.getElementById('lb-close-' + galleryId);
+  const lbPrev = document.getElementById('lb-prev-' + galleryId);
+  const lbNext = document.getElementById('lb-next-' + galleryId);
+
+  if (!track || !prevBtn || !nextBtn || !counter || !dotsContainer || !lightbox) return;
+
+  const slides = Array.from(track.querySelectorAll('[data-index]'));
+  const dots = Array.from(dotsContainer.querySelectorAll('[data-dot]'));
+  const total = slides.length;
+  let current = 0;
+  let lbCurrent = 0;
+
+  function scrollTo(index) {
+    current = Math.max(0, Math.min(index, total - 1));
+    slides[current].scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+    sync(current);
+  }
+
+  // Pause any inline video that is no longer the active slide
+  function pauseInactiveVideos(activeIndex) {
+    slides.forEach(function (slide, i) {
+      const video = slide.querySelector('video');
+      if (video && i !== activeIndex && !video.paused) video.pause();
+    });
+  }
+
+  function sync(index) {
+    current = index;
+    counter.textContent = (index + 1) + ' / ' + total;
+    prevBtn.disabled = index === 0;
+    nextBtn.disabled = index === total - 1;
+    pauseInactiveVideos(index);
+    dots.forEach((dot, i) => {
+      const active = i === index;
+      dot.setAttribute('data-active', active ? 'true' : 'false');
+      dot.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+  }
+
+  // Scroll spy
+  let scrollTimer;
+  track.addEventListener('scroll', function () {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(function () {
+      const scrollLeft = track.scrollLeft;
+      const width = track.clientWidth;
+      const idx = Math.round(scrollLeft / width);
+      sync(idx);
+    }, 50);
+  }, { passive: true });
+
+  prevBtn.addEventListener('click', function () { scrollTo(current - 1); });
+  nextBtn.addEventListener('click', function () { scrollTo(current + 1); });
+
+  dots.forEach(function (dot, i) {
+    dot.addEventListener('click', function () { scrollTo(i); });
+  });
+
+  // Keyboard nav
+  document.getElementById('gallery-' + galleryId).addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowLeft') scrollTo(current - 1);
+    if (e.key === 'ArrowRight') scrollTo(current + 1);
+  });
+
+  // Click to open lightbox — image slides only; video slides play inline
+  // (their native controls own the click).
+  slides.forEach(function (slide, i) {
+    if (slide.dataset.slideType === 'video') return;
+    slide.addEventListener('click', function () { openLightbox(i); });
+  });
+
+  function openLightbox(index) {
+    lbCurrent = index;
+    lbSync(index);
+    lightbox.classList.remove('hidden');
+    lightbox.classList.add('flex');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    lightbox.classList.add('hidden');
+    lightbox.classList.remove('flex');
+    document.body.style.overflow = '';
+    if (lbVideo && !lbVideo.paused) lbVideo.pause();
+  }
+
+  function lbSync(index) {
+    lbCurrent = index;
+    const item = imageData[index];
+    if (lbVideo && !lbVideo.paused) lbVideo.pause();
+    if (item.type === 'video' && lbVideo) {
+      lbImg.classList.add('hidden');
+      lbVideo.classList.remove('hidden');
+      if (lbVideo.getAttribute('src') !== item.src) {
+        lbVideo.setAttribute('src', item.src);
+        lbVideo.setAttribute('poster', item.poster || '');
+      }
+      lbVideo.setAttribute('aria-label', item.alt);
+    } else {
+      if (lbVideo) lbVideo.classList.add('hidden');
+      lbImg.classList.remove('hidden');
+      lbImg.src = item.src;
+      lbImg.alt = item.alt;
+    }
+    lbCaption.textContent = item.caption || '';
+    lbPrev.disabled = index === 0;
+    lbNext.disabled = index === total - 1;
+  }
+
+  lbClose.addEventListener('click', closeLightbox);
+  lbPrev.addEventListener('click', function () { lbSync(lbCurrent - 1); });
+  lbNext.addEventListener('click', function () { lbSync(lbCurrent + 1); });
+
+  lightbox.addEventListener('click', function (e) {
+    if (e.target === lightbox) closeLightbox();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (!lightbox.classList.contains('flex')) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft' && lbCurrent > 0) lbSync(lbCurrent - 1);
+    if (e.key === 'ArrowRight' && lbCurrent < total - 1) lbSync(lbCurrent + 1);
+  });
+
+  sync(0);
+})();
+</script>

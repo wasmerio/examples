@@ -1,0 +1,328 @@
+---
+import type { HTMLAttributes } from 'astro/types';
+import { cn } from '@/lib/cn';
+import { heroSectionVariants } from './hero.variants';
+import HeroGrid from '@/components/effects/HeroGrid.astro';
+import HeroBeam from '@/components/effects/HeroBeam.astro';
+
+interface Props extends HTMLAttributes<'section'> {
+  /** Layout mode: centered single column or split two-column */
+  layout?: 'centered' | 'split';
+  /** Vertical padding size */
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Show background grid pattern */
+  showGrid?: boolean;
+  /** Show brand-coloured radial glow blobs behind the content */
+  showGlow?: boolean;
+  /** Show decorative gradient blob */
+  showBlob?: boolean;
+  /** Render the light-mode architectural grid + dark-mode halo behind the hero */
+  showHeroHalo?: boolean;
+  /** Blob position (only applies when showBlob is true) */
+  blobPosition?: 'left' | 'right' | 'center';
+  /** Fade the bottom of the section into the next section's background */
+  bottomFade?: boolean;
+  /** Show an animated scroll indicator at the bottom (desktop only, hides on scroll) */
+  showScrollIndicator?: boolean;
+  /** Stretch the section to fill at least the full viewport height (min-h-[100dvh]) */
+  fullHeight?: boolean;
+}
+
+const {
+  layout = 'centered',
+  size = 'lg',
+  showGrid = false,
+  showBlob = false,
+  blobPosition: _blobPosition = 'center',
+  showGlow = false,
+  showHeroHalo = false,
+  bottomFade = false,
+  showScrollIndicator = false,
+  fullHeight = false,
+  class: className,
+  ...attrs
+} = Astro.props;
+
+// Check which slots are provided
+const hasBadgeSlot = Astro.slots.has('badge');
+const hasTitleSlot = Astro.slots.has('title');
+const hasDescriptionSlot = Astro.slots.has('description');
+const hasActionsSlot = Astro.slots.has('actions');
+const hasAsideSlot = Astro.slots.has('aside');
+const hasBottomSlot = Astro.slots.has('bottom');
+
+// Compute alignment based on layout
+const alignment = layout === 'centered' ? 'text-center items-center' : 'text-left items-start';
+
+// When a bottom slot is used in a full-height hero, lay the section out as a flex
+// column so the slot can be pushed to the floor (mt-auto) while the CONTENT stays
+// at the top — leftover height then opens up BETWEEN them (the roomy "Chrome
+// look"). The column `gap` is a GUARANTEED minimum gap, so the slot never crowds
+// the content on short windows. Tunable per hero via --hero-floor-gap (default 4rem).
+const isFlooredBottom = fullHeight && hasBottomSlot;
+
+// Compute classes
+const sectionClasses = cn(
+  heroSectionVariants({ size }),
+  // Full-viewport hero: stretch to at least the viewport height. Uses svh (stable
+  // small viewport) rather than dvh so the hero does NOT resize as the mobile
+  // browser's address bar shows/hides on scroll. No upper cap — a 60rem cap used
+  // to cut the hero short on viewports taller than 960px (portrait tablets), so
+  // the next section bled into the first screen; the floored bottom slot absorbs
+  // extra height by design.
+  fullHeight && 'min-h-[100svh]',
+  // Floored bottom slot (e.g. the homepage tech-stack marquee): flex column so the
+  // slot floats to the floor with a guaranteed minimum gap above it.
+  isFlooredBottom && 'flex flex-col gap-[var(--hero-floor-gap,4rem)]',
+  // Marks the heroes that draw a grid. `showHeroHalo` gates both grid layers
+  // below, so it already names exactly the heroes whose badge needs an opaque
+  // fill; the rule is at the foot of this file.
+  showHeroHalo && 'hero-gridded',
+  className
+);
+
+const contentClasses = cn(
+  'z-10 flex flex-col',
+  alignment
+);
+
+const gridClasses = cn(
+  'relative z-10 mx-auto grid max-w-6xl grid-cols-1 items-center gap-[var(--space-section-gap)] px-6',
+  layout === 'split' && 'lg:grid-cols-2 lg:gap-[var(--space-section-gap)]',
+  // Full-height hero with a floored bottom slot: centre the content in the
+  // leftover height (my-auto splits it evenly above and below), so the hero
+  // stays balanced on tall windows instead of pooling all spare space
+  // between the actions and the bottom slot.
+  isFlooredBottom && 'my-auto'
+);
+---
+
+<section class={sectionClasses} {...attrs}>
+  {showHeroHalo && <HeroGrid />}
+  {showHeroHalo && <HeroBeam />}
+
+  {showGrid && (
+    <div
+      class="bg-grid-pattern pointer-events-none absolute inset-x-0 -inset-y-[20%] opacity-30 hidden md:dark:block"
+      style="mask-image: radial-gradient(ellipse 50% 50% at 50% 40%, black 0%, transparent 70%); -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 40%, black 0%, transparent 70%);"
+      aria-hidden="true"
+    />
+  )}
+
+  {showGlow && (
+    <>
+      <div class="pointer-events-none absolute left-1/2 top-1/4 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-500/15 blur-[120px] hidden dark:block" aria-hidden="true" />
+      <div class="pointer-events-none absolute bottom-1/4 right-1/4 h-[400px] w-[400px] rounded-full bg-brand-600/10 blur-[100px] hidden dark:block" aria-hidden="true" />
+    </>
+  )}
+
+  {showBlob && (
+    <>
+      <div
+        class="pointer-events-none absolute hidden dark:block dark:opacity-[0.20] rounded-full blur-[120px] h-[500px] w-[500px] -left-20 top-0 -translate-y-1/4"
+        style="background: radial-gradient(ellipse at center, var(--color-brand-400) 0%, transparent 70%);"
+        aria-hidden="true"
+      />
+      <div
+        class="pointer-events-none absolute hidden dark:block dark:opacity-[0.20] rounded-full blur-[120px] h-[500px] w-[500px] -right-20 top-0 -translate-y-1/4"
+        style="background: radial-gradient(ellipse at center, var(--color-brand-400) 0%, transparent 70%);"
+        aria-hidden="true"
+      />
+    </>
+  )}
+
+  {bottomFade && (
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-b from-transparent to-background-secondary hidden dark:block" aria-hidden="true" />
+  )}
+
+
+  {showScrollIndicator && (
+    <div class="scroll-indicator-wrapper absolute bottom-14 left-1/2 -translate-x-1/2 z-10" aria-hidden="true">
+      <div class="scroll-indicator flex flex-col items-center gap-0.5">
+        <svg class="scroll-indicator-chevron w-7 h-7 text-brand-500/70" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+        <svg class="scroll-indicator-chevron-2 w-7 h-7 text-brand-500/35" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </div>
+    </div>
+  )}
+
+  <div class={gridClasses}>
+    {/* Content Column */}
+    <div class={cn(contentClasses, 'order-1 lg:order-none animate-hero-stagger')}>
+      {/* Badge Slot */}
+      {hasBadgeSlot && (
+        <div class="hero-badge-slot mb-[var(--space-heading-gap)]">
+          <slot name="badge" />
+        </div>
+      )}
+
+      {/* Title Slot */}
+      {hasTitleSlot && (
+        <div class={cn(
+          'hero-title-slot mb-[var(--space-heading-gap)]',
+          '[&>h1]:font-display [&>h1]:text-5xl [&>h1]:leading-[1.1] [&>h1]:font-bold [&>h1]:tracking-tight [&>h1]:text-balance [&>h1]:text-foreground md:[&>h1]:text-6xl lg:[&>h1]:text-7xl',
+          '[&>h2]:font-display [&>h2]:text-4xl [&>h2]:leading-[1.1] [&>h2]:font-bold [&>h2]:tracking-tight [&>h2]:text-balance [&>h2]:text-foreground md:[&>h2]:text-5xl lg:[&>h2]:text-6xl'
+        )}>
+          <slot name="title" />
+        </div>
+      )}
+
+      {/* Description Slot */}
+      {hasDescriptionSlot && (
+        <div class={cn(
+          'mb-[var(--space-stack-lg)] max-w-xl text-lg leading-relaxed text-foreground-muted',
+          '[&>p]:text-lg [&>p]:leading-relaxed [&>p]:text-foreground-muted',
+          layout === 'centered' && 'mx-auto'
+        )}>
+          <slot name="description" />
+        </div>
+      )}
+
+      {/* Actions Slot */}
+      {hasActionsSlot && (
+        <div class={cn(
+          'flex w-full flex-col gap-4 sm:w-auto sm:flex-row',
+          layout === 'centered' && 'justify-center'
+        )}>
+          <slot name="actions" />
+        </div>
+      )}
+
+      {/* Default slot for additional content (social proof, etc.) */}
+      <slot />
+    </div>
+
+    {/* Aside Column (for split layout) */}
+    {layout === 'split' && hasAsideSlot && (
+      <div class="relative z-10 w-full order-2 lg:order-none">
+        <slot name="aside" />
+      </div>
+    )}
+  </div>
+
+  {/* Bottom slot — e.g. the homepage tech-stack marquee, in place of the scroll
+      indicator. In a full-height hero it's the last flex child, so it sits on
+      the floor while the content grid centres itself in the leftover height
+      (my-auto above); the section's column `gap` guarantees a minimum gap so
+      the slot never crowds the content on short windows. Outside full-height
+      it falls back to absolute. */}
+  {hasBottomSlot && (
+    <div class={cn(
+      'hero-bottom-slot z-10 w-full',
+      isFlooredBottom ? 'relative' : 'absolute inset-x-0 bottom-0'
+    )}>
+      <slot name="bottom" />
+    </div>
+  )}
+</section>
+
+<style>
+  /* The badge on a gridded hero, filled rather than tinted.
+
+     `Badge variant="brand"` fills at `bg-brand-500/10`, and the hero behind it
+     draws a 56px lattice — `HeroGrid` in light mode, `hero-beam__grid` in dark
+     — so a 1px line reads straight through the pill and cuts it in half.
+
+     Mixing the same 10% of the brand into the section's own ground gives the
+     colour the pill already renders as, with nothing left to see through. It
+     reads the brand and the background token, so one rule covers all eight
+     colour themes and both modes with no second value to keep in step.
+
+     In sRGB, not OKLCH. `--color-background` in light mode is `oklch(100% 0 0)`,
+     whose hue is powerless, so mixing toward it in OKLCH interpolates the hue
+     away from the brand and the pill comes out the wrong colour. sRGB is also
+     what the browser composites the translucent fill in, so this lands on the
+     colour the pill has today.
+
+     Dark mode gets it too. The line there sits at a far lower contrast against
+     its ground than in light, so it was close to invisible to begin with and
+     this changes nothing you can see — it keeps one rule for both rather than
+     two that can drift.
+
+     Scoped to the badge slot's own child: every hero badge in the theme is a
+     brand-variant pill. A badge of another variant slotted here would be
+     repainted brand, and would need the rule narrowed. */
+  .hero-gridded .hero-badge-slot > :global(*) {
+    background-color: color-mix(in srgb, var(--color-brand-500) 10%, var(--color-background));
+  }
+
+  /* Desktop only: hide on landscape mobile (phones max out ~430px tall) */
+  .scroll-indicator-wrapper {
+    display: none;
+  }
+
+  @media (min-width: 1024px) and (min-height: 500px) {
+    .scroll-indicator-wrapper {
+      display: block;
+    }
+  }
+
+  /* Fade in after the hero slide-up animation completes */
+  .scroll-indicator {
+    animation: si-fade-in 0.6s ease-out 1.4s backwards;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+
+  .scroll-indicator.is-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+  }
+
+  @keyframes si-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* First chevron bounces, second follows with a slight delay */
+  .scroll-indicator-chevron {
+    animation: si-bounce 2s ease-in-out 2s infinite;
+  }
+
+  .scroll-indicator-chevron-2 {
+    animation: si-bounce 2s ease-in-out 2.15s infinite;
+  }
+
+  @keyframes si-bounce {
+    0%, 100% { transform: translateY(0); }
+    50%       { transform: translateY(5px); }
+  }
+
+
+  @media (prefers-reduced-motion: reduce) {
+    .scroll-indicator              { animation: none; opacity: 1; }
+    .scroll-indicator-chevron,
+    .scroll-indicator-chevron-2    { animation: none; }
+  }
+</style>
+
+<script>
+  // Scroll indicator: fade out once the user starts scrolling.
+  // Stored on window so re-init across navigations replaces the previous
+  // listener instead of stacking handlers.
+  function initScrollIndicator() {
+    const indicator = document.querySelector<HTMLElement>('.scroll-indicator');
+    if (!indicator) return;
+
+    const w = window as Window & { __scrollIndicatorHandler?: () => void };
+    if (w.__scrollIndicatorHandler) {
+      window.removeEventListener('scroll', w.__scrollIndicatorHandler);
+    }
+
+    function onScroll() {
+      if (window.scrollY > 50) {
+        indicator?.classList.add('is-hidden');
+        window.removeEventListener('scroll', onScroll);
+        delete w.__scrollIndicatorHandler;
+      }
+    }
+
+    w.__scrollIndicatorHandler = onScroll;
+    window.addEventListener('scroll', onScroll, { passive: true });
+  }
+
+  initScrollIndicator();
+</script>

@@ -1,0 +1,158 @@
+---
+const svgs = import.meta.glob<string>('/src/assets/blog/*.svg', { query: '?raw', import: 'default', eager: true });
+
+interface Props {
+  slug: string;
+  title: string;
+}
+
+const { slug, title } = Astro.props;
+const svgContent = svgs[`/src/assets/blog/${slug}.svg`] ?? '';
+
+/**
+ * Where the gradient's two stops sit, in the rect's own coordinates.
+ *
+ * The artwork is scaled inside its frame, so the frame shows the middle slice
+ * of the SVG and never its top or bottom edge. Stops at 0 and 1 would put both
+ * ends of the gradient in the part that is cropped away, and the visible slice
+ * would show neither the light colour nor the dark one. So they sit on the
+ * edges of the visible slice instead, and `spreadMethod` (pad, the default)
+ * fills the cropped remainder with the end colours.
+ *
+ * Both numbers stay inside 0..1. Moving the gradient VECTOR out of range
+ * instead — y1 below zero — is valid SVG and renders correctly in Chromium,
+ * but not on iOS.
+ *
+ * COVER_SCALE has to match the `scale()` in the stylesheet below.
+ */
+const COVER_SCALE = 1.35;
+const visible = 1 / COVER_SCALE;
+const stopTop = +((1 - visible) / 2).toFixed(4);
+const stopFoot = +(1 - stopTop).toFixed(4);
+---
+
+{svgContent && (
+  <>
+    {/*
+      The gradient the cover's `.bg` rect is filled with. It has to be a real
+      SVG paint server rather than a CSS gradient, because `fill` on an SVG
+      shape takes `url(#id)` and nothing else.
+
+      One def per cover, keyed by slug: SVG ids are document-global, and a page
+      can carry more than one cover — the blog index shows several — so a shared
+      id would paint them all from whichever parsed first. The id reaches the
+      stylesheet through --cover-bg on the host, since a scoped rule cannot
+      interpolate the slug itself.
+    */}
+    <svg class="cover-grad" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id={`blog-grad-${slug}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset={stopTop} class="g-top" />
+          <stop offset={stopFoot} class="g-foot" />
+        </linearGradient>
+      </defs>
+    </svg>
+    <div
+      class="svg-host"
+      role="img"
+      aria-label={title}
+      style={`--cover-bg: url(#blog-grad-${slug})`}
+      set:html={svgContent}
+    />
+  </>
+)}
+
+<style>
+  .svg-host :global(svg) {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .svg-host :global(svg) {
+    transform: scale(1.35);
+    transform-origin: center center;
+  }
+
+  /* The def carries no picture of its own; it only has to be in the document
+     for the fill to resolve. Taken out of flow so it cannot add a line box. */
+  .cover-grad {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
+  /* The cover opens a step down the brand ramp rather than at full brand-500,
+     so the gradient has somewhere to travel before it reaches brand-900 at the
+     foot. Mixed in sRGB, which is what the SVG gradient between these two
+     stops interpolates in, so the top stop sits on that same curve rather than
+     beside it. */
+  .cover-grad .g-top {
+    stop-color: color-mix(in srgb, var(--color-brand-900) 14%, var(--color-brand-500));
+  }
+  .cover-grad .g-foot {
+    stop-color: var(--color-brand-900);
+  }
+
+  .svg-host {
+    position: relative;
+  }
+
+  /* One rule, both modes. A flat fill for light and another for dark would sit
+     after this one at equal specificity and win on source order, handing light
+     mode its flat background back. The gradient does not flip between modes. */
+  .svg-host :global(.bg) {
+    fill: var(--cover-bg);
+  }
+
+  /* The grid, scaled to the picture rather than to the screen.
+
+     `background-size` in percentages rather than pixels: this grid is part of
+     the image, sixteen columns at every width, so a cover looks the same in a
+     card as it does across an article hero.
+
+     The cells stay square without being told to, because the frame's aspect
+     ratio is the artwork's 1200x630 at every size. 6.25% is a sixteenth of the
+     width; 11.9048% is the same number of pixels down a box 630/1200 as tall.
+
+     Over the artwork rather than under it: the cover opens with an opaque
+     `.bg` rect covering the whole canvas, so anything beneath it is hidden. */
+  .svg-host::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.09) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.09) 1px, transparent 1px);
+    background-size: 6.25% 11.9048%;
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 45%, transparent 100%);
+    mask-image: radial-gradient(ellipse at center, #000 45%, transparent 100%);
+  }
+
+  /* ── Light mode ─────────────────────────────────────────────────────────
+     Light icons and text on the gradient above, for vivid images in both
+     modes. `.bg` is not here: it carries the gradient, set once further up
+     and the same in both modes.
+  ── */
+  .svg-host :global(.ico) { stroke: var(--brand-50); }
+  .svg-host :global(.txt) { fill: var(--brand-50); }
+  .svg-host :global(.ln)  { stroke: var(--brand-200); stroke-opacity: 0.5; }
+  .svg-host :global(.pil) { fill: var(--brand-300); fill-opacity: 0.35; stroke: var(--brand-100); stroke-opacity: 0.8; }
+  .svg-host :global(.ptx) { fill: var(--brand-50); }
+  .svg-host :global(.cor) { stroke: var(--brand-200); stroke-opacity: 0.7; }
+  .svg-host :global(.num) { fill: var(--brand-100); fill-opacity: 0.18; }
+
+  /* ── Dark mode ───────────────────────────────────────────────────────────
+     Deep background with all brand colors at full opacity — vivid, not faded.
+  ── */
+  :global(html.dark) .svg-host :global(.ico) { stroke: var(--brand-200); }
+  :global(html.dark) .svg-host :global(.txt) { fill: var(--brand-50); }
+  :global(html.dark) .svg-host :global(.ln)  { stroke: var(--brand-300); stroke-opacity: 0.5; }
+  :global(html.dark) .svg-host :global(.pil) { fill: var(--brand-600); fill-opacity: 0.4; stroke: var(--brand-300); stroke-opacity: 0.7; }
+  :global(html.dark) .svg-host :global(.ptx) { fill: var(--brand-100); }
+  :global(html.dark) .svg-host :global(.cor) { stroke: var(--brand-300); stroke-opacity: 0.6; }
+  :global(html.dark) .svg-host :global(.num) { fill: var(--brand-50); fill-opacity: 0.18; }
+
+</style>

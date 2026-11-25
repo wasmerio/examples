@@ -1,0 +1,132 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import PageHeader from "../../components/Sections/PageHeader.astro";
+import Button from "../../components/UI/Button.astro";
+import SermonInfoCard from "../../components/Cards/SermonInfoCard.astro";
+import CompactLinkCard from "../../components/Cards/CompactLinkCard.astro";
+import { getCollection, render } from "astro:content";
+import { formatDate } from "../../utils/dateUtils";
+
+export async function getStaticPaths() {
+  try {
+    const sermonEntries = await getCollection("sermons", ({ data }) => {
+      return import.meta.env.PROD ? !data.draft : true;
+    });
+
+    return sermonEntries.map((entry) => ({
+      params: { slug: entry.id },
+      props: { entry },
+    }));
+  } catch (error) {
+    return [];
+  }
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+
+let relatedSermons = [];
+if (entry.data.series) {
+  try {
+    const allSermons = await getCollection("sermons", ({ data }) => {
+      return import.meta.env.PROD ? !data.draft : true;
+    });
+
+    relatedSermons = allSermons
+      .filter(
+        (sermon) =>
+          sermon.data.series === entry.data.series && sermon.id !== entry.id,
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.data.date).getTime() - new Date(a.data.date).getTime(),
+      )
+      .slice(0, 3);
+  } catch (error) {
+    console.log("Error fetching related sermons");
+  }
+}
+---
+
+<BaseLayout
+  title={`${entry.data.title} - Sermons - Church Name`}
+  description={entry.data.summary ||
+    `Listen to "${entry.data.title}" by ${entry.data.speaker}`}
+  image={entry.data.image
+    ? { url: entry.data.image, alt: entry.data.title }
+    : undefined}
+  type="article"
+>
+  <PageHeader
+    title={entry.data.title}
+    subtitle={entry.data.summary}
+    backgroundImage={entry.data.image || "/uploads/sermons-header-bg.webp"}
+  />
+
+  <section class="py-16">
+    <div class="container">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-12">
+        <div class="lg:col-span-2">
+          {
+            entry.data.videoUrl && (
+              <div class="mb-8">
+                <h3 class="text-xl font-bold mb-4">Watch</h3>
+                <div class="aspect-w-16 aspect-h-9 rounded-lg overflow-hidden">
+                  <iframe
+                    src={entry.data.videoUrl}
+                    title={entry.data.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen
+                    class="w-full h-full"
+                  />
+                </div>
+              </div>
+            )
+          }
+
+          {
+            entry.data.audioUrl && (
+              <div class="mb-8">
+                <h3 class="text-xl font-bold mb-4">Listen</h3>
+                <audio controls class="w-full">
+                  <source src={entry.data.audioUrl} type="audio/mpeg" />
+                  Your browser does not support the audio element.
+                </audio>
+              </div>
+            )
+          }
+
+          <div
+            class="prose prose-lg max-w-none prose-headings:text-gray-900 prose-h2:text-2xl prose-h3:text-xl prose-h4:text-lg prose-p:text-gray-700 prose-li:text-gray-700 prose-strong:text-gray-900 prose-a:text-primary-600 hover:prose-a:text-primary-700"
+          >
+            <Content />
+          </div>
+
+          {
+            relatedSermons.length > 0 && (
+              <div class="mt-12">
+                <h2 class="text-2xl font-bold mb-6">More From This Series</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {relatedSermons.map((sermon) => (
+                    <CompactLinkCard
+                      href={`/sermons/${sermon.id}`}
+                      title={sermon.data.title}
+                      meta={formatDate(sermon.data.date)}
+                      linkText="Listen/Watch"
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          }
+        </div>
+
+        <div>
+          <div class="sticky top-24 mb-6">
+            <SermonInfoCard sermon={entry} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

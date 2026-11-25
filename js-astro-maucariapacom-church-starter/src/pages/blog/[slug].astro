@@ -1,0 +1,107 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import PageHeader from "../../components/Sections/PageHeader.astro";
+import BlogInfoCard from "../../components/Cards/BlogInfoCard.astro";
+import CompactLinkCard from "../../components/Cards/CompactLinkCard.astro";
+import { getCollection, render } from "astro:content";
+
+// Generate static paths for all blog posts
+export async function getStaticPaths() {
+  try {
+    const blogEntries = await getCollection("blog", ({ data }) => {
+      return import.meta.env.PROD ? !data.draft : true;
+    });
+
+    return blogEntries.map((entry) => ({
+      params: { slug: entry.id },
+      props: { entry },
+    }));
+  } catch (error) {
+    return [];
+  }
+}
+
+const { entry } = Astro.props;
+const { Content, headings } = await render(entry);
+
+let relatedPosts = [];
+try {
+  const allPosts = await getCollection("blog", ({ data }) => {
+    return import.meta.env.PROD ? !data.draft : true;
+  });
+
+  const postTags = entry.data.tags || [];
+
+  if (postTags.length > 0) {
+    relatedPosts = allPosts
+      .filter(
+        (post) =>
+          post.id !== entry.id &&
+          post.data.tags.some((tag) => postTags.includes(tag)),
+      )
+      .sort((a, b) => {
+        const aMatchCount = a.data.tags.filter((tag) =>
+          postTags.includes(tag),
+        ).length;
+        const bMatchCount = b.data.tags.filter((tag) =>
+          postTags.includes(tag),
+        ).length;
+        return bMatchCount - aMatchCount;
+      })
+      .slice(0, 3);
+  }
+} catch (error) {
+  console.log("Error fetching related posts");
+}
+---
+
+<BaseLayout
+  title={`${entry.data.title} - Blog - Church Name`}
+  description={entry.data.description}
+  image={entry.data.image}
+  type="article"
+>
+  <PageHeader
+    title={entry.data.title}
+    subtitle={entry.data.description}
+    backgroundImage={entry.data.image?.url || "/uploads/blog-header-bg.webp"}
+  />
+
+  <section class="py-16">
+    <div class="container">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-12">
+        <div class="lg:col-span-2">
+          <article
+            class="prose prose-lg max-w-none prose-headings:text-gray-900 prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl prose-h4:text-lg prose-p:text-gray-700 prose-li:text-gray-700 prose-strong:text-gray-900 prose-a:text-primary-600 hover:prose-a:text-primary-700"
+          >
+            <Content />
+          </article>
+
+          {
+            relatedPosts.length > 0 && (
+              <div class="mt-12">
+                <h2 class="text-2xl font-bold mb-6">Related Posts</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {relatedPosts.map((post) => (
+                    <CompactLinkCard
+                      href={`/blog/${post.id}`}
+                      title={post.data.title}
+                      meta={`By ${post.data.author}`}
+                      linkText="Read More"
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          }
+        </div>
+
+        <div>
+          <div class="sticky top-24 mb-6">
+            <BlogInfoCard post={entry} shareUrl={Astro.url.toString()} />
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

@@ -1,0 +1,165 @@
+---
+import type { ImageMetadata } from "astro";
+import { Image } from "astro:assets";
+
+interface BaseProps {
+  src: string;
+  alt?: string;
+  width?: number | string;
+  height?: number | string;
+  class?: string;
+  style?: any;
+  [key: string]: any;
+}
+
+interface InlineSvgProps extends BaseProps {
+  inlineSvg: true;
+  alt?: string; // Optional for inline SVGs
+}
+
+interface ImageProps extends BaseProps {
+  inlineSvg?: false;
+  alt: string; // Required for images
+  layout?: "responsive" | "full-width" | "none";
+  loading?: "eager" | "lazy";
+  decoding?: "async" | "auto" | "sync";
+  formats?: string[] | "auto" | "avif" | "jpeg" | "png" | "svg" | "webp";
+}
+
+type Props = InlineSvgProps | ImageProps;
+
+const {
+  src,
+  alt = "",
+  inlineSvg = false,
+  width,
+  height,
+  loading = "lazy",
+  decoding = "async",
+  formats,
+  style,
+  ...rest
+} = Astro.props as Props;
+
+// Validation
+if (!src) {
+  throw new Error("Image component requires a 'src' prop");
+}
+
+if (!inlineSvg && !alt) {
+  throw new Error("Image component requires an 'alt' prop for accessibility");
+}
+
+// Determine if this is a local image
+const isLocalImage =
+  !src.startsWith("http") &&
+  !src.startsWith("data:") &&
+  !src.startsWith("blob:");
+
+let imageContent: string | undefined;
+let imageModule: Promise<{ default: ImageMetadata }> | undefined;
+
+if (isLocalImage) {
+  // Normalize the path
+  const normalizedSrc = src.startsWith("/src/assets")
+    ? src
+    : `/src/assets/images${src.startsWith("/") ? src : "/" + src}`;
+
+  try {
+    if (inlineSvg && normalizedSrc.endsWith(".svg")) {
+      // Load SVG as raw content for inline use
+      const rawSvgs = import.meta.glob("/src/assets/images/**/*.svg", {
+        query: "raw",
+        import: "default",
+      });
+
+      if (rawSvgs[normalizedSrc]) {
+        const svgContent = (await rawSvgs[normalizedSrc]()) as string;
+
+        // Add attributes to SVG
+        const attributes = Object.entries(rest)
+          .filter(([key]) => key !== "class") // Handle class separately
+          .map(([key, value]) => `${key}="${value}"`)
+          .join(" ");
+
+        const classAttr = rest.class || Astro.props.class;
+        const widthAttr = width ? `width="${width}"` : "";
+        const heightAttr = height ? `height="${height}"` : "";
+        const styleAttr = style
+          ? `style="${
+              typeof style === "object"
+                ? Object.entries(style)
+                    .map(([k, v]) => `${k}:${v}`)
+                    .join(";")
+                : style
+            }"`
+          : "";
+
+        imageContent = svgContent.replace(
+          "<svg",
+          `<svg data-icon="true" ${classAttr ? `class="${classAttr}"` : ""} ${widthAttr} ${heightAttr} ${styleAttr} ${attributes}`
+        );
+      } else {
+        console.warn(`SVG not found: ${normalizedSrc}`);
+      }
+    } else {
+      // Load regular image
+      const images = import.meta.glob(
+        "/src/assets/images/**/*.{jpeg,jpg,png,webp,svg,gif}"
+      );
+
+      if (images[normalizedSrc]) {
+        imageModule = images[normalizedSrc]() as Promise<{
+          default: ImageMetadata;
+        }>;
+      } else {
+        console.warn(
+          `Image not found: ${normalizedSrc}. Available images:`,
+          Object.keys(images)
+        );
+      }
+    }
+  } catch (error) {
+    console.error(`Error loading image: ${normalizedSrc}`, error);
+  }
+}
+---
+
+{
+  isLocalImage ? (
+    inlineSvg && imageContent ? (
+      <Fragment set:html={imageContent} />
+    ) : imageModule ? (
+      <Image
+        src={imageModule}
+        alt={alt}
+        width={width}
+        height={height}
+        loading={loading}
+        decoding={decoding}
+        formats={formats}
+        style={style}
+        class={rest.class || Astro.props.class}
+        {...rest}
+      />
+    ) : (
+      <div
+        class="image-error"
+        style="color: red; border: 1px solid red; padding: 1rem;">
+        Image not found: {src}
+      </div>
+    )
+  ) : (
+    /* External images */
+    <Image
+      src={src}
+      alt={alt}
+      inferSize={true}
+      loading={loading}
+      decoding={decoding}
+      style={style}
+      class={rest.class || Astro.props.class}
+      {...rest}
+    />
+  )
+}

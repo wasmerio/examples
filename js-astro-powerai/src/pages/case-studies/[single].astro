@@ -1,0 +1,83 @@
+---
+import Base from "@/layouts/Base.astro";
+import FeaturedCaseStudy from "@/components/FeaturedCaseStudy";
+import MainContainer from "@/components/MainContainer.astro";
+import { getSinglePage } from "@/lib/contentParser.astro";
+import { render } from "astro:content";
+import CaseStudyCard from "@/components/CaseStudyCard.astro";
+
+export async function getStaticPaths() {
+  const caseStudies = await getSinglePage("case-studies");
+  return caseStudies.map((study: any) => ({
+    params: { single: study.id },
+    props: { caseStudy: study },
+  }));
+}
+
+const { caseStudy } = Astro.props;
+
+const allCaseStudies = await getSinglePage("case-studies");
+const otherCaseStudies = allCaseStudies.filter((s: any) => s.id !== caseStudy.id);
+const sameCategoryStudies = otherCaseStudies.filter(
+  (s: any) => s.data.category === caseStudy.data.category,
+);
+const relatedCaseStudies = [
+  ...sameCategoryStudies,
+  ...otherCaseStudies.filter(
+    (s: any) => s.data.category !== caseStudy.data.category,
+  ),
+]
+  .slice(0, 3)
+  .map((s: any) => ({
+    frontmatter: s.data,
+    slug: s.id,
+    content: s.body || "",
+  }));
+
+if (caseStudy.data.draft) return Astro.redirect("/404");
+
+const { Content } = await render(caseStudy);
+const { title, meta_title, description, image } = caseStudy.data;
+
+// Shape for React components expecting legacy {frontmatter, slug, content} format
+const caseStudyLegacy = {
+  frontmatter: caseStudy.data,
+  slug: caseStudy.id,
+  content: caseStudy.body || "",
+};
+---
+
+<Base title={title} meta_title={meta_title} description={description} image={image}>
+  <section>
+    <MainContainer>
+      <div class="container-padding-x container-padding-y pb-14">
+        <FeaturedCaseStudy data={caseStudyLegacy} hideButton disableLink client:visible />
+      </div>
+    </MainContainer>
+  </section>
+  <section>
+    <MainContainer>
+      <div class="container-padding-x py-12">
+        <div class="lg:w-3/5 mx-auto">
+          <div class="content">
+            <Content />
+          </div>
+        </div>
+      </div>
+    </MainContainer>
+  </section>
+  {relatedCaseStudies.length > 0 && (
+    <section>
+      <MainContainer>
+        <div class="container-padding-x py-14">
+          <h2 class="font-primary font-semibold text-3xl text-text text-center mb-10">Related Case Studies</h2>
+          <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {relatedCaseStudies.map((study: any) => (
+             <CaseStudyCard data={study} />
+            ))}
+          </div>
+        </div>
+      </MainContainer>
+    </section>
+  )}
+</Base>

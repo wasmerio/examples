@@ -1095,11 +1095,18 @@ async function processRow(row, plan, ctx) {
 
     stage = 'deploy';
     let deployed;
-    try {
-      deployed = await withBackoff(() => deployAutobuild({ folder, appName, owner: ctx.owner, branch: ctx.branch, attempts: 120 }));
-    } catch (error) {
-      if (error && error.existed === false) created = appName;
-      throw error;
+    for (let attempt = 1; !deployed; attempt += 1) {
+      try {
+        deployed = await withBackoff(() => deployAutobuild({ folder, appName, owner: ctx.owner, branch: ctx.branch, attempts: 120 }));
+      } catch (error) {
+        if (error && error.existed === false) created = appName;
+        // Under load some builds end FAILED with a log that stops mid-build and shows no error; those pass on a redeploy.
+        const silent = error && error.buildId && attempt === 1 && !/ERROR|error:|failed to solve|Error:/.test(await autobuildLogTail(error.buildId));
+        if (!silent) throw error;
+        info.silentRetry = error.buildId;
+        console.log(`redeploy ${row.rank} after silent build failure ${error.buildId}`);
+        await sleep(60000);
+      }
     }
     if (!deployed.existed) created = appName;
     record.createdApp = created || (ctx.ownApps.has(appName) ? appName : '');
@@ -1111,7 +1118,7 @@ async function processRow(row, plan, ctx) {
     const failed = Object.entries(live.checks).filter(([key, value]) => key !== 'coldStartMs' && value !== 'passed' && value !== 'n/a').map(([key]) => key);
     if (failed.length) throw Object.assign(new Error(`live checks failed: ${failed.join(', ')} (${live.detail})`), { code: 'live-check' });
     liveOk = true;
-    record.liveDetail = live.detail;
+    record.liveDetail = info.silentRetry ? `${live.detail}; first build ${info.silentRetry} failed without an error and was redeployed` : live.detail;
 
     stage = 'preview';
     const previewPath = path.join(dest, 'preview.jpg');

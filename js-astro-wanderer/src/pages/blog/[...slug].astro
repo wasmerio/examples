@@ -1,0 +1,98 @@
+---
+import Layout from '../../components/Layout.astro';
+import Icon from '../../components/Icon.astro';
+import { getCollection, render } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import { site, withBase } from '../../data/site';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post },
+  }));
+}
+
+type Props = {
+  post: CollectionEntry<'blog'>;
+};
+
+const { post } = Astro.props;
+
+const { Content } = await render(post);
+
+const allPosts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+);
+const idx = allPosts.findIndex((p) => p.id === post.id);
+const prev = idx > 0 ? allPosts[idx - 1] : undefined;
+const next = idx >= 0 && idx < allPosts.length - 1 ? allPosts[idx + 1] : undefined;
+
+const readingTime = Math.max(1, Math.ceil((post.body?.split(/\s+/).length ?? 0) / 220));
+const dateFmt = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+const description = post.data.description ?? post.data.subtitle ?? `${post.data.title} — by ${post.data.author}`;
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: post.data.title,
+  description,
+  datePublished: post.data.date.toISOString(),
+  ...(post.data.updated && { dateModified: post.data.updated.toISOString() }),
+  author: { '@type': 'Person', name: post.data.author },
+  url: `${site.url}${withBase(`/blog/${post.id}/`)}`,
+};
+---
+
+<Layout
+  title={post.data.title}
+  description={description}
+  type="article"
+  image={post.data.coverImage ?? '/img/og.jpg'}
+  canonical={`${site.url}/blog/${post.id}/`}
+  jsonLd={jsonLd}
+>
+  <article class="section">
+    <div class="container">
+      <nav aria-label="Breadcrumb" style="margin-bottom: 1.5rem;">
+        <a href={withBase('/blog')}><Icon name="arrow-left" size={14} /> Back to blog</a>
+      </nav>
+
+      <header style="max-width: 70ch;">
+        <div class="post-meta">
+          <span class="category-badge {post.data.category}">{post.data.category}</span>
+          <time datetime={post.data.date.toISOString()}>{dateFmt.format(post.data.date)}</time>
+          <span class="dot">·</span>
+          <span>{readingTime} min read</span>
+          {post.data.updated && (
+            <>
+              <span class="dot">·</span>
+              <span>updated {dateFmt.format(post.data.updated)}</span>
+            </>
+          )}
+        </div>
+        <h1 style="margin: 0.75rem 0 0.5rem;">{post.data.title}</h1>
+        {post.data.subtitle && <p class="muted" style="font-size: 1.1rem;">{post.data.subtitle}</p>}
+        <p class="post-meta" style="margin-top: 1rem;">By {post.data.author}</p>
+        {post.data.tags.length > 0 && (
+          <div class="tag-list">
+            {post.data.tags.map((t) => <a class="tag" href={withBase(`/blog/tags/${t}/`)}>#{t}</a>)}
+          </div>
+        )}
+      </header>
+
+      {post.data.coverImage && (
+        <img src={withBase(post.data.coverImage)} alt={post.data.title} style="border-radius: var(--radius-lg); margin: 2rem 0; width: 100%; object-fit: cover; max-height: 420px;" />
+      )}
+
+      <div class="prose" style="margin-top: 2rem;">
+        <Content />
+      </div>
+
+      <nav aria-label="Post navigation" class="pagination" style="justify-content: space-between; margin-top: 3rem;">
+        {next && <a href={withBase(`/blog/${next.id}/`)} style="display: inline-flex; align-items: center; gap: 0.5rem;"><Icon name="arrow-left" size={16} /> {next.data.title}</a>}
+        {prev && <a href={withBase(`/blog/${prev.id}/`)} style="display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto;">{prev.data.title} <Icon name="arrow-right" size={16} /></a>}
+      </nav>
+    </div>
+  </article>
+</Layout>

@@ -1,0 +1,222 @@
+---
+export interface Props {
+  items: string[];
+  title: string;
+}
+
+const { items, title } = Astro.props;
+
+const isVideo = (src: string) => /\.(mp4|mov|webm|m4v)(\?|$)/i.test(src);
+const thumbOf = (src: string) => {
+  const i = src.lastIndexOf('/');
+  return `${src.slice(0, i)}/thumbs${src.slice(i)}`;
+};
+const itemsJson = JSON.stringify(items);
+const thumbsJson = JSON.stringify(items.map((s) => (isVideo(s) ? s : thumbOf(s))));
+const isVideoJson = JSON.stringify(items.map(isVideo));
+---
+
+<div class="carousel" data-items={itemsJson} data-thumbs={thumbsJson} data-videos={isVideoJson} data-title={title}>
+  <div class="carousel-stage">
+    <button class="carousel-nav carousel-prev" type="button" aria-label="Previous slide">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
+    </button>
+    <div class="carousel-track">
+      <figure class="carousel-slide is-active">
+        <img class="carousel-media" alt={`${title} photo`} draggable="false" />
+        <video class="carousel-media carousel-video" muted loop playsinline preload="metadata"></video>
+      </figure>
+    </div>
+    <button class="carousel-nav carousel-next" type="button" aria-label="Next slide">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+    </button>
+  </div>
+
+  <div class="carousel-meta">
+    <span class="carousel-count"></span>
+    <div class="carousel-thumbs">
+      {
+        items.map((src, i) =>
+          isVideo(src) ? (
+            <button class="carousel-thumb" data-index={i} type="button" aria-label={`Slide ${i + 1}`}>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+            </button>
+          ) : (
+            <button class="carousel-thumb" data-index={i} type="button" aria-label={`Slide ${i + 1}`}>
+              <img src={thumbOf(src)} alt="" loading="lazy" />
+            </button>
+          ),
+        )
+      }
+    </div>
+  </div>
+</div>
+
+<div class="carousel-lightbox" hidden>
+  <button class="lightbox-close" type="button" aria-label="Close">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+  </button>
+  <button class="lightbox-fullscreen" type="button" aria-label="Toggle full screen">
+    <svg class="fs-open" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M21 8V5a2 2 0 0 0-2-2h-3" /><path d="M3 16v3a2 2 0 0 0 2 2h3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></svg>
+    <svg class="fs-exit" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3" /><path d="M21 8h-3a2 2 0 0 1-2-2V3" /><path d="M3 16h3a2 2 0 0 1 2 2v3" /><path d="M16 21v-3a2 2 0 0 1 2-2h3" /></svg>
+  </button>
+  <button class="lightbox-prev" type="button" aria-label="Previous">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" /></svg>
+  </button>
+  <figure class="lightbox-stage">
+    <img class="lightbox-media lightbox-img" alt="" />
+    <video class="lightbox-media lightbox-video" controls playsinline></video>
+  </figure>
+  <button class="lightbox-next" type="button" aria-label="Next">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+  </button>
+  <span class="lightbox-count"></span>
+</div>
+
+<script>
+  const carousel = document.querySelector<HTMLElement>('.carousel');
+  const lightbox = document.querySelector<HTMLElement>('.carousel-lightbox');
+  if (!carousel || !lightbox) {
+    throw new Error('Gallery mount failed');
+  }
+
+  const items: string[] = JSON.parse(carousel.dataset.items ?? '[]');
+  const thumbs: string[] = JSON.parse(carousel.dataset.thumbs ?? '[]');
+  const isVideo: boolean[] = JSON.parse(carousel.dataset.videos ?? '[]');
+  const slide = carousel.querySelector<HTMLElement>('.carousel-slide')!;
+  const media = carousel.querySelector<HTMLImageElement>('.carousel-media')!;
+  const video = carousel.querySelector<HTMLVideoElement>('.carousel-video')!;
+  const thumbsEls = Array.from(carousel.querySelectorAll<HTMLElement>('.carousel-thumb'));
+  const countEl = carousel.querySelector<HTMLElement>('.carousel-count')!;
+  const prevBtn = carousel.querySelector<HTMLElement>('.carousel-prev')!;
+  const nextBtn = carousel.querySelector<HTMLElement>('.carousel-next')!;
+  const lbClose = lightbox.querySelector<HTMLElement>('.lightbox-close')!;
+  const lbFs = lightbox.querySelector<HTMLElement>('.lightbox-fullscreen')!;
+  const lbPrev = lightbox.querySelector<HTMLElement>('.lightbox-prev')!;
+  const lbNext = lightbox.querySelector<HTMLElement>('.lightbox-next')!;
+  const lbImg = lightbox.querySelector<HTMLImageElement>('.lightbox-img')!;
+  const lbVideo = lightbox.querySelector<HTMLVideoElement>('.lightbox-video')!;
+  const lbCount = lightbox.querySelector<HTMLElement>('.lightbox-count')!;
+
+  let index = 0;
+  let lbIndex = 0;
+  let animating = false;
+
+  const wrap = (i: number) => (i + items.length) % items.length;
+
+  const renderSlide = () => {
+    thumbsEls.forEach((t, n) => t.classList.toggle('is-active', n === index));
+    countEl.textContent = `${index + 1} / ${items.length}`;
+    if (isVideo[index]) {
+      media.style.display = 'none';
+      video.style.display = '';
+      video.src = thumbs[index];
+      video.load();
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+      video.removeAttribute('src');
+      video.style.display = 'none';
+      media.style.display = '';
+      media.src = thumbs[index];
+    }
+  };
+
+  const setActive = (i: number, instant = false) => {
+    if (animating && !instant) return;
+    index = wrap(i);
+    if (instant) {
+      renderSlide();
+      return;
+    }
+    animating = true;
+    slide.classList.remove('is-animating');
+    void slide.offsetHeight;
+    slide.classList.add('is-animating');
+    renderSlide();
+    setTimeout(() => (animating = false), 400);
+  };
+
+  const openLightbox = (i: number) => {
+    lbIndex = wrap(i);
+    renderLightbox();
+    lightbox.hidden = false;
+    document.body.classList.add('no-scroll');
+    requestAnimationFrame(() => lightbox.classList.add('is-open'));
+  };
+
+  const closeLightbox = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    lbVideo.pause();
+    lbVideo.removeAttribute('src');
+    lbVideo.load();
+    lightbox.classList.remove('is-open');
+    document.body.classList.remove('no-scroll');
+    setTimeout(() => {
+      lightbox.hidden = true;
+    }, 300);
+  };
+
+  const renderLightbox = () => {
+    lbCount.textContent = `${lbIndex + 1} / ${items.length}`;
+    if (isVideo[lbIndex]) {
+      lbImg.style.display = 'none';
+      lbVideo.style.display = '';
+      lbVideo.src = items[lbIndex];
+      lbVideo.play().catch(() => {});
+    } else {
+      lbVideo.pause();
+      lbVideo.removeAttribute('src');
+      lbVideo.style.display = 'none';
+      lbImg.style.display = '';
+      lbImg.src = items[lbIndex];
+    }
+  };
+
+  const next = () => setActive(index + 1);
+  const prev = () => setActive(index - 1);
+  const nextLb = () => openLightbox(lbIndex + 1);
+  const prevLb = () => openLightbox(lbIndex - 1);
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      lightbox.requestFullscreen?.();
+    }
+  };
+
+  lbFs.addEventListener('click', toggleFullscreen);
+
+  document.addEventListener('fullscreenchange', () => {
+    const isFs = !!document.fullscreenElement;
+    lightbox.classList.toggle('is-fullscreen', isFs);
+    lbFs.setAttribute('aria-label', isFs ? 'Exit full screen' : 'Toggle full screen');
+  });
+
+  nextBtn.addEventListener('click', next);
+  prevBtn.addEventListener('click', prev);
+
+  thumbsEls.forEach((t) => {
+    t.addEventListener('click', () => setActive(Number(t.dataset.index ?? 0)));
+  });
+
+  slide.addEventListener('click', () => openLightbox(index));
+
+  lbClose.addEventListener('click', closeLightbox);
+  lbNext.addEventListener('click', nextLb);
+  lbPrev.addEventListener('click', prevLb);
+
+  document.addEventListener('keydown', (e) => {
+    if (lightbox.hidden) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowRight') nextLb();
+    if (e.key === 'ArrowLeft') prevLb();
+  });
+
+  lightbox.addEventListener('click', (e) => {
+    if (e.target === lightbox) closeLightbox();
+  });
+
+  setActive(0, true);
+</script>

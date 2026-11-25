@@ -1,1 +1,0 @@
-var relearn_searchindex=[{breadcrumb:"Purple Pulpo",content:"",description:"",tags:[],title:"Categories",uri:"/categories/index.html"},{breadcrumb:"",content:"",description:"",tags:[],title:"Purple Pulpo",uri:"/index.html"},{breadcrumb:"Purple Pulpo",content:"",description:"",tags:[],title:"Tags",uri:"/tags/index.html"}]

@@ -1,0 +1,104 @@
+---
+import type { ImageMetadata } from 'astro';
+import { renderPhoto, GRID_SIZES } from '../lib/photos';
+import Lightbox from './Lightbox.astro';
+import { calendar } from '../data/calendar';
+import { site as siteInfo } from '../config';
+
+const images = import.meta.glob<{ default: ImageMetadata }>(
+  '../assets/calendar/*.{jpg,jpeg,png,webp,avif,JPG,JPEG,PNG,WEBP,AVIF}',
+  { eager: true }
+);
+const byName = new Map<string, ImageMetadata>();
+for (const [path, mod] of Object.entries(images)) {
+  byName.set(path.split('/').pop()!, mod.default);
+}
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+// Evaluated at build time: show every calendar photo we have, newest first.
+const items = await Promise.all(
+  calendar
+    .filter((e) => byName.has(e.file)) // only entries whose image is present
+    // Newest first; same-month ties sort Z→A by location ("a…" below "z…").
+    .sort((a, b) => b.year - a.year || b.month - a.month || b.location.localeCompare(a.location))
+    .map(async (e) => {
+      const photo = await renderPhoto(byName.get(e.file)!);
+      return {
+        ...photo,
+        label: `${MONTHS[e.month - 1]} ${e.year}, ${e.location}`,
+        year: e.year,
+        month: e.month,
+        location: e.location,
+      };
+    })
+);
+
+// Structured data: each month as an ImageObject with its date and place.
+const base = Astro.site ? Astro.site.href.replace(/\/$/, '') : '';
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'ImageGallery',
+  name: `Calendar — ${siteInfo.name}`,
+  url: `${base}${Astro.url.pathname}`,
+  isPartOf: { '@id': `${base}/#website` },
+  author: { '@id': `${base}/#person` },
+  image: items.map((it) => ({
+    '@type': 'ImageObject',
+    contentUrl: `${base}${it.full}`,
+    name: it.label,
+    caption: it.label,
+    dateCreated: `${it.year}-${String(it.month).padStart(2, '0')}`,
+    contentLocation: { '@type': 'Place', name: it.location },
+    creator: { '@id': `${base}/#person` },
+    copyrightHolder: { '@id': `${base}/#person` },
+    creditText: siteInfo.name,
+    copyrightNotice: `© ${siteInfo.name}`,
+    license: `${base}/license`,
+    acquireLicensePage: `${base}/contact`,
+  })),
+};
+---
+
+{
+  items.length === 0 ? (
+    <p class="empty">
+      No calendar photos yet. Add entries in <code>src/data/calendar.ts</code> and images in
+      <code>src/assets/calendar/</code>.
+    </p>
+  ) : (
+    <section class="calendar-grid" aria-label="Calendar photographs">
+      {items.map((item, i) => (
+        <figure class="calendar-item">
+          <button
+            class="photo-tile"
+            type="button"
+            aria-label={`${item.label} — view larger`}
+            data-full={item.full}
+            data-alt={item.label}
+            data-caption={item.label}
+          >
+            <img
+              class="photo__img"
+              src={item.src}
+              srcset={item.srcset}
+              sizes={GRID_SIZES}
+              alt={item.label}
+              loading={i < 4 ? 'eager' : 'lazy'}
+              decoding="async"
+              draggable={false}
+            />
+          </button>
+          <figcaption class="calendar-caption">{item.label}</figcaption>
+        </figure>
+      ))}
+    </section>
+  )
+}
+
+<Lightbox />
+
+<script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />

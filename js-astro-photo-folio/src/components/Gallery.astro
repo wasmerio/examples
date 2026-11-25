@@ -1,0 +1,68 @@
+---
+import type { ImageMetadata } from 'astro';
+import { renderPhoto, POST_GRID_SIZES, captionFromFilename } from '../lib/photos';
+
+// A 2-up grid of in-post photos — identical in treatment to the site galleries
+// (same tiles, same lightbox). Reference images in src/assets/blog/ by filename:
+//
+//     <Gallery photos={["01-ridge.jpg", "02-coast.jpg"]} />
+//
+// Captions default to the filename (like the galleries). For explicit captions:
+//
+//     <Gallery photos={[{ src: "a.jpg", caption: "Dawn" }]} />
+//
+type Item = string | { src: string; alt?: string; caption?: string };
+interface Props {
+  photos: Item[];
+}
+const { photos } = Astro.props;
+
+const images = import.meta.glob<{ default: ImageMetadata }>(
+  '../assets/blog/**/*.{jpg,jpeg,png,webp,avif,JPG,JPEG,PNG,WEBP,AVIF}',
+  { eager: true }
+);
+const findMeta = (name: string): ImageMetadata => {
+  const hit = Object.entries(images).find(
+    ([path]) => path.endsWith('/' + name) || path.split('/').pop() === name
+  );
+  if (!hit) {
+    throw new Error(`<Gallery> photo "${name}" not found in src/assets/blog/.`);
+  }
+  return hit[1].default;
+};
+
+const items = await Promise.all(
+  photos.map(async (entry, i) => {
+    const o = typeof entry === 'string' ? { src: entry } : entry;
+    const alt = o.alt ?? o.caption ?? captionFromFilename(o.src, i);
+    const photo = await renderPhoto(findMeta(o.src));
+    return { ...photo, alt, caption: o.caption ?? '' };
+  })
+);
+---
+
+<section class="photo-grid post-grid" aria-label="Photographs">
+  {
+    items.map((item) => (
+      <button
+        class="photo-tile"
+        type="button"
+        aria-label={`${item.alt} — view larger`}
+        data-full={item.full}
+        data-alt={item.alt}
+        data-caption={item.caption}
+      >
+        <img
+          class="photo__img"
+          src={item.src}
+          srcset={item.srcset}
+          sizes={POST_GRID_SIZES}
+          alt={item.alt}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+        />
+      </button>
+    ))
+  }
+</section>

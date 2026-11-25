@@ -1,0 +1,152 @@
+---
+import type { ImageMetadata } from 'astro';
+import { renderPhoto, GRID_SIZES } from '../lib/photos';
+import Lightbox from './Lightbox.astro';
+import { site as siteInfo } from '../config';
+import { digital as digitalMeta, analog as analogMeta, type GalleryPhoto } from '../data/galleries';
+
+interface Props {
+  collection: 'digital' | 'analog';
+}
+const { collection } = Astro.props;
+
+// Both globs must be static string literals (Vite requirement); we pick one.
+// Add or remove files in these folders and the gallery updates. Order comes
+// from the per-photo dates in src/data/galleries.ts (see the sort below), so
+// filenames don't need renumbering when an older photo is added later.
+const digital = import.meta.glob<{ default: ImageMetadata }>(
+  '../assets/digital/*.{jpg,jpeg,png,webp,avif,JPG,JPEG,PNG,WEBP,AVIF}',
+  { eager: true }
+);
+const analog = import.meta.glob<{ default: ImageMetadata }>(
+  '../assets/analog/*.{jpg,jpeg,png,webp,avif,JPG,JPEG,PNG,WEBP,AVIF}',
+  { eager: true }
+);
+
+const files = collection === 'analog' ? analog : digital;
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+// Per-photo descriptions live in src/data/galleries.ts, keyed by filename. The
+// caption renders as "Month Year, Location" — the same format as the Calendar —
+// shown under each photo and in the lightbox. It stays empty until a location is
+// filled in, so an un-described photo simply shows on its own.
+const meta = new Map<string, GalleryPhoto>(
+  (collection === 'analog' ? analogMeta : digitalMeta).map((e) => [e.file, e])
+);
+
+// Order by the described date, newest first, so adding an older photo never
+// requires renumbering files. Within the same month + year, descriptions sort
+// Z→A (an "a…" location appears below a "z…" one). Photos without a date yet
+// (year/month 0) sink to the bottom; filename (numeric, descending) is the
+// final tie-break so the order is stable.
+const entries = Object.entries(files).sort(([pathA], [pathB]) => {
+  const a = meta.get(pathA.split('/').pop()!);
+  const b = meta.get(pathB.split('/').pop()!);
+  return (
+    (b?.year ?? 0) - (a?.year ?? 0) ||
+    (b?.month ?? 0) - (a?.month ?? 0) ||
+    (b?.location ?? '').localeCompare(a?.location ?? '') ||
+    pathB.localeCompare(pathA, undefined, { numeric: true })
+  );
+});
+function describe(e: GalleryPhoto | undefined): string {
+  if (!e) return '';
+  const loc = e.location.trim();
+  const date =
+    e.month >= 1 && e.month <= 12 && e.year > 0 ? `${MONTHS[e.month - 1]} ${e.year}` : '';
+  if (date && loc) return `${date}, ${loc}`;
+  return date || loc;
+}
+
+// Fallback alt text from the filename ("01-snowy-harbor.jpg" -> "Snowy harbor")
+// for photos without a description yet, so alt / SEO text is never empty.
+function captionFor(path: string, index: number): string {
+  const base = path.split('/').pop()!.replace(/\.[^.]+$/, '');
+  const words = base.replace(/^[\s\d_-]+/, '').replace(/[-_]+/g, ' ').trim();
+  if (!words) return `Photograph ${index + 1}`;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+const photos = await Promise.all(
+  entries.map(async ([path, mod], i) => {
+    const photo = await renderPhoto(mod.default);
+    const entry = meta.get(path.split('/').pop()!);
+    const caption = describe(entry);
+    return { ...photo, caption, alt: caption || captionFor(path, i), entry };
+  })
+);
+
+// Structured data: an ImageGallery of ImageObjects attributed to the photographer.
+// When a photo has a description, mirror the Calendar's richer metadata
+// (caption, date, place).
+const base = Astro.site ? Astro.site.href.replace(/\/$/, '') : '';
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'ImageGallery',
+  name: `${collection.charAt(0).toUpperCase() + collection.slice(1)} — ${siteInfo.name}`,
+  url: `${base}${Astro.url.pathname}`,
+  isPartOf: { '@id': `${base}/#website` },
+  author: { '@id': `${base}/#person` },
+  image: photos.map((p) => ({
+    '@type': 'ImageObject',
+    contentUrl: `${base}${p.full}`,
+    name: p.alt,
+    ...(p.caption ? { caption: p.caption } : {}),
+    ...(p.entry && p.entry.month >= 1 && p.entry.month <= 12 && p.entry.year > 0
+      ? { dateCreated: `${p.entry.year}-${String(p.entry.month).padStart(2, '0')}` }
+      : {}),
+    ...(p.entry && p.entry.location.trim()
+      ? { contentLocation: { '@type': 'Place', name: p.entry.location.trim() } }
+      : {}),
+    creator: { '@id': `${base}/#person` },
+    copyrightHolder: { '@id': `${base}/#person` },
+    creditText: siteInfo.name,
+    copyrightNotice: `© ${siteInfo.name}`,
+    license: `${base}/license`,
+    acquireLicensePage: `${base}/contact`,
+  })),
+};
+---
+
+{
+  photos.length === 0 ? (
+    <p class="empty">
+      No photos yet. Drop image files into <code>src/assets/{collection}/</code> and they'll appear here.
+    </p>
+  ) : (
+    <section class="calendar-grid" aria-label={`${collection} photographs`}>
+      {photos.map((photo, i) => (
+        <figure class="calendar-item">
+          <button
+            class="photo-tile"
+            type="button"
+            aria-label={`${photo.alt} — view larger`}
+            data-full={photo.full}
+            data-alt={photo.alt}
+            data-caption={photo.caption}
+          >
+            <img
+              class="photo__img"
+              src={photo.src}
+              srcset={photo.srcset}
+              sizes={GRID_SIZES}
+              alt={photo.alt}
+              loading={i < 4 ? 'eager' : 'lazy'}
+              decoding="async"
+              draggable={false}
+            />
+          </button>
+          {photo.caption && <figcaption class="calendar-caption">{photo.caption}</figcaption>}
+        </figure>
+      ))}
+    </section>
+  )
+}
+
+<Lightbox />
+
+<script type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd)} />

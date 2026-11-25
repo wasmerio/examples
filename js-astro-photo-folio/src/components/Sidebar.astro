@@ -1,0 +1,138 @@
+---
+import Logo from './Logo.astro';
+import Icon from './Icon.astro';
+import { site, nav, social } from '../config';
+
+// Normalise the current path (strip trailing slash) for active-link matching.
+// A link is active on its own page and on any page beneath it (e.g. "Tech Blog"
+// stays active while reading a post), but "/" only matches the home page.
+const norm = (p: string) => p.replace(/\/+$/, '') || '/';
+const current = norm(Astro.url.pathname);
+const isActive = (href: string) => {
+  const h = norm(href);
+  return h === current || (h !== '/' && current.startsWith(h + '/'));
+};
+---
+
+<header class="sidebar">
+  <div class="sidebar__inner">
+    <a class="brand" href="/" aria-label={`${site.name} — home`}>
+      <Logo class="brand__mark" />
+      <span class="brand__names">
+        <span class="brand__name">{site.name}</span>
+        {site.nameZh && (
+          <span class="brand__zh"><span class="brand__rule"></span>{site.nameZh}<span class="brand__rule"></span></span>
+        )}
+      </span>
+    </a>
+
+    <div class="socials">
+      <a class="socials__link" href={social.instagram} target="_blank" rel="noopener noreferrer" aria-label="Instagram">
+        <Icon name="instagram" />
+      </a>
+      <a class="socials__link" href={social.linkedin} target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+        <Icon name="linkedin" />
+      </a>
+      <a class="socials__link" href={social.github} target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+        <Icon name="github" />
+      </a>
+      <button class="socials__link theme-toggle" type="button" aria-label="Toggle dark mode" aria-pressed="false" title="Toggle dark mode">
+        <Icon name="moon" class="theme-toggle__moon" />
+        <Icon name="sun" class="theme-toggle__sun" />
+      </button>
+    </div>
+
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav">
+      <span class="nav-toggle__label">Menu</span>
+    </button>
+
+    <nav id="primary-nav" class="nav" aria-label="Primary">
+      <ul class="nav__list">
+        {
+          nav.map((item) => (
+            <li>
+              <a
+                href={item.href}
+                class:list={['nav__link', { 'is-active': isActive(item.href) }]}
+                aria-current={isActive(item.href) ? 'page' : undefined}
+              >
+                {item.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<script>
+  const sidebar = document.querySelector('.sidebar');
+  const toggle = sidebar?.querySelector<HTMLButtonElement>('.nav-toggle');
+  const label = toggle?.querySelector('.nav-toggle__label');
+  const menu = sidebar?.querySelector<HTMLElement>('.nav');
+
+  if (sidebar && toggle && menu) {
+    const inner = sidebar.querySelector<HTMLElement>('.sidebar__inner');
+
+    const setOpen = (open: boolean) => {
+      // Measure the header (logo/brand/socials) so the full-screen menu can
+      // reserve exactly that much space and never ride up under the logo.
+      if (open && inner) {
+        sidebar.style.setProperty('--header-h', `${Math.ceil(inner.getBoundingClientRect().height)}px`);
+      }
+      sidebar.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+      if (label) label.textContent = open ? 'Close' : 'Menu';
+      document.body.style.overflow = open ? 'hidden' : '';
+    };
+
+    toggle.addEventListener('click', () => setOpen(!sidebar.classList.contains('is-open')));
+
+    // Tap the backdrop (empty area, not a link) to close.
+    menu.addEventListener('click', (e) => {
+      if (e.target === menu) setOpen(false);
+    });
+
+    // Close after tapping a link.
+    sidebar.querySelectorAll('.nav__link').forEach((link) =>
+      link.addEventListener('click', () => setOpen(false))
+    );
+
+    // Close on Escape.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && sidebar.classList.contains('is-open')) setOpen(false);
+    });
+  }
+</script>
+
+<script>
+  // Dark-mode toggle. The initial theme is applied before paint by the inline
+  // script in Layout.astro; here we flip it on click and remember the choice.
+  const themeToggle = document.querySelector<HTMLButtonElement>('.theme-toggle');
+  if (themeToggle) {
+    const root = document.documentElement;
+    const sync = () =>
+      themeToggle.setAttribute('aria-pressed', String(root.dataset.theme === 'dark'));
+    sync();
+    themeToggle.addEventListener('click', () => {
+      const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      try {
+        localStorage.setItem('theme', next);
+      } catch {}
+      sync();
+    });
+
+    // Follow live OS light/dark changes until the visitor makes a manual choice.
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+      let stored = null;
+      try {
+        stored = localStorage.getItem('theme');
+      } catch {}
+      if (stored) return;
+      root.dataset.theme = e.matches ? 'dark' : 'light';
+      sync();
+    });
+  }
+</script>

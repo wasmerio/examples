@@ -1,0 +1,57 @@
+---
+import type { ImageMetadata } from 'astro';
+import { renderPhoto, POST_SIZES, captionFromFilename } from '../lib/photos';
+
+// A single in-post photo — rendered through the same web-resolution pipeline as
+// the galleries (responsive WebP, capped at MAX_WEB) and wired to the shared
+// Lightbox that BlogPost includes. Drop images in src/assets/blog/ and reference
+// them by filename (no import needed):
+//
+//     <Photo src="lake-erie-fog.jpg" caption="Lake Erie, fog" />
+//
+interface Props {
+  src: string; // filename within src/assets/blog/ (subfolders allowed)
+  alt?: string; // defaults to the caption, else derived from the filename
+  caption?: string; // optional visible caption (also shown in the lightbox)
+}
+const { src, alt, caption } = Astro.props;
+
+const images = import.meta.glob<{ default: ImageMetadata }>(
+  '../assets/blog/**/*.{jpg,jpeg,png,webp,avif,JPG,JPEG,PNG,WEBP,AVIF}',
+  { eager: true }
+);
+const match = Object.entries(images).find(
+  ([path]) => path.endsWith('/' + src) || path.split('/').pop() === src
+);
+if (!match) {
+  throw new Error(
+    `<Photo src="${src}"> not found in src/assets/blog/. Add the file there and reference it by filename.`
+  );
+}
+
+const altText = alt ?? caption ?? captionFromFilename(src);
+const photo = await renderPhoto(match[1].default);
+---
+
+<figure class="post-figure">
+  <button
+    class="photo-tile"
+    type="button"
+    aria-label={`${altText} — view larger`}
+    data-full={photo.full}
+    data-alt={altText}
+    data-caption={caption ?? ''}
+  >
+    <img
+      class="photo__img"
+      src={photo.src}
+      srcset={photo.srcset}
+      sizes={POST_SIZES}
+      alt={altText}
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+    />
+  </button>
+  {caption && <figcaption class="post-figure__caption">{caption}</figcaption>}
+</figure>

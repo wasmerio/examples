@@ -1,0 +1,59 @@
+---
+// Share control. Uses the native share sheet where available (most phones and
+// modern desktops); otherwise copies the page link to the clipboard. Entirely
+// client-side — no network request, so it needs no CSP allowance.
+interface Props {
+  title?: string;
+}
+const { title } = Astro.props;
+---
+
+<button class="share" type="button" data-share-title={title} aria-label="Share this post">
+  <svg class="share__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+    <circle cx="18" cy="5" r="2.6" stroke="currentColor" stroke-width="1.6" />
+    <circle cx="6" cy="12" r="2.6" stroke="currentColor" stroke-width="1.6" />
+    <circle cx="18" cy="19" r="2.6" stroke="currentColor" stroke-width="1.6" />
+    <path d="M8.3 10.8l7.4-4.3M8.3 13.2l7.4 4.3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+  </svg>
+  <span class="share__label">Share</span>
+</button>
+
+<script>
+  const buttons = document.querySelectorAll<HTMLButtonElement>('.share');
+
+  buttons.forEach((btn) => {
+    const labelEl = btn.querySelector<HTMLElement>('.share__label');
+    const defaultLabel = labelEl?.textContent ?? 'Share';
+
+    btn.addEventListener('click', async () => {
+      const url = location.href;
+      const title = btn.dataset.shareTitle || document.title;
+
+      // 1) Native share sheet (mobile + modern desktop).
+      if (navigator.share) {
+        try {
+          await navigator.share({ title, url });
+        } catch {
+          /* user dismissed the sheet — nothing to do */
+        }
+        return;
+      }
+
+      // 2) Fallback: copy the link to the clipboard, with brief confirmation.
+      try {
+        await navigator.clipboard.writeText(url);
+        if (labelEl) {
+          labelEl.textContent = 'Link copied';
+          btn.classList.add('is-copied');
+          setTimeout(() => {
+            labelEl.textContent = defaultLabel;
+            btn.classList.remove('is-copied');
+          }, 2000);
+        }
+      } catch {
+        // 3) Last resort if clipboard access is blocked.
+        window.prompt('Copy this link:', url);
+      }
+    });
+  });
+</script>

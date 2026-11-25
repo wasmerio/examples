@@ -1,0 +1,148 @@
+---
+import { render } from 'astro:content'
+import { ChevronLeftIcon } from 'lucide-react'
+
+import Layout from '@/layouts/Layout.astro'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import FeaturedWorks from '@/components/shared/featured-works/featured-works.astro'
+import ReadingProgressPill from '@/components/case-study/reading-progress-pill'
+import { mdxComponents } from '@/components/case-study/mdx-components'
+
+import UsersGroupIcon from '@/assets/svg/users-group-icon'
+import CalendarIcon from '@/assets/svg/calendar-icon'
+import UserCircleIcon from '@/assets/svg/user-circle-icon'
+import RulerPenIcon from '@/assets/svg/ruler-pen-icon'
+
+import { getAllCaseStudies, getCaseStudies } from '@/lib/case-studies'
+
+export async function getStaticPaths() {
+  const caseStudies = await getAllCaseStudies()
+
+  return caseStudies.map(entry => ({
+    params: { slug: entry.data.slug },
+    props: entry
+  }))
+}
+
+const caseStudy = Astro.props
+const { data } = caseStudy
+
+const { Content, headings } = await render(caseStudy)
+
+const allCaseStudies = await getCaseStudies()
+const otherCaseStudies = allCaseStudies.filter(item => item.slug !== data.slug).slice(0, 2)
+
+const heroImageSrc = data.heroImage ?? data.image
+
+const metaItems = [
+  { label: 'Organisation', value: data.organisation, icon: UsersGroupIcon },
+  { label: 'Role', value: data.role, icon: UserCircleIcon },
+  { label: 'Duration', value: data.duration, icon: CalendarIcon }
+].filter(item => item.value)
+
+const schema = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'BlogPosting',
+      headline: data.title,
+      description: data.description,
+      datePublished: data.publishedAt,
+      author: { '@type': 'Person', name: 'Zolt Mercer' },
+      keywords: data.tools?.join(', '),
+      articleSection: data.organisation
+    },
+    {
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Home', item: '/' },
+        { '@type': 'ListItem', position: 2, name: data.title, item: `/case-study/${data.slug}/` }
+      ]
+    }
+  ]
+}
+---
+
+<Layout title={`Case Study: ${data.title}`} description={data.description} type='article' schema={schema}>
+  <ReadingProgressPill client:load headings={headings} contentId='case-study-content' />
+
+  <section class='mx-auto space-y-8 border-b px-4 pb-8 text-center max-sm:pt-20 sm:px-6 sm:py-24 lg:px-10.5'>
+    <a
+      href='/'
+      class='text-muted-foreground hover:text-foreground mr-auto flex items-center gap-2 text-base no-underline'
+    >
+      <Button
+        size='icon-xs'
+        variant='outline'
+        className='text-foreground size-6 border-transparent bg-(--background-darker) hover:bg-(--background-darker) dark:border-transparent'
+      >
+        <ChevronLeftIcon className='size-4' />
+      </Button>
+      Back to home
+    </a>
+
+    <h1 class='text-card-foreground text-3xl leading-[1.2] font-semibold sm:text-4xl md:text-5xl lg:text-[64px]'>
+      {data.title}
+    </h1>
+
+    {
+      heroImageSrc && (
+        <div class='bg-card relative w-full overflow-hidden rounded-3xl p-2 sm:p-3 dark:bg-white/10'>
+          <div class='bg-background relative size-full overflow-hidden rounded-2xl'>
+            <img src={heroImageSrc} alt={data.title ?? ''} class='object-cover' />
+          </div>
+        </div>
+      )
+    }
+
+    {
+      metaItems.length > 0 && (
+        <div class='mx-auto grid max-w-xl justify-start gap-4 pt-16 text-left sm:grid-cols-2 sm:justify-center'>
+          {metaItems.map(item => (
+            <div class='flex w-fit items-center gap-3'>
+              <div class='flex size-13.5 shrink-0 items-center justify-center rounded-xl bg-(--background-darker)'>
+                <item.icon className='text-accent size-8' />
+              </div>
+              <div>
+                <p class='text-muted-foreground text-xs tracking-wide uppercase'>{item.label}</p>
+                <p class='font-medium'>{item.value}</p>
+              </div>
+            </div>
+          ))}
+
+          {data.tools && data.tools.length > 0 && (
+            <div class='flex items-center gap-3 max-sm:justify-start'>
+              <div class='flex size-13.5 shrink-0 items-center justify-center rounded-xl bg-(--background-darker)'>
+                <RulerPenIcon className='text-accent size-8' />
+              </div>
+              <div>
+                <p class='text-muted-foreground text-xs tracking-wide uppercase'>Tools & Technologies</p>
+                <div class='mt-1 flex flex-wrap gap-1.5'>
+                  {data.tools.map(tool => (
+                    <Badge variant='secondary' className='text-foreground bg-(--background-darker) font-normal'>
+                      {tool}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }
+
+    <div id='case-study-content' class='mt-16 text-left'>
+      <Content components={mdxComponents} />
+    </div>
+  </section>
+
+  <FeaturedWorks
+    caseStudies={otherCaseStudies}
+    id='other-works'
+    eyebrow='Other works'
+    layout='vertical'
+    title='Have a look at my other work'
+    showBorder={false}
+  />
+</Layout>

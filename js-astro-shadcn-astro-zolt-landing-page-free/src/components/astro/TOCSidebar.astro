@@ -1,0 +1,201 @@
+---
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { CircleIcon } from 'lucide-react'
+
+type Props = {
+  headings: { slug: string; text: string; depth: number }[]
+}
+
+const { headings } = Astro.props
+
+// Build hierarchical tree structure for headings
+interface TocItem {
+  slug: string
+  text: string
+  depth: number
+  children: TocItem[]
+}
+
+function buildTocTree(headings: { slug: string; text: string; depth: number }[]): TocItem[] {
+  const root: TocItem[] = []
+  const stack: TocItem[] = []
+
+  headings.forEach(heading => {
+    const item: TocItem = {
+      slug: heading.slug,
+      text: heading.text,
+      depth: heading.depth,
+      children: []
+    }
+
+    // Find the appropriate parent
+    while (stack.length > 0 && stack[stack.length - 1].depth >= heading.depth) {
+      stack.pop()
+    }
+
+    // Add to parent's children or root
+    if (stack.length === 0) {
+      root.push(item)
+    } else {
+      stack[stack.length - 1].children.push(item)
+    }
+
+    stack.push(item)
+  })
+
+  return root
+}
+
+const groupedHeadings = buildTocTree(headings)
+---
+
+{
+  groupedHeadings.length > 0 && (
+    <div class='sticky top-20 hidden max-h-[calc(100vh-5rem)] md:block'>
+      <div class='mb-4 text-sm font-semibold'>On This Page</div>
+      <ScrollArea className='max-h-[calc(100vh-8rem)]'>
+        <nav>
+          <ul class='flex list-none flex-col gap-y-3'>
+            {groupedHeadings.map(item => (
+              <li>
+                <a
+                  href={`#${item.slug}`}
+                  class='text-foreground/60 hover:text-foreground toc-link flex items-center gap-2 text-sm no-underline transition-colors duration-200'
+                  data-heading-link={item.slug}
+                  data-depth='0'
+                >
+                  <CircleIcon className='size-2 fill-current' />
+                  <span>{item.text}</span>
+                </a>
+
+                {item.children.length > 0 && (
+                  <ul class='mt-2.5 ml-5 flex list-none flex-col gap-y-2.5'>
+                    {item.children.map(child => (
+                      <li>
+                        <a
+                          href={`#${child.slug}`}
+                          class='text-foreground/50 hover:text-foreground toc-link flex items-center gap-2 text-sm no-underline transition-colors duration-200'
+                          data-heading-link={child.slug}
+                          data-depth='1'
+                        >
+                          <CircleIcon className='size-1.5' />
+                          <span>{child.text}</span>
+                        </a>
+
+                        {child.children.length > 0 && (
+                          <ul class='mt-2.5 ml-5 flex list-none flex-col gap-y-2.5'>
+                            {child.children.map(grandchild => (
+                              <li>
+                                <a
+                                  href={`#${grandchild.slug}`}
+                                  class='text-foreground/40 hover:text-foreground toc-link flex items-center gap-2 text-sm no-underline transition-colors duration-200'
+                                  data-heading-link={grandchild.slug}
+                                  data-depth='2'
+                                >
+                                  <CircleIcon className='size-1.5' />
+                                  <span>{grandchild.text}</span>
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </ScrollArea>
+    </div>
+  )
+}
+
+<script>
+  const HEADER_OFFSET = 150
+
+  function highlightActiveHeading() {
+    const headings = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.prose h2[id], .prose h3[id], .prose h4[id], .prose h5[id], .prose h6[id]'
+      )
+    )
+    if (headings.length === 0) return
+
+    const scrollY = window.scrollY || window.pageYOffset
+    let activeId = ''
+
+    // Find the last heading above the scroll position
+    for (let i = headings.length - 1; i >= 0; i--) {
+      const heading = headings[i]
+      const headingTop = heading.getBoundingClientRect().top + scrollY
+      if (headingTop - HEADER_OFFSET <= scrollY) {
+        activeId = heading.id
+        break
+      }
+    }
+
+    if (!activeId && headings.length > 0 && scrollY < headings[0].getBoundingClientRect().top + scrollY) {
+      activeId = headings[0].id
+    }
+
+    const links = document.querySelectorAll('[data-heading-link]')
+    links.forEach(link => {
+      const linkId = link.getAttribute('data-heading-link')
+      const depth = parseInt(link.getAttribute('data-depth') || '0', 10)
+
+      // Remove all highlight/opacity classes
+      link.classList.remove(
+        'text-foreground',
+        'font-medium',
+        'text-foreground/60',
+        'text-foreground/50',
+        'text-foreground/40'
+      )
+
+      if (linkId === activeId) {
+        link.classList.add('text-foreground', 'font-medium')
+      } else {
+        // Restore original opacity based on depth
+        if (depth === 0) {
+          link.classList.add('text-foreground/60')
+        } else if (depth === 1) {
+          link.classList.add('text-foreground/50')
+        } else {
+          link.classList.add('text-foreground/40')
+        }
+      }
+    })
+  }
+
+  // Smooth scroll behavior
+  function setupSmoothScroll() {
+    const links = document.querySelectorAll('.toc-link')
+
+    links.forEach(link => {
+      link.addEventListener('click', e => {
+        e.preventDefault()
+        const href = link.getAttribute('href')
+        if (href) {
+          const target = document.querySelector(href)
+          if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            // Update active state after scrolling
+            setTimeout(() => highlightActiveHeading(), 100)
+          }
+        }
+      })
+    })
+  }
+
+  document.addEventListener('astro:page-load', () => {
+    highlightActiveHeading()
+    setupSmoothScroll()
+    window.addEventListener('scroll', highlightActiveHeading, { passive: true })
+  })
+
+  document.addEventListener('astro:before-swap', () => {
+    window.removeEventListener('scroll', highlightActiveHeading)
+  })
+</script>

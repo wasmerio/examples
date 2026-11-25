@@ -1,0 +1,308 @@
+---
+import Layout from '@/layouts/Layout.astro'
+import TOCSidebar from '@/components/astro/TOCSidebar.astro'
+
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator
+} from '@/components/ui/breadcrumb'
+import { getAllPosts, getAdjacentPosts, getTOCHeadings, calculateReadTime } from '@/lib/data-utils'
+import { formatPostDate } from '@/lib/utils'
+import { AuthorMetadata } from '@/components/blog/AuthorAvatar'
+
+import { render } from 'astro:content'
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+
+export async function getStaticPaths() {
+  const posts = await getAllPosts()
+  return posts.map(post => ({
+    params: { slug: post.data.slug },
+    props: post
+  }))
+}
+
+const post = Astro.props
+const currentPostId = post.data.slug
+
+// Render post content
+const { Content } = await render(post)
+
+// Get navigation and TOC
+const navigation = await getAdjacentPosts(currentPostId)
+const tocHeadings = await getTOCHeadings(currentPostId)
+
+// Calculate read time dynamically from post body
+const postContent = post.body || ''
+const readTime = calculateReadTime(postContent)
+
+// Comprehensive Schema.org structured data
+const schema = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    // BlogPosting schema
+    {
+      '@type': 'BlogPosting',
+      '@id': `${Astro.site}blog/${post.data.slug}/#article`,
+      headline: post.data.title,
+      description: post.data.description,
+      image: {
+        '@type': 'ImageObject',
+        url: post.data.imageUrl ? new URL(post.data.imageUrl, Astro.site).toString() : undefined,
+        width: 1200,
+        height: 630
+      },
+      datePublished: post.data.pubDate,
+      dateModified: post.data.pubDate,
+      author: {
+        '@type': 'Person',
+        name: post.data.author
+      },
+      publisher: {
+        '@type': 'Organization',
+        name: 'Shadcn Studio',
+        logo: {
+          '@type': 'ImageObject',
+          url: new URL('/images/site-logo.png', Astro.site).toString()
+        }
+      },
+      mainEntityOfPage: {
+        '@type': 'WebPage',
+        '@id': `${Astro.site}blog/${post.data.slug}/`
+      },
+      keywords: post.data.tags?.join(', '),
+      articleSection: post.data.category,
+      inLanguage: 'en-US',
+      isPartOf: {
+        '@type': 'Blog',
+        '@id': `${Astro.site}blog/#blog`,
+        name: 'Shadcn Studio Blog'
+      },
+      wordCount: postContent.trim().split(/\s+/).length,
+      timeRequired: `PT${readTime}M`
+    },
+
+    // BreadcrumbList schema
+    {
+      '@type': 'BreadcrumbList',
+      '@id': `${Astro.site}blog/${post.data.slug}/#breadcrumb`,
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Home',
+          item: Astro.site?.toString() || ''
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: 'Blog',
+          item: `${Astro.site}blog/`
+        },
+        {
+          '@type': 'ListItem',
+          position: 3,
+          name: post.data.title,
+          item: `${Astro.site}blog/${post.data.slug}/`
+        }
+      ]
+    },
+
+    // WebPage schema
+    {
+      '@type': 'WebPage',
+      '@id': `${Astro.site}blog/${post.data.slug}/#webpage`,
+      url: `${Astro.site}blog/${post.data.slug}/`,
+      name: post.data.title,
+      description: post.data.description,
+      datePublished: post.data.pubDate,
+      dateModified: post.data.pubDate,
+      inLanguage: 'en-US',
+      isPartOf: {
+        '@type': 'WebSite',
+        '@id': `${Astro.site}#website`
+      },
+      breadcrumb: {
+        '@id': `${Astro.site}blog/${post.data.slug}/#breadcrumb`
+      },
+      primaryImageOfPage: {
+        '@id': `${Astro.site}blog/${post.data.slug}/#primaryimage`
+      }
+    }
+  ]
+}
+---
+
+<Layout
+  title={post.data.title}
+  description={post.data.description}
+  image={post.data.imageUrl}
+  type='article'
+  publishedTime={post.data.pubDate}
+  author={post.data.author}
+  schema={schema}
+  keywords={post.data.tags?.join(', ')}
+>
+  <main class='flex flex-col'>
+    <section class='py-8 sm:pt-16 sm:pb-24'>
+      <div class='mx-auto max-w-7xl space-y-8 px-4 sm:px-6 lg:space-y-16 lg:px-8'>
+        <div class='gap-16 md:grid md:grid-cols-5 lg:grid-cols-7'>
+          <!-- Table of Contents Sidebar -->
+          <div class='hidden md:col-span-2 md:block lg:col-span-2'>
+            {tocHeadings.length > 0 && <TOCSidebar headings={tocHeadings} />}
+          </div>
+
+          <!-- Main Content -->
+          <div class='space-y-12 md:col-span-3 lg:col-span-5'>
+            <!-- Breadcrumbs -->
+            <div class='space-y-6'>
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem>
+                    <BreadcrumbLink href='/'>Home</BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbLink href='/blog'>Blog</BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>{post.data.title}</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
+
+              <!-- Title and Description -->
+              <h1 class='text-foreground text-4xl font-semibold'>{post.data.title}</h1>
+              <p class='text-muted-foreground text-xl'>{post.data.description}</p>
+
+              <Separator />
+
+              <!-- Post Metadata -->
+
+              <div class='flex justify-between'>
+                <div class='flex items-center gap-3'>
+                  <AuthorMetadata client:load avatarUrl={post.data.avatarUrl} author={post.data.author} />
+                  <div class='flex flex-col gap-1'>
+                    <span class='text-muted-foreground text-sm'>Written by</span>
+                    <span class='text-foreground text-sm font-medium'>{post.data.author}</span>
+                  </div>
+                </div>
+                <div class='flex flex-col gap-1.5'>
+                  <span class='text-muted-foreground text-sm'>Read Time</span>
+                  <span class='text-foreground text-sm font-medium'>{readTime} minute read</span>
+                </div>
+                <div class='flex flex-col gap-1.5'>
+                  <span class='text-muted-foreground text-sm'>Posted on</span>
+
+                  <span class='text-foreground text-sm font-medium'>{formatPostDate(post.data.pubDate)}</span>
+                </div>
+              </div>
+
+              <!-- Tags -->
+              {
+                post.data.tags && post.data.tags.length > 0 && (
+                  <div class='flex flex-wrap gap-2'>
+                    {post.data.tags.map(tag => {
+                      return (
+                        <div class='group relative'>
+                          <Badge variant='secondary'>{tag}</Badge>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              }
+            </div>
+
+            <!-- Hero Image -->
+            {
+              post.data.imageUrl && (
+                <div itemprop='image' itemscope itemtype='https://schema.org/ImageObject'>
+                  <img
+                    src={post.data.imageUrl}
+                    alt={post.data.imageAlt || post.data.title}
+                    class='max-h-148 w-full rounded-xl'
+                    itemprop='url contentUrl'
+                    width='1200'
+                    height='630'
+                  />
+                  <meta itemprop='width' content='1200' />
+                  <meta itemprop='height' content='630' />
+                </div>
+              )
+            }
+
+            <!-- Article Content -->
+            <article
+              id='content'
+              class='prose dark:prose-invert max-w-none'
+              itemscope
+              itemtype='https://schema.org/BlogPosting'
+            >
+              <meta itemprop='headline' content={post.data.title} />
+              <meta itemprop='description' content={post.data.description} />
+              <meta itemprop='datePublished' content={post.data.pubDate} />
+              <meta itemprop='author' content={post.data.author} />
+              <div itemprop='articleBody'>
+                <Content />
+              </div>
+            </article>
+
+            <!-- Post Navigation -->
+            <div class='flex w-full justify-between pt-8'>
+              {
+                navigation.older ? (
+                  <a href={`/blog/${navigation.older.data.slug}`} class='no-underline'>
+                    <Button className='rounded-xl' variant='outline'>
+                      <ChevronLeftIcon className='size-4' />
+                      Previous Post
+                    </Button>
+                  </a>
+                ) : (
+                  <Button className='rounded-xl' variant='outline' disabled>
+                    <ChevronLeftIcon className='size-4' />
+                    Previous Post
+                  </Button>
+                )
+              }
+
+              {
+                navigation.newer ? (
+                  <a class='ms-auto no-underline' href={`/blog/${navigation.newer.data.slug}`}>
+                    <Button className='rounded-xl' variant='outline'>
+                      Next Post
+                      <ChevronRightIcon className='size-4' />
+                    </Button>
+                  </a>
+                ) : (
+                  <Button className='rounded-xl ms-auto' variant='outline' disabled>
+                    Next Post
+                    <ChevronRightIcon className='size-4' />
+                  </Button>
+                )
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    if (document.querySelector('.katex')) {
+      if (!document.querySelector('link[href*="katex.min.css"]')) {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = 'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css'
+        document.head.appendChild(link)
+      }
+    }
+  </script>
+</Layout>

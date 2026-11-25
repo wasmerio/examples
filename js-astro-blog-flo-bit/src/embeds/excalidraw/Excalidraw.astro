@@ -1,0 +1,114 @@
+---
+import { load } from "cheerio";
+
+interface Props {
+  href: string;
+  src: string;
+  alt: string;
+  caption?: string;
+  class?: string;
+}
+
+const { href, src, alt, caption, class: className } = Astro.props;
+
+// Import all SVG files from /src/ as raw strings
+const svgFiles = import.meta.glob("/src/**/*.svg", {
+  query: "?raw",
+  import: "default",
+});
+
+let svgContent = "";
+
+if ((src || href).startsWith("<svg")) {
+  // If src is an SVG string
+  svgContent = src || href;
+} else {
+  let file = svgFiles[src || href];
+  if (!file) {
+    console.error(`SVG file not found: ${src || href}`);
+    svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20 120 50" width="100%" height="100%">
+      <text x="10" y="50" fill="red">SVG not found</text>
+    </svg>`;
+  } else {
+    svgContent = (await file()) as string;
+  }
+}
+
+// Function to modify the SVG using cheerio
+function modifySvg(svgString: string): string {
+  const $ = load(svgString, { xmlMode: true });
+
+  const svg = $("svg");
+  svg.attr("width", "100%");
+  svg.attr("height", "100%");
+  svg.addClass("w-full h-auto");
+
+  $("text").each((_, el) => {
+    $(el).removeAttr("fill");
+    $(el).addClass("fill-skin-base");
+  });
+
+  $("rect").each((_, el) => {
+    $(el).removeAttr("fill");
+    $(el).addClass("fill-skin-soft");
+  });
+
+  $("path").each((_, el) => {
+    $(el).removeAttr("stroke");
+    $(el).addClass("stroke-skin-accent");
+    if ($(el).attr("fill") !== "none") {
+      $(el).addClass("fill-skin-soft");
+      $(el).removeAttr("fill");
+    }
+  });
+
+  $("g").each((_, el) => {
+    $(el).addClass("excalidraw-element");
+  });
+
+  return $.html();
+}
+
+let modifiedSvg = "";
+
+try {
+  modifiedSvg = modifySvg(svgContent);
+} catch (error) {
+  console.error("Error processing SVG:", error);
+  modifiedSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <text x="10" y="50" fill="red">Error loading SVG</text>
+  </svg>`;
+}
+---
+
+<figure class:list={["mx-auto max-w-full overflow-hidden my-8", className]}>
+  <div class="excalidraw-svg" aria-label={alt} set:html={modifiedSvg} />
+  {
+    caption && (
+      <figcaption class="text-center mt-4 text-sm text-base-700 dark:text-base-300 italic">
+        {caption}
+      </figcaption>
+    )
+  }
+</figure>
+
+<style>
+  .excalidraw-svg {
+    @apply w-full max-w-full overflow-hidden;
+  }
+  :global(.excalidraw-svg svg) {
+    @apply w-full h-auto;
+  }
+  :global(.excalidraw-svg .fill-skin-base) {
+    @apply fill-base-800 dark:fill-base-100;
+  }
+  :global(.excalidraw-svg .fill-skin-soft) {
+    @apply fill-accent-600 dark:fill-accent-500;
+  }
+  :global(.excalidraw-svg .stroke-skin-accent) {
+    @apply stroke-accent-600 dark:stroke-accent-500;
+  }
+  :global(.excalidraw-svg .excalidraw-element) {
+    @apply transition-all duration-300;
+  }
+</style>

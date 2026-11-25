@@ -1,0 +1,180 @@
+---
+import ProductLayouts from "@/functional-components/product/ProductLayouts";
+import ProductFilters from "@/functional-components/ProductFilters";
+import ProductLayoutViews from "@/functional-components/ProductLayoutViews";
+import Base from "@/layouts/Base.astro";
+import { defaultSort, sorting } from "@/lib/constants";
+import {
+  getCollectionProducts,
+  getCollections,
+  getHighestProductPrice,
+  getProducts,
+  getVendors,
+} from "@/lib/shopify";
+import type { PageInfo, Product } from "@/lib/shopify/types";
+import CallToAction from "@/partials/CallToAction.astro";
+
+const searchParams = Astro.url.searchParams;
+const searchParamsObject = Object.fromEntries(searchParams.entries());
+
+const sort = searchParamsObject.sort || "";
+const searchValue = searchParamsObject.q || "";
+const minPrice = searchParamsObject.minPrice || "";
+const maxPrice = searchParamsObject.maxPrice || "";
+const brand = searchParamsObject.b || "";
+const category = searchParamsObject.c || "all";
+const tag = searchParamsObject.t || "";
+const cursor = searchParamsObject.cursor || null;
+
+const { sortKey, reverse } =
+  sorting.find((item) => item.slug === sort) || defaultSort;
+
+let productsData: any;
+let vendorsWithCounts: { vendor: string; productCount: number }[] = [];
+let categoriesWithCounts: { category: string; productCount: number }[] = [];
+
+if (searchValue || brand || minPrice || maxPrice || category || tag) {
+  let queryString = "";
+
+  if (minPrice || maxPrice) {
+    queryString += `variants.price:<=${maxPrice} variants.price:>=${minPrice}`;
+  }
+
+  if (searchValue) {
+    queryString += ` ${searchValue}`;
+  }
+
+  if (brand) {
+    Array.isArray(brand)
+      ? (queryString += `${brand.map((b) => `(vendor:${b})`).join(" OR ")}`)
+      : (queryString += `vendor:"${brand}"`);
+  }
+
+  if (tag) {
+    queryString += ` ${tag}`;
+  }
+
+  const query = {
+    sortKey,
+    reverse,
+    query: queryString,
+    cursor: cursor || undefined,
+  };
+
+  try {
+    productsData =
+      category && category !== "all"
+        ? await getCollectionProducts({
+            collection: category,
+            sortKey,
+            reverse,
+          })
+        : await getProducts(query);
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    productsData = { products: [] };
+  }
+
+  const uniqueVendors: string[] = [
+    ...new Set(
+      ((productsData?.products as Product[]) || []).map((product: Product) =>
+        String(product?.vendor || "")
+      )
+    ),
+  ];
+
+  const uniqueCategories: string[] = [
+    ...new Set(
+      ((productsData?.products as Product[]) || []).flatMap(
+        (product: Product) =>
+          product.collections.nodes.map(
+            (collectionNode: any) => collectionNode.title || ""
+          )
+      )
+    ),
+  ];
+
+  vendorsWithCounts = uniqueVendors.map((vendor: string) => {
+    const productCount = (productsData?.products || []).filter(
+      (product: Product) => product?.vendor === vendor
+    ).length;
+    return { vendor, productCount };
+  });
+
+  categoriesWithCounts = uniqueCategories.map((category: string) => {
+    const productCount = ((productsData?.products as Product[]) || []).filter(
+      (product: Product) =>
+        product.collections.nodes.some(
+          (collectionNode: any) => collectionNode.title === category
+        )
+    ).length;
+    return { category, productCount };
+  });
+} else {
+  // Fetch all products
+  try {
+    productsData = await getProducts({
+      sortKey,
+      reverse,
+      cursor: cursor || undefined,
+    });
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    productsData = { products: [] };
+  }
+}
+
+const categories = await getCollections();
+const vendors = await getVendors({});
+
+const tags = [
+  ...new Set(
+    (
+      productsData as { pageInfo: PageInfo; products: Product[] }
+    )?.products.flatMap((product: Product) => product.tags)
+  ),
+];
+
+const maxPriceData = await getHighestProductPrice();
+
+const initialProducts = productsData.products;
+const initialPageInfo = productsData.pageInfo;
+---
+
+<Base title="Products">
+  <ProductLayouts
+    categories={categories}
+    vendors={vendors}
+    tags={tags}
+    maxPriceData={maxPriceData}
+    vendorsWithCounts={vendorsWithCounts}
+    categoriesWithCounts={categoriesWithCounts}
+    client:only="react"
+  />
+
+  <div class="container">
+    <div class="row">
+      <div class="col-3 hidden lg:block -mt-14">
+        <ProductFilters
+          categories={categories}
+          vendors={vendors}
+          tags={tags}
+          maxPriceData={maxPriceData!}
+          vendorsWithCounts={vendorsWithCounts}
+          categoriesWithCounts={categoriesWithCounts}
+          client:only="react"
+        />
+      </div>
+
+      <ProductLayoutViews
+        initialProducts={initialProducts}
+        initialPageInfo={initialPageInfo}
+        sortKey={sortKey}
+        reverse={reverse}
+        searchValue={searchValue}
+        client:only="react"
+      />
+      <CallToAction />
+    </div>
+  </div>
+</Base>

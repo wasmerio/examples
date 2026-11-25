@@ -1,0 +1,100 @@
+---
+import Icon from "@/components/ui/Icon.astro";
+import { isCommentViewCountEnabled } from "@/config/commentConfig";
+import { I18nKey, t } from "@/i18n";
+import { anchoredPopoverClass, popoverMotionClass } from "@/utils/motion";
+
+interface Props {
+  targetId: string;
+}
+
+const { targetId } = Astro.props;
+const menuId = `${targetId}-sort-menu`;
+const options = [
+  { value: "latest", label: t(I18nKey.sortLatest) },
+  ...(isCommentViewCountEnabled ? [{ value: "views", label: t(I18nKey.sortMostRead) }] : []),
+];
+---
+
+<post-sort class="relative flex-none" data-target={targetId}>
+  <button
+    class="group inline-flex h-10 cursor-pointer items-center gap-2 rounded-panel border border-border bg-panel px-4 text-sm text-text-soft transition-colors hover:border-border-strong hover:text-accent-strong focus-visible:border-focus-ring focus-visible:text-accent-strong focus-visible:outline-hidden"
+    type="button"
+    aria-label={t(I18nKey.postSort)}
+    aria-expanded="false"
+    popovertarget={menuId}
+  >
+    <span data-current-sort>{options[0].label}</span>
+    <Icon
+      class="size-4 rotate-90 text-muted transition-transform duration-200 ease-soft group-aria-expanded:-rotate-90"
+      name="chevron"
+      size={16}
+    />
+  </button>
+
+  <div
+    class:list={[
+      "z-10 w-max min-w-[anchor-size(width,var(--popover-trigger-width))] rounded-panel border border-border bg-panel p-1 supports-not-[top:anchor(bottom)]:min-w-(--popover-trigger-width)",
+      anchoredPopoverClass,
+      popoverMotionClass,
+    ]}
+    id={menuId}
+    data-anchored-popover
+    popover
+  >
+    {options.map(({ value, label }, index) => (
+      <button
+        class="group flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-start text-sm whitespace-nowrap text-text-soft transition-colors hover:bg-accent-soft hover:text-accent-strong focus-visible:bg-accent-soft focus-visible:text-accent-strong focus-visible:outline-hidden aria-pressed:text-accent-strong"
+        type="button"
+        aria-pressed={index === 0 ? "true" : "false"}
+        data-sort-option={value}
+        data-sort-label={label}
+      >
+        <span
+          class="grid size-4 shrink-0 place-items-center text-accent-strong opacity-0 transition-opacity duration-150 group-aria-pressed:opacity-100"
+          aria-hidden="true"
+        >
+          <Icon class="size-3.5" name="check" size={14} />
+        </span>
+        <span>{label}</span>
+      </button>
+    ))}
+  </div>
+</post-sort>
+
+<script>
+  import type { PostListElement } from "./postList";
+
+  class PostSortElement extends HTMLElement {
+    connectedCallback() {
+      const trigger = this.querySelector<HTMLButtonElement>("button[popovertarget]");
+      const menu = this.querySelector<HTMLElement>("[popover]");
+      const current = trigger?.querySelector("[data-current-sort]");
+      const targetId = this.dataset.target;
+
+      if (!trigger || !menu || !current || !targetId) return;
+
+      menu.ontoggle = () => {
+        trigger.setAttribute("aria-expanded", String(menu.matches(":popover-open")));
+      };
+
+      menu.onclick = (event) => {
+        const option =
+          event.target instanceof Element ? event.target.closest<HTMLButtonElement>("[data-sort-option]") : null;
+        const mode = option?.dataset.sortOption;
+        const list = document.getElementById(targetId) as PostListElement | null;
+        if (!option || (mode !== "latest" && mode !== "views") || !list?.sortBy) return;
+
+        list.sortBy(mode);
+        current.textContent = option.dataset.sortLabel ?? "";
+        menu.querySelectorAll("[data-sort-option]").forEach((button) => {
+          button.setAttribute("aria-pressed", String(button === option));
+        });
+        menu.hidePopover();
+        trigger.focus();
+      };
+    }
+  }
+
+  customElements.define("post-sort", PostSortElement);
+</script>

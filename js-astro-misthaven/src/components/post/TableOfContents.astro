@@ -1,0 +1,147 @@
+---
+import TableOfContentsItem from "@/components/post/TableOfContentsItem.astro";
+import Card from "@/components/ui/Card.astro";
+import Icon from "@/components/ui/Icon.astro";
+import { I18nKey, t } from "@/i18n";
+import type { MarkdownHeading } from "astro";
+
+interface Props {
+  headings: MarkdownHeading[];
+  variant: "sidebar" | "inline";
+}
+
+const { headings, variant } = Astro.props;
+let sectionIndex = 0;
+const items = headings
+  .filter(({ depth }) => depth >= 2 && depth <= 4)
+  .map((heading) => ({
+    ...heading,
+    sectionIndex: heading.depth === 2 ? ++sectionIndex : undefined,
+  }));
+---
+
+{items.length > 0 && variant === "sidebar" && (
+  <aside class="sticky top-4 mt-9 hidden w-sidebar shrink-0 wide:block" aria-label={t(I18nKey.tableOfContents)}>
+    <post-table-of-contents class="block">
+      <Card as="nav" class="p-4">
+        <h2 class="m-0 px-1 text-sm font-semibold tablet:text-base">{t(I18nKey.tableOfContents)}</h2>
+
+        <ol class="relative mt-4 flex flex-col gap-1">
+          <li
+            class="pointer-events-none absolute inset-x-0 top-0 rounded-panel bg-accent-soft opacity-0 transition-[top,height,opacity] duration-250 ease-soft"
+            data-toc-indicator
+            aria-hidden="true"
+          />
+          {items.map((item) => (
+            <TableOfContentsItem {...item} />
+          ))}
+        </ol>
+      </Card>
+    </post-table-of-contents>
+  </aside>
+)}
+
+{items.length > 0 && variant === "inline" && (
+  <details class="group border-b border-border [interpolate-size:allow-keywords] details-content:h-0 details-content:overflow-clip details-content:transition-[height,content-visibility] details-content:transition-discrete details-content:duration-250 details-content:ease-soft open:details-content:h-auto wide:hidden">
+    <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-semibold text-text transition-colors hover:text-accent-strong focus-visible:-outline-offset-2 tablet:px-12 [&::-webkit-details-marker]:hidden">
+      {t(I18nKey.tableOfContents)}
+      <Icon
+        class="text-muted transition-transform duration-250 ease-soft group-open:rotate-90"
+        name="chevron"
+        size={16}
+      />
+    </summary>
+    <nav aria-label={t(I18nKey.tableOfContents)}>
+      <ol class="flex flex-col gap-1 px-3 pb-4 tablet:px-10">
+        {items.map((item) => (
+          <TableOfContentsItem {...item} />
+        ))}
+      </ol>
+    </nav>
+  </details>
+)}
+
+<script>
+  class PostTableOfContents extends HTMLElement {
+    private listeners?: AbortController;
+
+    connectedCallback() {
+      const list = this.querySelector("ol");
+      const indicator = this.querySelector<HTMLElement>("[data-toc-indicator]");
+      if (!list || !indicator) return;
+
+      const headings = Array.from(list.querySelectorAll<HTMLAnchorElement>("a[href]")).flatMap((link) => {
+        const heading = document.getElementById(decodeURIComponent(link.hash.slice(1)));
+        return heading ? [{ heading, link }] : [];
+      });
+      if (headings.length === 0) return;
+
+      this.listeners = new AbortController();
+      const { signal } = this.listeners;
+      const update = () => {
+        if (this.getClientRects().length === 0) return;
+
+        let closestIndex = 0;
+        let closestDistance = Number.POSITIVE_INFINITY;
+        const active = new Set<number>();
+        headings.forEach(({ heading }, index) => {
+          const { top, bottom } = heading.getBoundingClientRect();
+          if (top < window.innerHeight && bottom > 0) active.add(index);
+
+          const distance = Math.abs(top);
+          if (distance < closestDistance) {
+            closestIndex = index;
+            closestDistance = distance;
+          }
+        });
+        if (active.size === 0) active.add(closestIndex);
+
+        const activeIndexes = Array.from(active);
+        const first = activeIndexes[0];
+        const last = activeIndexes[activeIndexes.length - 1];
+        const listTop = list.getBoundingClientRect().top;
+        const top = headings[first].link.getBoundingClientRect().top;
+        const bottom = headings[last].link.getBoundingClientRect().bottom;
+        indicator.style.top = `${top - listTop}px`;
+        indicator.style.height = `${bottom - top}px`;
+        indicator.classList.remove("opacity-0");
+
+        headings.forEach(({ link }, index) => {
+          link.classList.toggle("text-accent-strong", active.has(index));
+          if (index === first) link.setAttribute("aria-current", "location");
+          else link.removeAttribute("aria-current");
+        });
+      };
+
+      let frame = 0;
+      const scheduleUpdate = () => {
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          update();
+        });
+      };
+      const observer = new ResizeObserver(scheduleUpdate);
+      observer.observe(list);
+
+      document.addEventListener("scroll", scheduleUpdate, { passive: true, signal });
+      window.addEventListener("resize", scheduleUpdate, { passive: true, signal });
+      signal.addEventListener(
+        "abort",
+        () => {
+          cancelAnimationFrame(frame);
+          observer.disconnect();
+        },
+        { once: true },
+      );
+
+      update();
+    }
+
+    disconnectedCallback() {
+      this.listeners?.abort();
+    }
+  }
+
+  customElements.define("post-table-of-contents", PostTableOfContents);
+</script>

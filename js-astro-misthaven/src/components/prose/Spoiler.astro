@@ -1,0 +1,375 @@
+<script>
+  interface Particle {
+    x: number;
+    y: number;
+    size: number;
+    velocityX: number;
+    velocityY: number;
+    alpha: number;
+    minAlpha: number;
+    maxAlpha: number;
+    alphaVelocity: number;
+    lifetime: number;
+    soft: boolean;
+  }
+
+  interface ParticleLayer {
+    canvas: HTMLCanvasElement;
+    context: CanvasRenderingContext2D;
+    width: number;
+    height: number;
+    particles: Particle[];
+  }
+
+  interface ParticleField {
+    layers: ParticleLayer[];
+    visible: boolean;
+  }
+
+  const spoilerSelector = "spoiler";
+  const interactiveDescendantSelector = "a, button, input, select, textarea, summary, [role='button']";
+  const particleDensity = 0.1;
+  const minimumParticleCount = 24;
+  const maximumParticleCount = 4800;
+  const particleFrameDuration = 1000 / 30;
+  const maximumDevicePixelRatio = 2;
+  const lazyCreationMargin = 200;
+
+  let cleanupSpoilers: (() => void) | undefined;
+
+  const getSpoiler = (target: EventTarget | null) => {
+    return target instanceof Element ? target.closest<HTMLElement>(spoilerSelector) : null;
+  };
+
+  const setupSpoilers = () => {
+    if (cleanupSpoilers) return;
+
+    const spoilers = [...document.querySelectorAll<HTMLElement>(spoilerSelector)];
+    if (spoilers.length === 0) return;
+
+    const abortController = new AbortController();
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const fields = new Map<HTMLElement, ParticleField>();
+    let animationFrame = 0;
+    let layoutFrame = 0;
+    let lastParticleFrame = 0;
+    let visibleCount = 0;
+
+    const readParticleColors = () => {
+      const rootStyle = getComputedStyle(document.documentElement);
+      return {
+        strong: rootStyle.getPropertyValue("--color-spoiler-particle").trim() || "transparent",
+        soft: rootStyle.getPropertyValue("--color-spoiler-particle-soft").trim() || "transparent",
+      };
+    };
+
+    let particleColors = readParticleColors();
+
+    const getLineRects = (spoiler: HTMLElement) =>
+      [...spoiler.getClientRects()].filter(({ height, width }) => height > 0 && width > 0);
+
+    const sizeLayer = (canvas: HTMLCanvasElement, context: CanvasRenderingContext2D, rect: DOMRect) => {
+      const width = Math.max(1, rect.width);
+      const height = Math.max(1, rect.height);
+      const devicePixelRatio = Math.min(maximumDevicePixelRatio, window.devicePixelRatio || 1);
+      canvas.width = Math.ceil(width * devicePixelRatio);
+      canvas.height = Math.ceil(height * devicePixelRatio);
+      canvas.style.left = `${rect.left + window.scrollX}px`;
+      canvas.style.top = `${rect.top + window.scrollY}px`;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+      return { width, height };
+    };
+
+    const setFieldVisible = (field: ParticleField, visible: boolean) => {
+      if (field.visible === visible) return;
+      field.visible = visible;
+      visibleCount += visible ? 1 : -1;
+    };
+
+    const resetParticle = (particle: Particle, width: number, height: number) => {
+      particle.x = Math.random() * width;
+      particle.y = Math.random() * height;
+      particle.size = 0.6 + Math.random() * 0.9;
+      particle.velocityX = (Math.random() - 0.5) * 0.16;
+      particle.velocityY = (Math.random() - 0.5) * 0.12;
+      particle.minAlpha = 0.35 + Math.random() * 0.15;
+      particle.maxAlpha = 0.68 + Math.random() * 0.28;
+      particle.alpha = particle.minAlpha + Math.random() * (particle.maxAlpha - particle.minAlpha);
+      particle.alphaVelocity = (0.008 + Math.random() * 0.012) * (Math.random() < 0.5 ? -1 : 1);
+      particle.lifetime = 40 + Math.floor(Math.random() * 100);
+      particle.soft = Math.random() < 0.42;
+    };
+
+    const createParticle = (width: number, height: number): Particle => {
+      const particle: Particle = {
+        x: 0,
+        y: 0,
+        size: 1,
+        velocityX: 0,
+        velocityY: 0,
+        alpha: 1,
+        minAlpha: 0,
+        maxAlpha: 1,
+        alphaVelocity: 0,
+        lifetime: 0,
+        soft: false,
+      };
+      resetParticle(particle, width, height);
+      return particle;
+    };
+
+    const createParticleLayer = (rect: DOMRect): ParticleLayer | undefined => {
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      if (!context) return;
+
+      canvas.className = "spoiler-particle-layer";
+      canvas.setAttribute("aria-hidden", "true");
+      const { width, height } = sizeLayer(canvas, context, rect);
+      document.body.append(canvas);
+
+      const particleCount = Math.min(
+        maximumParticleCount,
+        Math.max(minimumParticleCount, Math.round(width * height * particleDensity)),
+      );
+      const particles = Array.from({ length: particleCount }, () => createParticle(width, height));
+
+      return { canvas, context, width, height, particles };
+    };
+
+    const drawParticleLayer = (layer: ParticleLayer, advance: boolean) => {
+      const { context, height, particles, width } = layer;
+      context.clearRect(0, 0, width, height);
+
+      if (advance) {
+        particles.forEach((particle) => {
+          particle.x += particle.velocityX;
+          particle.y += particle.velocityY;
+          particle.alpha += particle.alphaVelocity;
+          particle.lifetime -= 1;
+
+          if (particle.x < 0) particle.x += width;
+          else if (particle.x >= width) particle.x -= width;
+          if (particle.y < 0) particle.y += height;
+          else if (particle.y >= height) particle.y -= height;
+
+          if (particle.alpha <= particle.minAlpha || particle.alpha >= particle.maxAlpha) {
+            particle.alpha = Math.min(particle.maxAlpha, Math.max(particle.minAlpha, particle.alpha));
+            particle.alphaVelocity *= -1;
+          }
+
+          if (particle.lifetime <= 0) resetParticle(particle, width, height);
+        });
+      }
+
+      [false, true].forEach((soft) => {
+        context.fillStyle = soft ? particleColors.soft : particleColors.strong;
+        particles.forEach((particle) => {
+          if (particle.soft !== soft) return;
+          context.globalAlpha = particle.alpha;
+          context.fillRect(particle.x, particle.y, particle.size, particle.size);
+        });
+      });
+      context.globalAlpha = 1;
+    };
+
+    const intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          const spoiler = entry.target as HTMLElement;
+          const field = fields.get(spoiler);
+          if (field) {
+            setFieldVisible(field, entry.isIntersecting);
+            ensureAnimationLoop();
+          } else if (entry.isIntersecting) {
+            createParticleField(spoiler);
+          }
+        });
+      },
+      { rootMargin: `${lazyCreationMargin}px` },
+    );
+
+    const destroyParticleField = (spoiler: HTMLElement) => {
+      const field = fields.get(spoiler);
+      if (!field) return;
+
+      if (field.visible) visibleCount -= 1;
+      field.layers.forEach(({ canvas }) => canvas.remove());
+      fields.delete(spoiler);
+    };
+
+    const createParticleField = (spoiler: HTMLElement, visible = true) => {
+      destroyParticleField(spoiler);
+      if (!spoiler.isConnected || spoiler.hasAttribute("data-revealed")) return;
+
+      const layers = getLineRects(spoiler)
+        .map(createParticleLayer)
+        .filter((layer): layer is ParticleLayer => layer !== undefined);
+      if (layers.length === 0) return;
+
+      const field: ParticleField = { layers, visible: false };
+      fields.set(spoiler, field);
+      setFieldVisible(field, visible);
+      layers.forEach((layer) => drawParticleLayer(layer, false));
+      ensureAnimationLoop();
+    };
+
+    const fadeParticleField = (spoiler: HTMLElement) => {
+      const field = fields.get(spoiler);
+      if (!field) return;
+
+      field.layers.forEach(({ canvas }) => {
+        canvas.dataset.fading = "";
+      });
+      const animations = field.layers.flatMap(({ canvas }) => canvas.getAnimations());
+      void Promise.allSettled(animations.map(({ finished }) => finished)).then(() => {
+        if (fields.get(spoiler) === field) destroyParticleField(spoiler);
+      });
+    };
+
+    const setSpoilerRevealed = (spoiler: HTMLElement, revealed: boolean) => {
+      spoiler.toggleAttribute("data-revealed", revealed);
+      spoiler.setAttribute("aria-expanded", String(revealed));
+
+      if (revealed) fadeParticleField(spoiler);
+      else createParticleField(spoiler);
+    };
+
+    const toggleSpoiler = (spoiler: HTMLElement) => {
+      setSpoilerRevealed(spoiler, !spoiler.hasAttribute("data-revealed"));
+    };
+
+    const renderParticles = (timestamp: number) => {
+      if (timestamp - lastParticleFrame >= particleFrameDuration) {
+        fields.forEach((field) => {
+          if (field.visible) field.layers.forEach((layer) => drawParticleLayer(layer, true));
+        });
+        lastParticleFrame = timestamp;
+      }
+      animationFrame = visibleCount > 0 ? requestAnimationFrame(renderParticles) : 0;
+    };
+
+    const ensureAnimationLoop = () => {
+      if (animationFrame !== 0 || reducedMotion.matches || visibleCount <= 0) return;
+      animationFrame = requestAnimationFrame(renderParticles);
+    };
+
+    const syncMotionPreference = () => {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+      fields.forEach((field) => field.layers.forEach((layer) => drawParticleLayer(layer, false)));
+      ensureAnimationLoop();
+    };
+
+    const relayoutParticleField = (spoiler: HTMLElement) => {
+      const field = fields.get(spoiler);
+      if (!field || spoiler.hasAttribute("data-revealed")) return;
+
+      const rects = getLineRects(spoiler);
+      if (rects.length === 0) {
+        destroyParticleField(spoiler);
+        return;
+      }
+
+      if (rects.length !== field.layers.length) {
+        createParticleField(spoiler, field.visible);
+        return;
+      }
+
+      field.layers.forEach((layer, index) => {
+        const { width, height } = sizeLayer(layer.canvas, layer.context, rects[index]);
+        const scaleX = width / layer.width;
+        const scaleY = height / layer.height;
+
+        layer.width = width;
+        layer.height = height;
+        layer.particles.forEach((particle) => {
+          particle.x = (particle.x * scaleX) % width;
+          if (particle.x < 0) particle.x += width;
+          particle.y = (particle.y * scaleY) % height;
+          if (particle.y < 0) particle.y += height;
+        });
+        drawParticleLayer(layer, false);
+      });
+    };
+
+    const relayoutParticleFields = () => {
+      spoilers.forEach(relayoutParticleField);
+    };
+
+    const scheduleParticleLayout = () => {
+      cancelAnimationFrame(layoutFrame);
+      layoutFrame = requestAnimationFrame(relayoutParticleFields);
+    };
+
+    document.addEventListener(
+      "click",
+      (event) => {
+        const spoiler = getSpoiler(event.target);
+        if (!spoiler) return;
+
+        const interactiveDescendant =
+          event.target instanceof Element ? event.target.closest<HTMLElement>(interactiveDescendantSelector) : null;
+        if (spoiler.hasAttribute("data-revealed") && interactiveDescendant && interactiveDescendant !== spoiler) return;
+
+        toggleSpoiler(spoiler);
+      },
+      { signal: abortController.signal },
+    );
+
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if ((event.key !== "Enter" && event.key !== " ") || event.repeat) return;
+
+        const spoiler = getSpoiler(event.target);
+        if (!spoiler || event.target !== spoiler) return;
+
+        event.preventDefault();
+        toggleSpoiler(spoiler);
+      },
+      { signal: abortController.signal },
+    );
+
+    window.addEventListener("resize", scheduleParticleLayout, { signal: abortController.signal, passive: true });
+    reducedMotion.addEventListener("change", syncMotionPreference, { signal: abortController.signal });
+
+    const resizeObserver = new ResizeObserver(scheduleParticleLayout);
+    document.querySelectorAll(".prose-content").forEach((content) => resizeObserver.observe(content));
+
+    const themeObserver = new MutationObserver(() => {
+      particleColors = readParticleColors();
+      if (reducedMotion.matches) {
+        fields.forEach((field) => field.layers.forEach((layer) => drawParticleLayer(layer, false)));
+      }
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+    spoilers.forEach((spoiler) => intersectionObserver.observe(spoiler));
+    void document.fonts.ready.then(() => {
+      if (!abortController.signal.aborted) scheduleParticleLayout();
+    });
+
+    cleanupSpoilers = () => {
+      cleanupSpoilers = undefined;
+      abortController.abort();
+      cancelAnimationFrame(animationFrame);
+      cancelAnimationFrame(layoutFrame);
+      resizeObserver.disconnect();
+      themeObserver.disconnect();
+      intersectionObserver.disconnect();
+      fields.forEach((_, spoiler) => destroyParticleField(spoiler));
+    };
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", setupSpoilers, { once: true });
+  } else {
+    setupSpoilers();
+  }
+
+  document.addEventListener("astro:before-swap", () => cleanupSpoilers?.());
+  document.addEventListener("astro:page-load", setupSpoilers);
+</script>

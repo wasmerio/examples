@@ -1,0 +1,101 @@
+---
+import HeaderIconButton from "@/components/layout/HeaderIconButton.astro";
+import SearchBox from "@/components/search/SearchBox.astro";
+import Icon from "@/components/ui/Icon.astro";
+import { I18nKey, t } from "@/i18n";
+
+const dialogId = "mobile-search-dialog";
+---
+
+<site-search-controls class="contents">
+  <SearchBox class="hidden min-w-0 tablet:block" id="site-search" variant="field" />
+
+  <HeaderIconButton
+    class="tablet:hidden"
+    name="search"
+    size={16}
+    aria-label={t(I18nKey.searchLabel)}
+    aria-haspopup="dialog"
+    aria-controls={dialogId}
+    data-search-dialog-open
+  />
+
+  <dialog
+    class="m-0 w-full max-w-none -translate-y-2 border-0 bg-transparent p-0 text-text opacity-0 transition transition-discrete duration-200 ease-soft backdrop:bg-overlay backdrop:opacity-0 backdrop:transition backdrop:transition-discrete backdrop:duration-200 open:translate-y-0 open:opacity-100 open:backdrop:opacity-100 starting:open:-translate-y-2 starting:open:opacity-0 starting:open:backdrop:opacity-0"
+    id={dialogId}
+    aria-label={t(I18nKey.searchLabel)}
+  >
+    <div class="border-b border-border bg-page px-4 py-3">
+      <SearchBox id="mobile-search" variant="sheet">
+        <button
+          class="grid size-11 flex-none cursor-pointer place-items-center rounded-panel text-text-soft transition-colors hover:bg-accent-soft hover:text-accent-strong"
+          type="button"
+          aria-label={t(I18nKey.searchClose)}
+          data-search-dialog-close
+        >
+          <Icon name="close" size={18} />
+        </button>
+      </SearchBox>
+    </div>
+  </dialog>
+</site-search-controls>
+
+<script>
+  import { SiteSearch } from "./siteSearch";
+
+  class SiteSearchControls extends HTMLElement {
+    private listeners?: AbortController;
+    private observer?: ResizeObserver;
+
+    connectedCallback() {
+      const desktop = this.querySelector(":scope > site-search");
+      const dialog = this.querySelector("dialog");
+      const mobile = dialog?.querySelector("site-search");
+      const openButton = this.querySelector<HTMLButtonElement>("[data-search-dialog-open]");
+      const closeButton = dialog?.querySelector("[data-search-dialog-close]");
+      if (!dialog || !openButton || !(desktop instanceof SiteSearch) || !(mobile instanceof SiteSearch)) return;
+
+      this.listeners = new AbortController();
+      const { signal } = this.listeners;
+      openButton.addEventListener("click", () => dialog.showModal(), { signal });
+      closeButton?.addEventListener("click", () => dialog.close(), { signal });
+      dialog.addEventListener(
+        "click",
+        (event) => {
+          if (event.target === dialog) dialog.close();
+        },
+        { signal },
+      );
+
+      this.observer = new ResizeObserver(() => {
+        if (dialog.open && openButton.getClientRects().length === 0) dialog.close();
+      });
+      this.observer.observe(openButton);
+
+      document.addEventListener(
+        "click",
+        (event) => {
+          const trigger =
+            event.target instanceof Element ? event.target.closest<HTMLElement>("[data-search-query]") : null;
+          const query = trigger?.dataset.searchQuery;
+          if (!query) return;
+
+          if (desktop.getClientRects().length > 0) {
+            desktop.search(query);
+          } else {
+            if (!dialog.open) dialog.showModal();
+            mobile.search(query);
+          }
+        },
+        { signal },
+      );
+    }
+
+    disconnectedCallback() {
+      this.listeners?.abort();
+      this.observer?.disconnect();
+    }
+  }
+
+  if (!customElements.get("site-search-controls")) customElements.define("site-search-controls", SiteSearchControls);
+</script>

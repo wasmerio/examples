@@ -1,0 +1,62 @@
+---
+import { getElapsedDays } from "@/components/post/outdatedWarning";
+import Icon from "@/components/ui/Icon.astro";
+import { I18nKey, t } from "@/i18n";
+import { formatPostDate } from "@/utils/postDates";
+
+interface Props {
+  lastUpdatedAt: Date;
+  thresholdDays: number;
+}
+
+const { lastUpdatedAt, thresholdDays } = Astro.props;
+const normalizedThresholdDays = Math.max(1, Math.floor(thresholdDays));
+const elapsedDays = getElapsedDays(lastUpdatedAt.getTime());
+const formattedDate = formatPostDate(lastUpdatedAt);
+const summaryTemplate = t(I18nKey.postOutdatedSummary, { date: formattedDate, days: "{days}" });
+---
+
+<aside
+  class="mt-6 flex items-start gap-3 rounded-lg bg-warning-soft px-4 py-3 tablet:px-5"
+  data-post-outdated-warning
+  data-last-updated-at={lastUpdatedAt.toISOString()}
+  data-summary-template={summaryTemplate}
+  data-threshold-days={normalizedThresholdDays}
+  hidden={elapsedDays < normalizedThresholdDays}
+  role="note"
+>
+  <Icon class="mt-1 text-warning" name="history" size={16} />
+  <span class="min-w-0 text-sm leading-6">
+    <span class="block text-text" data-post-outdated-summary>
+      {t(I18nKey.postOutdatedSummary, { date: formattedDate, days: elapsedDays })}
+    </span>
+    <span class="block text-warning">{t(I18nKey.postOutdatedDescription)}</span>
+  </span>
+</aside>
+
+<script>
+  import { getElapsedDays } from "@/components/post/outdatedWarning";
+
+  const updatePostOutdatedWarnings = () => {
+    document.querySelectorAll<HTMLElement>("[data-post-outdated-warning]").forEach((warning) => {
+      const lastUpdatedAt = Date.parse(warning.dataset.lastUpdatedAt ?? "");
+      const thresholdDays = Number(warning.dataset.thresholdDays);
+
+      if (!Number.isFinite(lastUpdatedAt) || !Number.isFinite(thresholdDays)) return;
+
+      const elapsedDays = getElapsedDays(lastUpdatedAt);
+      const summary = warning.querySelector<HTMLElement>("[data-post-outdated-summary]");
+
+      warning.hidden = elapsedDays < thresholdDays;
+      if (summary) summary.textContent = (warning.dataset.summaryTemplate ?? "").replace("{days}", String(elapsedDays));
+    });
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", updatePostOutdatedWarnings, { once: true });
+  } else {
+    updatePostOutdatedWarnings();
+  }
+
+  document.addEventListener("astro:page-load", updatePostOutdatedWarnings);
+</script>

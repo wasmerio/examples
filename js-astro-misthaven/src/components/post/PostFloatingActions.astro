@@ -1,0 +1,86 @@
+---
+import { readingGridClass } from "@/components/post/readingLayout";
+import Icon from "@/components/ui/Icon.astro";
+import { I18nKey, t } from "@/i18n";
+
+interface Props {
+  contentId: string;
+}
+
+const { contentId } = Astro.props;
+---
+
+<post-floating-actions
+  class="pointer-events-none invisible fixed inset-x-0 bottom-12 z-40 block translate-y-2 opacity-0 transition-[opacity,translate,visibility] transition-discrete duration-250 ease-soft data-visible:visible data-visible:translate-y-0 data-visible:opacity-100"
+  data-content-id={contentId}
+  inert
+>
+  <div class="mx-auto w-layout-width max-w-page tablet:w-layout-width-tablet wide:w-layout-width-wide">
+    <div class={readingGridClass}>
+      <div
+        class="pointer-events-auto ml-auto flex flex-col gap-2 wide:col-start-3 wide:ml-0"
+        role="group"
+        aria-label={t(I18nKey.postQuickActions)}
+      >
+        <button
+          class="grid h-11 w-12 cursor-pointer place-items-center rounded-panel border border-border bg-panel text-accent-strong transition-colors hover:bg-accent hover:text-surface"
+          type="button"
+          aria-label={t(I18nKey.backToTop)}
+        >
+          <Icon class="-rotate-90" name="arrow" size={20} />
+        </button>
+      </div>
+    </div>
+  </div>
+</post-floating-actions>
+
+<script>
+  class PostFloatingActionsElement extends HTMLElement {
+    #lifecycle?: AbortController;
+
+    connectedCallback() {
+      const content = document.getElementById(this.dataset.contentId ?? "");
+      const button = this.querySelector("button");
+      if (!content || !button) return;
+
+      this.#lifecycle = new AbortController();
+      const { signal } = this.#lifecycle;
+      const offset = Number.parseFloat(getComputedStyle(this).bottom) || 0;
+      let frame = 0;
+
+      const update = () => {
+        const actionBottom = window.innerHeight - offset;
+        const shouldShow =
+          window.scrollY >= window.innerHeight * 0.75 && content.getBoundingClientRect().bottom > actionBottom;
+        this.toggleAttribute("data-visible", shouldShow);
+        this.inert = !shouldShow;
+      };
+      const scheduleUpdate = () => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(update);
+      };
+      const observer = new ResizeObserver(scheduleUpdate);
+      observer.observe(content);
+
+      button.addEventListener("click", () => window.scrollTo({ top: 0 }), { signal });
+      document.addEventListener("scroll", scheduleUpdate, { passive: true, signal });
+      window.addEventListener("resize", scheduleUpdate, { passive: true, signal });
+      signal.addEventListener(
+        "abort",
+        () => {
+          cancelAnimationFrame(frame);
+          observer.disconnect();
+        },
+        { once: true },
+      );
+
+      update();
+    }
+
+    disconnectedCallback() {
+      this.#lifecycle?.abort();
+    }
+  }
+
+  customElements.define("post-floating-actions", PostFloatingActionsElement);
+</script>

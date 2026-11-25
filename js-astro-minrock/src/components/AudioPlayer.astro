@@ -1,0 +1,738 @@
+---
+// src/components/AudioPlayer.astro
+// Accessible client-side Text-to-Speech audio reader using browser Web Speech API
+export interface Props {
+  selector?: string;
+  title?: string;
+  label?: string;
+}
+
+const { selector = '.post-content', title = '', label = 'Listen to Article' } = Astro.props;
+---
+
+<div id="audio-player-root" class="audio-player-card is-collapsed" data-selector={selector} data-title={title} aria-label="Accessible audio reader">
+  <!-- Trigger Bar -->
+  <button
+    id="audio-toggle-btn"
+    type="button"
+    class="audio-toggle-btn"
+    aria-expanded="false"
+    aria-controls="audio-player-drawer"
+    title="Expand audio player"
+  >
+    <div class="audio-toggle-left">
+      <div class="audio-speaker-icon" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path class="audio-wave wave-1" d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          <path class="audio-wave wave-2" d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+        </svg>
+      </div>
+      <div class="audio-toggle-text">
+        <span class="audio-label">{label}</span>
+        <span class="audio-dot" aria-hidden="true">•</span>
+        <span id="audio-estimate" class="audio-estimate">Calculating...</span>
+      </div>
+    </div>
+
+    <div class="audio-toggle-right">
+      <span id="audio-status-badge" class="audio-status-badge">Ready to play</span>
+      <span class="audio-chevron-icon" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </span>
+    </div>
+  </button>
+
+  <!-- Drawer Container -->
+  <div id="audio-player-drawer" class="audio-player-drawer" role="region" aria-label="Audio player controls">
+    <div class="audio-drawer-content">
+      <div class="audio-drawer-divider" aria-hidden="true"></div>
+
+      <!-- Controls Row -->
+      <div class="audio-controls-row">
+        <!-- Play / Pause -->
+        <button id="audio-play-btn" type="button" class="audio-btn audio-btn-primary" aria-label="Play audio">
+          <svg class="icon-play" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <svg class="icon-pause hidden" width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+          <span id="audio-play-text" class="audio-btn-text">Play</span>
+        </button>
+
+        <!-- Stop -->
+        <button id="audio-stop-btn" type="button" class="audio-btn audio-btn-secondary" aria-label="Stop playback" disabled>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+          </svg>
+          <span>Stop</span>
+        </button>
+
+        <!-- Prev / Next Paragraph -->
+        <div class="audio-nav-btns">
+          <button id="audio-prev-btn" type="button" class="audio-btn audio-btn-icon" aria-label="Previous paragraph" disabled title="Previous paragraph">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="19 20 9 12 19 4 19 20"></polygon>
+              <line x1="5" y1="19" x2="5" y2="5"></line>
+            </svg>
+          </button>
+          <button id="audio-next-btn" type="button" class="audio-btn audio-btn-icon" aria-label="Next paragraph" disabled title="Next paragraph">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 4 15 12 5 20 5 4"></polygon>
+              <line x1="19" y1="5" x2="19" y2="19"></line>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Speed Rate Selector -->
+        <div class="audio-rate-wrap">
+          <button type="button" id="audio-rate-btn" class="audio-rate-btn" aria-label="Playback speed" title="Adjust playback speed">
+            <span id="audio-rate-val">1.0x</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Progress bar -->
+      <div class="audio-progress-wrap">
+        <div class="audio-progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+          <div id="audio-progress-fill" class="audio-progress-fill" style="width: 0%;"></div>
+        </div>
+        <div class="audio-progress-labels">
+          <span id="audio-part-label">Paragraph 0 of 0</span>
+          <span id="audio-pct-label">0%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let activeStickyObserver: IntersectionObserver | null = null;
+  let audioPlayerGlobalInitialized = false;
+
+  function setupAudioPlayer() {
+    // Teardown previous observer if present
+    if (activeStickyObserver) {
+      activeStickyObserver.disconnect();
+      activeStickyObserver = null;
+    }
+
+    const root = document.getElementById('audio-player-root');
+    if (!root) return;
+
+    if (!('speechSynthesis' in window)) {
+      root.style.display = 'none';
+      return;
+    }
+
+    const toggleBtn = document.getElementById('audio-toggle-btn');
+    const playBtn = document.getElementById('audio-play-btn');
+    const stopBtn = document.getElementById('audio-stop-btn') as HTMLButtonElement | null;
+    const prevBtn = document.getElementById('audio-prev-btn') as HTMLButtonElement | null;
+    const nextBtn = document.getElementById('audio-next-btn') as HTMLButtonElement | null;
+    const rateBtn = document.getElementById('audio-rate-btn');
+    const rateVal = document.getElementById('audio-rate-val');
+    const playText = document.getElementById('audio-play-text');
+    const statusBadge = document.getElementById('audio-status-badge');
+    const estimateLabel = document.getElementById('audio-estimate');
+    const partLabel = document.getElementById('audio-part-label');
+    const pctLabel = document.getElementById('audio-pct-label');
+    const progressFill = document.getElementById('audio-progress-fill');
+    const iconPlay = playBtn?.querySelector('.icon-play');
+    const iconPause = playBtn?.querySelector('.icon-pause');
+
+    const selector = root.dataset.selector || '.post-content';
+    const contentEl = document.querySelector(selector);
+    if (!contentEl) {
+      root.style.display = 'none';
+      return;
+    }
+
+    // 1. Extract Title and Subtitle/Description from article header
+    const articleEl = contentEl.closest('article') || document.querySelector('article') || document;
+    const titleEl = articleEl.querySelector('h1.post-title, h1.project-title, .post-header h1, .project-header h1, h1') as HTMLElement | null;
+    const subtitleEl = articleEl.querySelector('.post-description, .project-description, .post-header p.post-description, .project-header p') as HTMLElement | null;
+
+    const initialNodes: HTMLElement[] = [];
+    if (titleEl && (titleEl.innerText || titleEl.textContent || '').trim()) {
+      initialNodes.push(titleEl);
+    }
+    if (subtitleEl && (subtitleEl.innerText || subtitleEl.textContent || '').trim()) {
+      initialNodes.push(subtitleEl);
+    }
+
+    // 2. Extract textual elements from content body (h2, h3, p, li, blockquote)
+    const bodyNodes = Array.from(contentEl.querySelectorAll('h2, h3, p, li, blockquote'))
+      .filter((el) => {
+        // Exclude callout icons, copy buttons, pre, tables, toc, etc.
+        return (
+          !el.closest('pre') &&
+          !el.closest('.expressive-code') &&
+          !el.closest('.code-block') &&
+          !el.closest('.toc') &&
+          !el.closest('table') &&
+          !el.closest('.callout-title') &&
+          Boolean(el.textContent?.trim().length)
+        );
+      }) as HTMLElement[];
+
+    const rawNodes = [...initialNodes, ...bodyNodes];
+    const textNodes = rawNodes.filter((el) => {
+      const text = (el.innerText || el.textContent || '').trim();
+      return text.length > 0;
+    });
+
+    if (!textNodes.length) {
+      root.style.display = 'none';
+      return;
+    }
+
+    const parts = textNodes.map((el) => (el.innerText || el.textContent || '').trim());
+    const totalWords = parts.reduce((acc, text) => acc + text.split(/\s+/).filter(Boolean).length, 0);
+    const estMin = Math.max(1, Math.ceil(totalWords / 140)); // ~140 words/min speech rate
+
+    if (estimateLabel) {
+      estimateLabel.textContent = `~${estMin} min narration (${parts.length} parts)`;
+    }
+
+    let currentIndex = 0;
+    let isPlaying = false;
+    let isPaused = false;
+    let rates = [1.0, 1.25, 1.5, 2.0, 0.75];
+    let currentRateIdx = 0;
+    let synth = window.speechSynthesis;
+    let userToggledWhileSticky = false;
+
+    // Detect language
+    const pageLang = document.documentElement.lang || 'en';
+    const targetLang = pageLang.startsWith('pt') ? 'pt-BR' : 'en-US';
+
+    function setExpanded(expanded: boolean) {
+      if (expanded) {
+        root?.classList.add('is-expanded');
+        root?.classList.remove('is-collapsed');
+        toggleBtn?.setAttribute('aria-expanded', 'true');
+        toggleBtn?.setAttribute('title', 'Collapse audio player');
+      } else {
+        root?.classList.remove('is-expanded');
+        root?.classList.add('is-collapsed');
+        toggleBtn?.setAttribute('aria-expanded', 'false');
+        toggleBtn?.setAttribute('title', 'Expand audio player');
+      }
+    }
+
+    toggleBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isCurrentlyExpanded = root?.classList.contains('is-expanded');
+      if (root?.classList.contains('is-sticky')) {
+        userToggledWhileSticky = true;
+      }
+      if (!isCurrentlyExpanded) {
+        root?.classList.add('is-active-player');
+      }
+      setExpanded(!isCurrentlyExpanded);
+    });
+
+    function updateProgress() {
+      const pct = parts.length ? Math.round(((currentIndex + 1) / parts.length) * 100) : 0;
+      if (progressFill) progressFill.style.width = `${pct}%`;
+
+      const currentEl = textNodes[currentIndex];
+      let label = `Part ${currentIndex + 1} of ${parts.length}`;
+      if (currentEl) {
+        if (currentEl.tagName === 'H1') {
+          label = targetLang.startsWith('pt')
+            ? `Título (${currentIndex + 1} de ${parts.length})`
+            : `Title (${currentIndex + 1} of ${parts.length})`;
+        } else if (
+          currentEl.classList.contains('post-description') ||
+          currentEl.classList.contains('project-description')
+        ) {
+          label = targetLang.startsWith('pt')
+            ? `Subtítulo (${currentIndex + 1} de ${parts.length})`
+            : `Subtitle (${currentIndex + 1} of ${parts.length})`;
+        } else {
+          label = targetLang.startsWith('pt')
+            ? `Parágrafo ${currentIndex + 1} de ${parts.length}`
+            : `Paragraph ${currentIndex + 1} of ${parts.length}`;
+        }
+      }
+
+      if (partLabel) partLabel.textContent = label;
+      if (pctLabel) pctLabel.textContent = `${pct}%`;
+
+      if (prevBtn) prevBtn.disabled = currentIndex <= 0;
+      if (nextBtn) nextBtn.disabled = currentIndex >= parts.length - 1;
+    }
+
+    function clearHighlight() {
+      document.querySelectorAll('.audio-speaking-active').forEach((el) => {
+        el.classList.remove('audio-speaking-active');
+      });
+    }
+
+    function highlightCurrent() {
+      clearHighlight();
+      const currentEl = textNodes[currentIndex];
+      if (currentEl) {
+        currentEl.classList.add('audio-speaking-active');
+        const rect = currentEl.getBoundingClientRect();
+        if (rect.top < 90 || rect.bottom > window.innerHeight - 80) {
+          currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }
+    }
+
+    function playCurrentPart() {
+      if (currentIndex >= parts.length) {
+        stopPlayback();
+        return;
+      }
+
+      root?.classList.add('is-active-player');
+      if (sentinel && sentinel.getBoundingClientRect().top <= 64) {
+        root?.classList.add('is-sticky');
+      }
+
+      synth.cancel();
+      const text = parts[currentIndex];
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = targetLang;
+      utterance.rate = rates[currentRateIdx];
+
+      utterance.onstart = () => {
+        isPlaying = true;
+        isPaused = false;
+        highlightCurrent();
+        updateUI();
+      };
+
+      utterance.onend = () => {
+        currentIndex++;
+        updateProgress();
+        if (currentIndex < parts.length && isPlaying) {
+          playCurrentPart();
+        } else {
+          stopPlayback();
+        }
+      };
+
+      utterance.onerror = (e) => {
+        if (e.error === 'canceled' || e.error === 'interrupted') return;
+        stopPlayback();
+      };
+
+      synth.speak(utterance);
+    }
+
+    function updateUI() {
+      if (isPlaying && !isPaused) {
+        iconPlay?.classList.add('hidden');
+        iconPause?.classList.remove('hidden');
+        if (playText) playText.textContent = 'Pause';
+        if (statusBadge) {
+          statusBadge.textContent = parts.length > 0 ? `Playing (${currentIndex + 1}/${parts.length})` : 'Playing...';
+        }
+        root?.classList.add('is-playing');
+        if (stopBtn) stopBtn.disabled = false;
+      } else if (isPaused) {
+        iconPlay?.classList.remove('hidden');
+        iconPause?.classList.add('hidden');
+        if (playText) playText.textContent = 'Resume';
+        if (statusBadge) statusBadge.textContent = 'Paused';
+        root?.classList.remove('is-playing');
+      } else {
+        iconPlay?.classList.remove('hidden');
+        iconPause?.classList.add('hidden');
+        if (playText) playText.textContent = 'Play';
+        if (statusBadge) statusBadge.textContent = 'Ready to play';
+        root?.classList.remove('is-playing');
+        if (stopBtn) stopBtn.disabled = true;
+      }
+    }
+
+    playBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (!isPlaying) {
+        playCurrentPart();
+      } else if (isPaused) {
+        synth.resume();
+        isPaused = false;
+        updateUI();
+      } else {
+        synth.pause();
+        isPaused = true;
+        updateUI();
+      }
+    });
+
+    function stopPlayback() {
+      synth.cancel();
+      isPlaying = false;
+      isPaused = false;
+      currentIndex = 0;
+      clearHighlight();
+      root?.classList.remove('is-active-player', 'is-sticky');
+      userToggledWhileSticky = false;
+      updateUI();
+      updateProgress();
+    }
+
+    stopBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      stopPlayback();
+    });
+
+    prevBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (currentIndex > 0) {
+        currentIndex--;
+        updateProgress();
+        if (isPlaying) playCurrentPart();
+        else highlightCurrent();
+      }
+    });
+
+    nextBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (currentIndex < parts.length - 1) {
+        currentIndex++;
+        updateProgress();
+        if (isPlaying) playCurrentPart();
+        else highlightCurrent();
+      }
+    });
+
+    rateBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      currentRateIdx = (currentRateIdx + 1) % rates.length;
+      const newRate = rates[currentRateIdx];
+      if (rateVal) rateVal.textContent = `${newRate.toFixed(1).replace('.0', '')}x`;
+      if (isPlaying) {
+        playCurrentPart();
+      }
+    });
+
+    updateProgress();
+
+    // Sentinel & IntersectionObserver for Sticky detection
+    let sentinel = root.parentElement?.querySelector('.audio-sticky-sentinel') as HTMLElement | null;
+    if (!sentinel) {
+      sentinel = document.createElement('div');
+      sentinel.className = 'audio-sticky-sentinel';
+      sentinel.style.cssText = 'position: relative; top: -64px; height: 1px; pointer-events: none; visibility: hidden; margin: 0; padding: 0;';
+      root.parentNode?.insertBefore(sentinel, root);
+    }
+
+    activeStickyObserver = new IntersectionObserver(([entry]) => {
+      const isActive = root?.classList.contains('is-active-player') ?? false;
+      const isScrolledPast = !entry.isIntersecting && entry.boundingClientRect.top <= 64;
+      const shouldBeSticky = isActive && isScrolledPast;
+      const wasSticky = root?.classList.contains('is-sticky') ?? false;
+
+      root?.classList.toggle('is-sticky', shouldBeSticky);
+
+      if (shouldBeSticky && !wasSticky) {
+        if (!userToggledWhileSticky && root?.classList.contains('is-expanded')) {
+          setExpanded(false);
+        }
+      } else if (!shouldBeSticky && wasSticky) {
+        userToggledWhileSticky = false;
+      }
+    }, { threshold: [0, 1] });
+
+    activeStickyObserver.observe(sentinel);
+  }
+
+  // Initial run and page navigation hooks
+  setupAudioPlayer();
+  document.addEventListener('astro:page-load', setupAudioPlayer);
+  document.addEventListener('astro:after-swap', setupAudioPlayer);
+
+  // Global teardown listeners registered only once
+  if (!audioPlayerGlobalInitialized) {
+    audioPlayerGlobalInitialized = true;
+    window.addEventListener('beforeunload', () => {
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    });
+    document.addEventListener('astro:before-swap', () => {
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+      if (activeStickyObserver) {
+        activeStickyObserver.disconnect();
+        activeStickyObserver = null;
+      }
+    });
+  }
+</script>
+
+<style>
+  .audio-player-card {
+    position: relative;
+    margin: 1.5rem 0 2rem 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background-color: var(--bg-surface);
+    overflow: hidden;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  }
+
+  /* Sticky when active playback is initiated */
+  .audio-player-card.is-active-player {
+    position: sticky;
+    top: 4.5rem;
+    z-index: 35;
+  }
+
+  .audio-player-card:hover,
+  .audio-player-card.is-playing {
+    border-color: var(--accent);
+  }
+
+  .audio-player-card.is-active-player.is-sticky {
+    box-shadow: 0 10px 28px -6px rgba(0, 0, 0, 0.25), 0 2px 8px -2px rgba(37, 99, 235, 0.2);
+    border-color: var(--accent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .audio-player-card.is-playing .wave-1 {
+    animation: pulse-wave 1.2s infinite ease-in-out;
+  }
+
+  .audio-player-card.is-playing .wave-2 {
+    animation: pulse-wave 1.2s infinite ease-in-out 0.2s;
+  }
+
+  @keyframes pulse-wave {
+    0%, 100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+
+  .audio-toggle-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text);
+    text-align: left;
+    transition: background-color 0.15s ease;
+  }
+
+  .audio-toggle-btn:hover {
+    background-color: var(--bg-subtle);
+  }
+
+  .audio-toggle-left {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .audio-speaker-icon {
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+  }
+
+  .audio-toggle-text {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.92rem;
+    flex-wrap: wrap;
+  }
+
+  .audio-label {
+    font-weight: 600;
+  }
+
+  .audio-dot {
+    color: var(--text-muted);
+    opacity: 0.5;
+  }
+
+  .audio-estimate {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .audio-toggle-right {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .audio-status-badge {
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    background-color: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+
+  .audio-player-card.is-playing .audio-status-badge {
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .audio-chevron-icon {
+    color: var(--text-muted);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease;
+    display: flex;
+    align-items: center;
+  }
+
+  .audio-player-card.is-expanded .audio-chevron-icon {
+    transform: rotate(180deg);
+  }
+
+  /* Drawer Container with Smooth Grid Transition */
+  .audio-player-drawer {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+    opacity: 0;
+  }
+
+  .audio-player-card.is-expanded .audio-player-drawer {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+
+  .audio-drawer-content {
+    overflow: hidden;
+    padding: 0 1.25rem 1rem 1.25rem;
+  }
+
+  .audio-drawer-divider {
+    height: 1px;
+    background-color: var(--border);
+    margin-bottom: 0.85rem;
+  }
+
+  .audio-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+  }
+
+  .audio-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.38rem 0.75rem;
+    font-size: 0.85rem;
+    font-family: var(--font-sans);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background-color: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .audio-btn:hover:not(:disabled) {
+    background-color: var(--bg-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .audio-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .audio-btn-primary {
+    background-color: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+
+  .audio-btn-primary:hover:not(:disabled) {
+    background-color: var(--accent-hover);
+    color: #ffffff;
+    border-color: var(--accent-hover);
+  }
+
+  .audio-nav-btns {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .audio-btn-icon {
+    padding: 0.38rem 0.5rem;
+  }
+
+  .audio-rate-btn {
+    padding: 0.35rem 0.6rem;
+    font-size: 0.8rem;
+    font-family: var(--font-mono);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background-color: var(--bg);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .audio-rate-btn:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+
+  .audio-progress-wrap {
+    margin-top: 0.85rem;
+  }
+
+  .audio-progress-bar {
+    width: 100%;
+    height: 4px;
+    background-color: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .audio-progress-fill {
+    height: 100%;
+    background-color: var(--accent);
+    transition: width 0.2s ease;
+  }
+
+  .audio-progress-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    margin-top: 0.35rem;
+  }
+
+  .hidden {
+    display: none !important;
+  }
+
+  :global(.audio-speaking-active) {
+    background-color: rgba(37, 99, 235, 0.08);
+    border-radius: 4px;
+    outline: 2px dashed var(--accent);
+    outline-offset: 4px;
+    transition: background-color 0.2s ease;
+  }
+</style>

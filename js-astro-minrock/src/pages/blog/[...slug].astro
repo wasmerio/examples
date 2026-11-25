@@ -1,0 +1,336 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import TOC from '../../components/TOC.astro';
+import ShareBar from '../../components/ShareBar.astro';
+import CopyCode from '../../components/CopyCode.astro';
+import AudioPlayer from '../../components/AudioPlayer.astro';
+import StructuredData from '../../components/StructuredData.astro';
+import Comments from '../../components/Comments.astro';
+import { getCollection, render } from 'astro:content';
+import { siteConfig } from '../../config/site';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post }
+  }));
+}
+
+const { post } = Astro.props;
+const { Content, headings } = await render(post);
+
+const formattedDate = post.data.pubDate.toLocaleDateString('en-US', {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric'
+});
+
+// Reading time calculation
+const words = (post.body ?? '').split(/\s+/).filter(Boolean).length;
+const readingMin = Math.max(1, Math.ceil(words / 200));
+
+// Prev / Next posts
+const allPosts = (await getCollection('blog', ({ data }) => !data.draft))
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+const currentIndex = allPosts.findIndex((p) => p.id === post.id);
+const prevPost = currentIndex < allPosts.length - 1 ? allPosts[currentIndex + 1] : null;
+const nextPost = currentIndex > 0 ? allPosts[currentIndex - 1] : null;
+
+const currentUrl = new URL(Astro.url.pathname, siteConfig.siteUrl).href;
+
+const features = siteConfig.features ?? {};
+const showReadingTime = features.readingTime !== false;
+const showTags = features.tags !== false;
+const showAudio = features.audioPlayer !== false;
+const showShare = features.socialShare !== false;
+const showToc = features.tableOfContents !== false && headings.length > 0;
+---
+
+<BaseLayout title={post.data.title} description={post.data.description} wide={true}>
+  <StructuredData
+    type="article"
+    title={post.data.title}
+    description={post.data.description}
+    datePublished={post.data.pubDate}
+    tags={post.data.tags}
+    url={currentUrl}
+  />
+
+  <div class:list={['post-page-container', { 'no-sidebar': !showToc }]}>
+    <!-- Main Content Column -->
+    <div class="post-main">
+      <article class="post-article">
+        <header class="post-header">
+          <div class="post-meta">
+            <time datetime={post.data.pubDate.toISOString()}>{formattedDate}</time>
+            {showReadingTime && (
+              <>
+                <span class="meta-dot">·</span>
+                <span class="reading-time">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                  {readingMin} min read
+                </span>
+              </>
+            )}
+            {showTags && post.data.tags && post.data.tags.length > 0 && (
+              <>
+                <span class="meta-dot">·</span>
+                <span class="meta-tags">
+                  {post.data.tags.map((tag: string) => (
+                    <a href={`/tags/${tag}`} class="tag">#{tag}</a>
+                  ))}
+                </span>
+              </>
+            )}
+          </div>
+
+          <h1 class="post-title">{post.data.title}</h1>
+          <p class="post-description">{post.data.description}</p>
+        </header>
+
+        <!-- 🔊 Accessible Audio Player (Text-to-Speech) -->
+        {showAudio && post.data.audio !== false && (
+          <AudioPlayer selector=".post-content" title={post.data.title} label="Listen to Article" />
+        )}
+
+        {post.data.image && (
+          <figure class="post-cover">
+            <img src={post.data.image} alt={post.data.title} class="cover-img" />
+          </figure>
+        )}
+
+        <div class="post-content">
+          <Content />
+        </div>
+
+        {showShare && (
+          <ShareBar title={post.data.title} url={currentUrl} description={post.data.description} />
+        )}
+
+        <!-- Prev / Next Navigation -->
+        <nav class="post-nav" aria-label="Post navigation">
+          {prevPost ? (
+            <a href={`/blog/${prevPost.id}`} class="nav-card nav-prev">
+              <span class="nav-direction">← Older</span>
+              <span class="nav-title">{prevPost.data.title}</span>
+            </a>
+          ) : (
+            <div class="nav-spacer"></div>
+          )}
+          {nextPost ? (
+            <a href={`/blog/${nextPost.id}`} class="nav-card nav-next">
+              <span class="nav-direction">Newer →</span>
+              <span class="nav-title">{nextPost.data.title}</span>
+            </a>
+          ) : (
+            <div class="nav-spacer"></div>
+          )}
+        </nav>
+
+        <!-- 💬 Modular Comments Area -->
+        <Comments title={post.data.title} />
+      </article>
+    </div>
+
+    <!-- Sticky Sidebar Column (TOC) -->
+    {showToc && (
+      <aside class="post-sidebar" aria-label="Article Table of Contents">
+        <TOC headings={headings} title="On This Page" />
+      </aside>
+    )}
+  </div>
+
+  <CopyCode />
+</BaseLayout>
+
+<style>
+  .post-page-container {
+    display: grid;
+    grid-template-columns: 1fr 240px;
+    gap: 3.5rem;
+    align-items: start;
+    padding-top: 1rem;
+  }
+
+  .post-page-container.no-sidebar {
+    grid-template-columns: 1fr;
+    max-width: 780px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 900px) {
+    .post-page-container {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+    .post-sidebar {
+      display: none;
+    }
+  }
+
+  .post-main {
+    min-width: 0;
+  }
+
+  .post-sidebar {
+    position: relative;
+    height: 100%;
+  }
+
+  .post-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .post-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .meta-dot {
+    color: var(--text-muted);
+    opacity: 0.5;
+  }
+
+  .reading-time {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .meta-tags {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    color: var(--accent);
+    font-weight: 500;
+    font-size: 0.82rem;
+    text-decoration: none;
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+    background-color: transparent;
+    border: 1px solid transparent;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .tag:hover {
+    color: var(--accent);
+    background-color: var(--bg-subtle);
+    border-color: var(--accent);
+    transform: translateY(-1.5px) scale(1.04);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+
+  .tag:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  .post-title {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    font-size: 2.4rem;
+    line-height: 1.25;
+    letter-spacing: -0.025em;
+  }
+
+  .post-description {
+    font-size: 1.15rem;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.6;
+  }
+
+  .post-cover {
+    margin: 1.5rem 0;
+  }
+
+  .cover-img {
+    width: 100%;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    display: block;
+  }
+
+  .post-content {
+    font-size: 1.05rem;
+    line-height: 1.8;
+  }
+
+  /* Prev / Next Navigation */
+  .post-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 2.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .nav-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background-color: var(--bg-surface);
+    text-decoration: none;
+    transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.15s ease;
+  }
+
+  .nav-card:hover {
+    border-color: var(--accent);
+    background-color: var(--bg-subtle);
+    transform: translateY(-2px);
+  }
+
+  .nav-next {
+    text-align: right;
+    align-items: flex-end;
+  }
+
+  .nav-direction {
+    font-size: 0.75rem;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .nav-title {
+    font-size: 0.95rem;
+    color: var(--text);
+    font-weight: 500;
+    line-height: 1.4;
+  }
+
+  .nav-card:hover .nav-title {
+    color: var(--accent);
+  }
+
+  .nav-spacer {
+    display: block;
+  }
+
+  @media (max-width: 600px) {
+    .post-nav {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

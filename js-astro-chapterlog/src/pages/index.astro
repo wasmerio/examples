@@ -1,0 +1,284 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { site } from "../data/site";
+import { books, categories, getAllChapters } from "../data/books";
+import { l } from "../data/labels";
+import Search from "../components/Search.astro";
+
+const totalChapters = books.flatMap((b) => getAllChapters(b)).length;
+
+const palettes = [
+  ["#3b82f6", "#2563eb", "#1d4ed8", "#60a5fa", "#93c5fd"],
+  ["#8b5cf6", "#7c3aed", "#6d28d9", "#a78bfa", "#c4b5fd"],
+  ["#f59e0b", "#d97706", "#b45309", "#fbbf24", "#fcd34d"],
+  ["#10b981", "#059669", "#047857", "#34d399", "#6ee7b7"],
+  ["#ef4444", "#dc2626", "#b91c1c", "#f87171", "#fca5a5"],
+];
+
+const catPalette = new Map<string, string[]>();
+categories.forEach((cat, i) => {
+  catPalette.set(cat.key, palettes[i % palettes.length]);
+});
+
+let colorIdx: Record<string, number> = {};
+function getColor(cat: string) {
+  if (!colorIdx[cat]) colorIdx[cat] = 0;
+  const colors = catPalette.get(cat) || palettes[0];
+  return colors[colorIdx[cat]++ % colors.length];
+}
+---
+
+<Layout title={l("nav.bookshelf")}>
+  <div class="home">
+    <header class="topbar">
+      <span class="logo">{site.name}</span>
+      <button id="search-btn" class="search-btn" aria-label="Search">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="7" cy="7" r="4.5" />
+          <line x1="10.5" y1="10.5" x2="14" y2="14" />
+        </svg>
+        <kbd>⌘K</kbd>
+      </button>
+      <button id="theme-toggle" class="theme-btn" aria-label="Toggle theme">
+        <span class="light-icon">☽</span>
+        <span class="dark-icon">☀</span>
+      </button>
+    </header>
+    <main>
+      <h1>{l("nav.bookshelf")}</h1>
+      <p class="desc">{books.length} {l("shelf.books")} · {totalChapters} {l("shelf.chapters")}</p>
+
+      {categories.map((cat) => {
+        const catBooks = books.filter((b) => b.category === cat.key);
+        if (catBooks.length === 0) return null;
+        return (
+          <section>
+            <h2>{cat.label}</h2>
+            <div class="shelf">
+              <div class="shelf-books">
+                {catBooks.map((book) => {
+                  const total = book.parts.flatMap((p) => p.chapters).length;
+                  const color = getColor(cat.key);
+                  return (
+                    <a href={`/${book.slug}`} class="book-card">
+                      <div class="book-cover" style={!book.cover ? `background-color: ${color}` : undefined}>
+                        {book.cover ? (
+                          <img src={book.cover} alt={book.title} />
+                        ) : (
+                          <span class="cover-title">{book.title}</span>
+                        )}
+                      </div>
+                      <span class="book-label">{book.title}</span>
+                      <span class="book-progress">{total}ch</span>
+                    </a>
+                  );
+                })}
+              </div>
+              <div class="shelf-edge" />
+            </div>
+          </section>
+        );
+      })}
+    </main>
+  </div>
+  <Search />
+</Layout>
+
+<script>
+  document.getElementById("search-btn")?.addEventListener("click", () => {
+    (window as any).__openSearch?.();
+  });
+
+  document.getElementById("theme-toggle")?.addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme");
+    const next = current === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+  });
+</script>
+
+<style>
+  .search-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 0.3rem 0.5rem;
+    margin-left: 1rem;
+  }
+
+  .search-btn:hover {
+    border-color: var(--text-muted);
+  }
+
+  .theme-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    color: var(--text-muted);
+    padding: 0.25rem;
+    margin-left: auto;
+  }
+
+  [data-theme="light"] .dark-icon { display: none; }
+  [data-theme="dark"] .light-icon { display: none; }
+
+  .search-btn kbd {
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.05rem 0.3rem;
+    font-size: 0.6rem;
+    font-family: inherit;
+  }
+  .home {
+    min-height: 100vh;
+  }
+
+  .topbar {
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    padding: 0 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .logo {
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+
+  main {
+    max-width: 48rem;
+    margin: 0 auto;
+    padding: 3rem 1.5rem;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+
+  .desc {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+    margin-bottom: 2.5rem;
+  }
+
+  section {
+    margin-bottom: 2.5rem;
+  }
+
+  h2 {
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+
+  .shelf {
+    position: relative;
+  }
+
+  .shelf-books {
+    display: flex;
+    gap: 1rem;
+    padding: 0.5rem 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex-wrap: wrap;
+  }
+
+  .shelf-books::-webkit-scrollbar {
+    display: none;
+  }
+
+  .shelf-edge {
+    height: 4px;
+    background: linear-gradient(to bottom, var(--border), transparent);
+    margin-top: 0.25rem;
+  }
+
+  .book-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 6.5rem;
+    text-decoration: none;
+    transition: transform 0.15s;
+  }
+
+  .book-card:hover {
+    transform: translateY(-4px);
+  }
+
+  .book-cover {
+    width: 6rem;
+    height: 8.5rem;
+    border-radius: 4px;
+    box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+    color: white;
+    padding: 0;
+  }
+
+  .book-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 4px;
+  }
+
+  .cover-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-align: center;
+    line-height: 1.3;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .book-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 0.4rem;
+    text-align: center;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    width: 100%;
+  }
+
+  .book-progress {
+    font-size: 0.55rem;
+    color: var(--text-muted);
+    margin-top: 0.1rem;
+  }
+
+  @media (max-width: 768px) {
+    .shelf-books {
+      gap: 0.75rem;
+    }
+
+    .book-card {
+      width: 5rem;
+    }
+
+    .book-cover {
+      width: 4.5rem;
+      height: 6.5rem;
+    }
+  }
+</style>

@@ -1,0 +1,232 @@
+<div id="search-modal" class="modal">
+  <div class="modal-backdrop" id="search-backdrop"></div>
+  <div class="modal-content">
+    <input
+      type="text"
+      id="search-input"
+      placeholder="Search books and chapters..."
+      autocomplete="off"
+    />
+    <ul id="search-results"></ul>
+    <div class="search-hint">
+      <kbd>↑↓</kbd> navigate &nbsp; <kbd>↵</kbd> open &nbsp; <kbd>esc</kbd> close
+    </div>
+  </div>
+</div>
+
+<script>
+  const modal = document.getElementById("search-modal")!;
+  const backdrop = document.getElementById("search-backdrop")!;
+  const input = document.getElementById("search-input") as HTMLInputElement;
+  const resultsList = document.getElementById("search-results")!;
+
+  type Entry = { type: string; title: string; author: string; url: string; category: string };
+  let entries: Entry[] = [];
+  let selectedIdx = -1;
+
+  async function loadIndex() {
+    if (entries.length > 0) return;
+    try {
+      const res = await fetch("/api/search-index.json");
+      if (res.ok) entries = await res.json();
+    } catch {}
+  }
+
+  // Preload on page load
+  loadIndex();
+
+  function open() {
+    modal.classList.add("open");
+    input.value = "";
+    resultsList.innerHTML = "";
+    selectedIdx = -1;
+    setTimeout(() => input.focus(), 50);
+  }
+
+  function close() {
+    modal.classList.remove("open");
+  }
+
+  function render(results: Entry[]) {
+    resultsList.innerHTML = results
+      .slice(0, 20)
+      .map(
+        (r, i) =>
+          `<li class="${i === selectedIdx ? "selected" : ""}">
+            <a href="${r.url}">
+              <span class="result-type">${r.type === "book" ? "📖" : "📄"}</span>
+              <span class="result-info">
+                <span class="result-title">${r.title}</span>
+                <span class="result-meta">${r.author}</span>
+              </span>
+            </a>
+          </li>`
+      )
+      .join("");
+  }
+
+  function search(query: string) {
+    if (!query.trim()) {
+      resultsList.innerHTML = "";
+      selectedIdx = -1;
+      return;
+    }
+    const q = query.toLowerCase();
+    const results = entries.filter(
+      (e) =>
+        e.title.toLowerCase().includes(q) ||
+        e.author.toLowerCase().includes(q) ||
+        e.category.toLowerCase().includes(q)
+    );
+    selectedIdx = results.length > 0 ? 0 : -1;
+    render(results);
+  }
+
+  input.addEventListener("input", () => search(input.value));
+
+  input.addEventListener("keydown", (e) => {
+    const items = resultsList.querySelectorAll("li");
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      selectedIdx = Math.min(selectedIdx + 1, items.length - 1);
+      items.forEach((li, i) => li.classList.toggle("selected", i === selectedIdx));
+      items[selectedIdx]?.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      selectedIdx = Math.max(selectedIdx - 1, 0);
+      items.forEach((li, i) => li.classList.toggle("selected", i === selectedIdx));
+      items[selectedIdx]?.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const link = items[selectedIdx]?.querySelector("a") as HTMLAnchorElement | null;
+      if (link) window.location.href = link.href;
+    } else if (e.key === "Escape") {
+      close();
+    }
+  });
+
+  backdrop.addEventListener("click", close);
+
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      e.preventDefault();
+      modal.classList.contains("open") ? close() : open();
+    }
+    if (e.key === "Escape" && modal.classList.contains("open")) {
+      close();
+    }
+  });
+
+  // Expose open function for the search button
+  (window as any).__openSearch = open;
+</script>
+
+<style is:global>
+  .modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+  }
+
+  .modal.open {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 20vh;
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  .modal-content {
+    position: relative;
+    width: 90%;
+    max-width: 32rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+  }
+
+  input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+    font-family: inherit;
+  }
+
+  input::placeholder {
+    color: var(--text-muted);
+  }
+
+  ul {
+    list-style: none;
+    max-height: 20rem;
+    overflow-y: auto;
+  }
+
+  li a {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: background 0.1s;
+  }
+
+  li.selected a,
+  li a:hover {
+    background: var(--accent-bg);
+  }
+
+  .result-type {
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  .result-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .result-title {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .result-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .search-hint {
+    padding: 0.4rem 1rem;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+  }
+
+  kbd {
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1rem 0.3rem;
+    font-size: 0.6rem;
+    font-family: inherit;
+  }
+</style>

@@ -1,0 +1,264 @@
+---
+import WikiLayout from "../../layouts/WikiLayout.astro";
+import { books, getBook, getAllChapters } from "../../data/books";
+import { l } from "../../data/labels";
+import { marked } from "marked";
+import yaml from "js-yaml";
+import fs from "node:fs";
+import path from "node:path";
+
+export function getStaticPaths() {
+  return books.flatMap((book) =>
+    getAllChapters(book).map((ch) => ({
+      params: { book: book.slug, chapter: ch.slug },
+    }))
+  );
+}
+
+const { book: bookSlug, chapter: chapterSlug } = Astro.params;
+const book = getBook(bookSlug!);
+const allChapters = getAllChapters(book);
+const chapterIdx = allChapters.findIndex((c) => c.slug === chapterSlug);
+const chapter = allChapters[chapterIdx];
+const prev = chapterIdx > 0 ? allChapters[chapterIdx - 1] : null;
+const next = chapterIdx < allChapters.length - 1 ? allChapters[chapterIdx + 1] : null;
+
+const mdPath = path.join(process.cwd(), "src/content/books", bookSlug!, `${chapterSlug}.md`);
+let content = "";
+let sections: string[] = [];
+
+if (fs.existsSync(mdPath)) {
+  const raw = fs.readFileSync(mdPath, "utf-8");
+  const fmEnd = raw.indexOf("---", 3);
+  if (fmEnd !== -1) {
+    const fm = yaml.load(raw.slice(3, fmEnd)) as Record<string, unknown> | null;
+    content = raw.slice(fmEnd + 3).trim();
+    if (fm?.sections && Array.isArray(fm.sections)) {
+      sections = fm.sections.map(String);
+    }
+  }
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .trim();
+}
+
+const renderer = new marked.Renderer();
+renderer.heading = ({ text, depth }: { text: string; depth: number }) => {
+  const id = slugify(text);
+  return `<h${depth} id="${id}">${text}</h${depth}>`;
+};
+
+const html = content ? await marked.parse(content, { renderer }) : "";
+---
+
+<WikiLayout title={`${chapter.number}. ${chapter.title}`} currentSlug={chapterSlug} bookSlug={bookSlug}>
+  <article>
+    <span class="ch-label">{l("chapter.label")} {chapter.number}</span>
+    <h1>{chapter.title}</h1>
+
+    {sections.length > 0 && (
+      <ul class="sections">
+        {sections.map((s) => {
+          const label = s.replace(/^\d+\.\d+\s*/, "");
+          const id = slugify(label);
+          return <li><a href={`#${id}`}>{s}</a></li>;
+        })}
+      </ul>
+    )}
+
+    {html ? (
+      <div class="body" set:html={html} />
+    ) : (
+      <div class="empty">
+        <p>{l("chapter.empty")}</p>
+      </div>
+    )}
+  </article>
+
+  <nav class="pager">
+    {prev ? (
+      <a href={`/${bookSlug}/${prev.slug}`} class="prev">
+        ← {prev.number}. {prev.title}
+      </a>
+    ) : <span />}
+    {next ? (
+      <a href={`/${bookSlug}/${next.slug}`} class="next">
+        {next.number}. {next.title} →
+      </a>
+    ) : <span />}
+  </nav>
+</WikiLayout>
+
+<style>
+  .ch-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-top: 0.15rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .sections {
+    list-style: none;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sections li {
+    font-size: 0.8rem;
+    padding: 0.15rem 0;
+  }
+
+  .sections li a {
+    color: var(--text-muted);
+    transition: color 0.1s;
+  }
+
+  .sections li a:hover {
+    color: var(--accent);
+  }
+
+  .body :global(h2) {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-top: 2.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .body :global(h3) {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-top: 1.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .body :global(p) {
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    line-height: 1.8;
+  }
+
+  .body :global(strong) {
+    font-weight: 600;
+  }
+
+  .body :global(ul),
+  .body :global(ol) {
+    padding-left: 1.25rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    line-height: 1.8;
+  }
+
+  .body :global(li) {
+    margin-bottom: 0.25rem;
+  }
+
+  .body :global(code) {
+    font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 0.8em;
+    background: var(--bg-sidebar);
+    padding: 0.15rem 0.35rem;
+    border-radius: 3px;
+  }
+
+  .body :global(pre) {
+    background: var(--bg-sidebar);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    overflow-x: auto;
+  }
+
+  .body :global(pre code) {
+    background: none;
+    padding: 0;
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+
+  .body :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+  }
+
+  .body :global(th) {
+    text-align: left;
+    font-weight: 600;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--text);
+  }
+
+  .body :global(td) {
+    padding: 0.45rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .body :global(tr:last-child td) {
+    border-bottom: none;
+  }
+
+  .body :global(blockquote) {
+    border-left: 3px solid var(--accent);
+    padding-left: 1rem;
+    margin: 1rem 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .body :global(hr) {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2rem 0;
+  }
+
+  .empty {
+    padding: 2rem 0;
+  }
+
+  .empty p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .pager {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .pager a {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    transition: color 0.1s;
+  }
+
+  .pager a:hover {
+    color: var(--accent);
+  }
+
+  .next {
+    text-align: right;
+  }
+</style>

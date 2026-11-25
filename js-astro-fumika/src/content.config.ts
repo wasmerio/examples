@@ -1,0 +1,54 @@
+import { defineCollection } from "astro:content";
+import { file, glob } from "astro/loaders";
+import { z } from "astro/zod";
+
+const postsCollection = defineCollection({
+	loader: glob({
+		base: "./src/content/posts",
+		pattern: "**/*.{md,mdx}",
+	}),
+	schema: () =>
+		z.object({
+			title: z.string(),
+			published: z.date(),
+			updated: z.date().optional(),
+			draft: z.boolean().optional().default(false),
+			description: z.string().optional().default(""),
+			image: z.string().optional().default(""),
+			tags: z.array(z.string()).optional().default([]),
+			category: z.string().optional().nullable().default(""),
+			lang: z.string().optional().default(""),
+			ogImage: z.string().optional(),
+
+			/* For internal use */
+			prevTitle: z.string().default(""),
+			prevSlug: z.string().default(""),
+			nextTitle: z.string().default(""),
+			nextSlug: z.string().default(""),
+		}),
+});
+
+const specCollection = defineCollection({
+	loader: glob({
+		base: "./src/content/spec",
+		pattern: "**/*.{md,mdx}",
+	}),
+	schema: z.object({}),
+});
+
+const friendsCollection = defineCollection({
+	loader: file("./src/content/data/friends.json"),
+	schema: z.object({
+		id: z.string(),
+		siteTitle: z.string(),
+		siteDesc: z.string(),
+		siteUrl: z.url(),
+		siteIcon: z.url(),
+	}),
+});
+
+export const collections = {
+	posts: postsCollection,
+	spec: specCollection,
+	friends: friendsCollection,
+};

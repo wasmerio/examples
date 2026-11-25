@@ -275,7 +275,7 @@ export function removeAdapter(configText) {
     else text = text.slice(0, span.keyStart) + text.slice(end).replace(/^[ \t]*/, '');
   }
   const imp = hostImport(text);
-  if (imp && !new RegExp(`\\b${imp[1]}\\b`).test(text.slice(0, imp.index) + text.slice(imp.index + imp[0].length))) {
+  if (imp && !new RegExp(`(?<![\\w.$/-])${imp[1]}(?![\\w$])`).test(text.slice(0, imp.index) + text.slice(imp.index + imp[0].length))) {
     text = text.slice(0, imp.index) + text.slice(imp.index + imp[0].length);
   }
   return text.replace(/(output\s*:\s*)['"](hybrid|server)['"]/, "$1'static'");
@@ -289,7 +289,7 @@ export function swapToNode(configText) {
   const imp = hostImport(text);
   if (imp) {
     const rest = text.slice(0, imp.index) + text.slice(imp.index + imp[0].length);
-    text = new RegExp(`\\b${imp[1]}\\b`).test(rest) ? text : rest;
+    text = new RegExp(`(?<![\\w.$/-])${imp[1]}(?![\\w$])`).test(rest) ? text : rest;
   }
   if (!/from\s+['"]@astrojs\/node['"]/.test(text)) text = `import node from '@astrojs/node';\n${text}`;
   return text;
@@ -515,7 +515,14 @@ async function nodeAdapterFor(astroVersion) {
 
 function localEnv() {
   const pathPrefix = existsSync(LOCAL_NODE_BIN) ? `${LOCAL_NODE_BIN}:` : '';
-  return { ...process.env, PATH: `${pathPrefix}${process.env.PATH || ''}`, CI: 'true', ASTRO_TELEMETRY_DISABLED: '1', HUSKY: '0', NODE_OPTIONS: '--max-old-space-size=4096' };
+  return { ...process.env, PATH: `${pathPrefix}${process.env.PATH || ''}`, CI: 'true', ASTRO_TELEMETRY_DISABLED: '1', HUSKY: '0', NODE_OPTIONS: '--max-old-space-size=4096', npm_config_manage_package_manager_versions: 'false' };
+}
+
+// Anybuild installs pnpm 10 unless package.json declares a version (node.rs default_manager_version); match it locally.
+const PNPM_DEFAULT = '10.34.9';
+function pnpmCmd(dir) {
+  const declared = String((dir && (readJson(path.join(dir, 'package.json')) || {}).packageManager) || '').match(/^pnpm@(\d+\.\d+\.\d+)/);
+  return ['npx', ['-y', `pnpm@${declared ? declared[1] : PNPM_DEFAULT}`]];
 }
 
 const YARN1 = ['npx', ['-y', 'yarn@1.22.22']];
@@ -529,7 +536,7 @@ function yarnBerry(dir) {
 }
 
 export function installCommand(manager, frozen = true, dir = '') {
-  if (manager === 'pnpm') return ['pnpm', ['install', frozen ? '--frozen-lockfile' : '--no-frozen-lockfile']];
+  if (manager === 'pnpm') return [pnpmCmd(dir)[0], [...pnpmCmd(dir)[1], 'install', frozen ? '--frozen-lockfile' : '--no-frozen-lockfile']];
   if (manager === 'yarn') {
     const [cmd, base] = yarnCmd(dir);
     const berry = base === YARN4[1];
@@ -540,14 +547,18 @@ export function installCommand(manager, frozen = true, dir = '') {
 }
 
 function addCommand(manager, spec, dir) {
-  if (manager === 'pnpm') return ['pnpm', ['add', spec]];
+  if (manager === 'pnpm') return [pnpmCmd(dir)[0], [...pnpmCmd(dir)[1], 'add', spec]];
   if (manager === 'yarn') return [yarnCmd(dir)[0], [...yarnCmd(dir)[1], 'add', spec]];
   if (manager === 'bun') return ['bun', ['add', spec]];
   return ['npm', ['install', '--no-audit', '--no-fund', spec]];
 }
 
 function buildCommand(manager, pkg, dir) {
-  if (pkg && pkg.scripts && pkg.scripts.build) return manager === 'yarn' ? [yarnCmd(dir)[0], [...yarnCmd(dir)[1], 'run', 'build']] : [manager, ['run', 'build']];
+  if (pkg && pkg.scripts && pkg.scripts.build) {
+    if (manager === 'yarn') return [yarnCmd(dir)[0], [...yarnCmd(dir)[1], 'run', 'build']];
+    if (manager === 'pnpm') return [pnpmCmd(dir)[0], [...pnpmCmd(dir)[1], 'run', 'build']];
+    return [manager, ['run', 'build']];
+  }
   return ['npx', ['astro', 'build']];
 }
 

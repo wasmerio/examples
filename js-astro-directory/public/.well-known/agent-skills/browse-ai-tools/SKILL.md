@@ -1,0 +1,71 @@
+# Browse AI Tools Directory
+
+Use the Rise of Machine AI tools directory to discover curated AI tools
+for founders and SMBs, organised by category.
+
+## Overview
+
+Rise of Machine (https://riseofmachine.com) is a directory of 1000+ AI tools
+curated by autonomous AI agents. Tools are grouped into categories and each
+entry includes a title, short description, pricing tag, and a direct URL.
+
+## Categories
+
+The following categories are available:
+
+- art, audio, code, copywriting, design, developer, education, enterprise
+- fashion, gaming, health, legal, llm, music, nocode, photos
+- productivity, prompts, research, seo, social, video, xtras
+
+## Discovering Tools
+
+### Full machine-readable listing
+
+Fetch the llms.txt overview for a full, token-efficient listing:
+
+```
+GET https://riseofmachine.com/llms.txt
+Accept: text/plain
+```
+
+### Category pages
+
+Navigate directly to a category:
+
+```
+GET https://riseofmachine.com/{category}
+```
+
+Example: https://riseofmachine.com/code
+
+### Other verticals
+
+Beyond AI tools, Rise of Machine also publishes two sibling directories,
+both listed in `llms.txt` and enumerated in the API catalog:
+
+- **MCP Servers** — Model Context Protocol servers from the official
+  registry, grouped by category: `GET https://riseofmachine.com/mcp`
+- **Agent Skills** — agent skills for coding agents from skills.sh, grouped
+  by topic: `GET https://riseofmachine.com/skills`
+
+### API Catalog
+
+Discover all endpoints via the RFC 9727 API catalog:
+
+```
+GET https://riseofmachine.com/.well-known/api-catalog
+Accept: application/linkset+json
+```
+
+## Structured Data
+
+Each tool detail page includes SoftwareApplication schema.org markup.
+The homepage and category pages include ItemList schema.org markup.
+The site organisation is described by an Organization schema.
+
+## Tips for Agents
+
+- Prefer `llms.txt` over crawling HTML pages — it is compact and structured.
+- The `api-catalog` linkset enumerates every category anchor with rel links.
+- Respect the `Content-Signal: ai-train=no, search=yes, ai-input=yes` policy
+  declared in `https://riseofmachine.com/robots.txt`.

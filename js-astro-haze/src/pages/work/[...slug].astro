@@ -1,0 +1,435 @@
+---
+import { getCollection, render } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import Header from '@/components/common/Header.astro';
+import Footer from '@/components/common/Footer.astro';
+import Container from '@/components/ui/Container.astro';
+import GlassCard from '@/components/ui/GlassCard.astro';
+import Button from '@/components/ui/Button.astro';
+import Picture from '@/components/ui/Picture.astro';
+import ProjectGallery from '@/components/portfolio/ProjectGallery.astro';
+import siteConfig from '@/site.config';
+import { classifyHref, withBase } from '@/lib/url';
+
+export async function getStaticPaths() {
+  const projects = await getCollection('projects');
+  return projects.map((project) => ({
+    params: { slug: project.id },
+    props: project,
+  }));
+}
+
+type Props = CollectionEntry<'projects'>;
+
+const project = Astro.props;
+const { Content } = await render(project);
+const description = project.data.description ?? project.data.summary;
+const projectLinks = [
+  project.data.links?.live && {
+    label: 'Visit live site',
+    href: project.data.links.live,
+    external: true,
+  },
+  project.data.links?.github && {
+    label: 'View source',
+    href: project.data.links.github,
+    external: true,
+  },
+  project.data.links?.case && {
+    label: 'Read case study',
+    href: withBase(project.data.links.case),
+    // Unlike the two links above, a case study may live on or off site.
+    external: classifyHref(project.data.links.case) === 'external',
+  },
+].filter((link): link is { label: string; href: string; external: boolean } =>
+  Boolean(link),
+);
+---
+
+<BaseLayout
+  title={project.data.title}
+  description={description}
+  ogImage={withBase(`/og/work/${project.id}.png`)}
+  article={{ type: 'CreativeWork', year: project.data.year }}
+>
+  <Header />
+
+  <main id="main" tabindex="-1">
+    <article>
+      <header class="case-hero">
+        <Container size="xl">
+          <a class="case-hero__back" href={withBase('/work/')}>← All work</a>
+
+          <div class="case-hero__heading">
+            <p class="case-hero__kicker">
+              {project.data.role}{
+                siteConfig.portfolio.showYear && ` / ${project.data.year}`
+              }
+            </p>
+            <h1>{project.data.title}</h1>
+            <p class="case-hero__summary">{project.data.summary}</p>
+          </div>
+
+          <div
+            class="case-hero__image"
+            transition:name={`project-image-${project.id}`}
+          >
+            <Picture
+              src={project.data.cover}
+              alt={project.data.coverAlt ?? project.data.title}
+              widths={[600, 1200, 1586]}
+              sizes="100vw"
+              loading="eager"
+              fetchpriority="high"
+              class="case-cover"
+            />
+          </div>
+        </Container>
+      </header>
+
+      <Container size="xl">
+        <div class="case-layout">
+          <aside class="case-facts" aria-label="Project details">
+            <GlassCard padding="md" radius="lg" class="case-facts__card">
+              <dl>
+                {
+                  project.data.client && (
+                    <div>
+                      <dt>Client</dt>
+                      <dd>{project.data.client}</dd>
+                    </div>
+                  )
+                }
+                <div>
+                  <dt>Role</dt>
+                  <dd>{project.data.role}</dd>
+                </div>
+                {
+                  siteConfig.portfolio.showYear && (
+                    <div>
+                      <dt>Year</dt>
+                      <dd>{project.data.year}</dd>
+                    </div>
+                  )
+                }
+                {
+                  project.data.duration && (
+                    <div>
+                      <dt>Duration</dt>
+                      <dd>{project.data.duration}</dd>
+                    </div>
+                  )
+                }
+              </dl>
+
+              {
+                siteConfig.portfolio.showTechStack && (
+                  <div class="case-facts__stack">
+                    <p>Stack</p>
+                    <ul>
+                      {project.data.tech.map((item) => (
+                        <li>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )
+              }
+            </GlassCard>
+          </aside>
+
+          <div class="case-content">
+            <p class="case-content__lead">{description}</p>
+            <div class="prose">
+              <Content />
+            </div>
+
+            {
+              projectLinks.length > 0 && (
+                <div class="case-actions" aria-label="Project links">
+                  {projectLinks.map((link, index) => (
+                    <Button
+                      href={link.href}
+                      variant={index === 0 ? 'solid' : 'outline'}
+                      external={link.external}
+                    >
+                      {link.label}
+                      <span aria-hidden="true">↗</span>
+                    </Button>
+                  ))}
+                </div>
+              )
+            }
+          </div>
+        </div>
+      </Container>
+
+      {
+        project.data.images && (
+          <Container size="xl">
+            <ProjectGallery
+              images={project.data.images}
+              title={project.data.title}
+            />
+          </Container>
+        )
+      }
+
+      <Container size="xl">
+        <nav class="case-next" aria-label="Portfolio navigation">
+          <p>End of case file</p>
+          <a href={withBase('/work/')}>
+            Explore all work
+            <span aria-hidden="true">→</span>
+          </a>
+        </nav>
+      </Container>
+    </article>
+  </main>
+
+  <Footer />
+</BaseLayout>
+
+<style>
+  .case-hero {
+    padding-block: var(--space-2xl) var(--space-3xl);
+  }
+
+  .case-hero__back {
+    display: inline-flex;
+    margin-bottom: clamp(4rem, 9vw, 8rem);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+
+  .case-hero__back:hover {
+    color: var(--color-accent);
+  }
+
+  .case-hero__heading {
+    display: grid;
+    grid-template-columns: minmax(9rem, 0.35fr) minmax(0, 1.3fr);
+    gap: var(--space-xl);
+    align-items: start;
+  }
+
+  .case-hero__kicker {
+    padding-top: var(--space-sm);
+    color: var(--color-accent);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .case-hero h1 {
+    max-width: 13ch;
+    margin-bottom: var(--space-xl);
+    font-size: clamp(3.5rem, 8vw, 7.5rem);
+    line-height: 0.9;
+    letter-spacing: -0.055em;
+  }
+
+  .case-hero__summary {
+    grid-column: 2;
+    max-width: 44rem;
+    margin: 0 0 var(--space-2xl);
+    color: var(--color-text-muted);
+    font-size: var(--text-xl);
+    line-height: 1.55;
+  }
+
+  .case-hero__image {
+    overflow: hidden;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--glass-shadow);
+    background: var(--color-surface);
+  }
+
+  .case-hero__image :global(.case-cover) {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+  }
+
+  .case-layout {
+    display: grid;
+    grid-template-columns: minmax(14rem, 0.35fr) minmax(0, 1fr);
+    gap: clamp(var(--space-xl), 6vw, 6rem);
+    align-items: start;
+    padding-top: var(--space-3xl);
+  }
+
+  .case-facts {
+    position: sticky;
+    top: 7rem;
+  }
+
+  .case-facts dl {
+    margin: 0;
+  }
+
+  .case-facts dl > div {
+    padding-block: var(--space-sm);
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  .case-facts dt,
+  .case-facts__stack > p {
+    margin: 0 0 var(--space-xs);
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .case-facts dd {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .case-facts__stack {
+    margin-top: var(--space-lg);
+  }
+
+  .case-facts__stack ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .case-facts__stack li {
+    margin: 0;
+    padding: 0.2rem var(--space-sm);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--color-surface) 65%, transparent);
+    font-size: var(--text-xs);
+  }
+
+  .case-content {
+    min-width: 0;
+    max-width: 48rem;
+  }
+
+  .case-content__lead {
+    margin-bottom: var(--space-3xl);
+    padding-left: var(--space-xl);
+    border-left: 2px solid var(--color-accent);
+    font-size: var(--text-xl);
+    line-height: 1.65;
+  }
+
+  .prose :global(h2) {
+    margin: var(--space-3xl) 0 var(--space-lg);
+    font-size: var(--text-3xl);
+    letter-spacing: -0.025em;
+  }
+
+  .prose :global(h3) {
+    margin: var(--space-2xl) 0 var(--space-md);
+    font-size: var(--text-xl);
+  }
+
+  .prose :global(p),
+  .prose :global(li) {
+    color: var(--color-text-muted);
+    line-height: 1.85;
+  }
+
+  .prose :global(p) {
+    margin-bottom: var(--space-lg);
+  }
+
+  .prose :global(strong) {
+    color: var(--color-text);
+  }
+
+  .prose :global(blockquote) {
+    margin: var(--space-2xl) 0;
+    padding: var(--space-lg) 0 var(--space-lg) var(--space-xl);
+    border-left: 1px solid var(--glass-border);
+    color: var(--color-text);
+    font-family: Georgia, 'Times New Roman', serif;
+    font-size: var(--text-2xl);
+    line-height: 1.45;
+  }
+
+  .prose :global(blockquote p) {
+    margin: 0;
+    color: inherit;
+  }
+
+  .case-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
+    margin-top: var(--space-3xl);
+  }
+
+  .case-next {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-lg);
+    margin-top: calc(var(--space-3xl) * 1.5);
+    padding-block: var(--space-xl);
+    border-block: 1px solid var(--glass-border);
+  }
+
+  .case-next p {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .case-next a {
+    display: inline-flex;
+    gap: var(--space-md);
+    align-items: center;
+    color: var(--color-text);
+    font-size: var(--text-xl);
+    font-weight: 700;
+  }
+
+  .case-next a span {
+    color: var(--color-accent);
+  }
+
+  @media (max-width: 768px) {
+    .case-hero__heading {
+      display: block;
+    }
+
+    .case-hero__kicker {
+      margin-bottom: var(--space-lg);
+    }
+
+    .case-hero__summary {
+      grid-column: auto;
+    }
+
+    .case-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .case-facts {
+      position: static;
+    }
+
+    .case-next {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+  }
+</style>

@@ -1,0 +1,424 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import Container from '@/components/ui/Container.astro';
+import Pagination from '@/components/blog/Pagination.astro';
+import { withBase } from '@/lib/url';
+import ProjectCard from './ProjectCard.astro';
+
+export interface Props {
+  projects: CollectionEntry<'projects'>[];
+  totalProjects: number;
+  currentPage: number;
+  totalPages: number;
+  perPage: number;
+  showTechStack: boolean;
+  showYear: boolean;
+}
+
+const {
+  projects,
+  totalProjects,
+  currentPage,
+  totalPages,
+  perPage,
+  showTechStack,
+  showYear,
+} = Astro.props;
+
+const technologyCounts = projects
+  .flatMap((project) => project.data.tech)
+  .reduce<Map<string, number>>((counts, item) => {
+    counts.set(item, (counts.get(item) ?? 0) + 1);
+    return counts;
+  }, new Map());
+
+const filters = [...technologyCounts]
+  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  .slice(0, 5)
+  .map(([name]) => name);
+
+// The technology filter runs client-side over the cards on the page, so it can
+// only be correct when the whole archive fits on a single page. Once paginated
+// it would silently hide matches that live on other pages, so we omit it.
+const showFilters = showTechStack && totalPages <= 1 && filters.length > 0;
+
+const indexOffset = (currentPage - 1) * perPage;
+const rangeStart = projects.length > 0 ? indexOffset + 1 : 0;
+const rangeEnd = indexOffset + projects.length;
+---
+
+<section class="work-hero" aria-labelledby="work-title">
+  <Container size="xl">
+    <div class="work-hero__index" aria-hidden="true">
+      {String(rangeStart).padStart(2, '0')}—{String(rangeEnd).padStart(2, '0')}
+    </div>
+    <div class="work-hero__content">
+      <p class="work-hero__eyebrow">
+        Selected case files{showYear && ' / 2022—2026'}
+        {totalPages > 1 && ` / Page ${currentPage} of ${totalPages}`}
+      </p>
+      <h1 id="work-title">Work shaped around <em>real use.</em></h1>
+      <p class="work-hero__intro">
+        Digital products and identities made legible, useful, and distinctly
+        human. Each case starts with the constraint—not the decoration.
+      </p>
+    </div>
+  </Container>
+</section>
+
+<section class="project-index" aria-labelledby="project-index-title">
+  <Container size="xl">
+    <div class="project-index__bar">
+      <div>
+        <p class="project-index__label">
+          Archive / {String(totalProjects).padStart(2, '0')} cases
+        </p>
+        <h2 id="project-index-title">Selected projects</h2>
+      </div>
+
+      {
+        showFilters && (
+          <div
+            class="filters"
+            role="group"
+            aria-label="Filter projects by technology"
+          >
+            <button
+              class="filter is-active"
+              type="button"
+              data-filter="all"
+              aria-pressed="true"
+            >
+              All
+            </button>
+            {filters.map((filter) => (
+              <button
+                class="filter"
+                type="button"
+                data-filter={filter}
+                aria-pressed="false"
+              >
+                {filter}
+              </button>
+            ))}
+          </div>
+        )
+      }
+    </div>
+
+    <p class="filter-status sr-only" aria-live="polite"></p>
+
+    {
+      projects.length > 0 ? (
+        <>
+          <div class="project-grid-shell">
+            <div class="project-grid">
+              {projects.map((project, index) => (
+                <div
+                  class:list={[
+                    'project-shell',
+                    'reveal',
+                    { 'project-shell--featured': project.data.featured },
+                  ]}
+                  data-technologies={
+                    showTechStack
+                      ? JSON.stringify(project.data.tech)
+                      : undefined
+                  }
+                >
+                  <ProjectCard
+                    title={project.data.title}
+                    summary={project.data.summary}
+                    cover={project.data.cover}
+                    coverAlt={project.data.coverAlt}
+                    tech={project.data.tech}
+                    role={project.data.role}
+                    year={project.data.year}
+                    href={withBase(`/work/${project.id}/`)}
+                    slug={project.id}
+                    index={indexOffset + index + 1}
+                    featured={project.data.featured}
+                    showTechStack={showTechStack}
+                    showYear={showYear}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+          {showFilters && (
+            <p class="filter-empty-state" hidden>
+              No projects match this filter.
+            </p>
+          )}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            basePath="/work"
+          />
+        </>
+      ) : (
+        <p class="empty-state">
+          The archive is being assembled. Check back soon.
+        </p>
+      )
+    }
+  </Container>
+</section>
+
+<script>
+  import { onPage } from '@/lib/lifecycle';
+
+  // The filter runs over the cards on the current page, so every element here
+  // is looked up again after a navigation — leaving /work/ and coming back
+  // would otherwise land on a page whose filter buttons do nothing.
+  onPage(() => {
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[data-filter]'),
+    );
+    if (buttons.length === 0) return;
+
+    const projects = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-technologies]'),
+    );
+    const status = document.querySelector<HTMLElement>('.filter-status');
+    const emptyState = document.querySelector<HTMLElement>(
+      '.filter-empty-state',
+    );
+    const prefersReducedMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches;
+
+    buttons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const selected = button.dataset.filter ?? 'all';
+        let visibleCount = 0;
+
+        buttons.forEach((item) => {
+          const isSelected = item === button;
+          item.classList.toggle('is-active', isSelected);
+          item.setAttribute('aria-pressed', String(isSelected));
+        });
+
+        projects.forEach((project) => {
+          let technologies: string[] = [];
+          try {
+            technologies = JSON.parse(
+              project.dataset.technologies ?? '[]',
+            ) as string[];
+          } catch {
+            technologies = [];
+          }
+          const isVisible =
+            selected === 'all' || technologies.includes(selected);
+          project.hidden = !isVisible;
+          if (isVisible) {
+            visibleCount += 1;
+            if (!prefersReducedMotion) {
+              project.animate(
+                [
+                  { opacity: 0, transform: 'translateY(1rem)' },
+                  { opacity: 1, transform: 'translateY(0)' },
+                ],
+                { duration: 300, easing: 'ease-out' },
+              );
+            }
+          }
+        });
+
+        if (emptyState) emptyState.hidden = visibleCount > 0;
+
+        if (status) {
+          status.textContent = `${visibleCount} project${visibleCount === 1 ? '' : 's'} shown`;
+        }
+      });
+    });
+  });
+</script>
+
+<style>
+  .work-hero {
+    padding-block: clamp(5rem, 11vw, 10rem);
+  }
+
+  .work-hero :global(.container) {
+    display: grid;
+    grid-template-columns: minmax(5rem, 0.25fr) minmax(0, 1fr);
+    gap: var(--space-xl);
+  }
+
+  .work-hero__index {
+    padding-top: 0.65rem;
+    color: var(--color-text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    letter-spacing: 0.08em;
+  }
+
+  .work-hero__content {
+    max-width: 68rem;
+  }
+
+  .work-hero__eyebrow,
+  .project-index__label {
+    margin-bottom: var(--space-md);
+    color: var(--color-accent);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .work-hero h1 {
+    max-width: 14ch;
+    margin-bottom: var(--space-xl);
+    font-size: clamp(3.25rem, 8.5vw, 8rem);
+    font-weight: 750;
+    line-height: 0.88;
+    letter-spacing: -0.065em;
+  }
+
+  .work-hero h1 em {
+    color: var(--color-accent);
+    font-family: Georgia, 'Times New Roman', serif;
+    font-weight: 400;
+  }
+
+  .work-hero__intro {
+    max-width: 42rem;
+    margin: 0 0 0 auto;
+    color: var(--color-text-muted);
+    font-size: var(--text-lg);
+    line-height: 1.7;
+  }
+
+  .project-index {
+    padding-bottom: var(--space-3xl);
+  }
+
+  .project-index__bar {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: var(--space-xl);
+    margin-bottom: var(--space-2xl);
+    padding-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  .project-index__bar h2 {
+    margin: 0;
+    font-size: var(--text-3xl);
+  }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-xs);
+  }
+
+  .filter {
+    min-height: 2.75rem;
+    padding: var(--space-xs) var(--space-md);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-full);
+    color: var(--color-text-muted);
+    background: color-mix(in srgb, var(--color-surface) 70%, transparent);
+    font-size: var(--text-sm);
+    transition:
+      color var(--transition-fast),
+      border-color var(--transition-fast),
+      background var(--transition-fast);
+  }
+
+  .filter.is-active {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: var(--color-accent-glass);
+  }
+
+  @media (hover: hover) {
+    .filter:hover {
+      border-color: var(--color-accent);
+      color: var(--color-accent);
+      background: var(--color-accent-glass);
+    }
+  }
+
+  .filter:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  /* The grid can't query its own width, so the shell is the container. */
+  .project-grid-shell {
+    container-type: inline-size;
+  }
+
+  .project-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-xl);
+  }
+
+  /* Was a viewport query: two project columns need room from the container,
+     not from the window. */
+  @container (max-width: 768px) {
+    .project-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .project-shell--featured {
+      grid-column: auto;
+    }
+  }
+
+  .project-shell[hidden] {
+    display: none;
+  }
+
+  .project-shell--featured {
+    grid-column: 1 / -1;
+  }
+
+  .empty-state,
+  .filter-empty-state {
+    padding: var(--space-3xl);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-xl);
+    color: var(--color-text-muted);
+    text-align: center;
+  }
+
+  .filter-empty-state[hidden] {
+    display: none;
+  }
+
+  .filter-empty-state {
+    margin-top: var(--space-xl);
+  }
+
+  @media (max-width: 768px) {
+    .work-hero :global(.container) {
+      display: block;
+    }
+
+    .work-hero__index {
+      margin-bottom: var(--space-xl);
+    }
+
+    .work-hero__intro {
+      margin-left: 0;
+    }
+
+    .project-index__bar {
+      display: block;
+    }
+
+    .filters {
+      justify-content: flex-start;
+      margin-top: var(--space-xl);
+    }
+  }
+</style>

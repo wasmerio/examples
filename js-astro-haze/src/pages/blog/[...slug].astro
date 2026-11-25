@@ -1,0 +1,444 @@
+---
+import { render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import Header from '@/components/common/Header.astro';
+import Footer from '@/components/common/Footer.astro';
+import GlassPanel from '@/components/common/GlassPanel.astro';
+import GlassCard from '@/components/ui/GlassCard.astro';
+import Tag from '@/components/ui/Tag.astro';
+import Picture from '@/components/ui/Picture.astro';
+import Toc from '@/components/blog/Toc.astro';
+import { withBase } from '@/lib/url';
+import { formatDate } from '@/lib/date';
+import { getPublishedPosts, getAdjacentPosts, readingTime } from '@/lib/posts';
+import siteConfig from '@/site.config';
+
+export const getStaticPaths = (async () => {
+  const posts = await getPublishedPosts();
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post },
+  }));
+}) satisfies GetStaticPaths;
+
+const { post } = Astro.props;
+const { Content, headings } = await render(post);
+
+const allPosts = await getPublishedPosts();
+const { newer, older } = getAdjacentPosts(allPosts, post.id);
+
+const minutes = readingTime(post.body);
+const formattedDate = formatDate(post.data.pubDate);
+const updatedDate = post.data.updatedDate
+  ? formatDate(post.data.updatedDate)
+  : undefined;
+
+const showToc = siteConfig.blog.showToc && headings.length > 0;
+const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
+  post.data.title,
+)}&url=${encodeURIComponent(Astro.url.href)}`;
+const linkedInUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(
+  Astro.url.href,
+)}`;
+---
+
+<BaseLayout
+  title={post.data.title}
+  description={post.data.description}
+  ogImage={withBase(`/og/blog/${post.id}.png`)}
+  article={{
+    publishedTime: post.data.pubDate.toISOString(),
+    modifiedTime: post.data.updatedDate?.toISOString(),
+    author: post.data.author,
+    tags: post.data.tags,
+  }}
+>
+  <Header />
+
+  <main id="main" tabindex="-1" class="main-content">
+    <article class="blog-post">
+      <div class="container">
+        <GlassPanel variant="solid" padding="xl" className="post-header">
+          <a href={withBase('/blog/')} class="post-back">← Back to blog</a>
+          <h1 class="post-title">{post.data.title}</h1>
+
+          <div class="post-meta">
+            <time datetime={post.data.pubDate.toISOString()}
+              >{formattedDate}</time
+            >
+            {
+              updatedDate && (
+                <>
+                  <span class="separator" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>Updated {updatedDate}</span>
+                </>
+              )
+            }
+            {
+              siteConfig.blog.showReadingTime && minutes > 0 && (
+                <>
+                  <span class="separator" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>{minutes} min read</span>
+                </>
+              )
+            }
+            {
+              post.data.author && (
+                <>
+                  <span class="separator" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>By {post.data.author}</span>
+                </>
+              )
+            }
+          </div>
+
+          {
+            post.data.tags.length > 0 && (
+              <div class="post-tags">
+                {post.data.tags.map((tag) => (
+                  <Tag name={tag} />
+                ))}
+              </div>
+            )
+          }
+        </GlassPanel>
+
+        {
+          post.data.heroImage && (
+            <div
+              class="post-hero-image"
+              transition:name={`post-image-${post.id}`}
+            >
+              <Picture
+                src={post.data.heroImage}
+                alt={post.data.heroImageAlt ?? post.data.title}
+                widths={[600, 1200, 1600]}
+                sizes="(min-width: 1024px) 720px, 100vw"
+                loading="eager"
+                fetchpriority="high"
+              />
+            </div>
+          )
+        }
+
+        <div class={`post-body ${showToc ? 'post-body--with-toc' : ''}`}>
+          <GlassPanel variant="solid" padding="xl" className="post-content">
+            <div class="prose">
+              <Content />
+            </div>
+          </GlassPanel>
+
+          {
+            showToc && (
+              <aside class="post-toc">
+                <div class="post-toc__inner">
+                  <Toc headings={headings} />
+                </div>
+              </aside>
+            )
+          }
+        </div>
+
+        {
+          siteConfig.blog.showShareButtons && (
+            <GlassPanel variant="default" padding="lg" className="post-footer">
+              <div class="share-section">
+                <h2 class="share-title">Share this post</h2>
+                <div class="share-buttons">
+                  <a
+                    href={tweetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="share-button glass-button"
+                  >
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      aria-hidden="true"
+                    >
+                      <path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z" />
+                    </svg>
+                    Share on X
+                  </a>
+                  <a
+                    href={linkedInUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="share-button glass-button"
+                  >
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      aria-hidden="true"
+                    >
+                      <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
+                      <rect x="2" y="9" width="4" height="12" />
+                      <circle cx="4" cy="4" r="2" />
+                    </svg>
+                    Share on LinkedIn
+                  </a>
+                </div>
+              </div>
+            </GlassPanel>
+          )
+        }
+
+        {
+          siteConfig.blog.showRelatedPosts && (newer || older) && (
+            <nav class="post-nav" aria-label="More posts">
+              {older ? (
+                <GlassCard
+                  href={withBase(`/blog/${older.id}/`)}
+                  class="post-nav__card"
+                >
+                  <span class="post-nav__dir">← Older</span>
+                  <span class="post-nav__title">{older.data.title}</span>
+                </GlassCard>
+              ) : (
+                <span />
+              )}
+              {newer ? (
+                <GlassCard
+                  href={withBase(`/blog/${newer.id}/`)}
+                  class="post-nav__card post-nav__card--next"
+                >
+                  <span class="post-nav__dir">Newer →</span>
+                  <span class="post-nav__title">{newer.data.title}</span>
+                </GlassCard>
+              ) : (
+                <span />
+              )}
+            </nav>
+          )
+        }
+      </div>
+    </article>
+  </main>
+
+  <Footer />
+</BaseLayout>
+
+<style>
+  .main-content {
+    min-height: 100vh; /* fallback */
+    min-height: 100dvh;
+  }
+
+  .blog-post {
+    padding: var(--space-2xl) 0;
+  }
+
+  .blog-post .container {
+    max-width: var(--container-5xl);
+    margin-inline: auto;
+    padding-inline: var(--space-lg);
+  }
+
+  .post-back {
+    display: inline-block;
+    color: var(--color-text-muted);
+    text-decoration: none;
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-md);
+    transition: color var(--transition-fast);
+  }
+  .post-back:hover {
+    color: var(--color-accent);
+  }
+
+  .post-header {
+    text-align: center;
+    margin-bottom: var(--space-2xl);
+  }
+
+  .post-title {
+    font-size: var(--text-4xl);
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: var(--space-lg);
+    /* The accent end uses the darker, AA-checked accent (see Button.astro's
+       solid variant) so the gradient edge stays readable on light mode. */
+    background: linear-gradient(
+      135deg,
+      var(--color-text),
+      var(--color-accent-dark)
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  @supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+    .post-title {
+      background: none;
+      -webkit-text-fill-color: currentColor;
+      color: var(--color-text);
+    }
+  }
+
+  .post-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-sm);
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    margin-bottom: var(--space-md);
+  }
+
+  .separator {
+    opacity: 0.5;
+  }
+
+  .post-tags {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-xs);
+    margin-top: var(--space-md);
+  }
+
+  .post-hero-image {
+    margin-bottom: var(--space-2xl);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--glass-shadow);
+  }
+
+  .post-hero-image :global(img) {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  /* Body + optional TOC sidebar */
+  .post-body {
+    display: grid;
+    gap: var(--space-xl);
+    margin-bottom: var(--space-2xl);
+  }
+
+  .post-body--with-toc {
+    grid-template-columns: minmax(0, 1fr) 16rem;
+  }
+
+  .post-toc__inner {
+    position: sticky;
+    top: calc(var(--space-3xl) + var(--space-md));
+  }
+
+  .prose {
+    font-size: var(--text-base);
+    line-height: 1.8;
+  }
+
+  /* Offset anchored headings from the sticky header */
+  .prose :global(:is(h2, h3, h4)) {
+    scroll-margin-top: var(--space-3xl);
+  }
+
+  .post-footer {
+    margin-top: var(--space-2xl);
+  }
+
+  .share-title {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    margin-bottom: var(--space-md);
+  }
+
+  .share-buttons {
+    display: flex;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+  }
+
+  .share-button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-sm) var(--space-md);
+    text-decoration: none;
+    color: var(--color-text);
+    font-weight: 500;
+  }
+
+  .share-button:hover {
+    color: var(--color-accent);
+  }
+
+  /* Prev / next */
+  .post-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-lg);
+    margin-top: var(--space-2xl);
+  }
+
+  .post-nav__card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  .post-nav__card--next {
+    text-align: right;
+  }
+
+  .post-nav__dir {
+    font-size: var(--text-sm);
+    color: var(--color-accent);
+    font-weight: 600;
+  }
+
+  .post-nav__title {
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  @media (max-width: 900px) {
+    .post-body--with-toc {
+      grid-template-columns: 1fr;
+    }
+    .post-toc {
+      order: -1;
+    }
+    .post-toc__inner {
+      position: static;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .post-title {
+      font-size: var(--text-3xl);
+    }
+    .post-meta {
+      font-size: var(--text-xs);
+    }
+    .blog-post {
+      padding: var(--space-lg) 0;
+    }
+    .post-nav {
+      grid-template-columns: 1fr;
+    }
+    .post-nav__card--next {
+      text-align: left;
+    }
+  }
+</style>

@@ -1,0 +1,146 @@
+---
+import type { GetStaticPaths } from 'astro';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import BaseLayout from '~/layouts/BaseLayout.astro';
+import Breadcrumbs from '~/components/Breadcrumbs.astro';
+import Artwork from '~/components/art/Artwork.astro';
+import Button from '~/components/Button.astro';
+import Cta from '~/components/home/Cta.astro';
+import siteConfig from '~/config/site';
+import { isVisible } from '~/lib/utils';
+import { graph, breadcrumbSchema, personSchema } from '~/lib/jsonld';
+
+export const getStaticPaths = (async () => {
+  const projects = (await getCollection('projects'))
+    .filter(isVisible)
+    .sort((a, b) => a.data.order - b.data.order);
+
+  return projects.map((project, i) => ({
+    params: { slug: project.id },
+    props: {
+      project,
+      next: projects[(i + 1) % projects.length]!,
+    },
+  }));
+}) satisfies GetStaticPaths;
+
+interface Props {
+  project: CollectionEntry<'projects'>;
+  next: CollectionEntry<'projects'>;
+}
+
+const { project, next } = Astro.props;
+const { Content } = await render(project);
+const d = project.data;
+
+const jsonLd = graph([
+  personSchema(siteConfig),
+  breadcrumbSchema([
+    { name: 'Home', url: `${siteConfig.url}/` },
+    { name: 'Work', url: `${siteConfig.url}/work/` },
+    { name: d.title, url: `${siteConfig.url}/work/${project.id}/` },
+  ]),
+]);
+---
+
+<BaseLayout
+  title={d.title}
+  description={d.description}
+  image={d.image?.src}
+  imageAlt={d.image?.alt}
+  jsonLd={jsonLd}
+>
+  <article>
+    <section class="wrap phero">
+      <div class="rev">
+        <Breadcrumbs items={[{ label: 'Work', href: '/work/' }, { label: d.title }]} />
+        <p class="eyebrow">{d.category} &middot; {d.year}</p>
+        <h1 class="d1" style="font-size:clamp(38px,6.4vw,76px);margin:16px 0 20px">{d.title}</h1>
+        <p class="lead" style="max-width:58ch">{d.description}</p>
+      </div>
+    </section>
+
+    <section class="wrap" style="padding-bottom:var(--sec)">
+      <div class="case-media rev">
+        {
+          d.image ? (
+            <img
+              src={d.image.src}
+              alt={d.image.alt}
+              width={d.image.width}
+              height={d.image.height}
+              fetchpriority="high"
+              decoding="async"
+            />
+          ) : d.artwork ? (
+            <Artwork name={d.artwork} label={`${d.title} — project artwork`} />
+          ) : null
+        }
+      </div>
+
+      <div class="case-grid">
+        <div class="rev">
+          <div class="prose"><Content /></div>
+
+          {
+            d.results.length > 0 && (
+              <div class="results">
+                {d.results.map((r) => (
+                  <div class="result">
+                    <b>{r.value}</b>
+                    <span>{r.label}</span>
+                  </div>
+                ))}
+              </div>
+            )
+          }
+        </div>
+
+        <aside class="case-aside rev rev-d1" aria-label="Project details">
+          <div class="case-fact">
+            <b>Client</b>
+            <p>{d.client}</p>
+          </div>
+          <div class="case-fact">
+            <b>Year</b>
+            <p>{d.year}</p>
+          </div>
+          {
+            d.services.length > 0 && (
+              <div class="case-fact">
+                <b>Services</b>
+                <ul>{d.services.map((s) => <li>{s}</li>)}</ul>
+              </div>
+            )
+          }
+          {
+            d.technologies.length > 0 && (
+              <div class="case-fact">
+                <b>Tools</b>
+                <div>{d.technologies.map((t) => <span class="pill">{t}</span>)}</div>
+              </div>
+            )
+          }
+          {
+            d.externalUrl && (
+              <Button href={d.externalUrl} variant="outline">Visit the site</Button>
+            )
+          }
+        </aside>
+      </div>
+
+      <div class="nextprev">
+        <a href={`/work/${next.id}/`}>
+          <b>Next project</b>
+          <span>{next.data.title}</span>
+        </a>
+        <a href="/work/">
+          <b>Everything else</b>
+          <span>All projects</span>
+        </a>
+      </div>
+    </section>
+  </article>
+
+  <Cta />
+</BaseLayout>

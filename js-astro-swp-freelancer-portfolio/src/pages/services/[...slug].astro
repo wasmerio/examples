@@ -1,0 +1,113 @@
+---
+import type { GetStaticPaths } from 'astro';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import BaseLayout from '~/layouts/BaseLayout.astro';
+import Breadcrumbs from '~/components/Breadcrumbs.astro';
+import Icon from '~/components/Icon.astro';
+import Button from '~/components/Button.astro';
+import Cta from '~/components/home/Cta.astro';
+import siteConfig from '~/config/site';
+import { isVisible } from '~/lib/utils';
+import { graph, breadcrumbSchema, personSchema } from '~/lib/jsonld';
+
+export const getStaticPaths = (async () => {
+  const services = (await getCollection('services'))
+    .filter(isVisible)
+    .sort((a, b) => a.data.order - b.data.order);
+
+  return services.map((service, i) => ({
+    params: { slug: service.id },
+    props: { service, next: services[(i + 1) % services.length]! },
+  }));
+}) satisfies GetStaticPaths;
+
+interface Props {
+  service: CollectionEntry<'services'>;
+  next: CollectionEntry<'services'>;
+}
+
+const { service, next } = Astro.props;
+const { Content } = await render(service);
+const d = service.data;
+
+const jsonLd = graph([
+  personSchema(siteConfig),
+  breadcrumbSchema([
+    { name: 'Home', url: `${siteConfig.url}/` },
+    { name: 'Services', url: `${siteConfig.url}/services/` },
+    { name: d.title, url: `${siteConfig.url}/services/${service.id}/` },
+  ]),
+]);
+---
+
+<BaseLayout title={d.title} description={d.description} jsonLd={jsonLd}>
+  <article>
+    <section class="wrap phero">
+      <div class="phero-in rev">
+        <Breadcrumbs items={[{ label: 'Services', href: '/services/' }, { label: d.title }]} />
+        <p class="eyebrow">{d.number}</p>
+        <div style="display:flex;align-items:center;gap:18px;margin:16px 0 20px;flex-wrap:wrap">
+          <span class="svc-ic" style="box-shadow:inset 0 0 0 1.5px var(--swp-line)">
+            <Icon name={d.icon} class="ic-lg" />
+          </span>
+          <h1 class="d1" style="font-size:clamp(38px,6.4vw,72px)">{d.title}</h1>
+        </div>
+        <p class="lead">{d.excerpt}</p>
+        {
+          d.tags.length > 0 && (
+            <div class="phero-meta">
+              {d.tags.map((t) => <span class="pill">{t}</span>)}
+            </div>
+          )
+        }
+      </div>
+    </section>
+
+    <section class="wrap" style="padding-bottom:var(--sec)">
+      <div class="case-grid">
+        <div class="rev">
+          <div class="prose"><Content /></div>
+        </div>
+
+        <aside class="case-aside rev rev-d1" aria-label="At a glance">
+          <div class="case-fact">
+            <b>How it runs</b>
+            <ul>
+              {d.process.map((step) => <li><strong>{step.title}.</strong> {step.body}</li>)}
+            </ul>
+          </div>
+          <Button href="/contact/" variant="ink">{d.ctaLabel}</Button>
+        </aside>
+      </div>
+
+      {
+        d.features.length > 0 && (
+          <div style="margin-top:clamp(40px,4.6vw,64px)">
+            <h2 class="d3 rev" style="margin-bottom:clamp(22px,2.4vw,32px)">What is included</h2>
+            <div class="feature-grid">
+              {d.features.map((f, i) => (
+                <div class:list={['feature', 'rev', i % 3 > 0 && `rev-d${i % 3}`]}>
+                  <i><Icon name="check" class="ic-xs" /></i>
+                  <span>{f}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      }
+
+      <div class="nextprev">
+        <a href={`/services/${next.id}/`}>
+          <b>Next service</b>
+          <span>{next.data.title}</span>
+        </a>
+        <a href="/services/">
+          <b>Everything else</b>
+          <span>All services</span>
+        </a>
+      </div>
+    </section>
+  </article>
+
+  <Cta />
+</BaseLayout>

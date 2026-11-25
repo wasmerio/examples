@@ -1,0 +1,117 @@
+---
+import type { GetStaticPaths } from 'astro';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import BaseLayout from '~/layouts/BaseLayout.astro';
+import Breadcrumbs from '~/components/Breadcrumbs.astro';
+import PostCard from '~/components/cards/PostCard.astro';
+import Button from '~/components/Button.astro';
+import siteConfig from '~/config/site';
+import { isVisible, formatDate, isoDate, absoluteUrl } from '~/lib/utils';
+import { graph, blogPostingSchema, breadcrumbSchema, personSchema } from '~/lib/jsonld';
+
+export const getStaticPaths = (async () => {
+  const posts = (await getCollection('blog'))
+    .filter(isVisible)
+    .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+  return posts.map((post, i) => ({
+    params: { slug: post.id },
+    props: {
+      post,
+      related: posts.filter((p) => p.id !== post.id).slice(0, 3),
+      next: posts[(i + 1) % posts.length]!,
+    },
+  }));
+}) satisfies GetStaticPaths;
+
+interface Props {
+  post: CollectionEntry<'blog'>;
+  related: CollectionEntry<'blog'>[];
+  next: CollectionEntry<'blog'>;
+}
+
+const { post, related, next } = Astro.props;
+const { Content } = await render(post);
+const d = post.data;
+const url = `${siteConfig.url}/journal/${post.id}/`;
+
+const jsonLd = graph([
+  personSchema(siteConfig),
+  blogPostingSchema(siteConfig, {
+    title: d.title,
+    description: d.description,
+    url,
+    image: absoluteUrl(d.image.src, Astro.site),
+    datePublished: isoDate(d.pubDate),
+    dateModified: d.updatedDate ? isoDate(d.updatedDate) : undefined,
+    author: d.author,
+    keywords: d.tags,
+  }),
+  breadcrumbSchema([
+    { name: 'Home', url: `${siteConfig.url}/` },
+    { name: 'Journal', url: `${siteConfig.url}/journal/` },
+    { name: d.title, url },
+  ]),
+]);
+---
+
+<BaseLayout
+  title={d.title}
+  description={d.description}
+  image={d.image.src}
+  imageAlt={d.image.alt}
+  type="article"
+  publishedTime={isoDate(d.pubDate)}
+  modifiedTime={d.updatedDate ? isoDate(d.updatedDate) : undefined}
+  jsonLd={jsonLd}
+>
+  <article class="wrap phero" style="padding-bottom:var(--sec)">
+    <div class="article-head rev">
+      <Breadcrumbs items={[{ label: 'Journal', href: '/journal/' }, { label: d.title }]} />
+      <div class="post-meta">
+        <em>{d.category}</em>
+        <span>{d.readingTime}</span>
+        <span aria-hidden="true">&middot;</span>
+        <time datetime={isoDate(d.pubDate)}>{formatDate(d.pubDate)}</time>
+      </div>
+      <h1 class="d2">{d.title}</h1>
+      <p class="lead">{d.description}</p>
+      <p class="mini muted">By {d.author}</p>
+    </div>
+
+    <div class="article-media rev rev-d1">
+      <img
+        src={d.image.src}
+        alt={d.image.alt}
+        width={d.image.width}
+        height={d.image.height}
+        fetchpriority="high"
+        decoding="async"
+      />
+    </div>
+
+    <div class="prose rev rev-d1"><Content /></div>
+
+    <footer class="article-foot">
+      {
+        d.tags.length > 0 && (
+          <div class="tags">{d.tags.map((t) => <span>#{t}</span>)}</div>
+        )
+      }
+      <Button href={`/journal/${next.id}/`} variant="outline">Next article</Button>
+    </footer>
+  </article>
+
+  {
+    related.length > 0 && (
+      <section class="wrap sec sec-top" aria-labelledby="related-h">
+        <h2 class="d3 rev" id="related-h" style="margin-bottom:clamp(26px,3vw,42px)">Keep reading</h2>
+        <div class="posts">
+          {related.map((p, i) => (
+            <PostCard post={p} headingLevel="h3" class:list={['rev', i % 3 > 0 && `rev-d${i % 3}`]} />
+          ))}
+        </div>
+      </section>
+    )
+  }
+</BaseLayout>

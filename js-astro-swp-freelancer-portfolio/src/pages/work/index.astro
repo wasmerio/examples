@@ -1,0 +1,98 @@
+---
+import PageLayout from '~/layouts/PageLayout.astro';
+import WorkCard from '~/components/cards/WorkCard.astro';
+import Cta from '~/components/home/Cta.astro';
+import siteConfig from '~/config/site';
+import { getCollection } from 'astro:content';
+import { isVisible } from '~/lib/utils';
+import { graph, breadcrumbSchema, personSchema } from '~/lib/jsonld';
+
+const projects = (await getCollection('projects'))
+  .filter(isVisible)
+  .sort((a, b) => a.data.order - b.data.order);
+
+/* Filter chips are built from the categories actually in use. */
+const categories = [...new Set(projects.map((p) => p.data.category))].sort();
+
+const jsonLd = graph([
+  personSchema(siteConfig),
+  breadcrumbSchema([
+    { name: 'Home', url: `${siteConfig.url}/` },
+    { name: 'Work', url: `${siteConfig.url}/work/` },
+  ]),
+]);
+---
+
+<PageLayout
+  title="Work"
+  heading="Six projects, six different arguments."
+  eyebrow="Selected work"
+  intro="Each of these started as a half-finished thing somebody was quietly worried about. The case studies say what was wrong, what changed, and what I would do differently."
+  description="Selected case studies in art direction, interface design, identity and design systems."
+  crumbs={[{ label: 'Work' }]}
+  jsonLd={jsonLd}
+>
+  <section class="wrap sec" style="padding-top:0" aria-labelledby="work-list-h">
+    <h2 class="sr-only" id="work-list-h">All projects</h2>
+
+    <div class="work-filters rev" role="group" aria-label="Filter projects by discipline" id="workFilters">
+      <button class="chip" type="button" data-filter="all" aria-pressed="true">All</button>
+      {
+        categories.map((category) => (
+          <button class="chip" type="button" data-filter={category} aria-pressed="false">
+            {category}
+          </button>
+        ))
+      }
+    </div>
+
+    <p class="sr-only" role="status" id="workCount"></p>
+
+    <div class="work-grid" id="workGrid" style="margin-top:clamp(28px,3vw,44px)">
+      {
+        projects.map((project, i) => (
+          <WorkCard
+            project={project}
+            eager={i < 2}
+            class:list={['rev', i % 3 > 0 && `rev-d${i % 3}`]}
+          />
+        ))
+      }
+    </div>
+
+    {projects.length === 0 && <p class="empty">No projects yet. Add one in <code>src/content/projects/</code>.</p>}
+  </section>
+
+  <Cta />
+</PageLayout>
+
+<script>
+  const filters = document.getElementById('workFilters');
+  const grid = document.getElementById('workGrid');
+  const status = document.getElementById('workCount');
+
+  if (filters && grid) {
+    const chips = Array.from(filters.querySelectorAll<HTMLButtonElement>('.chip[data-filter]'));
+    const cards = Array.from(grid.querySelectorAll<HTMLElement>('.work-card'));
+
+    filters.addEventListener('click', (event) => {
+      const chip = (event.target as HTMLElement).closest<HTMLButtonElement>('.chip[data-filter]');
+      if (!chip) return;
+
+      const filter = chip.dataset.filter ?? 'all';
+      for (const c of chips) c.setAttribute('aria-pressed', String(c === chip));
+
+      let shown = 0;
+      for (const card of cards) {
+        const match = filter === 'all' || card.dataset.category === filter;
+        card.hidden = !match;
+        if (match) shown += 1;
+      }
+
+      if (status) {
+        const label = filter === 'all' ? 'all disciplines' : filter;
+        status.textContent = `${shown} ${shown === 1 ? 'project' : 'projects'} shown for ${label}.`;
+      }
+    });
+  }
+</script>

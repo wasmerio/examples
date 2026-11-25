@@ -1,0 +1,97 @@
+---
+import Icon from '../Icon.astro';
+import { stats, statsHeading, reel } from '~/data/stats';
+---
+
+<section class="band" aria-labelledby="band-h">
+  <div class="wrap sec">
+    <h2 class="band-h rev" id="band-h">
+      {statsHeading.lead} <span>{statsHeading.tail}</span>
+    </h2>
+
+    <div class="band-row">
+      <div class="vid rev rev-d1" id="reel" data-embed={reel.embedUrl || undefined}>
+        <img
+          src={reel.image}
+          alt={reel.alt}
+          width={reel.width}
+          height={reel.height}
+          loading="lazy"
+          decoding="async"
+        />
+        {
+          reel.embedUrl && (
+            <button type="button" aria-label={reel.label}>
+              <i><Icon name="play" /></i>
+            </button>
+          )
+        }
+      </div>
+
+      <div class="stats rev rev-d2">
+        {
+          stats.map((stat) => (
+            <div class="stat">
+              <b data-count={stat.value} data-suffix={stat.suffix}>{`${stat.value}${stat.suffix ?? ''}`}</b>
+              <span>{stat.label}</span>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  /* --- Count-up on the stat figures ------------------------------- */
+  {
+    const nums = document.querySelectorAll<HTMLElement>('[data-count]');
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (nums.length && 'IntersectionObserver' in window && !reduce) {
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const el = entry.target as HTMLElement;
+            io.unobserve(el);
+
+            const target = Number.parseInt(el.dataset.count ?? '0', 10) || 0;
+            const suffix = el.dataset.suffix ?? '';
+            const duration = 1300;
+            let start: number | null = null;
+
+            const step = (ts: number) => {
+              start ??= ts;
+              const p = Math.min((ts - start) / duration, 1);
+              const eased = 1 - Math.pow(1 - p, 3);
+              el.textContent = Math.round(target * eased) + suffix;
+              if (p < 1) window.requestAnimationFrame(step);
+            };
+            window.requestAnimationFrame(step);
+          }
+        },
+        { threshold: 0.5 }
+      );
+      nums.forEach((n) => io.observe(n));
+    }
+  }
+
+  /* --- Reel: swap the poster for the embed on click ---------------- */
+  {
+    const reel = document.getElementById('reel');
+    const button = reel?.querySelector('button');
+    const embed = reel?.dataset.embed;
+
+    if (reel && button && embed) {
+      button.addEventListener('click', () => {
+        const frame = document.createElement('iframe');
+        frame.src = embed.includes('?') ? `${embed}&autoplay=1` : `${embed}?autoplay=1`;
+        frame.title = button.getAttribute('aria-label') ?? 'Video';
+        frame.allow = 'accelerometer; autoplay; encrypted-media; picture-in-picture';
+        frame.allowFullscreen = true;
+        reel.replaceChildren(frame);
+      });
+    }
+  }
+</script>

@@ -1,0 +1,87 @@
+---
+import Layout from "@/layouts/main.astro"
+import PageHeader from "@/components/layout/PageHeader.astro"
+import PageSection from "@/components/layout/PageSection.astro"
+import PostArchiveList from "@/components/lists/PostArchiveList.astro"
+import Pagination from "@/components/navigation/Pagination.astro"
+import { LOCALES, type Locale } from "@/config/locales"
+import { POSTS_PER_PAGE } from "@/config/pagination"
+import { getPaginationLinks } from "@/utils/pagination"
+import { contentCacheKey, getPostsForLocale } from "@/utils/posts"
+import { t } from "@/utils/translations"
+
+export async function getStaticPaths({ paginate }: { paginate: any }) {
+  const paths = []
+  for (const lang of LOCALES) {
+    const posts = await getPostsForLocale(lang)
+    paths.push(
+      ...paginate(posts, {
+        params: { lang },
+        props: { lang },
+        pageSize: POSTS_PER_PAGE,
+      })
+        .map((path: any) => ({
+          ...path,
+          cacheKey: `${contentCacheKey(path.props.page.data)}|pages:${path.props.page.lastPage}`,
+        }))
+        .filter(({ props }: { props: { page: { currentPage: number } } }) =>
+        props.page.currentPage > 1
+        )
+    )
+  }
+  return paths
+}
+
+const { lang, page } = Astro.props as {
+  lang: Locale
+  page: {
+    data: Awaited<ReturnType<typeof getPostsForLocale>>
+    currentPage: number
+    lastPage: number
+    url: { prev?: string; next?: string }
+  }
+}
+const title = t(lang, "pages.posts.pageTitle", { page: page.currentPage })
+const pagination = getPaginationLinks({
+  currentPage: page.currentPage,
+  totalPages: page.lastPage,
+  buildPageUrl: (pageNumber) =>
+    pageNumber === 1 ? `/${lang}/posts/` : `/${lang}/posts/${pageNumber}/`,
+})
+---
+
+<Layout
+  lang={lang}
+  path={`/posts/${page.currentPage}/`}
+  title={title}
+  description={t(lang, "pages.posts.pageDescription", {
+    page: page.currentPage,
+  })}
+>
+  <PageSection>
+    <PageHeader
+      eyebrow={t(lang, "pages.posts.archiveEyebrow")}
+      title={t(lang, "pages.posts.archiveTitle")}
+      subtitle={t(lang, "pages.posts.archiveSubtitle")}
+      description={t(lang, "common.pagination.pageLabel", {
+        page: page.currentPage,
+      })}
+      stat={t(lang, "common.pagination.postsCount", {
+        count: page.data.length,
+      })}
+    />
+    <PostArchiveList posts={page.data} lang={lang} />
+    <Pagination
+      lang={lang}
+      prev={page.currentPage === 2 ? `/${lang}/posts/` : page.url.prev}
+      next={page.url.next}
+      first={`/${lang}/posts/`}
+      last={page.currentPage < page.lastPage
+        ? `/${lang}/posts/${page.lastPage}/`
+        : undefined}
+      pages={pagination.pages}
+      currentPage={page.currentPage}
+      totalPages={page.lastPage}
+    />
+  </PageSection>
+</Layout>

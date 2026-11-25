@@ -1,0 +1,191 @@
+---
+import "@/styles/global.css"
+import { SEO } from "astro-seo"
+import { ClientRouter } from "astro:transitions"
+import { LOCALES, getLocaleMeta, type Locale } from "@/config/locales"
+import { SITE_CONFIG } from "@/config/site"
+import { buildAlternates, canonicalUrl } from "@/utils/routes"
+import { t } from "@/utils/translations"
+import { normalizeMetaDescription } from "@/utils/seo"
+import { webPageJsonLd, webSiteJsonLd } from "@/utils/structured-data"
+import Header from "@/components/ui/Header.astro"
+import Footer from "@/components/ui/Footer.astro"
+import DynamicGlass from "@/components/features/DynamicGlass.astro"
+import GTMHead from "@/components/widgets/GTMHead.astro"
+import GTMBody from "@/components/widgets/GTMBody.astro"
+import Adsense from "@/components/widgets/Adsense.astro"
+
+interface Props {
+  lang: Locale
+  path?: string
+  title?: string
+  description?: string
+  image?: string
+  imageAlt?: string
+  canonicalOverride?: string
+  ogType?: "website" | "article"
+  articleMeta?: {
+    publishedTime: string
+    modifiedTime: string
+    author: string
+    section: string
+    tags: string[]
+  }
+  alternates?: Record<string, string>
+  noindex?: boolean
+  jsonLd?: unknown
+  dynamicGlass?: boolean
+}
+
+const {
+  lang,
+  path = "/",
+  title = SITE_CONFIG.name,
+  description,
+  image = SITE_CONFIG.defaultOgImage,
+  imageAlt,
+  canonicalOverride,
+  ogType = "website",
+  articleMeta,
+  alternates: explicitAlternates,
+  noindex = false,
+  jsonLd,
+  dynamicGlass = false,
+} = Astro.props
+const alternates = explicitAlternates ?? buildAlternates(path)
+const localeMeta = getLocaleMeta(lang)
+const fallbackDescription = t(lang, "site.description")
+const pageDescription = normalizeMetaDescription(
+  description ?? fallbackDescription,
+  fallbackDescription
+)
+const pageTitle =
+  title === SITE_CONFIG.name || title.includes(SITE_CONFIG.name)
+    ? title
+    : `${title} | ${SITE_CONFIG.name}`
+const canonical = canonicalOverride ?? canonicalUrl(lang, path)
+const absoluteImage = image.startsWith("http")
+  ? image
+  : `${SITE_CONFIG.url}${image}`
+const socialImageAlt = imageAlt ?? pageTitle
+const baseJsonLd = [
+  webSiteJsonLd(lang),
+  webPageJsonLd({
+    lang,
+    path,
+    title: pageTitle,
+    description: pageDescription,
+    image,
+  }),
+]
+const jsonLdItems = jsonLd
+  ? baseJsonLd.concat(Array.isArray(jsonLd) ? jsonLd : [jsonLd])
+  : baseJsonLd
+const languageAlternates = noindex
+  ? undefined
+  : Object.entries(alternates).map(([hrefLang, href]) => ({
+      hrefLang,
+      href,
+    }))
+const alternateOgLocales = LOCALES.filter((locale) => locale !== lang).map(
+  (locale) => getLocaleMeta(locale).ogLocale
+)
+---
+
+<html lang={localeMeta.hreflang} dir={localeMeta.dir}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta http-equiv="content-language" content={localeMeta.hreflang} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <ClientRouter />
+    <SEO
+      title={pageTitle}
+      description={pageDescription}
+      canonical={canonical}
+      noindex={noindex}
+      languageAlternates={languageAlternates}
+      openGraph={{
+        basic: {
+          title: pageTitle,
+          type: ogType,
+          image: absoluteImage,
+          url: canonical,
+        },
+        optional: {
+          description: pageDescription,
+          locale: localeMeta.ogLocale,
+          localeAlternate: alternateOgLocales,
+          siteName: SITE_CONFIG.name,
+        },
+        image: {
+          alt: socialImageAlt,
+        },
+      }}
+      twitter={{
+        card: "summary_large_image",
+        site: SITE_CONFIG.social.xHandle,
+        creator: SITE_CONFIG.social.xHandle,
+        title: pageTitle,
+        description: pageDescription,
+        image: absoluteImage,
+        imageAlt: socialImageAlt,
+      }}
+    />
+    {
+      articleMeta && (
+        <>
+          <meta property="article:published_time" content={articleMeta.publishedTime} />
+          <meta property="article:modified_time" content={articleMeta.modifiedTime} />
+          <meta property="article:author" content={articleMeta.author} />
+          <meta property="article:section" content={articleMeta.section} />
+          {articleMeta.tags.map((tag) => (
+            <meta property="article:tag" content={tag} />
+          ))}
+        </>
+      )
+    }
+    <script is:inline>
+      ;(() => {
+        const theme = localStorage.getItem("theme") || "system"
+        const resolved =
+          theme === "system"
+            ? matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : theme
+        document.documentElement.classList.toggle("dark", resolved === "dark")
+      })()
+    </script>
+    <script
+      is:inline
+      type="application/ld+json"
+      set:html={JSON.stringify(jsonLdItems)}
+    />
+    <GTMHead />
+    <Adsense />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{t(lang, "navigation.skipToContent")}</a>
+    <GTMBody />
+    <Header lang={lang} path={path} />
+    <main id="main" class="site-main flex-1" tabindex="-1">
+      <slot />
+    </main>
+    <Footer lang={lang} />
+    {dynamicGlass && <DynamicGlass />}
+    <script>
+      let routeChangePending = false
+
+      document.addEventListener("astro:before-swap", () => {
+        routeChangePending = true
+      })
+
+      document.addEventListener("astro:page-load", () => {
+        if (!routeChangePending) return
+        document.querySelector<HTMLElement>("#main")?.focus({ preventScroll: true })
+        routeChangePending = false
+      })
+    </script>
+  </body>
+</html>

@@ -1,0 +1,85 @@
+---
+import Layout from "@/layouts/main.astro"
+import PageHeader from "@/components/layout/PageHeader.astro"
+import PageSection from "@/components/layout/PageSection.astro"
+import PostCardGrid from "@/components/lists/PostCardGrid.astro"
+import Pagination from "@/components/navigation/Pagination.astro"
+import { LOCALES, type Locale } from "@/config/locales"
+import { TAXONOMY_POSTS_PER_PAGE } from "@/config/pagination"
+import { TAXONOMY, getTag } from "@/config/taxonomy"
+import { getPaginationLinks, getTotalPages } from "@/utils/pagination"
+import { contentCacheKey, getPostsByTag } from "@/utils/posts"
+import { taxonomyMetaDescription, taxonomyMetaTitle } from "@/utils/seo"
+import { t } from "@/utils/translations"
+
+export async function getStaticPaths() {
+  const paths = []
+
+  for (const lang of LOCALES) {
+    for (const tag of TAXONOMY.tags) {
+      const posts = await getPostsByTag(lang, tag.slug)
+      paths.push({
+        params: { lang, slug: tag.slug },
+        props: { lang, slug: tag.slug },
+        cacheKey: contentCacheKey(posts),
+      })
+    }
+  }
+
+  return paths
+}
+
+const { lang, slug } = Astro.props as { lang: Locale; slug: string }
+const tag = getTag(slug)
+const tagLabel = tag?.labelByLocale[lang] ?? slug
+const tagDescription = tag?.descriptionByLocale[lang] ?? ""
+const posts = await getPostsByTag(lang, slug)
+const pagePosts = posts.slice(0, TAXONOMY_POSTS_PER_PAGE)
+const totalPages = getTotalPages(posts.length, TAXONOMY_POSTS_PER_PAGE)
+const pagination = getPaginationLinks({
+  currentPage: 1,
+  totalPages,
+  buildPageUrl: (page) =>
+    page === 1 ? `/${lang}/tags/${slug}/` : `/${lang}/tags/${slug}/${page}/`,
+})
+const seoTitle = lang === "en" ? taxonomyMetaTitle(tagLabel) : tagLabel
+const seoDescription =
+  lang === "en" ? taxonomyMetaDescription(tagLabel, tagDescription) : tagDescription
+---
+
+<Layout
+  lang={lang}
+  path={`/tags/${slug}/`}
+  title={seoTitle}
+  description={seoDescription}
+  noindex={posts.length === 0}
+  dynamicGlass
+>
+  <PageSection>
+    <PageHeader
+      title={tagLabel}
+      subtitle={tagDescription}
+    />
+    {
+      posts.length > 0 ? (
+        <PostCardGrid posts={pagePosts} headingLevel={3} priorityFirst />
+      ) : (
+        <p class="mx-auto max-w-2xl text-center text-sm text-muted-foreground">
+          {t(lang, "pages.tags.noPosts")}
+        </p>
+      )
+    }
+    {
+      totalPages > 1 && (
+        <Pagination
+          lang={lang}
+          next={pagination.next}
+          last={pagination.last}
+          pages={pagination.pages}
+          currentPage={1}
+          totalPages={totalPages}
+        />
+      )
+    }
+  </PageSection>
+</Layout>

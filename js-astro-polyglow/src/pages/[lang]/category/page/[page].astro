@@ -1,0 +1,117 @@
+---
+import Layout from "@/layouts/main.astro"
+import PageHeader from "@/components/layout/PageHeader.astro"
+import PageSection from "@/components/layout/PageSection.astro"
+import Pagination from "@/components/navigation/Pagination.astro"
+import TaxonomyLinkGrid from "@/components/navigation/TaxonomyLinkGrid.astro"
+import { LOCALES, type Locale } from "@/config/locales"
+import { TAXONOMY_TERMS_PER_PAGE } from "@/config/pagination"
+import { TAXONOMY } from "@/config/taxonomy"
+import {
+  getPageSlice,
+  getPaginationLinks,
+  getTotalPages,
+  pageRange,
+} from "@/utils/pagination"
+import { contentCacheKey, getPostsForLocale, postCategorySlug } from "@/utils/posts"
+import { localePath } from "@/utils/routes"
+import { t } from "@/utils/translations"
+
+export async function getStaticPaths() {
+  const paths = []
+
+  for (const lang of LOCALES) {
+    const posts = await getPostsForLocale(lang)
+    const totalPages = getTotalPages(
+      TAXONOMY.categories.length,
+      TAXONOMY_TERMS_PER_PAGE
+    )
+
+    for (const page of pageRange(totalPages).filter((item) => item > 1)) {
+      paths.push({
+        params: { lang, page: String(page) },
+        props: { lang, currentPage: page, totalPages },
+        cacheKey: contentCacheKey(posts),
+      })
+    }
+  }
+
+  return paths
+}
+
+const {
+  lang,
+  currentPage,
+  totalPages,
+} = Astro.props as {
+  lang: Locale
+  currentPage: number
+  totalPages: number
+}
+const posts = await getPostsForLocale(lang)
+const countByCategory = new Map<string, number>()
+for (const post of posts) {
+  const categorySlug = postCategorySlug(post)
+  countByCategory.set(
+    categorySlug,
+    (countByCategory.get(categorySlug) ?? 0) + 1
+  )
+}
+const categoryLinks = TAXONOMY.categories
+  .map((category) => ({
+    href: localePath(lang, `/category/${category.slug}/`),
+    label: category.labelByLocale[lang],
+    count: countByCategory.get(category.slug) ?? 0,
+    description: category.descriptionByLocale[lang],
+  }))
+const pageLinks = getPageSlice(
+  categoryLinks,
+  currentPage,
+  TAXONOMY_TERMS_PER_PAGE
+)
+const pagination = getPaginationLinks({
+  currentPage,
+  totalPages,
+  buildPageUrl: (page) =>
+    page === 1
+      ? localePath(lang, "/category/")
+      : localePath(lang, `/category/page/${page}/`),
+})
+const categoryDescriptions = TAXONOMY.categories.map((category) => ({
+  label: category.labelByLocale[lang],
+  description: category.descriptionByLocale[lang],
+}))
+const title = `${t(lang, "pages.categories.title")} ${currentPage}`
+---
+
+<Layout
+  lang={lang}
+  path={`/category/page/${currentPage}/`}
+  title={title}
+  description={t(lang, "pages.categories.description")}
+>
+  <PageSection class="py-8">
+    <PageHeader
+      title={t(lang, "pages.categories.title")}
+      description={t(lang, "common.pagination.pageLabel", {
+        page: currentPage,
+      })}
+      align="start"
+    />
+    <TaxonomyLinkGrid
+      title={t(lang, "pages.categories.h2")}
+      items={pageLinks}
+      descriptionItems={categoryDescriptions}
+    />
+    <Pagination
+      lang={lang}
+      prev={pagination.prev}
+      next={pagination.next}
+      first={pagination.first}
+      last={pagination.last}
+      pages={pagination.pages}
+      currentPage={currentPage}
+      totalPages={totalPages}
+    />
+  </PageSection>
+</Layout>

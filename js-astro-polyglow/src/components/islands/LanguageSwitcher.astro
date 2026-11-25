@@ -1,0 +1,164 @@
+---
+import { LOCALE_META, LOCALES, type Locale } from "@/config/locales"
+import { localePath } from "@/utils/routes"
+import { t } from "@/utils/translations"
+
+interface Props {
+  lang: Locale
+  path?: string
+}
+
+const { lang, path = "/" } = Astro.props
+const flags: Record<Locale, string> = {
+  zh: "🇨🇳",
+  en: "🇺🇸",
+  fr: "🇫🇷",
+  es: "🇪🇸",
+  ru: "🇷🇺",
+  ja: "🇯🇵",
+  ko: "🇰🇷",
+  pt: "🇵🇹",
+  de: "🇩🇪",
+  id: "🇮🇩",
+  ar: "🇸🇦",
+}
+---
+
+<div class="relative" data-header-disclosure>
+  <button
+    type="button"
+    class="press-feedback inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+    aria-label={t(lang, "language.switch")}
+    aria-expanded="false"
+    aria-controls="language-switcher-content"
+    data-header-disclosure-trigger
+  >
+    <span class="text-sm leading-none" aria-hidden="true">{flags[lang]}</span>
+  </button>
+  <div
+    id="language-switcher-content"
+    class="nav-dropdown absolute top-full end-0 z-50 mt-2 grid w-44 gap-1 rounded-2xl p-2 shadow-xl"
+    role="group"
+    aria-label={t(lang, "language.switch")}
+    hidden
+    data-header-disclosure-content
+  >
+    {
+      LOCALES.map((locale) => (
+        <a
+          class="flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-foreground hover:bg-muted focus:bg-muted focus:outline-none"
+          href={localePath(locale, path)}
+          aria-current={locale === lang ? "page" : undefined}
+        >
+          <span aria-hidden="true">{flags[locale]}</span>
+          <span>{LOCALE_META[locale].nativeName}</span>
+        </a>
+      ))
+    }
+  </div>
+</div>
+
+<script is:inline>
+  ;(() => {
+    window.__headerDisclosureCleanup?.()
+
+    const closeDisclosure = (
+      disclosure,
+      restoreFocus = false,
+      deferFocus = false
+    ) => {
+      const trigger = disclosure.querySelector("[data-header-disclosure-trigger]")
+      const content = disclosure.querySelector("[data-header-disclosure-content]")
+      if (
+        !(trigger instanceof HTMLElement) ||
+        !(content instanceof HTMLElement)
+      )
+        return
+      const wasOpen = !content.hidden
+      trigger.setAttribute("aria-expanded", "false")
+      content.hidden = true
+      if (restoreFocus && wasOpen) {
+        if (deferFocus) {
+          requestAnimationFrame(() => {
+            if (trigger.isConnected) trigger.focus()
+          })
+        } else {
+          trigger.focus()
+        }
+      }
+    }
+
+    const closeAll = (except, restoreFocus = false, deferFocus = false) => {
+      document.querySelectorAll("[data-header-disclosure]").forEach((disclosure) => {
+        if (disclosure !== except) {
+          closeDisclosure(disclosure, restoreFocus, deferFocus)
+        }
+      })
+    }
+
+    const openDisclosure = (disclosure) => {
+      const trigger = disclosure.querySelector("[data-header-disclosure-trigger]")
+      const content = disclosure.querySelector("[data-header-disclosure-content]")
+      if (
+        !(trigger instanceof HTMLElement) ||
+        !(content instanceof HTMLElement)
+      )
+        return
+      closeAll(disclosure)
+      trigger.setAttribute("aria-expanded", "true")
+      content.hidden = false
+    }
+
+    const handleClick = (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+
+      const trigger = target.closest("[data-header-disclosure-trigger]")
+      if (trigger instanceof HTMLElement) {
+        const disclosure = trigger.closest("[data-header-disclosure]")
+        const content = disclosure?.querySelector("[data-header-disclosure-content]")
+        if (
+          !(disclosure instanceof HTMLElement) ||
+          !(content instanceof HTMLElement)
+        )
+          return
+        if (content.hidden) openDisclosure(disclosure)
+        else closeDisclosure(disclosure, true)
+        return
+      }
+
+      const option = target.closest(
+        "[data-header-disclosure-content] a, [data-header-disclosure-content] button"
+      )
+      if (option instanceof HTMLElement) {
+        const disclosure = option.closest("[data-header-disclosure]")
+        if (disclosure instanceof HTMLElement) closeDisclosure(disclosure, true)
+        return
+      }
+
+      if (!target.closest("[data-header-disclosure]")) {
+        closeAll(undefined, true, true)
+      }
+    }
+
+    const handleKeydown = (event) => {
+      if (event.key !== "Escape") return
+      const openContent = document.querySelector(
+        "[data-header-disclosure-content]:not([hidden])"
+      )
+      const disclosure = openContent?.closest("[data-header-disclosure]")
+      if (!(disclosure instanceof HTMLElement)) return
+      closeDisclosure(disclosure, true)
+    }
+
+    const handleBeforeSwap = () => closeAll()
+    document.addEventListener("click", handleClick)
+    document.addEventListener("keydown", handleKeydown)
+    document.addEventListener("astro:before-swap", handleBeforeSwap)
+    window.__headerDisclosureCleanup = () => {
+      document.removeEventListener("click", handleClick)
+      document.removeEventListener("keydown", handleKeydown)
+      document.removeEventListener("astro:before-swap", handleBeforeSwap)
+    }
+  })()
+</script>

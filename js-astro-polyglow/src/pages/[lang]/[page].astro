@@ -1,0 +1,71 @@
+---
+import Layout from "@/layouts/main.astro"
+import PageSection from "@/components/layout/PageSection.astro"
+import PostCardGrid from "@/components/lists/PostCardGrid.astro"
+import Pagination from "@/components/navigation/Pagination.astro"
+import { LOCALES, type Locale } from "@/config/locales"
+import { POSTS_PER_PAGE } from "@/config/pagination"
+import { getPaginationLinks } from "@/utils/pagination"
+import { contentCacheKey, getPostsForLocale } from "@/utils/posts"
+import { t } from "@/utils/translations"
+
+export async function getStaticPaths({ paginate }: { paginate: any }) {
+  const paths = []
+  for (const lang of LOCALES) {
+    const posts = await getPostsForLocale(lang)
+    paths.push(
+      ...paginate(posts, {
+        params: { lang },
+        props: { lang },
+        pageSize: POSTS_PER_PAGE,
+      })
+        .map((path: any) => ({
+          ...path,
+          cacheKey: `${contentCacheKey(path.props.page.data)}|pages:${path.props.page.lastPage}`,
+        }))
+        .filter(({ props }: { props: { page: { currentPage: number } } }) =>
+        props.page.currentPage > 1
+        )
+    )
+  }
+  return paths
+}
+
+const { lang, page } = Astro.props as {
+  lang: Locale
+  page: {
+    data: Awaited<ReturnType<typeof getPostsForLocale>>
+    currentPage: number
+    lastPage: number
+    url: { prev?: string; next?: string }
+  }
+}
+const title = t(lang, "common.pagination.pageTitle", {
+  page: page.currentPage,
+})
+const pagination = getPaginationLinks({
+  currentPage: page.currentPage,
+  totalPages: page.lastPage,
+  buildPageUrl: (pageNumber) =>
+    pageNumber === 1 ? `/${lang}/` : `/${lang}/${pageNumber}/`,
+})
+---
+
+<Layout lang={lang} path={`/${page.currentPage}/`} title={title} dynamicGlass>
+  <PageSection class="py-10 sm:px-6">
+    <h1 class="sr-only">{t(lang, "pages.posts.title")} - {title}</h1>
+    <PostCardGrid posts={page.data} priorityFirst />
+    <Pagination
+      lang={lang}
+      prev={page.currentPage === 2 ? `/${lang}/` : page.url.prev}
+      next={page.url.next}
+      first={`/${lang}/`}
+      last={page.currentPage < page.lastPage
+        ? `/${lang}/${page.lastPage}/`
+        : undefined}
+      pages={pagination.pages}
+      currentPage={page.currentPage}
+      totalPages={page.lastPage}
+    />
+  </PageSection>
+</Layout>

@@ -1,0 +1,135 @@
+---
+import { getLocaleMeta, type Locale } from "@/config/locales"
+import { t } from "@/utils/translations"
+
+interface Props {
+  lang: Locale
+  id?: string
+  label?: string
+  class?: string
+}
+
+const {
+  lang,
+  id = "search-page",
+  label = t(lang, "search.title"),
+  class: className = "",
+} = Astro.props
+const hint = getLocaleMeta(lang).searchHint
+const bundlePath = `/pagefind/${lang}/`
+---
+
+<div
+  class={`search-shell w-full ${className}`}
+  role="search"
+  aria-label={label}
+>
+  <label id={`${id}-label`} class="sr-only" for={`${id}-input`}>
+    {label}
+  </label>
+  <p id={`${id}-status`} class="sr-only" role="status"></p>
+  <div id={id} class="pagefind-ui pagefind-init w-full" data-locale={lang}>
+    <p
+      class="adaptive-glass-surface rounded-lg bg-card/90 p-6 text-sm text-muted-foreground shadow-sm backdrop-blur-md"
+    >
+      {hint}
+    </p>
+  </div>
+</div>
+<link href={`/pagefind/${lang}/pagefind-ui.css`} rel="stylesheet" />
+<script is:inline define:vars={{ id, lang, bundlePath }}>
+  ;(() => {
+    window.__pagefindSearchCleanup?.()
+
+    const initPagefindSearch = async () => {
+      const target = document.querySelector(`#${id}`)
+      if (!target) return
+      if (target.dataset.pagefindStatus === "loading") return
+
+      const activeSearch = window.__pagefindSearch
+      if (
+        activeSearch?.instance &&
+        (activeSearch.locale !== lang || activeSearch.id !== id)
+      ) {
+        activeSearch.instance.destroy?.()
+        window.__pagefindSearch = undefined
+      }
+
+      if (
+        target.dataset.pagefindLocale === lang &&
+        target.querySelector(".pagefind-ui__search-input")
+      ) {
+        target.dataset.pagefindStatus = "ready"
+        return
+      }
+
+      target.dataset.pagefindStatus = "loading"
+      target.dataset.pagefindLocale = lang
+      const fallback = target.innerHTML
+
+      try {
+        await import(`${bundlePath}pagefind-ui.js`)
+        target.innerHTML = ""
+        const PagefindUI = window.PagefindUI
+        if (!PagefindUI) throw new Error("Pagefind UI failed to load.")
+        const instance = new PagefindUI({
+          element: `#${id}`,
+          bundlePath,
+          showImages: false,
+          showSubResults: true,
+        })
+        window.__pagefindSearch = { id, instance, locale: lang }
+
+        const status = document.querySelector(`#${id}-status`)
+        let lastMessage = ""
+        const syncAccessibility = () => {
+          const input = target.querySelector(".pagefind-ui__search-input")
+          input?.setAttribute("id", `${id}-input`)
+          input?.setAttribute("aria-labelledby", `${id}-label`)
+
+          const message = target
+            .querySelector(".pagefind-ui__message")
+            ?.textContent?.trim()
+          if (!status || !message || message === lastMessage) return
+          lastMessage = message
+          status.textContent = message
+        }
+        const observer = new MutationObserver(syncAccessibility)
+        observer.observe(target, { childList: true, subtree: true })
+        window.__pagefindSearchObserver = observer
+        syncAccessibility()
+
+        window.requestAnimationFrame(() => {
+          if (target.querySelector(".pagefind-ui__search-input")) {
+            target.dataset.pagefindStatus = "ready"
+            return
+          }
+          target.innerHTML = fallback
+          target.dataset.pagefindStatus = "fallback"
+          window.__pagefindSearch = undefined
+        })
+      } catch {
+        target.innerHTML = fallback
+        target.dataset.pagefindStatus = "fallback"
+        target.dataset.pagefindLocale = ""
+        window.__pagefindSearch = undefined
+      }
+    }
+
+    const cleanup = () => {
+      window.__pagefindSearchObserver?.disconnect()
+      window.__pagefindSearchObserver = undefined
+      window.__pagefindSearch?.instance?.destroy?.()
+      window.__pagefindSearch = undefined
+    }
+    const handleBeforeSwap = () => cleanup()
+    document.addEventListener("astro:page-load", initPagefindSearch)
+    document.addEventListener("astro:before-swap", handleBeforeSwap)
+    window.__pagefindSearchCleanup = () => {
+      document.removeEventListener("astro:page-load", initPagefindSearch)
+      document.removeEventListener("astro:before-swap", handleBeforeSwap)
+      cleanup()
+    }
+    initPagefindSearch()
+  })()
+</script>

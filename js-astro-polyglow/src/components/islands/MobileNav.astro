@@ -1,0 +1,275 @@
+---
+import Icon from "@/components/ui/Icon.astro"
+import type { Locale } from "@/config/locales"
+import { SITE_CONFIG } from "@/config/site"
+import { getPrimaryCategories, getTagsForCategory } from "@/config/taxonomy"
+import { localePath } from "@/utils/routes"
+import { getPrimaryNavigationKey } from "@/utils/navigation"
+import { t } from "@/utils/translations"
+
+interface Props {
+  lang: Locale
+  path?: string
+}
+
+const { lang, path = "/" } = Astro.props
+const primaryCategories = getPrimaryCategories()
+const currentNavigationKey = getPrimaryNavigationKey(path)
+---
+
+<div class="lg:hidden" data-mobile-nav>
+  <button
+    type="button"
+    class="press-feedback inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+    aria-label={t(lang, "navigation.menu")}
+    aria-haspopup="dialog"
+    aria-expanded="false"
+    data-mobile-nav-trigger
+  >
+    <Icon name="menu" class="size-4" dataIcon="inline-start" />
+  </button>
+  <div
+    class="mobile-nav-overlay fixed inset-0 z-50 bg-background/40 backdrop-blur-sm"
+    hidden
+    data-mobile-nav-overlay
+  >
+  </div>
+  <aside
+    class="mobile-nav-glass fixed top-0 end-0 z-50 flex h-dvh w-full max-w-sm flex-col transition-transform duration-200"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="mobile-nav-title"
+    hidden
+    data-mobile-nav-panel
+    data-mobile-nav-state="closed"
+  >
+    <div
+      class="flex items-center justify-between gap-4 p-4"
+    >
+      <p id="mobile-nav-title" class="text-base font-semibold text-foreground">
+        {SITE_CONFIG.name}
+      </p>
+      <button
+        type="button"
+        class="press-feedback inline-flex size-11 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        aria-label={t(lang, "navigation.closeMenu")}
+        data-mobile-nav-close
+      >
+        <Icon name="x" class="size-4" />
+      </button>
+    </div>
+    <nav
+      class="flex flex-col gap-2 overflow-y-auto px-4 py-4"
+      aria-label={t(lang, "navigation.mobile")}
+    >
+      {
+        primaryCategories.map((category) => (
+          <div class="grid grid-cols-[minmax(0,1fr)_auto] rounded-lg">
+            <a
+              class="col-start-1 row-start-1 flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-foreground hover:bg-muted aria-current:font-semibold aria-current:underline aria-current:decoration-2 aria-current:underline-offset-4"
+              href={localePath(lang, `/category/${category.slug}/`)}
+              aria-current={currentNavigationKey === category.slug ? "page" : undefined}
+            >
+              {category.labelByLocale[lang]}
+            </a>
+            <details class="group contents">
+              <summary
+                class="col-start-2 row-start-1 inline-flex size-11 cursor-pointer list-none items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                aria-label={t(lang, "navigation.categoryTags", {
+                  category: category.labelByLocale[lang],
+                })}
+              >
+                <Icon
+                  name="chevron-down"
+                  class="size-4 text-muted-foreground transition-transform group-open:rotate-180"
+                />
+              </summary>
+              <div class="col-span-2 mt-1 flex flex-col gap-1 ps-3">
+                {getTagsForCategory(category.slug).map((tag) => (
+                  <a
+                    class="flex min-h-11 items-center rounded-lg px-3 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                    href={localePath(lang, `/tags/${tag.slug}/`)}
+                  >
+                    {tag.labelByLocale[lang]}
+                  </a>
+                ))}
+              </div>
+            </details>
+          </div>
+        ))
+      }
+      <a
+        class="flex min-h-11 items-center rounded-lg px-3 text-sm font-medium hover:bg-muted aria-current:font-semibold aria-current:underline aria-current:decoration-2 aria-current:underline-offset-4"
+        href={localePath(lang, "/posts/")}
+        aria-current={currentNavigationKey === "posts" ? "page" : undefined}
+      >
+        {t(lang, "pages.posts.title")}
+      </a>
+      <a
+        class="flex min-h-11 items-center rounded-lg px-3 text-sm font-medium hover:bg-muted"
+        href={localePath(lang, "/search/")}
+      >
+        {t(lang, "search.title")}
+      </a>
+    </nav>
+  </aside>
+</div>
+
+<script is:inline>
+  ;(() => {
+    window.__mobileNavCleanup?.()
+
+    const closeCompletions = new WeakMap()
+    const openingFrames = new WeakMap()
+    const modalBackgrounds = new WeakMap()
+
+    const getParts = (root) => ({
+      trigger: root.querySelector("[data-mobile-nav-trigger]"),
+      overlay: root.querySelector("[data-mobile-nav-overlay]"),
+      panel: root.querySelector("[data-mobile-nav-panel]"),
+    })
+
+    const openNav = (root) => {
+      const { trigger, overlay, panel } = getParts(root)
+      if (
+        !(trigger instanceof HTMLElement) ||
+        !(overlay instanceof HTMLElement) ||
+        !(panel instanceof HTMLElement)
+      )
+        return
+      closeCompletions.get(panel)?.()
+      const openingFrame = openingFrames.get(panel)
+      if (openingFrame) cancelAnimationFrame(openingFrame)
+      overlay.hidden = false
+      panel.hidden = false
+      const background = [
+        document.querySelector("main"),
+        document.querySelector("footer"),
+        document.querySelector("[data-header-brand]"),
+        document.querySelector("header nav"),
+        ...document.querySelectorAll("[data-header-actions] > :not([data-mobile-nav])"),
+      ].filter((element) => element instanceof HTMLElement)
+      modalBackgrounds.set(root, background)
+      background.forEach((element) => {
+        element.inert = true
+      })
+      if (root.dataset.previousOverflow === undefined) {
+        root.dataset.previousOverflow = document.documentElement.style.overflow
+      }
+      document.documentElement.style.overflow = "hidden"
+      const frame = requestAnimationFrame(() => {
+        openingFrames.delete(panel)
+        panel.dataset.mobileNavState = "open"
+      })
+      openingFrames.set(panel, frame)
+      trigger.setAttribute("aria-expanded", "true")
+      panel.querySelector("[data-mobile-nav-close]")?.focus()
+    }
+
+    const closeNav = (root, restoreFocus = true, immediate = false) => {
+      const { trigger, overlay, panel } = getParts(root)
+      if (
+        !(trigger instanceof HTMLElement) ||
+        !(overlay instanceof HTMLElement) ||
+        !(panel instanceof HTMLElement)
+      )
+        return
+      const openingFrame = openingFrames.get(panel)
+      if (openingFrame) cancelAnimationFrame(openingFrame)
+      openingFrames.delete(panel)
+      closeCompletions.get(panel)?.()
+      panel.dataset.mobileNavState = "closed"
+      trigger.setAttribute("aria-expanded", "false")
+      let active = true
+      const cleanup = () => {
+        active = false
+        closeCompletions.delete(panel)
+      }
+      const finish = () => {
+        if (!active || panel.dataset.mobileNavState !== "closed") return
+        active = false
+        closeCompletions.delete(panel)
+        overlay.hidden = true
+        panel.hidden = true
+        modalBackgrounds.get(root)?.forEach((element) => {
+          element.inert = false
+        })
+        modalBackgrounds.delete(root)
+        document.documentElement.style.overflow = root.dataset.previousOverflow || ""
+        delete root.dataset.previousOverflow
+        if (restoreFocus) trigger.focus()
+      }
+      closeCompletions.set(panel, cleanup)
+      const animations = panel.getAnimations()
+      if (immediate || animations.length === 0) finish()
+      else Promise.allSettled(animations.map((animation) => animation.finished)).then(finish)
+    }
+
+    const handleClick = (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+
+      const trigger = target.closest("[data-mobile-nav-trigger]")
+      if (trigger instanceof HTMLElement) {
+        const root = trigger.closest("[data-mobile-nav]")
+        if (root instanceof HTMLElement) openNav(root)
+        return
+      }
+
+      const closeTarget = target.closest(
+        "[data-mobile-nav-close], [data-mobile-nav-overlay]"
+      )
+      if (closeTarget instanceof HTMLElement) {
+        const root = closeTarget.closest("[data-mobile-nav]")
+        if (root instanceof HTMLElement) closeNav(root)
+        return
+      }
+
+      const navigationTarget = target.closest("[data-mobile-nav-panel] a")
+      if (navigationTarget instanceof HTMLElement) {
+        const root = navigationTarget.closest("[data-mobile-nav]")
+        if (root instanceof HTMLElement) closeNav(root, false)
+      }
+    }
+
+    const handleKeydown = (event) => {
+      const panel = document.querySelector(
+        "[data-mobile-nav-panel]:not([hidden])"
+      )
+      const root = panel?.closest("[data-mobile-nav]")
+      if (!(root instanceof HTMLElement) || !(panel instanceof HTMLElement)) return
+      if (event.key === "Escape") {
+        closeNav(root)
+        return
+      }
+      if (event.key !== "Tab") return
+      const focusable = Array.from(
+        panel.querySelectorAll("a[href], button:not([disabled]), summary")
+      ).filter((element) => element instanceof HTMLElement && element.getClientRects().length)
+      const first = focusable[0]
+      const last = focusable.at(-1)
+      if (!first || !last) return
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    const handleBeforeSwap = () => {
+      document.querySelectorAll("[data-mobile-nav]").forEach((root) => {
+        if (root instanceof HTMLElement) closeNav(root, false, true)
+      })
+    }
+    document.addEventListener("click", handleClick)
+    document.addEventListener("keydown", handleKeydown)
+    document.addEventListener("astro:before-swap", handleBeforeSwap)
+    window.__mobileNavCleanup = () => {
+      document.removeEventListener("click", handleClick)
+      document.removeEventListener("keydown", handleKeydown)
+      document.removeEventListener("astro:before-swap", handleBeforeSwap)
+    }
+  })()
+</script>

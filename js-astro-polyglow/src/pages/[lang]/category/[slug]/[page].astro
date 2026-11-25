@@ -1,0 +1,115 @@
+---
+import Layout from "@/layouts/main.astro"
+import PageHeader from "@/components/layout/PageHeader.astro"
+import PageSection from "@/components/layout/PageSection.astro"
+import PostCardGrid from "@/components/lists/PostCardGrid.astro"
+import TaxonomyPillNav from "@/components/navigation/TaxonomyPillNav.astro"
+import Pagination from "@/components/navigation/Pagination.astro"
+import { LOCALES, type Locale } from "@/config/locales"
+import { TAXONOMY_POSTS_PER_PAGE } from "@/config/pagination"
+import { TAXONOMY, getCategory, getTagsForCategory } from "@/config/taxonomy"
+import { getPaginationLinks } from "@/utils/pagination"
+import { contentCacheKey, getPostsByCategory } from "@/utils/posts"
+import { taxonomyMetaDescription, taxonomyMetaTitle } from "@/utils/seo"
+import { t } from "@/utils/translations"
+
+export async function getStaticPaths({ paginate }: { paginate: any }) {
+  const paths = []
+  for (const lang of LOCALES) {
+    for (const category of TAXONOMY.categories) {
+      const posts = await getPostsByCategory(lang, category.slug)
+      paths.push(
+        ...paginate(posts, {
+          params: { lang, slug: category.slug },
+          props: { lang, slug: category.slug },
+          pageSize: TAXONOMY_POSTS_PER_PAGE,
+        })
+          .map((path: any) => ({
+            ...path,
+            cacheKey: `${contentCacheKey(path.props.page.data)}|pages:${path.props.page.lastPage}`,
+          }))
+          .filter(({ props }: { props: { page: { currentPage: number } } }) =>
+          props.page.currentPage > 1
+          )
+      )
+    }
+  }
+  return paths
+}
+
+const { lang, slug, page } = Astro.props as {
+  lang: Locale
+  slug: string
+  page: {
+    data: Awaited<ReturnType<typeof getPostsByCategory>>
+    currentPage: number
+    lastPage: number
+    url: { prev?: string; next?: string }
+  }
+}
+const category = getCategory(slug)
+const categoryLabel = category?.labelByLocale[lang] ?? slug
+const categoryDescription = category?.descriptionByLocale[lang] ?? ""
+const relatedTags = getTagsForCategory(slug)
+const relatedTagLinks = relatedTags.map((tag) => ({
+  href: `/${lang}/tags/${tag.slug}/`,
+  label: tag.labelByLocale[lang],
+}))
+const seoTitle =
+  lang === "en"
+    ? taxonomyMetaTitle(categoryLabel, page.currentPage)
+    : `${categoryLabel} ${page.currentPage}`
+const seoDescription =
+  lang === "en"
+    ? taxonomyMetaDescription(categoryLabel, categoryDescription, page.currentPage)
+    : categoryDescription
+const pagination = getPaginationLinks({
+  currentPage: page.currentPage,
+  totalPages: page.lastPage,
+  buildPageUrl: (pageNumber) =>
+    pageNumber === 1
+      ? `/${lang}/category/${slug}/`
+      : `/${lang}/category/${slug}/${pageNumber}/`,
+})
+---
+
+<Layout
+  lang={lang}
+  path={`/category/${slug}/${page.currentPage}/`}
+  title={seoTitle}
+  description={seoDescription}
+  dynamicGlass
+>
+  <PageSection>
+    <PageHeader
+      eyebrow={t(lang, "pages.categories.eyebrow")}
+      title={categoryLabel}
+      subtitle={categoryDescription}
+      description={t(lang, "common.pagination.pageLabel", {
+        page: page.currentPage,
+      })}
+      stat={t(lang, "common.pagination.postsCount", {
+        count: page.data.length,
+      })}
+    />
+    <TaxonomyPillNav
+      items={relatedTagLinks}
+      label={t(lang, "pages.categories.relatedTags")}
+    />
+    <PostCardGrid posts={page.data} headingLevel={3} priorityFirst />
+    <Pagination
+      lang={lang}
+      prev={page.currentPage === 2
+        ? `/${lang}/category/${slug}/`
+        : page.url.prev}
+      next={page.url.next}
+      first={`/${lang}/category/${slug}/`}
+      last={page.currentPage < page.lastPage
+        ? `/${lang}/category/${slug}/${page.lastPage}/`
+        : undefined}
+      pages={pagination.pages}
+      currentPage={page.currentPage}
+      totalPages={page.lastPage}
+    />
+  </PageSection>
+</Layout>

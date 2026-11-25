@@ -1,0 +1,95 @@
+---
+import Layout from "@/layouts/main.astro"
+import PageHeader from "@/components/layout/PageHeader.astro"
+import PageSection from "@/components/layout/PageSection.astro"
+import Pagination from "@/components/navigation/Pagination.astro"
+import TaxonomyLinkGrid from "@/components/navigation/TaxonomyLinkGrid.astro"
+import { LOCALES, type Locale } from "@/config/locales"
+import { TAXONOMY_TERMS_PER_PAGE } from "@/config/pagination"
+import { SITE_CONFIG } from "@/config/site"
+import { TAXONOMY } from "@/config/taxonomy"
+import {
+  getPageSlice,
+  getPaginationLinks,
+  getTotalPages,
+} from "@/utils/pagination"
+import { contentCacheKey, getPostsForLocale, postTagSlugs } from "@/utils/posts"
+import { localePath } from "@/utils/routes"
+import { t } from "@/utils/translations"
+
+export async function getStaticPaths() {
+  return Promise.all(
+    LOCALES.map(async (lang) => {
+      const posts = await getPostsForLocale(lang)
+      return { params: { lang }, props: { lang }, cacheKey: contentCacheKey(posts) }
+    })
+  )
+}
+
+const { lang } = Astro.props as { lang: Locale }
+const posts = await getPostsForLocale(lang)
+const countByTag = new Map<string, number>()
+for (const post of posts) {
+  for (const tag of postTagSlugs(post))
+    countByTag.set(tag, (countByTag.get(tag) ?? 0) + 1)
+}
+const tagLinks = TAXONOMY.tags.map((tag) => ({
+  href: localePath(lang, `/tags/${tag.slug}/`),
+  label: tag.labelByLocale[lang],
+  count: countByTag.get(tag.slug) ?? 0,
+  description: tag.descriptionByLocale[lang],
+}))
+const totalPages = getTotalPages(tagLinks.length, TAXONOMY_TERMS_PER_PAGE)
+const pageLinks = getPageSlice(tagLinks, 1, TAXONOMY_TERMS_PER_PAGE)
+const pagination = getPaginationLinks({
+  currentPage: 1,
+  totalPages,
+  buildPageUrl: (page) =>
+    page === 1
+      ? localePath(lang, "/tags/")
+      : localePath(lang, `/tags/page/${page}/`),
+})
+const tagDescriptions = TAXONOMY.tags.map((tag) => ({
+  label: tag.labelByLocale[lang],
+  description: tag.descriptionByLocale[lang],
+}))
+const title = t(lang, "pages.tags.title")
+const seoTitle =
+  lang === "en"
+    ? `Content Tags and Research Topics | ${SITE_CONFIG.name}`
+    : title
+const seoDescription =
+  lang === "en"
+    ? `Browse ${SITE_CONFIG.name} tags for strategy, risk, media, innovation, and related themes across essays, notes, and long-term archives.`
+    : t(lang, "pages.tags.description")
+---
+
+<Layout
+  lang={lang}
+  path="/tags/"
+  title={seoTitle}
+  description={seoDescription}
+>
+  <PageSection class="py-8">
+    <PageHeader
+      title={title}
+      description={t(lang, "pages.tags.description")}
+      align="start"
+    />
+    <TaxonomyLinkGrid
+      title={t(lang, "pages.tags.h2")}
+      items={pageLinks}
+      descriptionItems={tagDescriptions}
+    />
+    {totalPages > 1 && (
+      <Pagination
+        lang={lang}
+        next={pagination.next}
+        last={pagination.last}
+        pages={pagination.pages}
+        currentPage={1}
+        totalPages={totalPages}
+      />
+    )}
+  </PageSection>
+</Layout>

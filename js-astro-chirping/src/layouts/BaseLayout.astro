@@ -1,0 +1,170 @@
+---
+import '../styles/global.css';
+
+import { Font } from 'astro:assets';
+import Sidebar from '../components/Sidebar.astro';
+import Topbar from '../components/Topbar.astro';
+import Footer from '../components/Footer.astro';
+import Panel from '../components/Panel.astro';
+import SEO from '../components/SEO.astro';
+import BackToTop from '../components/islands/BackToTop.astro';
+import { ClientRouter } from 'astro:transitions';
+import faviconImg from '../assets/images/site/favicon.svg';
+import { SITE, type Locale } from '../config';
+import { detectLocale, htmlLang, useTranslations, stripLocale, withBase } from '../i18n/utils';
+import { buildSeo, type SeoMeta } from '../utils/seo';
+
+interface Props {
+  title?: string;
+  description?: string;
+  ogImage?: string;
+  /** Logical path WITHOUT locale prefix (used for hreflang). */
+  pathWithoutLocale?: string;
+  type?: 'website' | 'article';
+  publishedTime?: Date;
+  modifiedTime?: Date;
+  tags?: string[];
+  /** Hide the right panel (e.g. on post pages where TOC takes its place). */
+  hidePanel?: boolean;
+  /** Constrain main content width (used by Pages like About/404). */
+  narrow?: boolean;
+  /** Breadcrumb segments shown in the topbar. */
+  crumbs?: Array<{ label: string; href?: string }>;
+  /** Pre-built SEO meta override. */
+  seo?: SeoMeta;
+  /**
+   * Locales for which a translation of the current page actually
+   * exists. Used to limit the language switcher to working links and
+   * to scope hreflang alternates. Defaults to all `SITE.locales`.
+   */
+  availableLocales?: readonly Locale[];
+}
+
+const {
+  title,
+  description,
+  ogImage,
+  type = 'website',
+  publishedTime,
+  modifiedTime,
+  tags,
+  hidePanel = false,
+  narrow = false,
+  crumbs = [],
+  seo,
+  availableLocales,
+} = Astro.props;
+
+const locale: Locale = detectLocale(Astro.url.pathname);
+const t = useTranslations(locale);
+const lang = htmlLang(locale);
+
+const pathWithoutLocale = Astro.props.pathWithoutLocale ?? stripLocale(Astro.url.pathname);
+const meta: SeoMeta =
+  seo ??
+  buildSeo({
+    title,
+    description,
+    pathWithoutLocale,
+    fullPath: Astro.url.pathname,
+    locale,
+    ogImage,
+    type,
+    publishedTime,
+    modifiedTime,
+    tags,
+    availableLocales,
+  });
+---
+
+<!doctype html>
+<html lang={lang} data-theme="chirpy-light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f7f8" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1b1b1e" />
+    <link rel="icon" type="image/svg+xml" href={withBase(faviconImg.src)} />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={`${SITE.title} (EN)`}
+      href={withBase('/rss.xml')}
+    />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={`${SITE.title} (FR)`}
+      href={withBase('/fr/rss.xml')}
+    />
+    <SEO meta={meta} />
+    {/* Custom fonts configured via Astro Fonts API */}
+    <Font cssVariable="--font-source-sans-3" />
+    <Font cssVariable="--font-lato" />
+    <Font cssVariable="--font-jetbrains-mono" preload />
+    <ClientRouter />
+    {/* Apply persisted theme as early as possible to avoid FOUC. */}
+    <script is:inline>
+      (function () {
+        function applyTheme() {
+          try {
+            var stored = localStorage.getItem('theme');
+            var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            var valid = stored === 'chirpy-dark' || stored === 'chirpy-light';
+            var theme = valid ? stored : prefersDark ? 'chirpy-dark' : 'chirpy-light';
+            if (!valid && stored) localStorage.setItem('theme', theme);
+            document.documentElement.setAttribute('data-theme', theme);
+          } catch {
+            /* ignore */
+          }
+        }
+        applyTheme();
+        // Re-apply after view transitions swap in a fresh <html data-theme>.
+        document.addEventListener('astro:after-swap', applyTheme);
+      })();
+    </script>
+  </head>
+
+  <body>
+    <a
+      href="#main"
+      class="focus:bg-primary focus:text-primary-content sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:px-3 focus:py-2"
+    >
+      {t('site.skipToContent')}
+    </a>
+
+    <Sidebar locale={locale} />
+
+    <div class="chirpy-main-wrapper">
+      <div class="chirpy-shell">
+        <Topbar locale={locale} crumbs={crumbs} availableLocales={availableLocales} />
+
+        <div class="flex flex-1 gap-10">
+          <div class="flex min-w-0 flex-1 flex-col">
+            <main
+              id="main"
+              aria-label="Main Content"
+              class:list={['min-w-0 flex-1 py-6 lg:pr-2', narrow ? 'mx-auto w-full max-w-3xl' : '']}
+            >
+              <slot />
+            </main>
+
+            <Footer locale={locale} />
+          </div>
+
+          {
+            !hidePanel && (
+              <aside class="chirpy-panel-rail" aria-label="Sidebar widgets">
+                <Panel locale={locale} />
+                <slot name="aside-bottom" />
+              </aside>
+            )
+          }
+        </div>
+      </div>
+    </div>
+
+    <BackToTop />
+  </body>
+</html>

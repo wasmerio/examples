@@ -1,0 +1,177 @@
+---
+/**
+ * Chirpy-style fixed left sidebar: avatar + site title + tagline,
+ * uppercase vertical nav with icon bullets, theme toggle + social
+ * pinned to the bottom.
+ */
+
+import { SITE, NAV, SOCIALS, type Locale } from '../config';
+import { useTranslations, localizedPath, withBase } from '../i18n/utils';
+import type { UIKey } from '../i18n/ui';
+import { Icon } from 'astro-icon/components';
+import { Image } from 'astro:assets';
+import ThemeToggle from './islands/ThemeToggle.astro';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+const home = localizedPath('/', locale);
+const avatar = SITE.author.avatar;
+const isStringAvatar = typeof avatar === 'string';
+const avatarSrc = isStringAvatar ? avatar.trim() : '';
+
+const navItems = NAV.map((item) => ({
+  ...item,
+  href: localizedPath(item.href, locale),
+  label: t(`nav.${item.key}` as UIKey),
+}));
+---
+
+<aside id="sidebar" class="chirpy-sidebar" aria-label="Sidebar">
+  {/* Profile */}
+  <header class="flex w-full flex-col items-center pt-4 pb-6 text-center">
+    <a href={home} class="flex flex-col items-center" aria-label={SITE.title}>
+      <span
+        class="border-base-100 block h-28 w-28 overflow-hidden rounded-full border-4 shadow-sm transition hover:scale-[1.02]"
+        style="background:linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 70%, white));"
+      >
+        {
+          avatar ? (
+            isStringAvatar ? (
+              <img
+                src={avatarSrc.startsWith('/') ? withBase(avatarSrc) : avatarSrc}
+                alt={SITE.author.name}
+                width="112"
+                height="112"
+                class="h-full w-full object-cover"
+                loading="eager"
+                decoding="async"
+              />
+            ) : (
+              <Image
+                src={avatar}
+                alt={SITE.author.name}
+                width={112}
+                height={112}
+                class="h-full w-full object-cover"
+                loading="eager"
+                decoding="async"
+              />
+            )
+          ) : (
+            <span class="text-primary-content flex h-full w-full items-center justify-center text-3xl font-bold">
+              {SITE.title.charAt(0)}
+            </span>
+          )
+        }
+      </span>
+      <span class="text-base-content hover:text-primary mt-4 text-xl font-semibold tracking-wide">
+        {SITE.title}
+      </span>
+    </a>
+    {
+      SITE.author.bio && (
+        <p class="text-base-content/70 mt-1 max-w-56 text-sm italic">{SITE.author.bio}</p>
+      )
+    }
+  </header>
+
+  {/* Vertical nav */}
+  <nav class="chirpy-nav flex-1" aria-label="Main">
+    <ul class="contents flex-col gap-0.5">
+      {
+        navItems.map((item) => {
+          const stripped = item.href.replace(/\/+$/, '') || '/';
+          const current = Astro.url.pathname.replace(/\/+$/, '') || '/';
+          const isActive =
+            stripped === current ||
+            (stripped !== home.replace(/\/+$/, '') && current.startsWith(stripped + '/'));
+          return (
+            <li>
+              <a
+                href={item.href}
+                aria-current={isActive ? 'page' : undefined}
+                class="chirpy-nav-link"
+              >
+                <Icon name={item.icon ?? 'lucide:home'} width={16} height={16} />
+                <span>{item.label}</span>
+              </a>
+            </li>
+          );
+        })
+      }
+    </ul>
+  </nav>
+
+  {/* Bottom row: theme toggle + socials */}
+  <div
+    class="border-base-300 mt-4 flex w-full flex-wrap items-center justify-center gap-2 border-t pt-4"
+  >
+    <ThemeToggle locale={locale} />
+    {
+      SOCIALS.map((s) => (
+        <a
+          href={s.href.startsWith('/') ? withBase(s.href) : s.href}
+          rel="noopener"
+          class="chirpy-social"
+          aria-label={s.label}
+          target={s.href.startsWith('http') || s.label === 'RSS' ? '_blank' : undefined}
+        >
+          <Icon name={s.icon} width={16} height={16} />
+        </a>
+      ))
+    }
+  </div>
+</aside>
+
+{/* Mobile backdrop */}
+<button
+  type="button"
+  data-sidebar-mask
+  class="fixed inset-0 z-30 hidden bg-black/40 lg:hidden"
+  aria-label="Close sidebar"
+  tabindex="-1"></button>
+
+<script>
+  function setupSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const mask = document.querySelector<HTMLElement>('[data-sidebar-mask]');
+    if (!sidebar || !mask) return;
+
+    function open() {
+      sidebar?.classList.add('is-open');
+      mask?.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+    function close() {
+      sidebar?.classList.remove('is-open');
+      mask?.classList.add('hidden');
+      document.body.style.overflow = '';
+    }
+
+    document.querySelectorAll<HTMLElement>('[data-sidebar-toggle]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (sidebar?.classList.contains('is-open')) close();
+        else open();
+      });
+    });
+    mask.addEventListener('click', close);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') close();
+    });
+    // Close when clicking a sidebar link on mobile
+    sidebar.querySelectorAll('a').forEach((a) =>
+      a.addEventListener('click', () => {
+        if (window.matchMedia('(max-width: 1023px)').matches) close();
+      }),
+    );
+  }
+  // `astro:page-load` fires on the initial load too (when ClientRouter is
+  // present), so we only bind here. Calling setupSidebar() additionally at
+  // module top-level would double-bind handlers and make the toggle a no-op
+  // on the first page (open + close fire on the same click).
+  document.addEventListener('astro:page-load', setupSidebar);
+</script>

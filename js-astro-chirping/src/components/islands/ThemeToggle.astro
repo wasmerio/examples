@@ -1,0 +1,128 @@
+---
+import { useTranslations } from '../../i18n/utils';
+import type { Locale } from '../../config';
+import { Icon } from 'astro-icon/components';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+---
+
+<button
+  type="button"
+  class="chirpy-social"
+  data-theme-toggle
+  aria-label={t('theme.toggle')}
+  title={t('theme.toggle')}
+>
+  <span data-theme-icon="light" class="hidden">
+    <Icon name="lucide:sun" width={18} height={18} aria-label={t('theme.light')} role="img" />
+  </span>
+  <span data-theme-icon="dark" class="hidden">
+    <Icon name="lucide:moon" width={18} height={18} aria-label={t('theme.dark')} role="img" />
+  </span>
+</button>
+
+<script>
+  type Theme = 'chirpy-light' | 'chirpy-dark';
+  const STORAGE_KEY = 'theme';
+
+  function currentTheme(): Theme {
+    return (document.documentElement.getAttribute('data-theme') as Theme) ?? 'chirpy-light';
+  }
+
+  function commitTheme(theme: Theme, save = true): void {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (save) {
+      try {
+        localStorage.setItem(STORAGE_KEY, theme);
+      } catch {
+        /* ignore */
+      }
+    }
+    updateIcons(theme);
+    document.dispatchEvent(new CustomEvent('theme-change', { detail: { theme } }));
+  }
+
+  /**
+   * Apply a theme. When the View Transitions API is available and the
+   * caller supplies a click event, animate a circular reveal from the
+   * cursor; otherwise fall back to an instant swap.
+   */
+  function applyTheme(theme: Theme, origin?: { x: number; y: number }): void {
+    const supportsVT =
+      typeof (document as unknown as { startViewTransition?: unknown }).startViewTransition ===
+      'function';
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (!supportsVT || reduceMotion || !origin) {
+      commitTheme(theme);
+      return;
+    }
+
+    const root = document.documentElement;
+    root.style.setProperty('--theme-x', `${origin.x}px`);
+    root.style.setProperty('--theme-y', `${origin.y}px`);
+    const dx = Math.max(origin.x, window.innerWidth - origin.x);
+    const dy = Math.max(origin.y, window.innerHeight - origin.y);
+    const radius = Math.hypot(dx, dy);
+    // Add a safety margin to prevent edge flickering on extremely large or high-DPI viewports.
+    root.style.setProperty('--theme-radius', `${radius + 100}px`);
+    root.dataset.themeAnim = theme === 'chirpy-dark' ? 'to-dark' : 'to-light';
+
+    const transition = (
+      document as unknown as {
+        // eslint-disable-next-line no-unused-vars
+        startViewTransition: (cb: () => void) => { finished: Promise<void> };
+      }
+    ).startViewTransition(() => {
+      commitTheme(theme);
+    });
+    transition.finished.finally(() => {
+      delete root.dataset.themeAnim;
+    });
+  }
+
+  function updateIcons(theme: Theme): void {
+    document.querySelectorAll<HTMLElement>('[data-theme-icon]').forEach((el) => {
+      const want = theme === 'chirpy-dark' ? 'light' : 'dark';
+      el.classList.toggle('hidden', el.dataset.themeIcon !== want);
+    });
+  }
+
+  function init(): void {
+    updateIcons(currentTheme());
+    document.querySelectorAll<HTMLElement>('[data-theme-toggle]').forEach((btn) => {
+      btn.addEventListener('click', (event) => {
+        const next: Theme = currentTheme() === 'chirpy-dark' ? 'chirpy-light' : 'chirpy-dark';
+        const rect = btn.getBoundingClientRect();
+        const origin = {
+          x: (event as MouseEvent).clientX || rect.left + rect.width / 2,
+          y: (event as MouseEvent).clientY || rect.top + rect.height / 2,
+        };
+        applyTheme(next, origin);
+      });
+    });
+    // Sync with system preference if user hasn't pinned a theme yet.
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    mql.addEventListener('change', (e) => {
+      try {
+        if (localStorage.getItem(STORAGE_KEY)) return;
+      } catch {
+        /* ignore */
+      }
+      // Apply visually only — do not persist so the system preference
+      // remains the source of truth until the user explicitly toggles.
+      commitTheme(e.matches ? 'chirpy-dark' : 'chirpy-light', false);
+    });
+  }
+
+  // `astro:page-load` fires on initial load AND after each client-side
+  // navigation (DOM is swapped so old listeners are gone). Using only
+  // this event avoids double-binding on first load which would fire two
+  // startViewTransition() calls and cancel the animation.
+  document.addEventListener('astro:page-load', init);
+</script>

@@ -1,0 +1,90 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import '../../styles/blog.css';
+
+interface Post {
+    title: string;
+    date: string;
+    description?: string;
+    tags?: string[];
+    url: string;
+}
+
+const postFiles = import.meta.glob<{ frontmatter: Post }>('./*.md', { eager: true });
+
+const sorted: Post[] = Object.entries(postFiles)
+    .map(([path, mod]) => ({
+        ...mod.frontmatter,
+        url: `${import.meta.env.BASE_URL}blog/` + path.replace('./', '').replace('.md', '') + '/',
+    }))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+const allTags = [...new Set(sorted.flatMap(p => p.tags ?? []))].sort();
+
+function formatDate(dateStr: string) {
+    return new Date(dateStr).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+    });
+}
+---
+
+<Layout pageTitle="Blog">
+    <div class="page-container">
+        <h1>Blog</h1>
+
+        <p class="intro-text">
+            Occasional writing on field work and the experience of studying things
+            that most institutions would prefer you not study. Non peer-reviewed opinions only.
+        </p>
+
+        <div class="blog-tag-filters">
+            <button class="blog-tag-btn active" data-tag="all">All</button>
+            {allTags.map(tag => (
+                <button class="blog-tag-btn" data-tag={tag}>{tag}</button>
+            ))}
+        </div>
+
+        <div class="blog-grid" id="blog-grid">
+            {sorted.map(post => (
+                <a href={post.url} class="blog-card" data-tags={JSON.stringify(post.tags ?? [])}>
+                    <div class="blog-card-inner">
+                        <span class="blog-card-date">{formatDate(post.date)}</span>
+                        <div>
+                            <h2 class="blog-card-title">{post.title}</h2>
+                            {post.description && (
+                                <p class="blog-card-description">{post.description}</p>
+                            )}
+                            {post.tags && (
+                                <div class="blog-card-tags">
+                                    {post.tags.map((tag: string) => (
+                                        <span class="tag">{tag}</span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </a>
+            ))}
+        </div>
+    </div>
+</Layout>
+
+<script>
+    const buttons = document.querySelectorAll<HTMLButtonElement>('.blog-tag-btn');
+    const cards = document.querySelectorAll<HTMLElement>('.blog-card');
+
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            buttons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            const selected = btn.dataset.tag!;
+            cards.forEach(card => {
+                const tags: string[] = JSON.parse(card.dataset.tags ?? '[]');
+                card.style.display = (selected === 'all' || tags.includes(selected)) ? '' : 'none';
+            });
+        });
+    });
+</script>

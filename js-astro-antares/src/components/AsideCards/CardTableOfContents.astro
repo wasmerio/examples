@@ -1,0 +1,106 @@
+---
+import CardBase from "./CardBase.astro";
+import type { MarkdownHeading } from 'astro'
+
+type HeadingWithSubheadings = MarkdownHeading & {
+  subheadings?: HeadingWithSubheadings[]
+}
+
+interface Props {
+  title: string,
+  headings: MarkdownHeading[]
+}
+
+const { title, headings } = Astro.props
+
+const grouppedHeadings = headings.reduce((array, heading) => {
+  if (heading.depth === 1) {
+    array.push({ ...heading, subheadings: [] })
+  } else if (heading.depth === 2) {
+    array.at(-1)?.subheadings?.push({ ...heading, subheadings: [] })
+  } else if (heading.depth === 3) {
+    array.at(-1)?.subheadings?.at(-1)?.subheadings?.push({ ...heading })
+  }
+  return array
+}, [] as HeadingWithSubheadings[])
+---
+
+<CardBase class="card-toc" title="目录" iconName="mdi:menu">
+  <span id="toc-process" class="text-xs" slot="extra"></span>
+  <ol class="text-0.8em lh-snug">
+    <li class="title pl-2">{title}</li>
+  {(()=>{
+  
+    const h = (heading:HeadingWithSubheadings,number:string) => (
+      <li class="pl-2">
+        <a class="w-full inline-block truncate duration-300" href={`#${heading.slug}`}>{number}. {heading.text}</a>
+        { heading.subheadings && <ol> { heading.subheadings.map((subheading, i) => h(subheading,`${number}.${i+1}`)) } </ol> }
+      </li>
+    )
+    return grouppedHeadings.map((heading, i)=> h(heading,`${i+1}`))
+  
+  })()}
+  </ol>
+</CardBase>
+
+<script>
+import { mapNextSameHeadingElement } from "@/utils/toc";
+
+//TOC定义
+const toc = [...document.querySelectorAll<HTMLElement>(".card-toc a")].map((a) => ({
+  linkEl: a,
+  headingEl: document.querySelector<HTMLHeadingElement>(a.getAttribute("href")!)!,
+}))
+
+//平滑跳转
+toc.forEach(({linkEl,headingEl}) => {
+  linkEl.addEventListener('click', event => {
+    event.preventDefault()
+    window.scrollTo({ top: headingEl.offsetTop, behavior: 'smooth' });
+  })
+})
+
+//获取下一个同类型的标题元素
+const headingElListWithNext = mapNextSameHeadingElement(toc.map(({headingEl})=>headingEl))
+toc.forEach(({linkEl, headingEl},index) => {
+  const linkElNext = toc.at(index+1)?.linkEl
+  const headingElNext = headingElListWithNext.find(({el})=>el===headingEl)!.next
+  const headingElInViewport = () => {
+    const viewportTop = headingEl.getBoundingClientRect().top;
+    const viewportBottom = headingElNext ? headingElNext.getBoundingClientRect().top : headingEl.getBoundingClientRect().bottom
+    return viewportTop >= 0 && (viewportBottom <= window.innerHeight)
+  }
+  const setLinkElClass = () => {
+    linkEl.classList[headingElInViewport()?"add":"remove"]("active")
+    setTimeout(() => {
+      if (linkElNext?.className.includes("active")) {
+        linkEl.classList.add("active")
+      }
+    }, 1)
+  }
+  setLinkElClass()
+  let debounceTimeout: NodeJS.Timeout;
+  window.addEventListener("scroll", () => {
+    clearTimeout(debounceTimeout);
+    debounceTimeout = setTimeout(setLinkElClass, 5);
+  })
+
+})
+
+// 阅读进度
+const tocProcessEl = document.getElementById("toc-process")!
+const getTocProcess = () => (window.scrollY / (document.documentElement.scrollHeight - document.documentElement.clientHeight)) * 100;
+const setTocProcessToEl = () => {
+  let tocProcess = getTocProcess()
+  tocProcess = isNaN(tocProcess) || tocProcess == 0 ? 0 : tocProcess
+  tocProcessEl.innerText = tocProcess ? tocProcess.toFixed(1) + "%" : ''
+}
+document.addEventListener("DOMContentLoaded", setTocProcessToEl)
+window.addEventListener("scroll", setTocProcessToEl)
+</script>
+
+<style is:global>
+  .card-toc a.active {
+    color: #49b1f5;
+  }
+</style>

@@ -1,0 +1,35 @@
+load("//anybuild:serve.bzl", "build")
+load("//anybuild/tools:hugo.bzl", "hugo_config")
+load("//anybuild/tools:staticfile.bzl", "staticfile_serve")
+
+config = hugo_config(
+    schema = 1,
+    hugo_version = "0.167.0",
+    static_dir = "public",
+    sws_version = "2.38.0",
+    port = 8080,
+)
+
+temp = mount("temp")
+site = mount("static_app")
+output = build(
+    steps = [
+        use(dep("hugo", config.hugo_version), dep("go", "1.25.5")),
+        env(
+            GOTOOLCHAIN = "local",
+            GOPROXY = "https://proxy.golang.org,direct",
+            GO111MODULE = "on",
+            HUGO_MODULE_PROXY = "https://proxy.golang.org,direct",
+            GOMAXPROCS = "1",
+        ),
+        workdir(temp.path),
+        copy(config.app_subdir or ".", ".", ignore = [".git", ".anybuild", ".cache", ".toolchain", "public", "resources", "node_modules"]),
+        run("hugo mod get", group = "install"),
+        run("hugo --gc --minify", group = "build"),
+        run('cp -R public/. "{}/"'.format(site.path)),
+    ],
+    mounts = [site],
+    static_app = site,
+    static_config = None,
+)
+staticfile_serve(config, output, name = "go-hugo-prose", provider = "hugo")

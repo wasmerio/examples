@@ -1,0 +1,95 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+import Breadcrumb from "@/components/Breadcrumb.astro";
+import AuroraHero from "@/components/AuroraHero.astro";
+import GalleryCard from "@/components/GalleryCard.astro";
+import { SITE } from "@/config";
+import { getGallerySlug } from "@/utils/contentEntry";
+import { getGalleryImages } from "@/utils/gallery";
+import postFilter from "@/utils/postFilter";
+import { useTranslations } from "@/i18n/utils";
+
+if (!SITE.showGalleries) {
+  return Astro.redirect("/404");
+}
+
+const locale = Astro.currentLocale || "en";
+const t = useTranslations(locale);
+
+const rawGalleries = await getCollection(
+  "galleries",
+  entry =>
+    (entry.id.startsWith(`${locale}/`) ||
+      (locale === "en" && !entry.id.startsWith("es/"))) &&
+    postFilter(entry)
+);
+
+const galleries = rawGalleries
+  .sort(
+    (a, b) =>
+      new Date(b.data.pubDatetime).getTime() -
+      new Date(a.data.pubDatetime).getTime()
+  )
+  .map(gallery => {
+    const slug = getGallerySlug(gallery.id);
+    const folderImages = getGalleryImages(slug, locale);
+    return {
+      gallery,
+      slug,
+      fallbackImage: folderImages[0]?.src,
+      imageCount: folderImages.length,
+    };
+  });
+---
+
+<Layout title={`${t("nav.galleries")} | ${SITE.title}`}>
+  <Header />
+  <Breadcrumb />
+  <main id="main-content" class="app-layout pb-12">
+    <!-- Hero -->
+    <AuroraHero
+      title={t("nav.galleries")}
+      description={t("galleries.desc")}
+      class="mb-10"
+    >
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <span class="hero-badge">
+          {galleries.length}
+          {galleries.length === 1
+            ? t("galleries.count")
+            : t("galleries.counts")}
+        </span>
+      </div>
+    </AuroraHero>
+
+    <!-- Gallery grid -->
+    {galleries.length === 0 ? (
+      <p class="mt-12 text-center text-foreground/50 italic">
+        {t("galleries.empty")}
+      </p>
+    ) : (
+      <ul
+        class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
+        role="list"
+      >
+        {galleries.map(
+          ({ gallery, slug, fallbackImage, imageCount }, index) => (
+            <li>
+              <GalleryCard
+                gallery={gallery}
+                slug={slug}
+                fallbackImage={fallbackImage}
+                imageCount={imageCount}
+                loading={index < 3 ? "eager" : "lazy"}
+              />
+            </li>
+          )
+        )}
+      </ul>
+    )}
+  </main>
+  <Footer />
+</Layout>

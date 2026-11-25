@@ -1,0 +1,340 @@
+---
+import type { CollectionEntry } from "astro:content";
+import type { ImageMetadata } from "astro";
+import { Image } from "astro:assets";
+import { slugifyStr } from "@/utils/slugify";
+import { getEntryPath, getGallerySlug } from "@/utils/contentEntry";
+import { getFirstGalleryImage } from "@/utils/gallery";
+import { getReadingTime } from "@/utils/readingTime";
+import Datetime from "./Datetime.astro";
+import IconGallery from "@/assets/icons/IconGallery.svg";
+import IconClock from "@/assets/icons/IconClock.svg";
+import { SITE } from "@/config";
+
+type Props = {
+  variant?: "h2" | "h3";
+  featured?: boolean;
+  loading?: "lazy" | "eager";
+  fetchpriority?: "auto" | "high" | "low";
+} & (CollectionEntry<"blog"> | CollectionEntry<"galleries">);
+
+const {
+  variant: Heading = "h2",
+  featured = false,
+  loading = "lazy",
+  fetchpriority,
+  id,
+  data,
+  filePath,
+  collection,
+  body,
+} = Astro.props;
+
+const { title, description, pubDatetime } = data;
+const modDatetime = "modDatetime" in data ? data.modDatetime : null;
+const tags = "tags" in data ? data.tags : [];
+const locale = Astro.currentLocale || "en";
+const prefix = locale === "es" ? "/es" : "";
+const href = prefix + getEntryPath({ collection, id, filePath });
+const isGallery = collection === "galleries";
+const headingId = `${collection}-${slugifyStr(String(id))}-title`;
+const descriptionId = `${collection}-${slugifyStr(String(id))}-description`;
+const viewTransitionName = slugifyStr(String(title).replaceAll(".", "-"));
+const readingTime = body ? getReadingTime(body, locale) : null;
+
+// Resolve cover image source
+let coverSrc: string | ImageMetadata | undefined;
+if (SITE.showCoverImages) {
+  if (isGallery) {
+    // Galleries: prefer coverImage from frontmatter, fallback to first folder image
+    const coverImage = (data as { coverImage?: ImageMetadata }).coverImage;
+    if (coverImage) {
+      coverSrc = coverImage;
+    } else {
+      const gallerySlug = getGallerySlug(id);
+      const galleryLang = id.startsWith("es/") ? "es" : "en";
+      const firstImage = getFirstGalleryImage(gallerySlug, galleryLang);
+      if (firstImage) {
+        coverSrc = firstImage;
+      }
+    }
+  } else {
+    // Blog posts: prefer frontmatter coverImage, then ogImage, fallback to dynamic OG image
+    const coverImage = (data as { coverImage?: ImageMetadata }).coverImage;
+    const ogImage = "ogImage" in data ? data.ogImage : undefined;
+
+    if (coverImage) {
+      coverSrc = coverImage;
+    } else if (ogImage) {
+      coverSrc = ogImage;
+    } else if (SITE.dynamicOgImage) {
+      // Fallback: dynamically generated OG image (exists in dist/ after pnpm build)
+      coverSrc = `${href}/index.png`;
+    }
+  }
+}
+---
+
+<li
+  data-post-card
+  data-tags={tags.map((t: string) => slugifyStr(t)).join(",")}
+  class:list={[
+    "card-glow group/card relative my-3 rounded-2xl",
+    // Use overflow-hidden when cover image is shown so the image respects border-radius
+    coverSrc ? "overflow-hidden" : "",
+    "border backdrop-blur-sm",
+    "transition-[border-color,background-color,box-shadow,transform] duration-300 ease-out motion-reduce:transform-none motion-reduce:transition-none",
+    "focus-within:-translate-y-0.5 hover:-translate-y-0.5",
+    "focus-within:shadow-lg hover:shadow-lg",
+
+    // Default posts styling
+    !isGallery &&
+      !featured && [
+        "border-border/25 bg-muted/10",
+        "focus-within:border-accent/40 focus-within:bg-accent/5 hover:border-accent/40 hover:bg-accent/5",
+        "focus-within:shadow-accent/10 hover:shadow-accent/10",
+      ],
+
+    // Featured generic posts styling
+    !isGallery &&
+      featured && [
+        "featured-card-shadow border-featured/30 bg-featured/5",
+        "focus-within:border-featured/50 focus-within:bg-featured/10 hover:border-featured/50 hover:bg-featured/10",
+        "focus-within:shadow-featured/10 hover:shadow-featured/10",
+      ],
+
+    // Gallery variant styling
+    isGallery &&
+      !featured && [
+        "border-gallery/20 bg-gallery/5",
+        "focus-within:border-gallery/40 focus-within:bg-gallery/10 hover:border-gallery/40 hover:bg-gallery/10",
+        "focus-within:shadow-gallery/10 hover:shadow-gallery/10",
+      ],
+
+    // Featured gallery styling
+    isGallery &&
+      featured && [
+        "gallery-card-shadow border-gallery/40 bg-gallery/10",
+        "focus-within:border-gallery/60 focus-within:bg-gallery/15 hover:border-gallery/60 hover:bg-gallery/15",
+        "focus-within:shadow-gallery/20 hover:shadow-gallery/20",
+      ],
+  ]}
+  style={
+    loading === "lazy"
+      ? {
+          contentVisibility: "auto",
+          containIntrinsicSize: coverSrc ? "auto 320px" : "auto 180px",
+        }
+      : undefined
+  }
+>
+  <!-- Cursor-following glow -->
+  <div
+    class="card-glow-effect pointer-events-none absolute inset-0 z-0 rounded-2xl opacity-0 transition-opacity duration-300 group-focus-within/card:opacity-100 group-hover/card:opacity-100 motion-reduce:transition-none"
+    aria-hidden="true"
+  ></div>
+
+  <!-- Cover image — wrapped in <a> for clickability; aria-hidden so screen readers skip the duplicate link -->
+  {coverSrc && (
+    <a
+      href={href}
+      tabindex="-1"
+      aria-hidden="true"
+      class="card-cover-wrapper block"
+      data-cover
+    >
+      {typeof coverSrc === "object" ? (
+        <Image
+          src={coverSrc}
+          alt={title}
+          class="card-cover-img"
+          loading={loading}
+          fetchpriority={fetchpriority}
+          widths={[400, 800]}
+          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+          format="avif"
+          quality={72}
+        />
+      ) : (
+        <img
+          src={coverSrc}
+          alt={title}
+          class="card-cover-img"
+          loading={loading}
+          fetchpriority={fetchpriority}
+          decoding="async"
+          width="1200"
+          height="630"
+          onerror="this.closest('[data-cover]').style.display='none'"
+        />
+      )}
+      <div class="card-cover-overlay" aria-hidden="true" />
+    </a>
+  )}
+
+  <div class="relative z-5 p-4 sm:p-5">
+    <a
+      href={href}
+      class:list={[
+        "rounded-sm text-lg font-semibold text-foreground transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
+        isGallery
+          ? "group-hover/card:text-gallery focus-visible:ring-gallery"
+          : featured
+            ? "group-hover/card:text-featured focus-visible:ring-featured"
+            : "group-hover/card:text-accent focus-visible:ring-accent",
+      ]}
+      aria-labelledby={headingId}
+      aria-describedby={descriptionId}
+      style={{ viewTransitionName }}
+    >
+      <Heading id={headingId} class="flex items-center gap-2">
+        {isGallery && (
+          <span
+            aria-hidden="true"
+            class="inline-flex items-center justify-center rounded-md bg-gallery/10 p-1 text-gallery/80 ring-1 ring-gallery/20"
+          >
+            <IconGallery class="size-4" />
+          </span>
+        )}
+        {isGallery && <span class="sr-only">Gallery:</span>}
+        {title}
+      </Heading>
+      <!-- Expand clickable area to whole card on top of everything, minus the description -->
+      <span
+        class="absolute -inset-4 z-10 sm:-inset-5"
+        aria-hidden="true"
+      ></span>
+    </a>
+
+    <!-- Meta row: date + reading time -->
+    <div class="pointer-events-none relative z-20 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+      <Datetime pubDatetime={pubDatetime} modDatetime={modDatetime} />
+      {readingTime && (
+        <span class="flex items-center gap-1 text-sm whitespace-nowrap">
+          <IconClock class="size-4 shrink-0" aria-hidden="true" />
+          {readingTime}
+        </span>
+      )}
+    </div>
+
+    <p
+      id={descriptionId}
+      class="pointer-events-auto relative z-20 mt-2 line-clamp-2 text-sm leading-relaxed text-foreground/90 select-text"
+    >
+      {description}
+    </p>
+
+    <!-- Tags -->
+    {SITE.showTagsInCards && tags.length > 0 && (
+      <ul class="pointer-events-auto relative z-20 mt-3 flex flex-wrap gap-1.5">
+        {tags.slice(0, 4).map((tag: string) => (
+          <li>
+            <a
+              href={`${prefix}/tags/${slugifyStr(tag)}/`}
+              class:list={[
+                "inline-flex items-center gap-0.5 rounded-full px-2.5 py-0.5",
+                "text-xs font-medium",
+                "border transition-colors duration-200",
+                isGallery
+                  ? "border-gallery/30 bg-gallery/10 text-gallery hover:border-gallery/60 hover:bg-gallery/20"
+                  : featured
+                    ? "border-featured/30 bg-featured/10 text-featured hover:border-featured/60 hover:bg-featured/20"
+                    : "border-border/30 bg-muted/15 text-foreground/80 hover:border-accent/40 hover:bg-accent/10 hover:text-accent",
+              ]}
+            >
+              <span aria-hidden="true" class="opacity-60">
+                #
+              </span>
+              {tag}
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
+  </div>
+</li>
+
+<style>
+  .card-glow {
+    contain: paint;
+  }
+
+  .featured-card-shadow {
+    box-shadow: 0 0 20px -5px
+      color-mix(in srgb, var(--featured-color) 15%, transparent);
+  }
+
+  .gallery-card-shadow {
+    box-shadow: 0 0 20px -5px
+      color-mix(in srgb, var(--gallery-color) 15%, transparent);
+  }
+
+  .card-glow-effect {
+    background: radial-gradient(
+      350px circle at var(--mouse-x, 50%) var(--mouse-y, 50%),
+      color-mix(in oklab, var(--accent) 8%, transparent) 0%,
+      color-mix(in oklab, var(--accent) 4%, transparent) 30%,
+      color-mix(in oklab, var(--accent) 0.8%, transparent) 60%,
+      transparent 80%
+    );
+  }
+
+  :global(.group\/card:hover) .card-glow-effect,
+  :global(.group\/card:focus-within) .card-glow-effect {
+    will-change: opacity;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card-glow-effect {
+      background: none;
+    }
+  }
+
+  /* ── Cover image ── */
+  .card-cover-wrapper {
+    position: relative;
+    width: 100%;
+    /* 1200/630 OG aspect ratio */
+    aspect-ratio: 1200 / 630;
+    overflow: hidden;
+    /* Clamp height so tall viewports don't blow up the card */
+    max-height: 220px;
+  }
+
+  .card-cover-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    display: block;
+    /* Subtle zoom on hover via the parent group */
+    transition:
+      transform 0.4s ease,
+      filter 0.4s ease;
+    filter: brightness(0.95) saturate(1.05);
+  }
+
+  :global(.group\/card:hover) .card-cover-img,
+  :global(.group\/card:focus-within) .card-cover-img {
+    transform: scale(1.03);
+    filter: brightness(1) saturate(1.1);
+  }
+
+  /* Fade-to-card-background gradient at the bottom of the cover */
+  .card-cover-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      transparent 40%,
+      color-mix(in oklab, var(--background) 60%, transparent) 100%
+    );
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card-cover-img {
+      transition: none;
+    }
+  }
+</style>

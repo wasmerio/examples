@@ -1,0 +1,154 @@
+---
+import IconArrowNarrowUp from "@/assets/icons/IconArrowNarrowUp.svg";
+---
+
+<div
+  id="btt-btn-container"
+  aria-hidden="true"
+  class:list={[
+    "pointer-events-none fixed end-4 bottom-8 z-50",
+    "md:end-8 md:bottom-10",
+    "translate-y-8 opacity-0",
+    "transition-[opacity,transform] duration-300 ease-out motion-reduce:transition-none",
+  ]}
+>
+  <button
+    id="back-to-top-button"
+    type="button"
+    tabindex="-1"
+    aria-label="Go back to top"
+    title="Go back to top"
+    data-button="back-to-top"
+    class:list={[
+      "group relative flex flex-col items-center justify-center gap-0.5",
+      "size-14 rounded-full",
+      "md:size-16",
+      "border border-accent/15 bg-background/75 backdrop-blur-md",
+      "shadow-[0_4px_20px_rgba(0,0,0,0.20)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.60)]",
+      "hover:shadow-[0_6px_28px_rgba(0,0,0,0.30)] dark:hover:shadow-[0_6px_28px_rgba(0,0,0,0.75)]",
+      "hover:scale-105 active:scale-95 motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
+      "transition-all duration-200 ease-out motion-reduce:transition-none",
+      "pointer-events-auto",
+    ]}
+  >
+    <!-- 1: Progress Ring (conic-gradient) -->
+    <span
+      aria-hidden="true"
+      id="progress-indicator"
+      class="absolute inset-0 z-0 block rounded-full bg-transparent"
+    ></span>
+    <!-- 2: Button Background, leaves 3px of the ring visible -->
+    <span
+      aria-hidden="true"
+      class="absolute inset-[3px] z-10 rounded-full bg-background/95"
+    ></span>
+    <!-- 3: Content (icon + label) -->
+    <IconArrowNarrowUp
+      aria-hidden="true"
+      class="relative z-20 size-5 text-accent transition-transform duration-200 group-hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 md:size-6"
+    />
+    <span class="relative z-20 text-[9px] font-bold tracking-widest text-accent/70 uppercase">
+      top
+    </span>
+    <span class="sr-only">Go back to top</span>
+  </button>
+</div>
+
+<script>
+  let backToTopCleanup: AbortController | null = null;
+
+  function initBackToTop() {
+    if (backToTopCleanup) backToTopCleanup.abort();
+    backToTopCleanup = new AbortController();
+    const { signal } = backToTopCleanup;
+
+    const rootElement = document.documentElement;
+    const btnContainer =
+      document.querySelector<HTMLElement>("#btt-btn-container");
+    const backToTopBtn = document.querySelector<HTMLButtonElement>(
+      "[data-button='back-to-top']"
+    );
+    const progressIndicator = document.querySelector<HTMLElement>(
+      "#progress-indicator"
+    );
+
+    if (!btnContainer || !backToTopBtn || !progressIndicator) return;
+
+    const containerEl = btnContainer;
+    const buttonEl = backToTopBtn;
+    const progressEl = progressIndicator;
+
+    let ticking = false;
+    let lastVisible = false;
+    let lastProgress = -1;
+
+    function getScrollMetrics() {
+      const scrollTotal = rootElement.scrollHeight - rootElement.clientHeight;
+      const scrollTop = rootElement.scrollTop || window.scrollY || 0;
+
+      if (scrollTotal <= 0) return { ratio: 0, progress: 0 };
+
+      const ratio = Math.min(scrollTop / scrollTotal, 1);
+      const progress = Math.round(ratio * 100);
+      return { ratio, progress };
+    }
+
+    function handleScroll() {
+      const { ratio, progress } = getScrollMetrics();
+
+      if (progress !== lastProgress) {
+        progressEl.style.setProperty(
+          "background-image",
+          `conic-gradient(var(--accent) ${progress}%, transparent ${progress}%)`
+        );
+        lastProgress = progress;
+      }
+
+      const isVisible = ratio > 0.2;
+
+      if (isVisible !== lastVisible) {
+        containerEl.classList.toggle("opacity-100", isVisible);
+        containerEl.classList.toggle("translate-y-0", isVisible);
+        containerEl.classList.toggle("opacity-0", !isVisible);
+        containerEl.classList.toggle("translate-y-8", !isVisible);
+        containerEl.classList.toggle("pointer-events-none", !isVisible);
+        containerEl.setAttribute("aria-hidden", String(!isVisible));
+        buttonEl.tabIndex = isVisible ? 0 : -1;
+        lastVisible = isVisible;
+      }
+    }
+
+    function onScroll() {
+      if (ticking) return;
+
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        handleScroll();
+        ticking = false;
+      });
+    }
+
+    buttonEl.addEventListener(
+      "click",
+      () => {
+        const prefersReducedMotion = window.matchMedia(
+          "(prefers-reduced-motion: reduce)"
+        ).matches;
+
+        window.scrollTo({
+          top: 0,
+          behavior: prefersReducedMotion ? "auto" : "smooth",
+        });
+      },
+      { signal }
+    );
+
+    document.addEventListener("scroll", onScroll, { passive: true, signal });
+    window.addEventListener("resize", onScroll, { passive: true, signal });
+
+    handleScroll();
+  }
+
+  document.addEventListener("astro:page-load", initBackToTop);
+  initBackToTop();
+</script>

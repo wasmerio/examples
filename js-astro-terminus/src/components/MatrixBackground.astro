@@ -1,0 +1,177 @@
+---
+interface Props {
+  highlightColor?: string;
+  boxSize?: number;
+  movementDirection?:
+    | "none"
+    | "up"
+    | "down"
+    | "left"
+    | "right"
+    | "up-left"
+    | "up-right"
+    | "down-left"
+    | "down-right";
+  movementSpeed?: number;
+}
+
+const {
+  highlightColor = "rgba(20, 184, 166, 0.3)",
+  boxSize = 50,
+  movementDirection = "none",
+  movementSpeed = 0.5,
+} = Astro.props;
+---
+
+<canvas
+  id="matrix-bg"
+  class="fixed inset-0 -z-10"
+  data-highlight-color={highlightColor}
+  data-box-size={boxSize}
+  data-movement-direction={movementDirection}
+  data-movement-speed={movementSpeed}></canvas>
+
+<script>
+  function initMatrixBackground() {
+    const canvas = document.getElementById("matrix-bg") as HTMLCanvasElement;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Configuration from data attributes
+    const highlightColor = canvas.dataset.highlightColor;
+    const boxSize = parseInt(canvas.dataset.boxSize || "50", 10);
+    const movementDirection = canvas.dataset.movementDirection || "none";
+    const movementSpeed = parseFloat(canvas.dataset.movementSpeed || "0.5");
+
+    // Theme-aware edge colors
+    const darkEdgeColor = "rgba(63, 63, 70, 0.3)";
+    const lightEdgeColor = "rgba(200, 200, 200, 0.25)";
+
+    function getEdgeColor() {
+      return document.documentElement.classList.contains("dark")
+        ? darkEdgeColor
+        : lightEdgeColor;
+    }
+
+    let mouseX = -1000;
+    let mouseY = -1000;
+    let offset = { x: 0, y: 0 };
+    let animationId: number;
+    let isRunning = true;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    function getBoxAtPosition(x: number, y: number) {
+      const adjustedX = x - offset.x;
+      const adjustedY = y - offset.y;
+      return {
+        col: Math.floor(adjustedX / boxSize),
+        row: Math.floor(adjustedY / boxSize),
+      };
+    }
+
+    function draw() {
+      if (!isRunning) return;
+
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
+
+      const edgeColor = getEdgeColor();
+
+      // Calculate visible grid range
+      const startCol = Math.floor(-offset.x / boxSize) - 1;
+      const endCol = Math.ceil((canvas.width - offset.x) / boxSize) + 1;
+      const startRow = Math.floor(-offset.y / boxSize) - 1;
+      const endRow = Math.ceil((canvas.height - offset.y) / boxSize) + 1;
+
+      // Get hovered box
+      const hoveredBox = getBoxAtPosition(mouseX, mouseY);
+
+      // Draw boxes
+      for (let row = startRow; row <= endRow; row++) {
+        for (let col = startCol; col <= endCol; col++) {
+          const x = col * boxSize + offset.x;
+          const y = row * boxSize + offset.y;
+
+          // Check if this box is hovered
+          const isHovered = col === hoveredBox.col && row === hoveredBox.row;
+
+          if (isHovered && ctx) {
+            ctx.fillStyle = highlightColor;
+            ctx.fillRect(x, y, boxSize, boxSize);
+          }
+
+          if (ctx) {
+            // Draw box edges
+            ctx.strokeStyle = edgeColor;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 0.5, y + 0.5, boxSize, boxSize);
+          }
+        }
+      }
+
+      // Update offset based on movement direction
+      if (movementDirection !== "none") {
+        const moveUp = movementDirection.includes("up");
+        const moveDown = movementDirection.includes("down");
+        const moveLeft = movementDirection.includes("left");
+        const moveRight = movementDirection.includes("right");
+
+        if (moveUp) {
+          offset.y -= movementSpeed;
+          if (offset.y <= -boxSize) offset.y += boxSize;
+        }
+        if (moveDown) {
+          offset.y += movementSpeed;
+          if (offset.y >= boxSize) offset.y -= boxSize;
+        }
+        if (moveLeft) {
+          offset.x -= movementSpeed;
+          if (offset.x <= -boxSize) offset.x += boxSize;
+        }
+        if (moveRight) {
+          offset.x += movementSpeed;
+          if (offset.x >= boxSize) offset.x -= boxSize;
+        }
+      }
+
+      animationId = requestAnimationFrame(draw);
+    }
+
+    function handleMouseMove(e: MouseEvent) {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    }
+
+    function handleMouseLeave() {
+      mouseX = -1000;
+      mouseY = -1000;
+    }
+
+    function cleanup() {
+      isRunning = false;
+      cancelAnimationFrame(animationId);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseleave", handleMouseLeave);
+    }
+
+    // Initialize
+    resize();
+    window.addEventListener("resize", resize);
+    window.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseleave", handleMouseLeave);
+    draw();
+
+    // Cleanup on page navigation
+    document.addEventListener("astro:before-swap", cleanup, { once: true });
+  }
+
+  // Initialize on first load and after view transitions
+  initMatrixBackground();
+  document.addEventListener("astro:after-swap", initMatrixBackground);
+</script>

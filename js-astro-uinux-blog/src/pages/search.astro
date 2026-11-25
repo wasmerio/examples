@@ -1,0 +1,246 @@
+---
+import Layout from "../components/Layout.astro";
+import Heading from "../components/Heading.astro";
+---
+
+<Layout title="Search — UINUX Blog" description="Search posts on UINUX Blog.">
+  <section class="search-page">
+    <Heading as="h1">Search</Heading>
+    <div class="search-input-wrap">
+      <input
+        type="text"
+        id="search-input"
+        placeholder="Search posts..."
+        autocomplete="off"
+        autofocus
+      />
+    </div>
+    <ul id="search-results" class="search-results"></ul>
+    <p id="search-empty" class="search-empty" hidden>No posts found.</p>
+  </section>
+</Layout>
+
+<script>
+  interface SearchEntry {
+    slug: string;
+    title: string;
+    description: string;
+    date: string;
+    tags: string[];
+    body: string;
+  }
+
+  let index: SearchEntry[] = [];
+  let loaded = false;
+
+  const input = document.getElementById("search-input") as HTMLInputElement;
+  const resultsList = document.getElementById("search-results") as HTMLUListElement;
+  const emptyMsg = document.getElementById("search-empty") as HTMLParagraphElement;
+
+  async function loadIndex(): Promise<void> {
+    if (loaded) return;
+    try {
+      const res = await fetch("/search-index.json");
+      if (!res.ok) throw new Error(`Failed to load search index: ${res.status}`);
+      index = await res.json();
+      loaded = true;
+    } catch (err) {
+      console.error(err);
+      emptyMsg.textContent = "Search is unavailable. Please try again later.";
+      emptyMsg.hidden = false;
+    }
+  }
+
+  function search(query: string): SearchEntry[] {
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return [];
+
+    return index.filter((entry) => {
+      const haystack = `${entry.title} ${entry.description} ${entry.tags.join(" ")} ${entry.body}`.toLowerCase();
+      return terms.every((term) => haystack.includes(term));
+    });
+  }
+
+  function getSnippet(entry: SearchEntry, query: string): string | null {
+    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const titleDesc = `${entry.title} ${entry.description} ${entry.tags.join(" ")}`.toLowerCase();
+    const allInTitleDesc = terms.every((t) => titleDesc.includes(t));
+    if (allInTitleDesc) return null;
+
+    const bodyLower = entry.body.toLowerCase();
+    for (const term of terms) {
+      const pos = bodyLower.indexOf(term);
+      if (pos === -1) continue;
+      const start = Math.max(0, pos - 40);
+      const end = Math.min(entry.body.length, pos + term.length + 80);
+      const prefix = start > 0 ? "…" : "";
+      const suffix = end < entry.body.length ? "…" : "";
+      return prefix + entry.body.slice(start, end).trim() + suffix;
+    }
+    return null;
+  }
+
+  function formatDate(iso: string): string {
+    return new Date(iso).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  }
+
+  function escapeHtml(str: string): string {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function render(results: SearchEntry[], query: string): void {
+    resultsList.innerHTML = "";
+
+    if (query.trim() === "") {
+      emptyMsg.hidden = true;
+      return;
+    }
+
+    if (results.length === 0) {
+      emptyMsg.hidden = false;
+      return;
+    }
+
+    emptyMsg.hidden = true;
+
+    for (const entry of results) {
+      const snippet = getSnippet(entry, query);
+      const li = document.createElement("li");
+      li.className = "search-result-item";
+      li.innerHTML = `
+        <a href="/posts/${encodeURIComponent(entry.slug)}">
+          <span class="result-title">${escapeHtml(entry.title)}</span>
+          <span class="result-description">${escapeHtml(entry.description)}</span>
+          ${snippet ? `<span class="result-snippet">${escapeHtml(snippet)}</span>` : ""}
+          <time datetime="${escapeHtml(entry.date)}">${formatDate(entry.date)}</time>
+        </a>
+      `;
+      resultsList.appendChild(li);
+    }
+  }
+
+  let debounceTimer: ReturnType<typeof setTimeout>;
+
+  input.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(async () => {
+      await loadIndex();
+      const query = input.value;
+      const results = search(query);
+      render(results, query);
+    }, 200);
+  });
+
+  // Support ?q= query param
+  const params = new URLSearchParams(window.location.search);
+  const initialQuery = params.get("q");
+  if (initialQuery) {
+    input.value = initialQuery;
+    loadIndex().then(() => {
+      const results = search(initialQuery);
+      render(results, initialQuery);
+    });
+  }
+</script>
+
+<style>
+  .search-page {
+    max-width: var(--width-content);
+  }
+
+  .search-input-wrap {
+    margin-top: var(--space-lg);
+    margin-bottom: var(--space-xl);
+  }
+
+  #search-input {
+    width: 100%;
+    font-family: var(--font-heading);
+    font-size: 1rem;
+    padding: var(--space-sm) var(--space-md);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    outline: none;
+    transition: border-color 0.15s ease;
+  }
+
+  #search-input:focus {
+    border-color: var(--color-text-tertiary);
+  }
+
+  #search-input::placeholder {
+    color: var(--color-text-tertiary);
+  }
+
+  #search-results {
+    list-style: none;
+    padding: 0;
+  }
+
+  /* :global needed — items are created dynamically via JS and don't receive Astro's scoped hash */
+  :global(.search-result-item) {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  :global(.search-result-item:first-child) {
+    border-top: 1px solid var(--color-border);
+  }
+
+  :global(.search-result-item a) {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    padding: var(--space-lg) 0;
+    text-decoration: none;
+    color: var(--color-text);
+  }
+
+  :global(.search-result-item a:hover .result-title) {
+    color: var(--color-text-secondary);
+  }
+
+  :global(.result-title) {
+    font-family: var(--font-heading);
+    font-size: 1.125rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    transition: color 0.15s ease;
+  }
+
+  :global(.result-description) {
+    font-family: var(--font-body);
+    font-size: 0.9375rem;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+  }
+
+  :global(.search-result-item time) {
+    font-family: var(--font-heading);
+    font-size: 0.75rem;
+    color: var(--color-text-tertiary);
+    margin-top: var(--space-xs);
+  }
+
+  :global(.result-snippet) {
+    font-family: var(--font-body);
+    font-size: 0.8125rem;
+    color: var(--color-text-tertiary);
+    line-height: 1.5;
+    font-style: italic;
+  }
+
+  .search-empty {
+    font-family: var(--font-heading);
+    font-size: 0.875rem;
+    color: var(--color-text-tertiary);
+  }
+</style>

@@ -1,0 +1,137 @@
+---
+import Icon from "@/components/ui/Icon.astro";
+---
+
+<dialog class="lightbox" aria-label="Image viewer" data-lightbox-dialog>
+  <button type="button" class="lightbox-btn lightbox-close" aria-label="Close" data-lightbox-close>
+    <Icon name="x" class="size-6" />
+  </button>
+  <button
+    type="button"
+    class="lightbox-btn lightbox-nav lightbox-prev"
+    aria-label="Previous image"
+    data-lightbox-prev
+  >
+    <Icon name="arrow-left" class="size-6" />
+  </button>
+  <figure class="lightbox-figure">
+    <img alt="" data-lightbox-img />
+    <figcaption class="lightbox-caption">
+      <span data-lightbox-text></span>
+      <span class="lightbox-count" data-lightbox-count></span>
+    </figcaption>
+  </figure>
+  <button
+    type="button"
+    class="lightbox-btn lightbox-nav lightbox-next"
+    aria-label="Next image"
+    data-lightbox-next
+  >
+    <Icon name="arrow-right" class="size-6" />
+  </button>
+</dialog>
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>("[data-lightbox-dialog]");
+
+  /* Plain Markdown images get the same treatment as a Figure, so writers never need a component. */
+  document.querySelectorAll<HTMLImageElement>("[data-prose] p > img").forEach((image) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "figure-frame";
+    button.dataset.lightbox = "";
+    button.dataset.lightboxSrc = image.currentSrc || image.src;
+    button.dataset.lightboxAlt = image.alt;
+    button.setAttribute("aria-label", `Enlarge image: ${image.alt || "image"}`);
+    image.replaceWith(button);
+    button.append(image);
+  });
+
+  if (dialog && typeof dialog.showModal === "function") {
+    const img = dialog.querySelector<HTMLImageElement>("[data-lightbox-img]")!;
+    const text = dialog.querySelector<HTMLElement>("[data-lightbox-text]")!;
+    const count = dialog.querySelector<HTMLElement>("[data-lightbox-count]")!;
+    const prev = dialog.querySelector<HTMLButtonElement>("[data-lightbox-prev]")!;
+    const next = dialog.querySelector<HTMLButtonElement>("[data-lightbox-next]")!;
+    let group: HTMLElement[] = [];
+    let index = 0;
+
+    const assign = (target: HTMLImageElement, trigger: HTMLElement) => {
+      const srcset = trigger.dataset.lightboxSrcset;
+      if (srcset) {
+        target.sizes = "100vw";
+        target.srcset = srcset;
+      } else {
+        target.removeAttribute("sizes");
+        target.removeAttribute("srcset");
+      }
+      target.src = trigger.dataset.lightboxSrc ?? "";
+    };
+
+    const show = (at: number) => {
+      index = (at + group.length) % group.length;
+      const trigger = group[index];
+      assign(img, trigger);
+      img.alt = trigger.dataset.lightboxAlt ?? "";
+      text.textContent = trigger.dataset.lightboxCaption || trigger.dataset.lightboxAlt || "";
+      count.textContent = group.length > 1 ? `${index + 1} / ${group.length}` : "";
+      prev.hidden = next.hidden = group.length < 2;
+      if (group.length > 1) {
+        assign(new Image(), group[(index + 1) % group.length]);
+        assign(new Image(), group[(index - 1 + group.length) % group.length]);
+      }
+    };
+
+    document.addEventListener("click", (event) => {
+      const trigger = (event.target as Element | null)?.closest<HTMLElement>("[data-lightbox]");
+      if (!trigger) return;
+      event.preventDefault();
+      group = [...document.querySelectorAll<HTMLElement>("[data-lightbox]")];
+      show(group.indexOf(trigger));
+      dialog.showModal();
+      document.documentElement.style.overflow = "hidden";
+    });
+
+    prev.addEventListener("click", () => show(index - 1));
+    next.addEventListener("click", () => show(index + 1));
+    dialog.querySelector("[data-lightbox-close]")?.addEventListener("click", () => dialog.close());
+
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") show(index - 1);
+      if (event.key === "ArrowRight") show(index + 1);
+    });
+
+    /* The dialog fills the viewport, so a click anywhere but the picture or a control closes it. */
+    dialog.addEventListener("click", (event) => {
+      const target = event.target as Element;
+      if (!target.closest("img, button, figcaption")) dialog.close();
+    });
+
+    let startX = 0;
+    let startY = 0;
+    dialog.addEventListener(
+      "touchstart",
+      (event) => {
+        startX = event.changedTouches[0].clientX;
+        startY = event.changedTouches[0].clientY;
+      },
+      { passive: true },
+    );
+    dialog.addEventListener(
+      "touchend",
+      (event) => {
+        const dx = event.changedTouches[0].clientX - startX;
+        const dy = event.changedTouches[0].clientY - startY;
+        if (group.length < 2 || Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
+        show(index + (dx < 0 ? 1 : -1));
+      },
+      { passive: true },
+    );
+
+    dialog.addEventListener("close", () => {
+      img.removeAttribute("src");
+      img.removeAttribute("srcset");
+      document.documentElement.style.overflow = "";
+    });
+  }
+</script>

@@ -1,0 +1,332 @@
+---
+import { Image, getImage } from "astro:assets";
+import { render } from "astro:content";
+import AuthorNote from "@/components/blog/AuthorNote.astro";
+import Avatar from "@/components/blog/Avatar.astro";
+import Breadcrumbs from "@/components/blog/Breadcrumbs.astro";
+import PostCard from "@/components/blog/PostCard.astro";
+import ShareSheet from "@/components/blog/ShareSheet.astro";
+import Lightbox from "@/components/blog/Lightbox.astro";
+import TableOfContents from "@/components/blog/TableOfContents.astro";
+import Figure from "@/components/mdx/Figure.astro";
+import Icon from "@/components/ui/Icon.astro";
+import { siteConfig } from "@/config/site";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import {
+  authorUrl,
+  categoryUrl,
+  formatDate,
+  getAdjacentPosts,
+  getAuthor,
+  getCategory,
+  getPosts,
+  getRelatedPosts,
+  getTag,
+  isoDate,
+  postUrl,
+  tagUrl,
+  type Post,
+} from "@/lib/posts";
+import { absolute, withBreadcrumbs, type Crumb } from "@/lib/schema";
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  return posts.map((post) => ({ params: { slug: post.slug }, props: { post } }));
+}
+
+interface Props {
+  post: Post;
+}
+
+const { post } = Astro.props;
+const { Content, headings } = await render(post.entry);
+const author = getAuthor(post.author);
+const category = getCategory(post.category);
+const related = await getRelatedPosts(post);
+const { newer, older } = await getAdjacentPosts(post);
+const url = absolute(postUrl(post));
+const card = await getImage({
+  src: post.thumbnail,
+  width: 1200,
+  height: 630,
+  fit: "cover",
+  format: "jpg",
+  quality: 80,
+});
+
+const crumbs: Crumb[] = [
+  { label: "Home", href: "/" },
+  { label: "Writing", href: "/blog/" },
+  ...(category ? [{ label: category.name, href: categoryUrl(category.slug) }] : []),
+  { label: post.title },
+];
+
+const schema = withBreadcrumbs(
+  {
+    "@type": "BlogPosting",
+    headline: post.title,
+    description: post.excerpt,
+    datePublished: post.date.toISOString(),
+    dateModified: (post.updated ?? post.date).toISOString(),
+    url,
+    mainEntityOfPage: post.canonical ?? url,
+    inLanguage: siteConfig.language,
+    articleSection: category?.name,
+    keywords: post.tags.map((tag) => getTag(tag)?.name ?? tag).join(", "),
+    timeRequired: `PT${post.readingTime}M`,
+    image: absolute(card.src),
+    author: author
+      ? { "@type": "Person", name: author.name, url: absolute(authorUrl(author.slug)) }
+      : undefined,
+    publisher: { "@type": "Organization", name: siteConfig.name, url: absolute("/") },
+  },
+  crumbs,
+);
+---
+
+<BaseLayout
+  title={post.seoTitle ?? post.title}
+  description={post.seoDescription ?? post.excerpt}
+  image={post.thumbnail}
+  imageAlt={post.thumbnailAlt}
+  type="article"
+  canonical={post.canonical}
+  publishedTime={post.date}
+  modifiedTime={post.updated}
+  structuredData={schema}
+>
+  <div class="fixed inset-x-0 top-0 z-[60] h-0.5" aria-hidden="true">
+    <div class="h-full origin-left scale-x-0 bg-accent" data-progress></div>
+  </div>
+
+  <article>
+    <header>
+      <div class="shell flex flex-col items-center pb-12 pt-12 text-center sm:pt-16">
+        <Breadcrumbs
+          items={crumbs}
+          class="rise flex justify-center max-sm:[&_li:last-child]:hidden [&_ol]:justify-center"
+        />
+        <h1 class="serif rise mt-8 max-w-4xl text-headline font-normal" style="--rise-order: 1">
+          {post.title}
+        </h1>
+        <p class="rise mt-6 max-w-2xl text-lead text-body" style="--rise-order: 2">
+          {post.excerpt}
+        </p>
+        <div class="rise mt-9 flex flex-col items-center gap-4" style="--rise-order: 3">
+          {author && (
+            <a href={authorUrl(author.slug)} class="group flex items-center gap-3 text-left">
+              <Avatar author={author} size={44} />
+              <span class="text-sm leading-snug">
+                <span class="block font-medium group-hover:text-accent">{author.name}</span>
+                <span class="block text-muted">{author.role}</span>
+              </span>
+            </a>
+          )}
+          <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-3">
+            <div class="meta justify-center">
+              <time datetime={isoDate(post.date)}>{formatDate(post.date)}</time>
+              {post.updated && (
+                <span class="hidden sm:inline">
+                  Updated{" "}
+                  <time datetime={isoDate(post.updated)}>{formatDate(post.updated, "short")}</time>
+                </span>
+              )}
+              <span>{post.readingTime} min read</span>
+            </div>
+            <button
+              type="button"
+              class="btn btn-quiet btn-sm"
+              aria-haspopup="dialog"
+              data-share-open
+              hidden
+            >
+              <Icon name="social-share" class="size-3.5" />
+              Share
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <figure class="shell max-w-[calc(66rem+2*var(--gutter))]">
+      <div class="media shadow-[var(--shadow-card)]">
+        <Image
+          src={post.thumbnail}
+          alt={post.thumbnailAlt}
+          widths={[640, 960, 1280, 1600]}
+          sizes="(min-width: 70rem) 66rem, 94vw"
+          quality={72}
+          loading="eager"
+          fetchpriority="high"
+          class="aspect-[16/9] w-full"
+        />
+      </div>
+      {post.imageCredit && (
+        <figcaption class="mx-auto mt-4 max-w-2xl text-center text-sm text-muted">
+          {post.imageCredit.caption && <span>{post.imageCredit.caption} </span>}
+          Photo by{" "}
+          <a href={post.imageCredit.authorUrl} class="text-link" rel="noopener noreferrer">
+            {post.imageCredit.author}
+          </a>{" "}
+          on{" "}
+          <a href={post.imageCredit.sourceUrl} class="text-link" rel="noopener noreferrer">
+            {post.imageCredit.source}
+          </a>
+        </figcaption>
+      )}
+    </figure>
+
+    <div class="shell mt-14 grid grid-cols-[minmax(0,1fr)] gap-12 sm:mt-20 xl:grid-cols-[1fr_minmax(0,42rem)_1fr]">
+      <div class="mx-auto w-full min-w-0 max-w-[42rem] xl:col-start-2">
+        <div class="prose-article" data-prose>
+          <Content components={{ Figure }} />
+        </div>
+
+        {post.tags.length > 0 && (
+          <ul class="mt-12 flex flex-wrap gap-2" aria-label="Tags">
+            {post.tags.map((tag) => (
+              <li>
+                <a href={tagUrl(tag)} class="chip">
+                  <Icon name="hash" class="size-3.5 opacity-60" />
+                  {getTag(tag)?.name ?? tag}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div
+          class="mt-10 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-8"
+          data-needs-js
+        >
+          <p class="text-muted">Know someone who would enjoy this?</p>
+          <button
+            type="button"
+            class="btn btn-quiet btn-sm"
+            aria-haspopup="dialog"
+            data-share-open
+            hidden
+          >
+            <Icon name="social-share" class="size-3.5" />
+            Share this essay
+          </button>
+        </div>
+
+        {author && (
+          <div class="mt-10">
+            <AuthorNote author={author} />
+          </div>
+        )}
+
+        <nav class="mt-10 grid gap-4 sm:grid-cols-2" aria-label="More writing">
+          {older && (
+            <a href={postUrl(older)} class="adjacent group">
+              <span class="flex items-center gap-1.5 text-sm text-muted">
+                <Icon
+                  name="arrow-left"
+                  class="size-4 transition-transform duration-300 group-hover:-translate-x-0.5"
+                />
+                Previous
+              </span>
+              <span class="serif mt-2 block text-xl leading-snug">{older.title}</span>
+            </a>
+          )}
+          {newer && (
+            <a href={postUrl(newer)} class="adjacent group sm:col-start-2 sm:text-right">
+              <span class="flex items-center gap-1.5 text-sm text-muted sm:justify-end">
+                Next
+                <Icon
+                  name="arrow-right"
+                  class="size-4 transition-transform duration-300 group-hover:translate-x-0.5"
+                />
+              </span>
+              <span class="serif mt-2 block text-xl leading-snug">{newer.title}</span>
+            </a>
+          )}
+        </nav>
+      </div>
+
+      <aside class="hidden xl:col-start-3 xl:block">
+        <div class="sticky top-[calc(var(--header-h)+2.5rem)] ml-auto w-56">
+          <TableOfContents headings={headings} />
+        </div>
+      </aside>
+    </div>
+  </article>
+
+  {related.length > 0 && (
+    <section class="shell mt-28 sm:mt-36" aria-labelledby="related-title">
+      <h2 id="related-title" class="serif text-section font-normal">
+        Keep reading
+      </h2>
+      <div class="mt-12 grid gap-x-8 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
+        {related.map((item) => (
+          <PostCard post={item} />
+        ))}
+      </div>
+    </section>
+  )}
+  <Lightbox />
+  <ShareSheet title={post.title} url={url} />
+</BaseLayout>
+
+<style>
+  .adjacent {
+    display: block;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    padding: 1.25rem 1.5rem 1.5rem;
+    transition: border-color 200ms ease;
+  }
+
+  .adjacent:hover {
+    border-color: var(--line-strong);
+    background: var(--surface);
+  }
+</style>
+
+<script>
+  const bar = document.querySelector<HTMLElement>("[data-progress]");
+  if (bar) {
+    const update = () => {
+      const root = document.documentElement;
+      const total = root.scrollHeight - root.clientHeight;
+      bar.style.transform = `scaleX(${total > 0 ? root.scrollTop / total : 0})`;
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+  }
+
+  const copyIcon =
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+  const checkIcon =
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+
+  document.querySelectorAll<HTMLPreElement>("[data-prose] pre").forEach((pre) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "code-block";
+    pre.before(wrapper);
+    wrapper.append(pre);
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "code-copy";
+    button.setAttribute("aria-label", "Copy code");
+    button.innerHTML = copyIcon;
+    wrapper.append(button);
+
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(pre.textContent ?? "");
+        button.innerHTML = checkIcon;
+        button.setAttribute("aria-label", "Copied");
+        button.toggleAttribute("data-copied", true);
+        window.setTimeout(() => {
+          button.innerHTML = copyIcon;
+          button.setAttribute("aria-label", "Copy code");
+          button.removeAttribute("data-copied");
+        }, 1800);
+      } catch {}
+    });
+  });
+</script>

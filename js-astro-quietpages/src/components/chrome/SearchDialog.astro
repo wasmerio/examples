@@ -1,0 +1,686 @@
+---
+import Icon from "@/components/ui/Icon.astro";
+
+/*
+ * Command-palette search over /search-index.json.
+ * Opens from any [data-search-open] element, Ctrl/Cmd+K, or "/" outside text fields.
+ * The input is a combobox driving a listbox: ArrowUp/ArrowDown move (wrapping), Enter opens,
+ * Escape or a backdrop click closes, and focus returns to whatever opened it.
+ */
+---
+
+<dialog
+  class="search-dialog rounded-card border border-line bg-surface p-0 text-ink"
+  aria-label="Search"
+  data-search-dialog
+>
+  <div class="search-head flex items-center gap-3 border-b border-line pl-5 pr-3">
+    <Icon name="search" class="search-icon size-5 text-muted" />
+    <label for="search-input" class="sr-only">
+      Search the magazine
+    </label>
+    <input
+      id="search-input"
+      class="search-input"
+      type="text"
+      inputmode="search"
+      enterkeyhint="go"
+      autocomplete="off"
+      autocapitalize="off"
+      spellcheck="false"
+      placeholder="Search essays, notes, and interviews"
+      role="combobox"
+      aria-autocomplete="list"
+      aria-expanded="false"
+      aria-controls="search-listbox"
+      autofocus
+      data-search-input
+    />
+    <button type="button" class="search-close" aria-label="Close search" data-search-close>
+      <kbd class="search-kbd hidden sm:inline-grid">Esc</kbd>
+      <Icon name="x" class="size-5 sm:hidden" />
+    </button>
+  </div>
+
+  <div class="search-body">
+    <p id="search-label" class="search-label" data-search-label>
+      Recent
+    </p>
+    <p class="search-message" data-search-message hidden></p>
+    <ul
+      id="search-listbox"
+      role="listbox"
+      aria-labelledby="search-label"
+      data-search-list
+      hidden
+    ></ul>
+  </div>
+
+  <div class="hidden items-center gap-5 border-t border-line px-5 py-3 text-xs text-muted sm:flex">
+    <span class="flex items-center gap-1.5">
+      <kbd class="search-kbd">↑</kbd>
+      <kbd class="search-kbd">↓</kbd> to move
+    </span>
+    <span class="flex items-center gap-1.5">
+      <kbd class="search-kbd">↵</kbd> to open
+    </span>
+    <span class="flex items-center gap-1.5">
+      <kbd class="search-kbd">esc</kbd> to close
+    </span>
+  </div>
+
+  <p class="sr-only" aria-live="polite" data-search-status></p>
+
+  <template data-search-icons>
+    <span class="search-enter" data-icon="enter">
+      <Icon name="corner-down-left" class="size-4" />
+    </span>
+  </template>
+</dialog>
+
+<style>
+  .search-dialog {
+    --search-scrim: color-mix(in oklab, var(--ink) 28%, transparent);
+    width: min(40rem, calc(100% - 1.5rem));
+    max-width: none;
+    max-height: min(34rem, calc(100dvh - 1.5rem));
+    margin: 0.75rem auto auto;
+    overflow: hidden;
+    box-shadow: var(--shadow-pop);
+  }
+
+  /* Light ink would haze a dark page; darken with the canvas instead. */
+  :global(.dark) .search-dialog {
+    --search-scrim: color-mix(in oklab, var(--canvas) 72%, transparent);
+  }
+
+  .search-dialog[open] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Fallback for browsers where ::backdrop does not inherit custom properties. */
+  .search-dialog::backdrop {
+    background: var(--search-scrim, rgb(11 11 18 / 0.35));
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+
+  @media (min-width: 40rem) {
+    .search-dialog {
+      margin-top: 12vh;
+      max-height: min(34rem, 76vh);
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .search-dialog[open] {
+      animation: search-in 240ms var(--ease-out-expo);
+    }
+
+    .search-dialog[open]::backdrop {
+      animation: search-fade 240ms ease;
+    }
+  }
+
+  @keyframes search-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+    }
+  }
+
+  @keyframes search-fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  .search-head:focus-within :global(.search-icon) {
+    color: var(--ink);
+  }
+
+  /* Focus never leaves this field while the dialog is open; the caret and icon mark it. */
+  .search-input {
+    flex: 1;
+    min-width: 0;
+    height: 3.75rem;
+    border: 0;
+    background: transparent;
+    font-size: 1.125rem;
+    color: var(--ink);
+    outline: none;
+  }
+
+  .search-input::placeholder {
+    color: var(--muted);
+  }
+
+  .search-close {
+    display: inline-grid;
+    place-items: center;
+    min-width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 999px;
+    color: var(--muted);
+    transition: color 200ms ease;
+  }
+
+  .search-close:hover {
+    color: var(--ink);
+  }
+
+  .search-kbd {
+    place-items: center;
+    min-width: 1.375rem;
+    height: 1.375rem;
+    border: 1px solid var(--line);
+    border-radius: 0.375rem;
+    background: var(--sunken);
+    padding: 0 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    line-height: 1;
+    color: var(--body);
+  }
+
+  .search-kbd:not(.hidden) {
+    display: inline-grid;
+  }
+
+  .search-close:hover .search-kbd {
+    border-color: var(--line-strong);
+    color: var(--ink);
+  }
+
+  .search-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.5rem;
+  }
+
+  .search-label {
+    padding: 0.5rem 0.75rem 0.25rem;
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+
+  .search-message {
+    padding: 0.75rem 0.75rem 0.5rem;
+    font-size: 0.9375rem;
+    color: var(--muted);
+  }
+
+  /* Rows are built in the script, so they need unscoped selectors. */
+  .search-dialog :global(.search-link) {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    border-radius: 0.875rem;
+    padding: 0.7rem 0.75rem;
+    color: inherit;
+  }
+
+  .search-dialog :global([aria-selected="true"] > .search-link) {
+    background: var(--sunken);
+  }
+
+  .search-dialog :global(.search-text) {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
+  }
+
+  .search-dialog :global(.search-title) {
+    font-family: var(--font-serif);
+    font-optical-sizing: auto;
+    font-size: 1.0625rem;
+    font-weight: 500;
+    line-height: 1.3;
+    color: var(--ink);
+  }
+
+  .search-dialog :global(.search-meta) {
+    font-size: 0.8125rem;
+  }
+
+  .search-dialog :global(.search-excerpt),
+  .search-dialog :global(.search-archive) {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .search-dialog :global(.search-excerpt) {
+    margin-top: 0.125rem;
+    font-size: 0.875rem;
+    color: var(--body);
+  }
+
+  .search-dialog :global(.search-archive) {
+    font-size: 0.9375rem;
+    color: var(--body);
+  }
+
+  .search-dialog :global(.search-query) {
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .search-dialog :global(.search-option + .search-option-archive) {
+    margin-top: 0.375rem;
+    border-top: 1px solid var(--line);
+    padding-top: 0.375rem;
+  }
+
+  .search-dialog :global(.search-enter) {
+    color: var(--muted);
+    opacity: 0;
+    transition: opacity 160ms ease;
+  }
+
+  .search-dialog :global([aria-selected="true"] .search-enter) {
+    opacity: 1;
+  }
+
+  .search-dialog :global(mark) {
+    border-radius: 0.125rem;
+    background: var(--accent-soft);
+    padding-inline: 0.05em;
+    color: var(--ink);
+  }
+</style>
+
+<script>
+  interface Entry {
+    title: string;
+    excerpt: string;
+    url: string;
+    category: string;
+    tags: string[];
+    author: string;
+    date: string;
+    dateLabel: string;
+  }
+
+  /** An entry with its fields pre-folded for matching. */
+  interface Indexed {
+    entry: Entry;
+    title: string;
+    terms: string;
+    author: string;
+    excerpt: string;
+  }
+
+  const MAX_RESULTS = 8;
+  const RECENT_COUNT = 5;
+
+  const fold = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+  const isTyping = (target: EventTarget | null) =>
+    target instanceof HTMLElement &&
+    (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+
+  const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = "") => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  };
+
+  /** Ranges in `text` matching any word, located on the folded text and mapped back. */
+  const matchRanges = (text: string, words: string[]) => {
+    let folded = "";
+    const map: number[] = [];
+    let offset = 0;
+    for (const char of text) {
+      const part = fold(char);
+      for (let i = 0; i < part.length; i++) map.push(offset);
+      folded += part;
+      offset += char.length;
+    }
+    map.push(offset);
+
+    const ranges: [number, number][] = [];
+    for (const word of words) {
+      for (let at = folded.indexOf(word); at !== -1; at = folded.indexOf(word, at + word.length)) {
+        ranges.push([map[at], map[at + word.length]]);
+      }
+    }
+    ranges.sort((a, b) => a[0] - b[0]);
+
+    const merged: [number, number][] = [];
+    for (const range of ranges) {
+      const last = merged.at(-1);
+      if (last && range[0] <= last[1]) last[1] = Math.max(last[1], range[1]);
+      else merged.push([...range]);
+    }
+    return merged;
+  };
+
+  /** Text with matches wrapped in <mark>. `windowed` trims the start so a late match stays on one line. */
+  const highlight = (text: string, words: string[], windowed = false) => {
+    let ranges = matchRanges(text, words);
+    const first = ranges[0]?.[0] ?? 0;
+    if (windowed && first > 48) {
+      const cut = text.lastIndexOf(" ", first - 20) + 1;
+      if (cut > 0) {
+        text = `…${text.slice(cut)}`;
+        ranges = ranges.map(([start, end]): [number, number] => [start - cut + 1, end - cut + 1]);
+      }
+    }
+
+    const fragment = document.createDocumentFragment();
+    let position = 0;
+    for (const [start, end] of ranges) {
+      fragment.append(text.slice(position, start), el("mark", "", text.slice(start, end)));
+      position = end;
+    }
+    fragment.append(text.slice(position));
+    return fragment;
+  };
+
+  function initSearch() {
+    const dialog = document.querySelector<HTMLDialogElement>("[data-search-dialog]");
+    const input = dialog?.querySelector<HTMLInputElement>("[data-search-input]");
+    const list = dialog?.querySelector<HTMLUListElement>("[data-search-list]");
+    const label = dialog?.querySelector<HTMLElement>("[data-search-label]");
+    const message = dialog?.querySelector<HTMLElement>("[data-search-message]");
+    const status = dialog?.querySelector<HTMLElement>("[data-search-status]");
+    const closeButton = dialog?.querySelector<HTMLButtonElement>("[data-search-close]");
+    const icons = dialog?.querySelector<HTMLTemplateElement>("[data-search-icons]");
+    if (!dialog || !input || !list || !label || !message || !status || !closeButton || !icons)
+      return;
+
+    const root = document.documentElement;
+    let entries: Indexed[] | undefined;
+    let loading: Promise<void> | undefined;
+    let failed = false;
+    let options: HTMLLIElement[] = [];
+    let active = -1;
+    let trigger: HTMLElement | null = null;
+    let announceTimer: number | undefined;
+    let pressedBackdrop = false;
+    let previousOverflow = "";
+    let previousGutter = "";
+
+    const load = () => {
+      if (entries || loading) return;
+      failed = false;
+      loading = fetch("/search-index.json")
+        .then((response) => {
+          if (!response.ok) throw new Error(`Search index: ${response.status}`);
+          return response.json() as Promise<Entry[]>;
+        })
+        .then((data) => {
+          entries = data.map((entry) => ({
+            entry,
+            title: fold(entry.title),
+            terms: fold([entry.category, ...entry.tags].join(" ")),
+            author: fold(entry.author),
+            excerpt: fold(entry.excerpt),
+          }));
+        })
+        .catch(() => {
+          failed = true;
+        })
+        .finally(() => {
+          loading = undefined;
+          if (dialog.open) render();
+        });
+    };
+
+    const search = (items: Indexed[], words: string[]) => {
+      const phrase = words.join(" ");
+      const scored: { item: Indexed; score: number }[] = [];
+      for (const item of items) {
+        let score = 0;
+        for (const word of words) {
+          const weight = item.title.includes(word)
+            ? 8
+            : item.terms.includes(word)
+              ? 4
+              : item.author.includes(word)
+                ? 2
+                : item.excerpt.includes(word)
+                  ? 1
+                  : 0;
+          // Every word must match somewhere.
+          if (!weight) {
+            score = 0;
+            break;
+          }
+          score += weight;
+        }
+        if (score && words.length > 1 && item.title.includes(phrase)) score += 4;
+        if (score) scored.push({ item, score });
+      }
+      return scored
+        .sort((a, b) => b.score - a.score || b.item.entry.date.localeCompare(a.item.entry.date))
+        .slice(0, MAX_RESULTS)
+        .map(({ item }) => item.entry);
+    };
+
+    const icon = (name: string) =>
+      icons.content.querySelector(`[data-icon="${name}"]`)?.cloneNode(true) ?? "";
+
+    const row = (href: string, content: (Node | string)[], className = "") => {
+      const option = el("li", `search-option ${className}`.trim());
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", "false");
+      const link = el("a", "search-link");
+      link.href = href;
+      link.tabIndex = -1;
+      const text = el("span", "search-text");
+      text.append(...content);
+      link.append(text, icon("enter"));
+      option.append(link);
+      return option;
+    };
+
+    const meta = (entry: Entry) => {
+      const line = el("span", "meta search-meta");
+      const time = el("time", "", entry.dateLabel);
+      time.dateTime = entry.date;
+      line.append(el("span", "", entry.category), time);
+      return line;
+    };
+
+    const archiveRow = (query: string) => {
+      const text = el("span", "search-archive");
+      if (query) text.append("Search the archive for ", el("span", "search-query", `“${query}”`));
+      else text.append("Browse the archive");
+      const href = query ? `/blog/?q=${encodeURIComponent(query)}` : "/blog/";
+      return row(href, [text], "search-option-archive");
+    };
+
+    const setActive = (index: number, scroll = false) => {
+      options[active]?.setAttribute("aria-selected", "false");
+      active = index;
+      const current = options[active];
+      if (!current) {
+        input.removeAttribute("aria-activedescendant");
+        return;
+      }
+      current.setAttribute("aria-selected", "true");
+      input.setAttribute("aria-activedescendant", current.id);
+      if (scroll) current.scrollIntoView({ block: "nearest" });
+    };
+
+    const announce = (text: string) => {
+      window.clearTimeout(announceTimer);
+      announceTimer = window.setTimeout(() => (status.textContent = text), 400);
+    };
+
+    function render() {
+      const query = input!.value.trim();
+      const rows: HTMLLIElement[] = [];
+      let note = "";
+      let heading = "Results";
+      let spoken = "";
+
+      if (!entries) {
+        if (failed) {
+          note = "Search couldn’t load just now. The archive has its own search.";
+          rows.push(archiveRow(query));
+          spoken = "Search is unavailable";
+        } else {
+          note = "Loading…";
+        }
+      } else if (!query) {
+        heading = "Recent";
+        if (!entries.length) note = "Nothing has been published yet.";
+        for (const { entry } of entries.slice(0, RECENT_COUNT)) {
+          rows.push(row(entry.url, [el("span", "search-title", entry.title), meta(entry)]));
+        }
+      } else {
+        const words = fold(query).split(/\s+/).filter(Boolean);
+        const results = search(entries, words);
+        for (const entry of results) {
+          const title = el("span", "search-title");
+          title.append(highlight(entry.title, words));
+          const excerpt = el("span", "search-excerpt");
+          excerpt.append(highlight(entry.excerpt, words, true));
+          rows.push(row(entry.url, [title, meta(entry), excerpt]));
+        }
+        rows.push(archiveRow(query));
+        if (!results.length) note = `Nothing here matches “${query}”.`;
+        spoken = results.length
+          ? `${results.length} ${results.length === 1 ? "result" : "results"}`
+          : "No results";
+      }
+
+      rows.forEach((option, index) => (option.id = `search-option-${index}`));
+      options = rows;
+      active = -1;
+      list!.replaceChildren(...rows);
+      list!.hidden = !rows.length;
+      label!.textContent = heading;
+      label!.hidden = !rows.length;
+      label!.classList.toggle("sr-only", heading !== "Recent");
+      message!.textContent = note;
+      message!.hidden = !note;
+      input!.setAttribute("aria-expanded", String(rows.length > 0));
+      setActive(rows.length ? 0 : -1);
+      announce(spoken);
+    }
+
+    const open = (from?: HTMLElement | null) => {
+      if (dialog.open) return;
+      const focused = document.activeElement;
+      trigger =
+        from ?? (focused instanceof HTMLElement && focused !== document.body ? focused : null);
+
+      previousOverflow = root.style.overflow;
+      previousGutter = root.style.scrollbarGutter;
+      // Keep the page from shifting when its scrollbar disappears.
+      if (window.innerWidth > root.clientWidth) root.style.scrollbarGutter = "stable";
+      root.style.overflow = "hidden";
+
+      dialog.showModal();
+      input.focus();
+      input.select();
+      load();
+      render();
+    };
+
+    dialog.addEventListener("close", () => {
+      root.style.overflow = previousOverflow;
+      root.style.scrollbarGutter = previousGutter;
+      window.clearTimeout(announceTimer);
+      status.textContent = "";
+      trigger?.focus();
+      trigger = null;
+    });
+
+    closeButton.addEventListener("click", () => dialog.close());
+
+    // A click on the dialog element itself, outside its box, is a click on the backdrop.
+    const onBackdrop = (event: MouseEvent) => {
+      if (event.target !== dialog) return false;
+      const box = dialog.getBoundingClientRect();
+      return (
+        event.clientX < box.left ||
+        event.clientX > box.right ||
+        event.clientY < box.top ||
+        event.clientY > box.bottom
+      );
+    };
+    dialog.addEventListener("pointerdown", (event) => (pressedBackdrop = onBackdrop(event)));
+    dialog.addEventListener("click", (event) => {
+      if (pressedBackdrop && onBackdrop(event)) dialog.close();
+      pressedBackdrop = false;
+    });
+
+    input.addEventListener("input", render);
+
+    input.addEventListener("keydown", (event) => {
+      if (event.isComposing) return;
+      const count = options.length;
+      if ((event.key === "ArrowDown" || event.key === "ArrowUp") && count) {
+        event.preventDefault();
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        setActive((Math.max(active, 0) + step + count) % count, true);
+      } else if (event.key === "Enter" && options[active]) {
+        event.preventDefault();
+        options[active].querySelector("a")?.click();
+      }
+    });
+
+    list.addEventListener("pointermove", (event) => {
+      const option = (event.target as Element).closest<HTMLLIElement>("[role='option']");
+      const index = option ? options.indexOf(option) : -1;
+      if (index !== -1 && index !== active) setActive(index);
+    });
+
+    // Close on a plain click so a back/forward cache restore never shows a stale palette.
+    list.addEventListener("click", (event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      if ((event.target as Element).closest("a")) dialog.close();
+    });
+
+    // Without JS the trigger is a plain link to the archive.
+    document.addEventListener("click", (event) => {
+      const target =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>("[data-search-open]")
+          : null;
+      if (!target || event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      open(target);
+    });
+
+    // Warm the index when a trigger is about to be used.
+    const warm = (event: Event) => {
+      if (event.target instanceof Element && event.target.closest("[data-search-open]")) load();
+    };
+    document.addEventListener("pointerover", warm, { passive: true });
+    document.addEventListener("focusin", warm);
+
+    document.addEventListener("keydown", (event) => {
+      if (event.defaultPrevented || event.isComposing) return;
+      const modifier = event.metaKey || event.ctrlKey;
+      if (modifier && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (dialog.open) dialog.close();
+        else open();
+      } else if (
+        event.key === "/" &&
+        !modifier &&
+        !event.altKey &&
+        !dialog.open &&
+        !isTyping(event.target)
+      ) {
+        event.preventDefault();
+        open();
+      }
+    });
+  }
+
+  initSearch();
+</script>

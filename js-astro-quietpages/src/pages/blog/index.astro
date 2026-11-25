@@ -1,0 +1,358 @@
+---
+import PostCard from "@/components/blog/PostCard.astro";
+import Icon from "@/components/ui/Icon.astro";
+import PageHeader from "@/components/ui/PageHeader.astro";
+import { categories, tags } from "@/config/taxonomy";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { categoryUrl, getPosts, plural, tagUrl } from "@/lib/posts";
+import { withBreadcrumbs } from "@/lib/schema";
+
+const posts = await getPosts();
+
+/* Options with no post behind them are dropped, so no filter is a dead end. */
+const categoryOptions = categories
+  .map((category) => ({
+    ...category,
+    count: posts.filter((post) => post.category === category.slug).length,
+  }))
+  .filter((category) => category.count > 0);
+
+const tagOptions = tags
+  .map((tag) => ({
+    ...tag,
+    count: posts.filter((post) => (post.tags as string[]).includes(tag.slug)).length,
+  }))
+  .filter((tag) => tag.count > 0);
+
+const crumbs = [{ label: "Home", href: "/" }, { label: "Writing" }];
+---
+
+<BaseLayout
+  title="The archive"
+  description="Every essay, field note, and interview in the magazine. Search, or filter by section and tag."
+  structuredData={withBreadcrumbs({ "@type": "CollectionPage", name: "The archive" }, crumbs)}
+>
+  <PageHeader
+    title="The archive"
+    lead={`Every essay, field note, and interview we've published, newest first. ${plural(posts.length, "piece")} so far.`}
+    crumbs={crumbs}
+  />
+
+  <div class="shell" data-archive>
+    <div class="flex flex-col gap-3 border-y border-line py-4 lg:flex-row lg:items-center">
+      <form role="search" class="relative lg:w-[26rem]" data-archive-search>
+        <label for="archive-query" class="sr-only">
+          Search the archive
+        </label>
+        <Icon
+          name="search"
+          class="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted"
+        />
+        <input
+          id="archive-query"
+          name="q"
+          type="search"
+          placeholder="Search by title, section, or author"
+          class="archive-search"
+          data-archive-query
+        />
+        <button
+          type="button"
+          class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-full px-3 py-1.5 text-sm text-muted hover:bg-surface hover:text-ink"
+          data-archive-clear
+          hidden
+        >
+          Clear
+        </button>
+      </form>
+
+      <div class="relative flex flex-wrap items-center gap-2 lg:flex-1" data-archive-filters>
+        <details class="group relative" data-filter-menu>
+          <summary class="filter-pill">
+            <span class="filter-pill-label">Section</span>
+            <span class="filter-pill-value" data-filter-label="cat">
+              All
+            </span>
+            <Icon
+              name="chevron-down"
+              class="size-3.5 text-muted transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <nav class="filter-popover" aria-label="Filter by section">
+            <a href="/blog/" class="facet" data-filter="cat" data-value="" aria-current="true">
+              <span class="facet-label">All sections</span>
+              <span class="facet-count" data-facet-count>
+                {posts.length}
+              </span>
+            </a>
+            {categoryOptions.map((category) => (
+              <a
+                href={categoryUrl(category.slug)}
+                class="facet"
+                data-filter="cat"
+                data-value={category.slug}
+              >
+                <span class="facet-label">{category.name}</span>
+                <span class="facet-count" data-facet-count>
+                  {category.count}
+                </span>
+              </a>
+            ))}
+          </nav>
+        </details>
+
+        <details class="group relative" data-filter-menu>
+          <summary class="filter-pill">
+            <span class="filter-pill-label">Tag</span>
+            <span class="filter-pill-value" data-filter-label="tag">
+              Any
+            </span>
+            <Icon
+              name="chevron-down"
+              class="size-3.5 text-muted transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <nav class="filter-popover" aria-label="Filter by tag">
+            <a href="/blog/" class="facet" data-filter="tag" data-value="" aria-current="true">
+              <span class="facet-label">Any tag</span>
+              <span class="facet-count" data-facet-count>
+                {posts.length}
+              </span>
+            </a>
+            {tagOptions.map((tag) => (
+              <a href={tagUrl(tag.slug)} class="facet" data-filter="tag" data-value={tag.slug}>
+                <span class="facet-label">{tag.name}</span>
+                <span class="facet-count" data-facet-count>
+                  {tag.count}
+                </span>
+              </a>
+            ))}
+          </nav>
+        </details>
+
+        <button type="button" class="filter-reset" data-filter-reset hidden>
+          Clear filters
+        </button>
+        <p class="ml-auto text-sm text-muted tabular-nums" data-archive-count aria-live="polite">
+          {plural(posts.length, "result")}
+        </p>
+      </div>
+    </div>
+
+    <div class="mt-12 grid gap-x-8 gap-y-14 sm:grid-cols-2 lg:grid-cols-3" data-archive-list>
+      {posts.map((post) => (
+        <PostCard post={post} headingLevel={2} />
+      ))}
+    </div>
+
+    <div class="mt-12 rounded-card bg-sunken px-6 py-16 text-center" data-archive-empty hidden>
+      <p class="serif text-2xl">Nothing matches that yet.</p>
+      <p class="mt-2 text-muted">Try another word, or clear the filters.</p>
+    </div>
+
+    <div class="mt-12 flex flex-col items-center gap-3" data-archive-more-wrap hidden>
+      <button type="button" class="btn btn-quiet" data-archive-more></button>
+      <p class="text-sm text-muted" data-archive-page></p>
+    </div>
+  </div>
+</BaseLayout>
+
+<style>
+  .archive-search {
+    width: 100%;
+    height: 2.75rem;
+    border-radius: 999px;
+    background: var(--sunken);
+    padding: 0 4.5rem 0 2.6rem;
+    font-size: 0.9375rem;
+    color: var(--ink);
+    transition: box-shadow 200ms ease;
+  }
+
+  .archive-search::placeholder {
+    color: var(--muted);
+  }
+
+  .archive-search:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+
+  .archive-search::-webkit-search-cancel-button {
+    display: none;
+  }
+</style>
+
+<script>
+  const archive = document.querySelector<HTMLElement>("[data-archive]");
+  if (archive) {
+    const pageSize = 9;
+    const $ = <T extends Element>(selector: string) => archive.querySelector<T>(selector)!;
+    const input = $<HTMLInputElement>("[data-archive-query]");
+    const clear = $<HTMLButtonElement>("[data-archive-clear]");
+    const form = $<HTMLFormElement>("[data-archive-search]");
+    const count = $<HTMLElement>("[data-archive-count]");
+    const empty = $<HTMLElement>("[data-archive-empty]");
+    const moreWrap = $<HTMLElement>("[data-archive-more-wrap]");
+    const more = $<HTMLButtonElement>("[data-archive-more]");
+    const pageText = $<HTMLElement>("[data-archive-page]");
+    const reset = $<HTMLButtonElement>("[data-filter-reset]");
+    const filterBar = $<HTMLElement>("[data-archive-filters]");
+    const cards = [...archive.querySelectorAll<HTMLElement>("[data-post-card]")];
+    const menus = [...archive.querySelectorAll<HTMLDetailsElement>("[data-filter-menu]")];
+    const facets = [...archive.querySelectorAll<HTMLAnchorElement>("[data-filter]")];
+    const emptyLabels: Record<string, string> = { cat: "All", tag: "Any" };
+
+    type State = { q: string; cat: string; tag: string; page: number };
+    type FilterKey = "cat" | "tag";
+
+    /* An unknown value in the URL is dropped rather than emptying the list. */
+    const known = (key: FilterKey, value: string) =>
+      !value || archive.querySelector(`[data-filter="${key}"][data-value="${CSS.escape(value)}"]`);
+
+    const stateFromUrl = (): State => {
+      const params = new URLSearchParams(window.location.search);
+      const cat = params.get("cat") ?? "";
+      const tag = params.get("tag") ?? "";
+      return {
+        q: params.get("q") ?? "",
+        cat: known("cat", cat) ? cat : "",
+        tag: known("tag", tag) ? tag : "",
+        page: Math.max(1, Number.parseInt(params.get("page") ?? "1", 10) || 1),
+      };
+    };
+
+    const matches = (card: HTMLElement, test: State) => {
+      if (test.cat && card.dataset.category !== test.cat) return false;
+      if (test.tag && !(card.dataset.tags ?? "").split(" ").includes(test.tag)) return false;
+      const words = test.q.toLowerCase().split(/\s+/).filter(Boolean);
+      return words.every((word) => (card.dataset.search ?? "").includes(word));
+    };
+
+    /* Typing replaces the history entry, so Back skips partial queries. */
+    const writeUrl = (state: State, replace = false) => {
+      const params = new URLSearchParams();
+      if (state.q) params.set("q", state.q);
+      if (state.cat) params.set("cat", state.cat);
+      if (state.tag) params.set("tag", state.tag);
+      if (state.page > 1) params.set("page", String(state.page));
+      const query = params.toString();
+      const url = query ? `/blog/?${query}` : "/blog/";
+      if (replace) history.replaceState(null, "", url);
+      else history.pushState(null, "", url);
+    };
+
+    const closeMenus = (except?: HTMLDetailsElement) =>
+      menus.forEach((menu) => menu !== except && menu.removeAttribute("open"));
+
+    /* Each option is counted against the other active filters, so a row says what choosing it would show. */
+    const renderFacets = (state: State) => {
+      facets.forEach((facet) => {
+        const key = facet.dataset.filter as FilterKey;
+        const value = facet.dataset.value ?? "";
+        const selected = state[key] === value;
+        if (selected) facet.setAttribute("aria-current", "true");
+        else facet.removeAttribute("aria-current");
+        const total = cards.filter((card) => matches(card, { ...state, [key]: value })).length;
+        const node = facet.querySelector("[data-facet-count]");
+        if (node) node.textContent = String(total);
+        facet.toggleAttribute("data-empty", total === 0 && !selected);
+      });
+
+      archive.querySelectorAll<HTMLElement>("[data-filter-label]").forEach((node) => {
+        const key = node.dataset.filterLabel as FilterKey;
+        const active = state[key];
+        node.closest("[data-filter-menu]")?.toggleAttribute("data-active", Boolean(active));
+        const label = archive
+          .querySelector(`[data-filter="${key}"][data-value="${CSS.escape(active)}"] .facet-label`)
+          ?.textContent?.trim();
+        node.textContent = active && label ? label : emptyLabels[key];
+      });
+
+      reset.hidden = !(state.cat || state.tag);
+    };
+
+    const render = (state: State, syncInput = true) => {
+      if (syncInput) input.value = state.q;
+      clear.hidden = !state.q;
+
+      const found = cards.filter((card) => matches(card, state));
+      const visible = Math.min(found.length, state.page * pageSize);
+      cards.forEach((card) => (card.hidden = true));
+      found.slice(0, visible).forEach((card) => (card.hidden = false));
+
+      count.textContent = `${found.length} ${found.length === 1 ? "result" : "results"}`;
+      empty.hidden = found.length > 0;
+      moreWrap.hidden = visible >= found.length;
+      more.textContent = `Show more (${found.length - visible} left)`;
+      pageText.textContent = `Showing ${visible} of ${found.length}`;
+      renderFacets(state);
+    };
+
+    let state = stateFromUrl();
+    render(state);
+
+    const update = (next: Partial<State>, syncInput = true, replace = false) => {
+      state = { ...state, ...next };
+      writeUrl(state, replace);
+      render(state, syncInput);
+    };
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      update({ q: input.value.trim(), page: 1 }, false);
+    });
+
+    let typing: number | undefined;
+    input.addEventListener("input", () => {
+      window.clearTimeout(typing);
+      typing = window.setTimeout(
+        () => update({ q: input.value.trim(), page: 1 }, false, true),
+        180,
+      );
+    });
+
+    clear.addEventListener("click", () => {
+      update({ q: "", page: 1 });
+      input.focus();
+    });
+
+    facets.forEach((facet) => {
+      facet.addEventListener("click", (event) => {
+        event.preventDefault();
+        const key = facet.dataset.filter as FilterKey;
+        const value = facet.dataset.value ?? "";
+        update({ [key]: state[key] === value ? "" : value, page: 1 });
+        closeMenus();
+      });
+    });
+
+    reset.addEventListener("click", () => {
+      update({ cat: "", tag: "", page: 1 });
+      closeMenus();
+    });
+
+    menus.forEach((menu) => menu.addEventListener("toggle", () => menu.open && closeMenus(menu)));
+
+    document.addEventListener("click", (event) => {
+      if (!(event.target instanceof Element) || !event.target.closest("[data-filter-menu]")) {
+        closeMenus();
+      }
+    });
+
+    filterBar.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      const open = menus.find((menu) => menu.open);
+      if (!open) return;
+      open.removeAttribute("open");
+      open.querySelector("summary")?.focus();
+    });
+
+    more.addEventListener("click", () => update({ page: state.page + 1 }, false));
+
+    window.addEventListener("popstate", () => {
+      state = stateFromUrl();
+      render(state);
+    });
+  }
+</script>

@@ -1,0 +1,959 @@
+---
+import { type CollectionEntry, render } from "astro:content";
+import { Image } from "astro:assets";
+
+import ShareButtons from "@/components/blog/ShareButtons.astro";
+import Mermaid from "@/components/blog/Mermaid.astro";
+import katexStylesheet from "katex/dist/katex.min.css?url";
+import WebMentions from "@/components/blog/webmentions/index.astro";
+import { getAllPosts, getPostHref, getPostSortDate, sortMDByDate } from "@/data/post";
+import { siteConfig } from "@/site-config";
+import { formatBylineDate, formatEyebrowDate } from "@/utils/date";
+import { absoluteUrl, withBase } from "@/utils/path";
+
+import BaseLayout from "./Base.astro";
+import { Schema } from "astro-seo-schema";
+
+interface Props {
+	post: CollectionEntry<"post">;
+}
+
+const { post } = Astro.props;
+
+const sortedAll = sortMDByDate(await getAllPosts());
+const idx = sortedAll.findIndex((p) => p.id === post.id);
+const newerPost = idx > 0 ? sortedAll[idx - 1] : undefined;
+const olderPost = idx >= 0 && idx < sortedAll.length - 1 ? sortedAll[idx + 1] : undefined;
+const {
+	data: { coverImage, description, ogImage, publishDate, title, updatedDate, tags, draft },
+	id: slug,
+} = post;
+const socialImage = ogImage ?? `/og-image/${slug}.png`;
+const articleDate = publishDate.toISOString();
+const articleModified = updatedDate?.toISOString();
+const { remarkPluginFrontmatter } = await render(post);
+const { hasMath, hasMermaid } = remarkPluginFrontmatter as { hasMath?: boolean; hasMermaid?: boolean };
+
+const authorName = siteConfig.profile?.name ?? siteConfig.author;
+const comments = siteConfig.comments;
+const postUrl = absoluteUrl(`/posts/${slug}/`, Astro.site);
+const socialImageAbsolute = absoluteUrl(socialImage, Astro.site);
+
+// "Posts · Month YYYY"
+const eyebrowDate = formatEyebrowDate(publishDate);
+
+// "2 May 2026"
+const bylineDate = formatBylineDate(publishDate);
+
+// Prefer remark plugin's value; fall back to "".
+const readingTime: string =
+	(remarkPluginFrontmatter as { minutesRead?: string })?.minutesRead ?? "";
+
+// Custom giscus themes only in prod: the giscus.app iframe can't fetch CSS from localhost / private IPs.
+const giscusThemes = import.meta.env.PROD
+	? {
+			light: absoluteUrl("/giscus-light.css", Astro.site),
+			dark: absoluteUrl("/giscus-dark.css", Astro.site),
+		}
+	: { light: "noborder_light", dark: "noborder_dark" };
+---
+
+<BaseLayout meta={{ articleDate, articleModified, description, ogImage: socialImage, title }}>
+	{hasMath && <link rel="stylesheet" href={katexStylesheet} slot="head" />}
+	{hasMermaid && <Mermaid slot="head" />}
+	<Schema
+		slot="head"
+		item={{
+			"@context": "https://schema.org",
+			"@type": "BlogPosting",
+			headline: title,
+			datePublished: articleDate,
+			dateModified: articleModified,
+			url: postUrl,
+			image: socialImageAbsolute,
+			author: {
+				"@type": "Person",
+				name: authorName,
+			},
+			description: description,
+		}}
+	/>
+	<div class="reading-progress" id="reading-progress" aria-hidden="true"></div>
+	<div class="post-shell">
+		<div class="post-main" data-pagefind-body>
+			<div id="blog-hero" class="post-header">
+				<div class="post-eyebrow">
+					Posts <span class="sep">·</span> {eyebrowDate}
+				</div>
+				{draft && <span class="draft-flag">(Draft)</span>}
+				<h1 class="post-title">{title}</h1>
+				<p class="byline">
+					{authorName && <>By {authorName}<span class="sep">·</span></>}{bylineDate}{readingTime && (
+						<>
+							<span class="sep">·</span>{readingTime}
+						</>
+					)}
+				</p>
+				{!!tags?.length && (
+					<div class="post-tags">
+						{tags.map((tag, i) => (
+							<><a class="tag-link" data-pagefind-filter="tag" href={withBase(`/tags/${encodeURIComponent(tag)}/`)}>{tag}</a>{i < tags.length - 1 && <span class="sep">·</span>}</>
+						))}
+					</div>
+				)}
+				{updatedDate && (
+					<div class="post-updated">
+						Updated <time datetime={updatedDate.toISOString()}>
+							{formatBylineDate(updatedDate)}
+						</time>
+					</div>
+				)}
+			</div>
+
+			{coverImage ? (
+				<figure class="post-cover">
+					<Image
+						src={coverImage.src}
+						alt={coverImage.alt}
+						loading="eager"
+						fetchpriority="high"
+						decoding="async"
+						widths={[480, 720, 960, 1280]}
+						sizes="(max-width: 720px) 92vw, 696px"
+					/>
+				</figure>
+			) : (
+				<hr class="rule" />
+			)}
+
+			<article class="post-article">
+				<slot />
+			</article>
+
+			<ShareButtons title={title} url={postUrl} description={description} />
+
+			<WebMentions />
+
+			<hr class="rule rule--footer" />
+
+			{(olderPost || newerPost) && (
+				<nav class="post-pager" aria-label="More posts">
+					{olderPost && (
+						<a class="pager-link prev" data-astro-prefetch href={getPostHref(olderPost)}>
+							<span class="pager-eyebrow">Older</span>
+							<span class="pager-title">{olderPost.data.title}</span>
+						</a>
+					)}
+					{newerPost && (
+						<a class="pager-link next" data-astro-prefetch href={getPostHref(newerPost)}>
+							<span class="pager-eyebrow">Newer</span>
+							<span class="pager-title">{newerPost.data.title}</span>
+						</a>
+					)}
+				</nav>
+			)}
+
+			{comments && <div class="comments" id="comments"></div>}
+		</div>
+	</div>
+
+	<button
+		aria-label="Back to Top"
+		class="to-top-btn"
+		data-show="false"
+		id="to-top-btn"
+	>
+		<svg
+			aria-hidden="true"
+			fill="none"
+			focusable="false"
+			stroke="currentColor"
+			stroke-width="2"
+			viewBox="0 0 24 24"
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			<path d="M4.5 15.75l7.5-7.5 7.5 7.5" stroke-linecap="round" stroke-linejoin="round"></path>
+		</svg>
+	</button>
+</BaseLayout>
+
+<style>
+	.post-shell { display: block; position: relative; }
+
+	.reading-progress {
+		position: fixed;
+		top: 0;
+		left: 0;
+		height: 2px;
+		width: 0;
+		background: hsl(var(--theme-accent));
+		z-index: 100;
+		pointer-events: none;
+		transition: width 0.05s linear;
+	}
+
+	.post-cover {
+		margin: 0 0 36px;
+		padding: 0;
+	}
+	.post-cover img {
+		display: block;
+		width: 100%;
+		height: auto;
+		max-height: 380px;
+		object-fit: cover;
+		border: 1px solid var(--hairline);
+		border-radius: 4px;
+		background: var(--paper);
+	}
+
+	.post-eyebrow {
+		font-family: var(--font-mono);
+		font-size: 11.5px;
+		font-weight: 500;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: hsl(var(--theme-text) / 0.55);
+		margin-bottom: 22px;
+		font-variant-numeric: tabular-nums;
+		font-feature-settings: "tnum";
+	}
+	.post-eyebrow .sep {
+		color: var(--faint);
+		margin: 0 8px;
+	}
+
+	.draft-flag {
+		display: inline-block;
+		font-family: var(--font-mono);
+		font-size: 11.5px;
+		color: #c14a2b;
+		margin-bottom: 12px;
+		letter-spacing: 0.08em;
+	}
+
+	.post-title {
+		font-family: var(--font-serif);
+		font-weight: 500;
+		font-size: clamp(28px, 5.5vw, 46px);
+		letter-spacing: -0.022em;
+		line-height: 1.1;
+		color: hsl(var(--theme-text));
+		margin: 0 0 18px;
+		word-wrap: break-word;
+		overflow-wrap: break-word;
+	}
+	.post-title :global(em) {
+		font-style: italic;
+		color: hsl(var(--theme-accent));
+		font-weight: 400;
+	}
+
+	.byline {
+		font-family: var(--font-serif);
+		font-style: italic;
+		font-size: 16.5px;
+		color: hsl(var(--theme-text-muted));
+		margin: 0 0 14px;
+		line-height: 1.5;
+		font-variant-numeric: tabular-nums;
+		font-feature-settings: "tnum";
+	}
+	.byline .sep {
+		color: var(--faint);
+		margin: 0 6px;
+		font-style: normal;
+	}
+
+	.post-tags {
+		font-family: var(--font-mono);
+		font-size: 11.5px;
+		color: hsl(var(--theme-text) / 0.55);
+		letter-spacing: 0.02em;
+		margin-bottom: 32px;
+		word-break: break-word;
+	}
+	.post-tags .tag-link {
+		color: inherit;
+		text-decoration: none;
+		transition: color 0.2s ease;
+	}
+	.post-tags .tag-link::before {
+		content: "#";
+		color: var(--faint);
+		transition: color 0.2s ease;
+	}
+	.post-tags .tag-link:hover,
+	.post-tags .tag-link:hover::before {
+		color: hsl(var(--theme-accent));
+	}
+	.post-tags .tag-link:focus-visible {
+		outline: 2px solid hsl(var(--theme-accent));
+		outline-offset: 2px;
+		border-radius: 3px;
+	}
+	.post-tags .sep {
+		color: var(--faint);
+		margin: 0 6px;
+	}
+
+	.post-updated {
+		font-family: var(--font-mono);
+		font-size: 11px;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: hsl(var(--theme-text) / 0.5);
+		margin: -16px 0 32px;
+	}
+
+	.rule {
+		height: 1px;
+		background: var(--hairline);
+		border: 0;
+		margin: 0 0 44px;
+		transition: background-color 0.35s ease;
+	}
+	/* Extra spacing so stacked footer blocks (post-end link, comments) read as intentional. */
+	.rule--footer {
+		margin: 56px 0 28px;
+	}
+
+	/* Match article body width */
+	.comments { max-width: var(--reading-width); margin: 56px 0 32px; }
+	.comments .giscus { max-width: 100%; }
+
+	/* Prev/Next post navigation */
+	.post-pager {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		column-gap: 32px;
+		row-gap: 28px;
+		margin: 0 0 56px;
+		padding: 0 0 0 0;
+	}
+	.pager-link {
+		display: block;
+		text-decoration: none;
+		min-width: 0;
+		transition: transform 0.25s ease;
+	}
+	.pager-link.next {
+		text-align: right;
+	}
+	.pager-link.prev:hover { transform: translateX(-2px); }
+	.pager-link.next:hover { transform: translateX(2px); }
+	.pager-eyebrow {
+		display: block;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		font-weight: 500;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: hsl(var(--theme-text) / 0.72);
+		margin-bottom: 8px;
+	}
+	.pager-link.prev .pager-eyebrow::before { content: "← "; }
+	.pager-link.next .pager-eyebrow::after { content: " →"; }
+	.pager-title {
+		display: block;
+		font-family: var(--font-serif);
+		font-size: 17.5px;
+		line-height: 1.3;
+		font-weight: 500;
+		letter-spacing: -0.01em;
+		color: hsl(var(--theme-text));
+		text-wrap: balance;
+		word-wrap: break-word;
+		overflow-wrap: anywhere;
+		transition: color 0.2s ease;
+	}
+	.pager-link:hover .pager-title {
+		color: hsl(var(--theme-accent));
+	}
+	/* Lone prev/next spans full width, text on its natural side. */
+	.post-pager:has(.pager-link.prev:only-child) .pager-link.prev,
+	.post-pager:has(.pager-link.next:only-child) .pager-link.next {
+		grid-column: 1 / -1;
+	}
+	@media (max-width: 720px) {
+		.post-pager {
+			grid-template-columns: 1fr;
+			row-gap: 22px;
+			margin-bottom: 40px;
+		}
+		.pager-link.next {
+			order: 0;
+			text-align: left;
+		}
+		.pager-link.prev {
+			order: 1;
+		}
+	}
+
+	.to-top-btn {
+		position: fixed;
+		bottom: 32px;
+		right: 16px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 40px;
+		height: 40px;
+		border-radius: 999px;
+		border: 1px solid transparent;
+		background: var(--accent-soft);
+		color: hsl(var(--theme-text-muted));
+		cursor: pointer;
+		opacity: 0;
+		transform: translateY(28px);
+		transition: opacity 0.3s ease, transform 0.3s ease, color 0.2s ease, border-color 0.2s ease;
+		z-index: 90;
+	}
+	.to-top-btn[data-show="true"] {
+		opacity: 1;
+		transform: translateY(0);
+	}
+	.to-top-btn:hover {
+		color: hsl(var(--theme-accent));
+		border-color: var(--hairline);
+	}
+	.to-top-btn svg {
+		width: 20px;
+		height: 20px;
+	}
+	@media (min-width: 720px) {
+		.to-top-btn {
+			right: 32px;
+			bottom: 32px;
+			width: 44px;
+			height: 44px;
+		}
+	}
+
+	@media (max-width: 720px) {
+		.post-title { font-size: 30px; line-height: 1.15; }
+		.byline { font-size: 15.5px; }
+		.rule { margin-bottom: 32px; }
+	}
+	@media (max-width: 420px) {
+		.post-eyebrow { font-size: 11px; margin-bottom: 18px; }
+		.post-eyebrow .sep { margin: 0 6px; }
+		.post-title { font-size: 26px; }
+		.byline { font-size: 14.5px; margin-bottom: 24px; }
+		.rule { margin-bottom: 26px; }
+		.post-end { font-size: 14px; }
+	}
+
+	.post-end a:focus-visible,
+	.to-top-btn:focus-visible {
+		outline: 2px solid hsl(var(--theme-accent));
+		outline-offset: 3px;
+		border-radius: 3px;
+	}
+</style>
+
+<style is:global>
+	.post-article {
+		font-family: var(--font-serif);
+		color: hsl(var(--theme-text));
+	}
+
+	.post-article > p {
+		font-size: 17.5px;
+		line-height: 1.75;
+		color: hsl(var(--theme-text));
+		margin: 0 0 24px;
+		max-width: var(--reading-width);
+		word-wrap: break-word;
+		overflow-wrap: anywhere;
+	}
+	.post-article > p + p {
+		text-indent: 1.5em;
+	}
+	.post-article > p:first-of-type::first-letter {
+		font-family: var(--font-serif);
+		font-style: italic;
+		font-weight: 500;
+		color: hsl(var(--theme-accent));
+		float: left;
+		font-size: 3.6em;
+		line-height: 0.92;
+		padding: 4px 10px 0 0;
+		margin-top: 4px;
+	}
+	.post-article p em,
+	.post-article em {
+		font-style: italic;
+	}
+	.post-article p strong,
+	.post-article strong {
+		font-weight: 500;
+		color: hsl(var(--theme-text));
+	}
+
+	.post-article h1 {
+		font-family: var(--font-serif);
+		font-weight: 500;
+		font-size: 33px;
+		line-height: 1.15;
+		letter-spacing: -0.02em;
+		color: hsl(var(--theme-text));
+		margin: 60px 0 22px;
+		word-wrap: break-word;
+		overflow-wrap: anywhere;
+	}
+	.post-article h2 {
+		font-family: var(--font-serif);
+		font-weight: 500;
+		font-size: 27px;
+		line-height: 1.22;
+		letter-spacing: -0.014em;
+		color: hsl(var(--theme-text));
+		margin: 56px 0 20px;
+		word-wrap: break-word;
+		overflow-wrap: anywhere;
+	}
+	.post-article h3 {
+		font-family: var(--font-serif);
+		font-weight: 500;
+		font-size: 20px;
+		line-height: 1.3;
+		letter-spacing: -0.005em;
+		color: hsl(var(--theme-text));
+		margin: 38px 0 14px;
+		word-wrap: break-word;
+		overflow-wrap: anywhere;
+	}
+	.post-article h4 {
+		font-family: var(--font-serif);
+		font-weight: 500;
+		font-size: 17.5px;
+		line-height: 1.35;
+		color: hsl(var(--theme-text));
+		margin: 30px 0 12px;
+	}
+	.post-article h5 {
+		font-family: var(--font-serif);
+		font-weight: 600;
+		font-size: 16px;
+		line-height: 1.4;
+		color: hsl(var(--theme-text));
+		margin: 26px 0 10px;
+	}
+	.post-article h6 {
+		font-family: var(--font-mono);
+		font-weight: 500;
+		font-size: 12.5px;
+		line-height: 1.5;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: hsl(var(--theme-text) / 0.6);
+		margin: 24px 0 10px;
+	}
+
+	.post-article a {
+		color: hsl(var(--theme-text));
+		text-decoration: underline;
+		text-decoration-color: hsl(var(--theme-text) / 0.35);
+		text-decoration-thickness: 1px;
+		text-underline-offset: 3px;
+		word-break: break-word;
+		overflow-wrap: anywhere;
+		transition: color 0.2s ease, text-decoration-color 0.2s ease;
+	}
+	.post-article a:hover {
+		color: hsl(var(--theme-accent));
+		text-decoration-color: hsl(var(--theme-accent));
+	}
+
+	.post-article :not(pre) > code {
+		font-family: var(--font-mono);
+		font-size: 14.5px;
+		background: var(--paper);
+		border: 1px solid var(--hairline);
+		padding: 1px 6px;
+		border-radius: 3px;
+		color: hsl(var(--theme-text-muted));
+		font-variant-numeric: tabular-nums;
+		font-feature-settings: "tnum";
+		transition: background-color 0.35s ease, border-color 0.35s ease;
+	}
+
+	.post-article pre {
+		background: var(--paper);
+		border: 1px solid var(--hairline);
+		border-radius: 4px;
+		padding: 16px;
+		margin: 28px 0;
+		overflow-x: auto;
+		max-width: 100%;
+		font-size: 14px;
+		line-height: 1.7;
+		transition: background-color 0.35s ease, border-color 0.35s ease;
+	}
+	.post-article pre code {
+		background: transparent;
+		border: 0;
+		padding: 0;
+		font-size: inherit;
+		color: inherit;
+	}
+	/* expressive-code wrapper safety */
+	.post-article .expressive-code {
+		margin: 28px 0;
+	}
+
+	.post-article ul {
+		margin: 0 0 28px;
+		padding: 0;
+		list-style: none;
+		max-width: var(--reading-width);
+	}
+	.post-article ul li {
+		position: relative;
+		padding-left: 22px;
+		font-size: 17.5px;
+		line-height: 1.7;
+		color: hsl(var(--theme-text));
+		margin-bottom: 10px;
+		word-wrap: break-word;
+		overflow-wrap: anywhere;
+	}
+	.post-article ul li::before {
+		content: "";
+		position: absolute;
+		left: 4px;
+		top: 0.78em;
+		width: 5px;
+		height: 5px;
+		border-radius: 50%;
+		background: hsl(var(--theme-accent));
+	}
+	.post-article ul ul {
+		margin: 10px 0 4px;
+	}
+	.post-article ul ul li {
+		font-size: 17px;
+		margin-bottom: 6px;
+	}
+	.post-article ul ul li::before {
+		background: transparent;
+		border: 1px solid hsl(var(--theme-accent));
+		width: 5px;
+		height: 5px;
+	}
+
+	.post-article ol {
+		margin: 0 0 28px;
+		padding-left: 22px;
+		max-width: var(--reading-width);
+	}
+	.post-article ol li {
+		font-size: 17.5px;
+		line-height: 1.7;
+		color: hsl(var(--theme-text));
+		margin-bottom: 10px;
+		padding-left: 6px;
+	}
+	.post-article ol li::marker {
+		color: hsl(var(--theme-accent));
+		font-family: var(--font-mono);
+		font-size: 14px;
+	}
+	.post-article ol {
+    	list-style: decimal;
+	}
+
+	.post-article li > p {
+		margin: 0;
+		display: inline;
+	}
+
+	.post-article blockquote {
+		margin: 28px 0;
+		padding: 4px 0 4px 22px;
+		border-left: 2px solid hsl(var(--theme-accent));
+		font-style: italic;
+		color: hsl(var(--theme-text-muted));
+		font-size: 18px;
+		line-height: 1.65;
+		max-width: var(--reading-width);
+	}
+	.post-article blockquote p {
+		margin: 0 0 12px;
+		font-size: inherit;
+		max-width: none;
+	}
+	.post-article blockquote p:last-child {
+		margin-bottom: 0;
+	}
+	.post-article blockquote p:first-of-type::first-letter {
+		all: unset;
+	}
+
+	/* Predictable sizing prevents CLS */
+	.post-article figure {
+		margin: 36px 0;
+		padding: 0;
+	}
+	.post-article figure video,
+	.post-article video {
+		display: block;
+		width: 100%;
+		height: auto;
+		border: 1px solid var(--hairline);
+		background: var(--paper);
+		transition: border-color 0.35s ease;
+	}
+	.post-article img {
+		display: block;
+		max-width: 100%;
+		height: auto;
+		border: 1px solid var(--hairline);
+		background: var(--paper);
+	}
+	@media (prefers-reduced-motion: no-preference) and (scripting: enabled) {
+		.post-article img[loading="lazy"]:not([data-in]) {
+			opacity: 0;
+		}
+		.post-article img[loading="lazy"][data-in] {
+			opacity: 1;
+			transition: opacity 360ms ease;
+		}
+	}
+
+	.post-article h1,
+	.post-article h2,
+	.post-article h3,
+	.post-article h4,
+	.post-article h5,
+	.post-article h6 {
+		position: relative;
+		scroll-margin-top: 2rem;
+	}
+	.post-article .heading-anchor {
+		position: absolute;
+		left: -1.25em;
+		top: 0;
+		bottom: 0;
+		display: inline-flex;
+		align-items: center;
+		font-family: var(--font-mono);
+		font-size: 0.7em;
+		color: hsl(var(--theme-accent));
+		opacity: 0.4;
+		transition: opacity 0.18s ease;
+		text-decoration: none;
+		padding: 0 0.4em 0.15em;
+		background: transparent;
+		border: 0;
+		cursor: pointer;
+	}
+	@media (hover: hover) {
+		.post-article h1:hover .heading-anchor,
+		.post-article h2:hover .heading-anchor,
+		.post-article h3:hover .heading-anchor,
+		.post-article h4:hover .heading-anchor,
+		.post-article h5:hover .heading-anchor,
+		.post-article h6:hover .heading-anchor,
+		.post-article .heading-anchor:focus-visible {
+			opacity: 1;
+		}
+	}
+	.post-article figure img {
+		width: 100%;
+	}
+	.post-article figcaption {
+		font-family: var(--font-serif);
+		font-style: italic;
+		font-size: 14.5px;
+		color: hsl(var(--theme-text) / 0.72);
+		margin-top: 12px;
+		line-height: 1.5;
+	}
+	.post-article figcaption .label {
+		font-family: var(--font-mono);
+		font-style: normal;
+		font-size: 11px;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: hsl(var(--theme-text-muted));
+		margin-right: 8px;
+	}
+
+	.post-article .table-scroll {
+		margin: 28px 0;
+		overflow-x: auto;
+	}
+	.post-article table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 15.5px;
+		font-family: var(--font-sans);
+	}
+	.post-article th,
+	.post-article td {
+		text-align: left;
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--hairline);
+	}
+	.post-article th {
+		font-weight: 500;
+		color: hsl(var(--theme-text));
+	}
+
+	.post-article hr {
+		border: 0;
+		height: 1px;
+		background: var(--hairline);
+		margin: 40px 0;
+	}
+
+	@media (max-width: 720px) {
+		.post-article > p,
+		.post-article ul li,
+		.post-article ol li {
+			font-size: 17px;
+			line-height: 1.72;
+		}
+		.post-article h1 { font-size: 28px; margin: 48px 0 18px; }
+		.post-article h2 { font-size: 23px; margin: 44px 0 16px; }
+		.post-article h3 { font-size: 18.5px; margin: 30px 0 12px; }
+		.post-article :not(pre) > code { font-size: 13.5px; }
+		.post-article figure { margin: 28px 0; }
+	}
+	@media (max-width: 420px) {
+		.post-article > p,
+		.post-article ul li,
+		.post-article ol li {
+			font-size: 16px;
+			line-height: 1.7;
+		}
+		.post-article h1 { font-size: 25px; margin: 40px 0 16px; }
+		.post-article h2 { font-size: 20px; margin: 36px 0 14px; }
+		.post-article h3 { font-size: 17px; margin: 26px 0 10px; }
+		.post-article ul { padding-left: 0; }
+		.post-article ul li { padding-left: 18px; }
+		.post-article blockquote { padding-left: 16px; font-size: 16.5px; }
+		.post-article figcaption { font-size: 13.5px; }
+	}
+
+	.post-article a:focus-visible {
+		outline: 2px solid hsl(var(--theme-accent));
+		outline-offset: 3px;
+		border-radius: 3px;
+	}
+</style>
+
+{comments && (
+	<script is:inline define:vars={{ comments, giscusThemes }}>
+		document.addEventListener("DOMContentLoaded", () => {
+			const mount = document.getElementById("comments");
+			if (!mount) return;
+			const theme = document.documentElement.getAttribute("data-theme");
+			const script = document.createElement("script");
+			script.src = "https://giscus.app/client.js";
+			script.setAttribute("data-repo", comments.repo);
+			script.setAttribute("data-repo-id", comments.repoId);
+			script.setAttribute("data-category", comments.category);
+			script.setAttribute("data-category-id", comments.categoryId);
+			script.setAttribute("data-mapping", "title");
+			script.setAttribute("data-strict", "0");
+			script.setAttribute("data-reactions-enabled", "1");
+			script.setAttribute("data-emit-metadata", "0");
+			script.setAttribute("data-input-position", "top");
+			script.setAttribute("data-theme", theme === "dark" ? giscusThemes.dark : giscusThemes.light);
+			script.setAttribute("data-lang", "en");
+			script.setAttribute("crossorigin", "anonymous");
+			script.async = true;
+			mount.appendChild(script);
+
+			document.addEventListener("theme-change", (e) => {
+				const iframe = document.querySelector("iframe.giscus-frame");
+				if (iframe && iframe.contentWindow) {
+					iframe.contentWindow.postMessage(
+						{ giscus: { setConfig: { theme: e.detail.theme === "dark" ? giscusThemes.dark : giscusThemes.light } } },
+						"https://giscus.app",
+					);
+				}
+			});
+		});
+	</script>
+)}
+<script>
+	const scrollBtn = document.getElementById("to-top-btn") as HTMLButtonElement | null;
+	const heroEl = document.getElementById("blog-hero") as HTMLDivElement | null;
+	if (scrollBtn && heroEl) {
+		new IntersectionObserver((entries) => {
+			entries.forEach((entry) => {
+				scrollBtn.dataset.show = (!entry.isIntersecting).toString();
+			});
+		}).observe(heroEl);
+		scrollBtn.addEventListener("click", () =>
+			document.documentElement.scrollTo({ behavior: "smooth", top: 0 }),
+		);
+	}
+
+	const progressBar = document.getElementById("reading-progress") as HTMLElement | null;
+	if (progressBar) {
+		const update = () => {
+			const h = document.documentElement;
+			const max = h.scrollHeight - h.clientHeight;
+			const pct = max > 0 ? Math.min(100, (h.scrollTop / max) * 100) : 0;
+			progressBar.style.width = pct + "%";
+		};
+		update();
+		window.addEventListener("scroll", update, { passive: true });
+		window.addEventListener("resize", update, { passive: true });
+	}
+
+	const lazyImgs = document.querySelectorAll<HTMLImageElement>(
+		'.post-article img[loading="lazy"]',
+	);
+	if (lazyImgs.length && "IntersectionObserver" in window) {
+		const io = new IntersectionObserver(
+			(entries) => {
+				entries.forEach((e) => {
+					if (e.isIntersecting) {
+						(e.target as HTMLElement).dataset.in = "1";
+						io.unobserve(e.target);
+					}
+				});
+			},
+			{ rootMargin: "120px 0px" },
+		);
+		lazyImgs.forEach((img) => io.observe(img));
+	}
+
+	const slugify = (s: string) =>
+		s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+	const usedIds = new Set<string>();
+	document
+		.querySelectorAll<HTMLHeadingElement>(
+			".post-article h1, .post-article h2, .post-article h3, .post-article h4, .post-article h5, .post-article h6",
+		)
+		.forEach((h) => {
+			const baseId = h.id || slugify(h.textContent ?? "");
+			if (!baseId) return;
+			let id = baseId;
+			for (let n = 2; usedIds.has(id); n++) id = `${baseId}-${n}`;
+			usedIds.add(id);
+			if (!h.id) h.id = id;
+
+			const btn = document.createElement("button");
+			btn.type = "button";
+			btn.className = "heading-anchor";
+			btn.setAttribute("aria-label", `Copy link to ${h.textContent ?? "section"}`);
+			btn.textContent = "#";
+			btn.addEventListener("click", async () => {
+				const url = `${location.origin}${location.pathname}#${id}`;
+				history.replaceState(null, "", `#${id}`);
+				try {
+					await navigator.clipboard.writeText(url);
+					btn.textContent = "✓";
+					setTimeout(() => (btn.textContent = "#"), 1200);
+				} catch {}
+			});
+			h.prepend(btn);
+		});
+</script>

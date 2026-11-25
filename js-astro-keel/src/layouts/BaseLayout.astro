@@ -1,0 +1,137 @@
+---
+import '@fontsource-variable/fraunces/opsz.css';
+import '@fontsource/public-sans/400.css';
+import '@fontsource/public-sans/500.css';
+import '@fontsource/public-sans/600.css';
+import '@fontsource/public-sans/700.css';
+import '@fontsource-variable/jetbrains-mono/wght.css';
+import '../styles/global.css';
+import { ClientRouter } from 'astro:transitions';
+import { withBase } from '../lib/url';
+import { SITE, NAV_ITEMS } from '../consts';
+import { locale, navLabel, t } from '../i18n';
+import CodeCopy from '../components/CodeCopy.astro';
+import SocialLinks from '../components/SocialLinks.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+  ogType?: 'website' | 'article';
+  image?: string;
+}
+
+const siteName = SITE.title;
+
+const { title = siteName, description = SITE.description, ogType = 'website', image } = Astro.props;
+
+// `Astro.site` comes from `site` in astro.config.mjs; fall back to the
+// request URL during dev so canonical/OG links still resolve.
+const siteBase = Astro.site ?? new URL(Astro.url.origin);
+const canonicalURL = new URL(Astro.url.pathname, siteBase);
+const imageURL = image ? new URL(image, siteBase) : new URL(withBase(SITE.ogImage), siteBase);
+const fullTitle = title === siteName ? title : `${title} — ${siteName}`;
+
+const currentPath = Astro.url.pathname;
+const isActive = (href: string) => {
+  const full = withBase(href);
+  return href === '/' ? currentPath === full : currentPath.startsWith(full);
+};
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href={withBase('/favicon.svg')} />
+    <link rel="icon" href={withBase('/favicon.ico')} />
+    <link rel="canonical" href={canonicalURL} />
+    <link rel="sitemap" href={withBase('/sitemap-index.xml')} />
+    <link rel="alternate" type="application/rss+xml" title={siteName} href={withBase('/rss.xml')} />
+    <title>{fullTitle}</title>
+
+    {/* Astro comment syntax — an HTML comment here would ship on every page. */}
+    {/* Open Graph */}
+    <meta property="og:type" content={ogType} />
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalURL} />
+    {/* Open Graph wants `ja_JP`, not the `ja-JP` of `<html lang>`. */}
+    <meta property="og:locale" content={locale.replace('-', '_')} />
+    {imageURL && <meta property="og:image" content={imageURL} />}
+
+    {/* Twitter */}
+    <meta name="twitter:card" content={imageURL ? 'summary_large_image' : 'summary'} />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    {imageURL && <meta name="twitter:image" content={imageURL} />}
+    <slot name="head" />
+    <ClientRouter />
+    <script is:inline>
+      // Runs before paint on the initial load, and again on `astro:after-swap`
+      // because the router resets `<html>` attributes during soft navigation.
+      // IIFE so top-level consts can't clash if the script ever re-runs.
+      (() => {
+        const applyTheme = () => {
+          const storedTheme = localStorage.getItem('theme');
+          const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.dataset.theme = storedTheme || (prefersDark ? 'dark' : 'light');
+        };
+        applyTheme();
+        document.addEventListener('astro:after-swap', applyTheme);
+      })();
+    </script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href={withBase('/')} aria-label={t('nav.brandHome', { site: siteName })}>
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>{siteName}</span>
+      </a>
+      <nav class="site-nav" aria-label={t('nav.label')}>
+        {
+          NAV_ITEMS.map((item) => (
+            <a href={withBase(item.href)} aria-current={isActive(item.href) ? 'page' : undefined}>
+              {navLabel(item)}
+            </a>
+          ))
+        }
+      </nav>
+      <button class="theme-toggle" type="button" aria-label={t('theme.toggle')} data-theme-toggle>
+        <span aria-hidden="true"></span>
+      </button>
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <p>{SITE.footerText}</p>
+      <div class="footer-links">
+        <a href={withBase('/blog/')}>{t('footer.notes')}</a>
+        <a href="https://almanac.p4ni.com" target="_blank" rel="noopener noreferrer">Almanac ↗</a>
+      </div>
+      <SocialLinks />
+    </footer>
+
+    <CodeCopy />
+
+    <script>
+      // Delegated to `document` so the handler survives view-transition swaps
+      // that replace the toggle button element.
+      document.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element) || !event.target.closest('[data-theme-toggle]')) {
+          return;
+        }
+        const current = document.documentElement.dataset.theme;
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        localStorage.setItem('theme', next);
+      });
+    </script>
+  </body>
+</html>

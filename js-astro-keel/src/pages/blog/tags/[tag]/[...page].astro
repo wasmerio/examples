@@ -1,0 +1,82 @@
+---
+import { getCollection, render } from 'astro:content';
+import type { GetStaticPaths, InferGetStaticPropsType } from 'astro';
+import BaseLayout from '../../../../layouts/BaseLayout.astro';
+import Pagination from '../../../../components/Pagination.astro';
+import { withBase } from '../../../../lib/url';
+import { SITE } from '../../../../consts';
+import { formatDate, readingTime, t } from '../../../../i18n';
+
+export const getStaticPaths = (async ({ paginate }) => {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+  const allTags = [...new Set(posts.flatMap((post) => post.data.tags))];
+  return allTags.flatMap((tag) => {
+    const taggedPosts = posts
+      .filter((post) => post.data.tags.includes(tag))
+      .sort((a, b) => b.data.publishDate.valueOf() - a.data.publishDate.valueOf());
+    const otherTags = allTags.filter((item) => item !== tag).sort((a, b) => a.localeCompare(b));
+    return paginate(taggedPosts, { params: { tag }, pageSize: 10, props: { otherTags } });
+  });
+}) satisfies GetStaticPaths;
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+
+const { tag } = Astro.params;
+const { page, otherTags } = Astro.props;
+const taggedPosts = page.data;
+
+const readingTimes = new Map(
+  await Promise.all(
+    taggedPosts.map(async (post) => {
+      const { remarkPluginFrontmatter } = await render(post);
+      return [post.id, readingTime(remarkPluginFrontmatter.minutesRead)] as const;
+    }),
+  ),
+);
+
+const pageTitle =
+  page.currentPage === 1
+    ? t('tag.title', { tag })
+    : t('tag.titlePaged', { tag, page: page.currentPage });
+---
+
+<BaseLayout title={pageTitle} description={t('tag.description', { tag, site: SITE.title })}>
+  <section class="page-head section">
+    <p class="eyebrow">{t('tag.eyebrow')}</p>
+    <h1>{tag}</h1>
+    <p class="lead">{t('tag.lead', { tag })}</p>
+  </section>
+
+  <section class="section content-index" aria-label={t('tag.listLabel', { tag })}>
+    <div class="index-sidebar">
+      <p class="eyebrow">{t('tag.moreTagsEyebrow')}</p>
+      <nav class="tag-cloud" aria-label={t('tag.otherTagsNavLabel')}>
+        <a href={withBase('/blog/')}>{t('tag.allPosts')}</a>
+        {otherTags.map((item) => <a href={withBase(`/blog/tags/${item}/`)}>{item}</a>)}
+      </nav>
+    </div>
+
+    <div>
+      <div class="entry-list">
+        {
+          taggedPosts.map((post) => (
+            <article class="entry-card">
+              <div class="entry-meta">
+                <time datetime={post.data.publishDate.toISOString()}>
+                  {formatDate(post.data.publishDate, 'short')}
+                </time>
+                <span>{readingTimes.get(post.id)}</span>
+                <span>{post.data.tags.join(' / ')}</span>
+              </div>
+              <h2>
+                <a href={withBase(`/blog/${post.id}/`)}>{post.data.title}</a>
+              </h2>
+              <p>{post.data.description}</p>
+            </article>
+          ))
+        }
+      </div>
+      <Pagination page={page} />
+    </div>
+  </section>
+</BaseLayout>

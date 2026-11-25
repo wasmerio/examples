@@ -1,0 +1,178 @@
+---
+// Giscus comments — opt-in. Everything below (markup, styles, *and* script)
+// sits behind the `enabled` check, so a default build ships zero Giscus bytes.
+import { GISCUS } from '../consts';
+import { t } from '../i18n';
+
+// Guard on the IDs too: a half-filled config would render a widget that can
+// never resolve a discussion.
+const enabled = Boolean(GISCUS.enabled && GISCUS.repo && GISCUS.repoId && GISCUS.categoryId);
+
+// Where to send readers when the widget itself never loads. The anchor is
+// assembled here rather than in the dictionary so the URL goes through
+// `encodeURI` — `GISCUS.repo` is user-supplied config, and a stray quote would
+// otherwise break out of the `href`.
+const discussionsUrl = encodeURI(`https://github.com/${GISCUS.repo}/discussions`);
+const discussionsLink = `<a href="${discussionsUrl}" target="_blank" rel="noopener noreferrer">${t('comments.failedLink')}</a>`;
+---
+
+{
+  enabled && (
+    <section class="section post-nav-section comments-section" aria-labelledby="comments-heading" data-pagefind-ignore>
+      <p class="eyebrow" id="comments-heading">
+        {t('comments.eyebrow')}
+      </p>
+      <div
+        class="comments-mount"
+        data-giscus
+        data-repo={GISCUS.repo}
+        data-repo-id={GISCUS.repoId}
+        data-category={GISCUS.category}
+        data-category-id={GISCUS.categoryId}
+        data-mapping={GISCUS.mapping}
+        data-strict={GISCUS.strict ? '1' : '0'}
+        data-reactions-enabled={GISCUS.reactionsEnabled ? '1' : '0'}
+        data-input-position={GISCUS.inputPosition}
+        data-lang={GISCUS.lang}
+        data-light-theme={GISCUS.lightTheme}
+        data-dark-theme={GISCUS.darkTheme}
+      >
+        {/* Shown if the widget never appears — a blocked request, an offline
+            reader, or a repository whose Giscus setup is unfinished. Without
+            it, the reader is left staring at a labelled but permanently empty
+            box with no explanation. */}
+        <p class="comments-fallback" data-giscus-fallback hidden set:html={t('comments.failed', { link: discussionsLink })} />
+        <noscript>
+          <p class="comments-fallback">{t('comments.noscript')}</p>
+        </noscript>
+      </div>
+
+      {/* `is:inline` for the same reason as the script below: a bundled
+          <style> would land in the shared stylesheet even when comments are
+          disabled, and "zero Giscus bytes" would stop being literally true. */}
+      <style is:inline>
+        {`
+          .comments-mount {
+            max-width: var(--prose-width);
+            margin-top: calc(var(--baseline) * 0.85);
+            border-top: var(--hairline);
+            padding-top: calc(var(--baseline) * 0.85);
+            /* Reserve room so the lazily loaded thread doesn't shift the footer. */
+            min-height: 12rem;
+          }
+
+          .comments-fallback {
+            margin: 0;
+            border: var(--hairline);
+            padding: 1rem 1.25rem;
+            color: var(--color-muted);
+            background: var(--color-surface);
+          }
+        `}
+      </style>
+
+      <script is:inline data-astro-rerun>
+        // `is:inline` keeps this out of the shared bundle so a disabled config
+        // emits nothing at all. `data-astro-rerun` re-runs it after each soft
+        // navigation, since the swap replaces the mount with an empty one.
+        // Config arrives through data attributes — `define:vars` would strip
+        // `data-astro-rerun` from the rendered tag. IIFE so re-runs can't
+        // redeclare top-level consts.
+        (() => {
+          const mount = document.querySelector('[data-giscus]');
+          if (!mount || mount.dataset.loaded) return;
+
+          const config = mount.dataset;
+          const fallback = mount.querySelector('[data-giscus-fallback]');
+          const themeFor = (scheme) => (scheme === 'dark' ? config.darkTheme : config.lightTheme);
+
+          // Long enough that a slow connection is not mistaken for a failure.
+          const FALLBACK_DELAY = 8000;
+          let fallbackTimer;
+
+          const load = () => {
+            if (mount.dataset.loaded) return;
+            mount.dataset.loaded = '1';
+            const script = document.createElement('script');
+            script.src = 'https://giscus.app/client.js';
+            script.async = true;
+            script.crossOrigin = 'anonymous';
+            script.setAttribute('data-repo', config.repo);
+            script.setAttribute('data-repo-id', config.repoId);
+            script.setAttribute('data-category', config.category);
+            script.setAttribute('data-category-id', config.categoryId);
+            script.setAttribute('data-mapping', config.mapping);
+            script.setAttribute('data-strict', config.strict);
+            script.setAttribute('data-reactions-enabled', config.reactionsEnabled);
+            script.setAttribute('data-emit-metadata', '0');
+            script.setAttribute('data-input-position', config.inputPosition);
+            script.setAttribute('data-lang', config.lang);
+            script.setAttribute('data-loading', 'lazy');
+            script.setAttribute('data-theme', themeFor(document.documentElement.dataset.theme));
+            mount.appendChild(script);
+            fallbackTimer = window.setTimeout(() => {
+              if (!mount.querySelector('iframe.giscus-frame') && fallback) fallback.hidden = false;
+            }, FALLBACK_DELAY);
+          };
+
+          // Defer the third-party request until the reader is near the thread,
+          // so comments never compete with the article for bandwidth.
+          let observer;
+          if ('IntersectionObserver' in window) {
+            observer = new IntersectionObserver(
+              (entries) => {
+                if (!entries.some((entry) => entry.isIntersecting)) return;
+                observer.disconnect();
+                load();
+              },
+              { rootMargin: '400px 0px' },
+            );
+            observer.observe(mount);
+          } else {
+            load();
+          }
+
+          // Giscus renders its own message for a misconfigured repository, so
+          // an iframe appearing at all means the fallback is no longer wanted.
+          const frameObserver = new MutationObserver(() => {
+            if (!mount.querySelector('iframe.giscus-frame')) return;
+            window.clearTimeout(fallbackTimer);
+            if (fallback) fallback.hidden = true;
+            frameObserver.disconnect();
+          });
+          frameObserver.observe(mount, { childList: true, subtree: true });
+
+          // Keep the widget in sync with the header toggle. The theme lives on
+          // `<html data-theme>`, so watch that attribute rather than the button.
+          const syncTheme = () => {
+            const frame = mount.querySelector('iframe.giscus-frame');
+            if (!frame) return;
+            frame.contentWindow?.postMessage(
+              { giscus: { setConfig: { theme: themeFor(document.documentElement.dataset.theme) } } },
+              'https://giscus.app',
+            );
+          };
+          const themeObserver = new MutationObserver(syncTheme);
+          themeObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme'],
+          });
+
+          // A reader who navigates away before scrolling this far would
+          // otherwise strand these on a detached mount — one set per soft
+          // navigation, with no upper bound over a session.
+          document.addEventListener(
+            'astro:before-swap',
+            () => {
+              themeObserver.disconnect();
+              frameObserver.disconnect();
+              observer?.disconnect();
+              window.clearTimeout(fallbackTimer);
+            },
+            { once: true },
+          );
+        })();
+      </script>
+    </section>
+  )
+}

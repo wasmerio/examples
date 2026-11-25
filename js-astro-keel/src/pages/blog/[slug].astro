@@ -1,0 +1,174 @@
+---
+import { getCollection, render } from 'astro:content';
+import { Image } from 'astro:assets';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import StructuredData from '../../components/StructuredData.astro';
+import Comments from '../../components/Comments.astro';
+import { withBase } from '../../lib/url';
+import { SITE } from '../../consts';
+import { formatDate, readingTime, t } from '../../i18n';
+
+export async function getStaticPaths() {
+  // Newest-first, same ordering as the blog index.
+  const entries = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+    (a, b) => b.data.publishDate.valueOf() - a.data.publishDate.valueOf(),
+  );
+  return entries.map((entry, index) => {
+    // Up to 3 posts ranked by shared tags; ties resolved by newest publish date.
+    const related = entries
+      .filter((other) => other.id !== entry.id)
+      .map((other) => ({
+        post: other,
+        shared: other.data.tags.filter((tag) => entry.data.tags.includes(tag)).length,
+      }))
+      .filter(({ shared }) => shared > 0)
+      .sort(
+        (a, b) =>
+          b.shared - a.shared ||
+          b.post.data.publishDate.valueOf() - a.post.data.publishDate.valueOf(),
+      )
+      .slice(0, 3)
+      .map(({ post }) => post);
+
+    return {
+      params: { slug: entry.id },
+      props: {
+        entry,
+        newer: entries[index - 1] ?? null,
+        older: entries[index + 1] ?? null,
+        related,
+      },
+    };
+  });
+}
+
+const { entry, newer, older, related } = Astro.props;
+const { Content, headings, remarkPluginFrontmatter } = await render(entry);
+
+// JSON-LD needs absolute URLs — resolve against `site` (astro.config.mjs).
+const site = Astro.site ?? new URL(Astro.url.origin);
+const absolute = (path: string) => new URL(withBase(path), site).href;
+const schema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: entry.data.title,
+    description: entry.data.description,
+    datePublished: entry.data.publishDate.toISOString(),
+    url: absolute(`/blog/${entry.id}/`),
+    image: absolute(`/og/blog/${entry.id}.png`),
+    ...(SITE.author ? { author: { '@type': 'Person', name: SITE.author } } : {}),
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: t('post.breadcrumbHome'), item: absolute('/') },
+      {
+        '@type': 'ListItem',
+        position: 2,
+        name: t('post.breadcrumbBlog'),
+        item: absolute('/blog/'),
+      },
+      { '@type': 'ListItem', position: 3, name: entry.data.title },
+    ],
+  },
+];
+---
+
+<BaseLayout
+  title={entry.data.title}
+  description={entry.data.description}
+  ogType="article"
+  image={withBase(`/og/blog/${entry.id}.png`)}
+>
+  <StructuredData slot="head" schema={schema} />
+  <article data-pagefind-body>
+    <header class="page-head section article-head">
+      <p class="eyebrow">{t('post.eyebrow')}</p>
+      <h1>{entry.data.title}</h1>
+      <p class="lead">{entry.data.description}</p>
+      <div class="entry-meta">
+        <time datetime={entry.data.publishDate.toISOString()}
+          >{formatDate(entry.data.publishDate)}</time
+        >
+        <span>{readingTime(remarkPluginFrontmatter.minutesRead)}</span>
+        <span>{entry.data.tags.join(' / ')}</span>
+      </div>
+      {
+        entry.data.heroImage && (
+          <Image
+            class="article-image"
+            src={entry.data.heroImage}
+            alt=""
+            widths={[720, 1040, 1400]}
+            sizes="(min-width: 900px) 72rem, 100vw"
+          />
+        )
+      }
+    </header>
+
+    <div class="section article-layout">
+      <aside class="article-toc" aria-label={t('post.tocLabel')}>
+        <p class="eyebrow">{t('post.contentsEyebrow')}</p>
+        <nav>
+          {
+            headings
+              .filter((heading) => heading.depth === 2)
+              .map((heading) => <a href={`#${heading.slug}`}>{heading.text}</a>)
+          }
+        </nav>
+      </aside>
+      <div class="prose">
+        <Content />
+      </div>
+    </div>
+  </article>
+
+  {
+    (older || newer) && (
+      <nav class="section post-nav-section" aria-label={t('post.adjacentLabel')}>
+        <div class="post-nav">
+          {older ? (
+            <a rel="prev" href={withBase(`/blog/${older.id}/`)}>
+              <span class="post-nav-label">{t('post.previous')}</span>
+              <span class="post-nav-title">{older.data.title}</span>
+            </a>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+          {newer ? (
+            <a rel="next" class="post-nav-next" href={withBase(`/blog/${newer.id}/`)}>
+              <span class="post-nav-label">{t('post.next')}</span>
+              <span class="post-nav-title">{newer.data.title}</span>
+            </a>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+        </div>
+      </nav>
+    )
+  }
+
+  {
+    related.length > 0 && (
+      <aside class="section post-nav-section" aria-labelledby="related-heading">
+        <p class="eyebrow" id="related-heading">
+          {t('post.relatedEyebrow')}
+        </p>
+        <ul class="related-list">
+          {related.map((post) => (
+            <li>
+              <a href={withBase(`/blog/${post.id}/`)}>{post.data.title}</a>
+              <time datetime={post.data.publishDate.toISOString()}>
+                {formatDate(post.data.publishDate)}
+              </time>
+            </li>
+          ))}
+        </ul>
+      </aside>
+    )
+  }
+
+  <Comments />
+</BaseLayout>

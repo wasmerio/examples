@@ -1,0 +1,113 @@
+---
+import { Image, getImage } from 'astro:assets';
+import { render, type CollectionEntry } from 'astro:content';
+
+interface Props {
+  entry: CollectionEntry<'jobs'>;
+}
+
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+
+const images = entry.data.images ?? [];
+
+// Optimized variants used by the lightbox (larger than thumbnails).
+const lightboxImages = await Promise.all(
+  images.map(async (image) => {
+    const optimized = await getImage({ src: image, width: 1600, format: 'webp' });
+    return {
+      src: optimized.src,
+      alt: entry.data.title,
+    };
+  }),
+);
+---
+
+<li class="py-0.5">
+  <div class="flex gap-5">
+    <div class="relative min-w-28 shrink-0">
+      <span class="text-muted-foreground text-sm"
+        >{entry.data.from} - {entry.data.to ?? 'Present'}</span
+      >
+    </div>
+    <div class="flex flex-col gap-3">
+      <div class="flex flex-col">
+        <span class="text-headings font-medium">{entry.data.title}</span>
+        <span class="text-foreground text-sm">{entry.data.company}</span>
+      </div>
+      <div class="prose dark:prose-invert prose-sm">
+        <Content />
+      </div>
+
+      {
+        images.length > 0 && (
+          <div class="flex gap-2 flex-wrap mt-2">
+            {images.map((image, idx) => (
+              <button
+                class="work-image-thumb overflow-hidden rounded-lg border border-border hover:opacity-80 transition-opacity"
+                data-images={JSON.stringify(lightboxImages)}
+                data-index={idx}
+              >
+                <Image
+                  src={image}
+                  alt={entry.data.title}
+                  width={80}
+                  height={80}
+                  format="avif"
+                  loading="lazy"
+                  decoding="async"
+                  class="w-20 h-20 object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        )
+      }
+    </div>
+  </div>
+</li>
+
+<script>
+  const container = document.querySelector('.flex.gap-2.flex-wrap.mt-2');
+
+  if (container) {
+    const clickHandler = async (event: Event) => {
+      const thumb = (event.target as HTMLElement).closest('.work-image-thumb');
+      if (!thumb || !container.contains(thumb)) return;
+
+      const [{ default: ImageLightbox }, { createRoot }, { createElement }] =
+        await Promise.all([
+          import('./ImageLightbox'),
+          import('react-dom/client'),
+          import('react'),
+        ]);
+
+      const images = JSON.parse(thumb.getAttribute('data-images') || '[]');
+      const index = parseInt(thumb.getAttribute('data-index') || '0');
+
+      const lightboxContainer = document.createElement('div');
+      document.body.appendChild(lightboxContainer);
+      const root = createRoot(lightboxContainer);
+
+      const closeHandler = () => {
+        root.unmount();
+        try {
+          document.body.removeChild(lightboxContainer);
+        } catch (e) {
+          // Container may have already been removed; ignore error
+        }
+      };
+
+      root.render(
+        createElement(ImageLightbox, {
+          images,
+          isOpen: true,
+          initialIndex: index,
+          onClose: closeHandler,
+        }),
+      );
+    };
+
+    container.addEventListener('click', clickHandler);
+  }
+</script>

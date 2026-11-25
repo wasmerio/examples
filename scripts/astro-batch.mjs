@@ -715,7 +715,7 @@ async function fetchText(url, timeout = 30000) {
 }
 
 function isPageRef(ref) {
-  return !/^(https?:|mailto:|tel:|javascript:|data:)/i.test(ref) && !ref.startsWith('//') && !ref.startsWith('#') && ref !== '/' && ref !== ''
+  return !/^\/?404\/?$/.test(ref) && !/^(https?:|mailto:|tel:|javascript:|data:)/i.test(ref) && !ref.startsWith('//') && !ref.startsWith('#') && ref !== '/' && ref !== ''
     && !/\.(css|js|mjs|png|jpe?g|gif|svg|webp|avif|ico|xml|json|txt|pdf|woff2?|ttf|webmanifest|rss)(?:$|[?#])/i.test(ref);
 }
 

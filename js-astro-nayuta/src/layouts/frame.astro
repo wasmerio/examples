@@ -1,0 +1,720 @@
+---
+import type { MarkdownHeading } from 'astro';
+import type { CollectionEntry } from 'astro:content';
+import type { AstroComponentFactory } from 'astro/runtime/server/index.js';
+import type { PageEntry } from '@type/template';
+import HeadBase from '@layouts/head-base.astro';
+import ImageController from '@layouts/widgets/image/ImageController.astro';
+import ImageLightbox from '@layouts/widgets/image/ImageLightbox.astro';
+import LeftSidebar from '@layouts/left-sidebar.astro';
+import RightSidebar from '@layouts/right-sidebar.astro';
+import SidebarFooter from '@layouts/sidebar-footer.astro';
+import TableOfContents from '@widgets/sidebar/TableOfContents.astro';
+import '@assets/styles/global.css';
+
+interface Props {
+  entry?: PageEntry | CollectionEntry<'posts'>;
+  headings?: MarkdownHeading[];
+  isPost?: boolean;
+  title?: string;
+  description?: string;
+  rightSidebarLabel?: string;
+  isHome?: boolean;
+  withLeftSidebar?: boolean;
+  withProfileCard?: boolean;
+  withRightSidebar?: boolean;
+  breadcrumbs?: { text: string; href: string }[];
+}
+
+const {
+  entry,
+  headings = [],
+  isPost = false,
+  title = entry?.data.title,
+  description = entry?.data.description,
+  rightSidebarLabel = isPost ? 'Table of Contents' : 'Right Sidebar',
+  isHome = false,
+  withLeftSidebar = entry?.data.withLeftSidebar ?? true,
+  withProfileCard = entry?.data.withProfileCard ?? true,
+  withRightSidebar: extraRightEnabled = entry?.data.withRightSidebar,
+  breadcrumbs = [{ text: 'Home', href: '/' }],
+} = Astro.props;
+
+const sidebars = import.meta.glob<AstroComponentFactory>(
+  [
+    '/src/content/**/_left.astro',
+    '/src/content/**/_right.astro',
+    '!/src/content/**/assets/**',
+    '!/src/content/**/_*/**',
+  ],
+  { eager: true, import: 'default' },
+);
+const directory = entry?.filePath
+  ? `/${entry.filePath.slice(0, entry.filePath.lastIndexOf('/'))}`
+  : '/src/content';
+const Left =
+  sidebars[`${directory}/_left.astro`] ?? sidebars['/src/content/_left.astro'];
+const Right =
+  sidebars[`${directory}/_right.astro`] ??
+  sidebars['/src/content/_right.astro'];
+const showExtraRight = Boolean(Right) && extraRightEnabled !== false;
+const withRightSidebar = isPost || showExtraRight;
+const sidebarProps = { entry, headings, pathname: Astro.url.pathname };
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <HeadBase title={title} description={description} isHome={isHome} />
+    <ImageController />
+    <slot name="head" />
+  </head>
+  <body>
+    <!-- Mobile Sticky Header -->
+    <header class="mobile-sticky-header">
+      <div class="header-content">
+        {
+          withLeftSidebar && (
+            <button
+              class="mobile-menu-btn"
+              id="open-widgets-btn"
+              aria-label="Open Sidebar"
+              aria-controls="widgets-drawer"
+              aria-expanded="false"
+            >
+              <svg
+                viewBox="0 0 16 16"
+                width="15"
+                height="15"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              >
+                <line x1="2" y1="3.5" x2="14" y2="3.5" />
+                <line x1="2" y1="8" x2="14" y2="8" />
+                <line x1="2" y1="12.5" x2="14" y2="12.5" />
+              </svg>
+            </button>
+          )
+        }
+        <nav class="breadcrumbs">
+          {
+            breadcrumbs.map((crumb, idx) => (
+              <Fragment key={crumb.href}>
+                <a href={crumb.href}>{crumb.text}</a>
+                {idx < breadcrumbs.length && ' > '}
+              </Fragment>
+            ))
+          }
+        </nav>
+      </div>
+    </header>
+
+    <div
+      class={`layout-container ${!withLeftSidebar ? 'without-left-sidebar' : ''} ${withRightSidebar ? 'with-right-sidebar' : ''}`}
+    >
+      {
+        withLeftSidebar && (
+          <LeftSidebar
+            withProfileCard={withProfileCard}
+            withHeader={withProfileCard || Astro.slots.has('left-header')}
+          >
+            {Astro.slots.has('left-header') && (
+              <slot name="left-header" slot="header" />
+            )}
+            {Left && <Left {...sidebarProps} />}
+          </LeftSidebar>
+        )
+      }
+
+      <!-- Main Region -->
+      <main class="main-region">
+        <nav class="breadcrumbs">
+          {
+            breadcrumbs.map((crumb, idx) => (
+              <Fragment key={crumb.href}>
+                <a href={crumb.href}>{crumb.text}</a>
+                {idx < breadcrumbs.length && ' > '}
+              </Fragment>
+            ))
+          }
+        </nav>
+
+        <slot />
+
+        <!-- Mobile Footer (Shown in normal flow only on mobile) -->
+        <SidebarFooter className="mobile-footer" />
+      </main>
+
+      {
+        withRightSidebar && (
+          <RightSidebar>
+            {isPost && <TableOfContents headings={headings} />}
+            {showExtraRight && Right && <Right {...sidebarProps} />}
+          </RightSidebar>
+        )
+      }
+    </div>
+
+    <!-- Mobile Drawer Elements -->
+    <div class="drawer-backdrop" id="drawer-backdrop"></div>
+
+    <!-- Left Drawer (Widgets) -->
+    {
+      withLeftSidebar && (
+        <div
+          class="drawer"
+          id="widgets-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sidebar"
+          aria-hidden="true"
+          inert
+        >
+          <button class="drawer-close" id="close-widgets-btn">
+            [Close]
+          </button>
+          <div style="margin-top: 20px;">
+            {Left && <Left {...sidebarProps} />}
+          </div>
+        </div>
+      )
+    }
+
+    <!-- Right Drawer (Context) -->
+    {
+      withRightSidebar && (
+        <div
+          class="drawer drawer-right"
+          id="context-drawer"
+          role="dialog"
+          aria-modal="true"
+          aria-label={rightSidebarLabel}
+          aria-hidden="true"
+          inert
+        >
+          <button class="drawer-close" id="close-context-btn">
+            [Close]
+          </button>
+          <div style="margin-top: 20px;">
+            <RightSidebar drawer>
+              {isPost && <TableOfContents headings={headings} />}
+              {showExtraRight && Right && <Right {...sidebarProps} />}
+            </RightSidebar>
+          </div>
+        </div>
+      )
+    }
+
+    <!-- Mobile Floating Action Button for Right Sidebar (TOC / Context) -->
+    {
+      withRightSidebar && (
+        <button
+          class="mobile-floating-btn"
+          id="open-context-btn"
+          aria-label={`Open ${rightSidebarLabel}`}
+          aria-controls="context-drawer"
+          aria-expanded="false"
+        >
+          <span class="btn-bracket">[</span>
+          <svg
+            viewBox="0 0 16 16"
+            width="12"
+            height="12"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          >
+            <line x1="2" y1="3.5" x2="14" y2="3.5" />
+            <line x1="2" y1="8" x2="10" y2="8" />
+            <line x1="2" y1="12.5" x2="14" y2="12.5" />
+          </svg>
+          <span class="btn-text">
+            {rightSidebarLabel === 'Table of Contents' ? 'TOC' : 'Sidebar'}
+          </span>
+          <span class="btn-bracket">]</span>
+        </button>
+      )
+    }
+
+    <ImageLightbox />
+
+    <!-- Pure JS for drawer transitions (Progressive Enhancement) -->
+    <script>
+      let drawerController: AbortController | undefined;
+      function setupDrawers() {
+        drawerController?.abort();
+        drawerController = new AbortController();
+        const { signal } = drawerController;
+        const backdrop = document.getElementById('drawer-backdrop');
+        const pairs = [
+          ['open-widgets-btn', 'widgets-drawer'],
+          ['open-context-btn', 'context-drawer'],
+        ].flatMap(([buttonId, drawerId]) => {
+          const button = document.getElementById(buttonId);
+          const drawer = document.getElementById(drawerId);
+          return button && drawer ? [{ button, drawer }] : [];
+        });
+        let active: (typeof pairs)[number] | undefined;
+        const background = [
+          document.querySelector<HTMLElement>('.layout-container'),
+          document.querySelector<HTMLElement>('.mobile-sticky-header'),
+          document.getElementById('open-context-btn'),
+        ];
+        function close(restoreFocus = true) {
+          if (!active) return;
+          const { button, drawer } = active;
+          drawer.classList.remove('open');
+          drawer.inert = true;
+          drawer.setAttribute('aria-hidden', 'true');
+          button.setAttribute('aria-expanded', 'false');
+          backdrop?.classList.remove('open');
+          background.forEach((element) => {
+            if (element) element.inert = false;
+          });
+          active = undefined;
+          if (restoreFocus) button.focus();
+        }
+        for (const pair of pairs) {
+          pair.button.addEventListener(
+            'click',
+            () => {
+              close(false);
+              active = pair;
+              pair.drawer.inert = false;
+              pair.drawer.setAttribute('aria-hidden', 'false');
+              pair.drawer.classList.add('open');
+              pair.button.setAttribute('aria-expanded', 'true');
+              backdrop?.classList.add('open');
+              background.forEach((element) => {
+                if (element) element.inert = true;
+              });
+              pair.drawer
+                .querySelector<HTMLButtonElement>('.drawer-close')
+                ?.focus();
+            },
+            { signal },
+          );
+          pair.drawer
+            .querySelector('.drawer-close')
+            ?.addEventListener('click', () => close(), { signal });
+        }
+        backdrop?.addEventListener('click', () => close(), { signal });
+        document.addEventListener(
+          'keydown',
+          (event) => {
+            if (!active) return;
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              close();
+            } else if (event.key === 'Tab') {
+              const focusable = [
+                ...active.drawer.querySelectorAll<HTMLElement>(
+                  'a[href], button, input, select, textarea, [tabindex]',
+                ),
+              ].filter(
+                (element) =>
+                  element.tabIndex >= 0 &&
+                  !element.matches(':disabled') &&
+                  element.getClientRects().length,
+              );
+              const first = focusable[0];
+              const last = focusable.at(-1);
+              if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last?.focus();
+              } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first?.focus();
+              }
+            }
+          },
+          { signal },
+        );
+        window.addEventListener(
+          'resize',
+          () => {
+            if (active && !active.button.getClientRects().length) close(false);
+          },
+          { signal },
+        );
+        document.documentElement.dataset.drawersReady = '';
+      }
+      setupDrawers();
+      document.addEventListener('astro:after-swap', setupDrawers);
+    </script>
+  </body>
+</html>
+
+<style>
+  .layout-container {
+    display: grid;
+    grid-template-columns: var(--ny-layout-left-width) minmax(0, 1fr);
+    gap: var(--ny-layout-column-gap);
+    max-width: calc(
+      var(--ny-layout-page-max-width) + var(--ny-layout-column-gap) + 2 *
+        var(--ny-layout-outer-padding-inline)
+    );
+    margin: 0 auto;
+    padding: var(--ny-layout-outer-padding-block)
+      var(--ny-layout-outer-padding-inline);
+    min-height: 100vh;
+  }
+
+  .layout-container.without-left-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .layout-container.with-right-sidebar {
+    grid-template-columns: var(--ny-layout-left-width) minmax(0, 1fr) var(
+        --ny-layout-right-width
+      );
+    max-width: calc(
+      var(--ny-layout-page-max-width) + 2 * var(--ny-layout-column-gap) + 2 *
+        var(--ny-layout-outer-padding-inline)
+    );
+  }
+
+  .layout-container.without-left-sidebar.with-right-sidebar {
+    grid-template-columns: minmax(0, 1fr) var(--ny-layout-right-width);
+  }
+
+  :global(.left-region) {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    position: sticky;
+    top: var(--ny-layout-outer-padding-block);
+    height: calc(100vh - 2 * var(--ny-layout-outer-padding-block));
+    max-height: calc(100vh - 2 * var(--ny-layout-outer-padding-block));
+    overflow: hidden;
+  }
+
+  :global(.left-footer) {
+    margin-top: auto;
+    flex-shrink: 0;
+    font-size: var(--ny-font-size-ui-micro);
+    color: var(--ny-color-text-subtle);
+    line-height: 1.6;
+    border-top: 1px solid var(--ny-color-border);
+    padding-top: 16px;
+  }
+
+  :global(.left-footer a),
+  :global(.mobile-footer a) {
+    color: var(--ny-color-text-muted);
+    text-decoration: none;
+  }
+
+  :global(.left-footer a:hover),
+  :global(.mobile-footer a:hover) {
+    color: var(--ny-color-outline);
+    text-decoration: underline;
+  }
+
+  .main-region {
+    max-width: 1670px;
+    width: 100%;
+  }
+
+  .layout-container.with-right-sidebar .main-region {
+    max-width: 1470px;
+  }
+
+  .breadcrumbs {
+    font-size: var(--ny-font-size-ui-meta);
+    color: var(--ny-color-text-subtle);
+    margin-bottom: 24px;
+  }
+
+  .breadcrumbs a {
+    color: var(--ny-color-text-subtle);
+    text-decoration: none;
+  }
+
+  .breadcrumbs a:hover {
+    color: var(--ny-color-outline);
+  }
+
+  :global(.right-region) {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    height: fit-content;
+    position: sticky;
+    top: var(--ny-layout-outer-padding-block);
+  }
+
+  .mobile-sticky-header {
+    display: none;
+  }
+
+  .drawer {
+    visibility: hidden;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    width: min(300px, calc(100vw - 32px));
+    background-color: var(--ny-color-surface);
+    border-right: 1px solid var(--ny-color-border);
+    padding: 24px;
+    z-index: 2000;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow-y: auto;
+  }
+
+  .drawer-right {
+    left: auto;
+    right: 0;
+    border-right: none;
+    border-left: 1px solid var(--ny-color-border);
+    transform: translateX(100%);
+  }
+
+  .drawer.open {
+    visibility: visible;
+    transform: translateX(0);
+  }
+
+  .drawer-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(
+      --ny-color-mask,
+      color-mix(in srgb, var(--ny-color-bg) 80%, transparent)
+    );
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    z-index: 1500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+
+  .drawer-backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .drawer-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: none;
+    border: none;
+    color: var(--ny-color-text-muted);
+    font-family: var(--ny-font-ui);
+    font-size: var(--ny-font-size-icon);
+    cursor: pointer;
+  }
+
+  .drawer-close + div {
+    margin-top: 44px !important;
+  }
+
+  .drawer-close:hover {
+    color: var(--ny-color-outline);
+  }
+
+  .drawer > div {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .mobile-floating-btn {
+    display: none;
+    position: fixed;
+    right: max(16px, calc(env(safe-area-inset-right, 0px) + 16px));
+    bottom: max(20px, calc(env(safe-area-inset-bottom, 0px) + 20px));
+    height: 30px;
+    padding: 0 8px;
+    background-color: var(--ny-color-surface-container);
+    border: 1px solid var(--ny-color-border);
+    border-radius: var(--ny-radius-sm);
+    color: var(--ny-color-text-muted);
+    font-family: var(--ny-font-ui);
+    font-size: var(--ny-font-size-ui-meta);
+    font-weight: 600;
+    letter-spacing: var(--ny-letter-spacing-ui);
+    box-shadow: 0 2px 8px var(--ny-color-shadow);
+    z-index: 1200;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+  }
+
+  .mobile-floating-btn:hover {
+    color: var(--ny-color-outline);
+    border-color: var(--ny-color-outline);
+    background-color: var(--ny-color-surface-elevated);
+    box-shadow: 0 0 10px
+      color-mix(in srgb, var(--ny-color-outline) 30%, transparent);
+    transform: translateY(-1px);
+  }
+
+  .mobile-floating-btn:active {
+    transform: translateY(0);
+  }
+
+  .mobile-floating-btn .btn-bracket {
+    color: var(--ny-color-text-subtle);
+    transition: color 0.15s ease;
+  }
+
+  .mobile-floating-btn:hover .btn-bracket {
+    color: var(--ny-color-outline);
+  }
+
+  @media (max-width: 1120px) {
+    .layout-container.with-right-sidebar {
+      grid-template-columns: var(--ny-layout-left-width) minmax(0, 1fr);
+    }
+
+    .layout-container.without-left-sidebar.with-right-sidebar {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .layout-container.with-right-sidebar .main-region {
+      max-width: 1670px;
+    }
+
+    :global(.right-region) {
+      grid-column: 1 / -1;
+      position: static;
+    }
+
+    :global(html[data-drawers-ready] .right-region) {
+      display: none;
+    }
+
+    :global(.left-region) {
+      top: calc(48px + 20px);
+      height: calc(100vh - 48px - 40px);
+      max-height: calc(100vh - 48px - 40px);
+    }
+
+    .mobile-sticky-header {
+      display: flex;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 48px;
+      background-color: var(
+        --ny-color-header-bg,
+        color-mix(in srgb, var(--ny-color-bg) 85%, transparent)
+      );
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+      border-bottom: none;
+      padding: 0 20px;
+      z-index: 1000;
+    }
+
+    .header-content {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .mobile-menu-btn {
+      background: none;
+      border: none;
+      color: var(--ny-color-text-subtle);
+      padding: 6px 6px 6px 0;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: color 0.15s ease;
+    }
+
+    .mobile-menu-btn:hover {
+      color: var(--ny-color-outline);
+    }
+
+    .mobile-sticky-header .breadcrumbs {
+      margin-bottom: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    :global(html[data-drawers-ready]) .mobile-floating-btn {
+      display: flex;
+    }
+
+    .main-region .breadcrumbs {
+      display: none;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .layout-container {
+      grid-template-columns: minmax(0, 1fr);
+      padding: 24px 20px;
+      row-gap: 24px;
+      align-content: start;
+    }
+
+    .layout-container.with-right-sidebar,
+    .layout-container.without-left-sidebar,
+    .layout-container.without-left-sidebar.with-right-sidebar {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    :global(.left-region) {
+      position: static;
+      top: auto;
+      height: auto;
+      max-height: none;
+      overflow: visible;
+      padding-right: 0;
+      gap: 0;
+    }
+
+    :global(html[data-drawers-ready] .left-region .left-sidebar-content),
+    :global(.left-region .left-footer) {
+      display: none;
+    }
+
+    :global(.left-region .profile-card) {
+      border-bottom: 1px solid var(--ny-color-border);
+      padding-bottom: 20px;
+    }
+
+    :global(.mobile-footer) {
+      display: block;
+      margin-top: 40px;
+      padding-top: 16px;
+      border-top: 1px solid var(--ny-color-border);
+      font-size: var(--ny-font-size-ui-micro);
+      color: var(--ny-color-text-subtle);
+      line-height: 1.6;
+    }
+
+    :global(html[data-drawers-ready]) .mobile-menu-btn {
+      display: inline-flex;
+    }
+  }
+
+  @media (min-width: 769px) {
+    :global(.mobile-footer) {
+      display: none;
+    }
+  }
+</style>

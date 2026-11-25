@@ -1,0 +1,468 @@
+---
+import 'photoswipe/style.css';
+---
+
+<nayuta-lightbox hidden></nayuta-lightbox>
+
+<script>
+  import type PhotoSwipe from 'photoswipe';
+  import type { SlideData } from 'photoswipe';
+
+  class NayutaLightbox extends HTMLElement {
+    private controller?: AbortController;
+    private observer?: MutationObserver;
+    private viewer?: PhotoSwipe;
+    private opening = false;
+    private generation = 0;
+    private region?: HTMLElement;
+
+    connectedCallback() {
+      this.controller = new AbortController();
+      this.region =
+        document.querySelector<HTMLElement>('.main-region') ?? undefined;
+      if (!this.region) return;
+      this.enhance();
+      this.observer = new MutationObserver(() => this.enhance());
+      this.observer.observe(this.region, { childList: true, subtree: true });
+      this.region.addEventListener(
+        'click',
+        (event) => {
+          const button = (event.target as Element).closest<HTMLButtonElement>(
+            '.ny-image-open',
+          );
+          const host = button?.closest<HTMLElement>('nayuta-image');
+          if (host && button) void this.open(host, button);
+        },
+        { signal: this.controller.signal },
+      );
+    }
+
+    disconnectedCallback() {
+      this.generation++;
+      this.opening = false;
+      this.controller?.abort();
+      this.observer?.disconnect();
+      this.viewer?.destroy();
+      this.region
+        ?.querySelectorAll('.ny-image-open')
+        .forEach((button) => button.remove());
+    }
+
+    private eligible(host: HTMLElement) {
+      return (
+        host.dataset.lightbox !== 'off' &&
+        !host.closest('a, button') &&
+        Boolean(host.querySelector('img'))
+      );
+    }
+
+    private enhance() {
+      this.region
+        ?.querySelectorAll<HTMLElement>('nayuta-prose nayuta-image')
+        .forEach((host) => {
+          if (!this.eligible(host) || host.querySelector('.ny-image-open'))
+            return;
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'ny-image-open';
+          button.setAttribute('aria-haspopup', 'dialog');
+          button.setAttribute(
+            'aria-label',
+            `View image${host.querySelector('img')?.alt ? `: ${host.querySelector('img')!.alt}` : ''}`,
+          );
+          host.append(button);
+        });
+    }
+
+    private async open(host: HTMLElement, trigger: HTMLButtonElement) {
+      if (this.viewer || this.opening || host.dataset.state === 'error') return;
+      this.opening = true;
+      const generation = this.generation;
+      try {
+        const { default: Viewer } = await import('photoswipe');
+        if (
+          !this.isConnected ||
+          !host.isConnected ||
+          generation !== this.generation
+        )
+          return;
+        const group = host.closest('nayuta-prose')!;
+        const hosts = [
+          ...group.querySelectorAll<HTMLElement>('nayuta-image'),
+        ].filter((image) => this.eligible(image));
+        const items: SlideData[] = hosts.map((element) => {
+          const image = element.querySelector('img')!;
+          const width =
+            image.naturalWidth || Number(image.getAttribute('width')) || 1600;
+          const height =
+            image.naturalHeight || Number(image.getAttribute('height')) || 900;
+          return {
+            element,
+            src: element.dataset.originalSrc || image.currentSrc || image.src,
+            width,
+            height,
+            alt: image.alt,
+            caption:
+              element
+                .closest('figure')
+                ?.querySelector('figcaption')
+                ?.textContent?.trim() || image.alt,
+          };
+        });
+        const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const viewer = new Viewer({
+          dataSource: items,
+          index: hosts.indexOf(host),
+          mainClass: 'pswp--nayuta',
+          showHideAnimationType: 'fade',
+          showAnimationDuration: reduced ? 0 : 180,
+          hideAnimationDuration: reduced ? 0 : 180,
+          zoomAnimationDuration: reduced ? 0 : 180,
+          easing: 'ease-in',
+          bgOpacity: 0.94,
+          loop: false,
+          returnFocus: false,
+          trapFocus: true,
+          preload: [0, 0],
+          closeSVG: '[Close]',
+          zoomSVG: '[Zoom]',
+          arrowPrevSVG: '[Prev]',
+          arrowNextSVG: '[Next]',
+          bgClickAction: 'close',
+          imageClickAction: 'zoom',
+          tapAction: 'zoom',
+          doubleTapAction: 'zoom',
+          paddingFn: (viewport) => ({
+            top: 88,
+            bottom: 144,
+            left: viewport.x <= 768 ? 20 : 72,
+            right: viewport.x <= 768 ? 20 : 72,
+          }),
+        });
+        this.viewer = viewer;
+        const decoding = new WeakSet<HTMLImageElement>();
+        viewer.addFilter('placeholderSrc', () => false);
+        viewer.addFilter(
+          'isKeepingPlaceholder',
+          (_keep, content) =>
+            content.state !== 'error' &&
+            content.element?.dataset.nyDecoded !== 'true',
+        );
+        // PhotoSwipe normally appends the active image before it has finished loading.
+        viewer.on('contentAppendImage', (event) => {
+          const { content } = event;
+          const image = content.element;
+          if (
+            !(image instanceof HTMLImageElement) ||
+            image.dataset.nyDecoded === 'true'
+          )
+            return;
+          event.preventDefault();
+          if (decoding.has(image)) return;
+          decoding.add(image);
+          void image
+            .decode()
+            .then(() => {
+              if (this.viewer !== viewer || content.element !== image) return;
+              if (!image.naturalWidth || !image.naturalHeight)
+                throw new Error('Image has no dimensions');
+              image.dataset.nyDecoded = 'true';
+              image.classList.add('ny-lightbox-image-ready');
+              const { naturalWidth: width, naturalHeight: height } = image;
+              content.width = content.data.width = width;
+              content.height = content.data.height = height;
+              if (content.slide) {
+                content.slide.width = width;
+                content.slide.height = height;
+                content.slide.resize();
+              }
+              if (content.placeholder?.element)
+                content.placeholder.element.style.animation = 'none';
+              content.appendImage();
+            })
+            .catch(() => {
+              if (this.viewer === viewer && content.element === image)
+                content.onError();
+            });
+        });
+        viewer.addFilter('contentErrorElement', (_element, content) => {
+          const error = document.createElement('div');
+          error.className = 'ny-lightbox-error';
+          error.setAttribute('role', 'img');
+          error.setAttribute(
+            'aria-label',
+            `Image unavailable${content.data.alt ? `: ${content.data.alt}` : ''}`,
+          );
+          error.innerHTML =
+            '<svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="16" cy="16" r="12"/><path d="m7.5 24.5 17-17"/></svg>';
+          return error;
+        });
+        viewer.on('uiRegister', () => {
+          viewer.ui?.registerElement({
+            name: 'original',
+            isButton: true,
+            order: 8,
+            html: '[Original]',
+            ariaLabel: 'Open original image',
+            onClick: () => {
+              const source = viewer.currSlide?.data.src;
+              if (source) window.open(source, '_blank', 'noopener,noreferrer');
+            },
+          });
+          viewer.ui?.registerElement({
+            name: 'caption',
+            appendTo: 'root',
+            onInit: (element) => {
+              element.setAttribute('aria-live', 'polite');
+              element.setAttribute('role', 'region');
+              element.setAttribute('aria-label', 'Image description');
+              element.tabIndex = 0;
+              viewer.on('change', () => {
+                element.textContent = viewer.currSlide?.data.caption ?? '';
+              });
+            },
+          });
+        });
+        // Preserve existing inert/scroll states, including the responsive drawers.
+        const background = new Map<HTMLElement, boolean>();
+        const overflow = document.documentElement.style.overflow;
+        viewer.on('afterInit', () => {
+          viewer.element?.setAttribute('aria-modal', 'true');
+          viewer.element?.setAttribute('aria-label', 'Image viewer');
+          for (const element of document.body.children) {
+            if (
+              element instanceof HTMLElement &&
+              element !== viewer.element &&
+              element !== this
+            ) {
+              background.set(element, element.inert);
+              element.inert = true;
+            }
+          }
+          document.documentElement.style.overflow = 'hidden';
+        });
+        viewer.on('bindEvents', () =>
+          viewer.element
+            ?.querySelector<HTMLButtonElement>('.pswp__button--close')
+            ?.focus(),
+        );
+        viewer.on('keydown', (event) => {
+          if (
+            (event.originalEvent.target as Element)?.closest(
+              '.pswp__caption',
+            ) &&
+            [
+              'ArrowUp',
+              'ArrowDown',
+              'Home',
+              'End',
+              'PageUp',
+              'PageDown',
+            ].includes(event.originalEvent.key)
+          ) {
+            event.preventDefault();
+            return;
+          }
+          if (event.originalEvent.key !== 'Tab') return;
+          event.preventDefault();
+          event.originalEvent.preventDefault();
+          const controls = [
+            ...viewer.element!.querySelectorAll<HTMLElement>(
+              'button:not(:disabled), a[href], [tabindex="0"]',
+            ),
+          ].filter((element) => element.getClientRects().length > 0);
+          const index = controls.indexOf(document.activeElement as HTMLElement);
+          const next = event.originalEvent.shiftKey
+            ? index <= 0
+              ? controls.length - 1
+              : index - 1
+            : (index + 1) % controls.length;
+          controls[next]?.focus();
+        });
+        viewer.on('destroy', () => {
+          background.forEach((inert, element) => {
+            element.inert = inert;
+          });
+          document.documentElement.style.overflow = overflow;
+          this.viewer = undefined;
+          if (this.isConnected && trigger.isConnected)
+            trigger.focus({ preventScroll: true });
+        });
+        viewer.init();
+      } catch (error) {
+        console.error('Unable to open image viewer', error);
+        this.viewer?.destroy();
+        // A failed optional chunk must leave the full image accessible.
+        const source =
+          host.dataset.originalSrc || host.querySelector('img')?.currentSrc;
+        if (source && this.isConnected) window.location.assign(source);
+      } finally {
+        this.opening = false;
+      }
+    }
+  }
+  if (!customElements.get('nayuta-lightbox'))
+    customElements.define('nayuta-lightbox', NayutaLightbox);
+</script>
+
+<style is:global>
+  .ny-image-open {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    cursor: zoom-in;
+  }
+  .ny-image-open:focus-visible {
+    outline: 2px solid var(--ny-color-outline);
+    outline-offset: -3px;
+  }
+  nayuta-image[data-state='error'] .ny-image-open {
+    display: none;
+  }
+  .pswp.pswp--nayuta {
+    touch-action: pan-y;
+    --pswp-bg: var(--ny-color-bg);
+    --pswp-placeholder-bg: var(--ny-color-surface-container);
+    --pswp-icon-color: var(--ny-color-text);
+    color: var(--ny-color-text);
+    font-family: var(--ny-font-ui);
+    font-size: var(--ny-font-size-ui);
+  }
+  .pswp--nayuta .pswp__scroll-wrap {
+    touch-action: none;
+  }
+  .pswp--nayuta .pswp__caption:focus-visible {
+    outline: 2px solid var(--ny-color-outline);
+    outline-offset: 2px;
+  }
+  .pswp--nayuta .pswp__preloader {
+    display: none;
+  }
+  /* Blend the entire top bar: its stacking context isolates child buttons. */
+  .pswp--nayuta .pswp__top-bar,
+  .pswp--nayuta .pswp__button--arrow {
+    mix-blend-mode: difference;
+  }
+  .pswp--nayuta .pswp__top-bar {
+    align-items: center;
+    gap: var(--ny-space-2);
+    padding: max(16px, env(safe-area-inset-top))
+      max(20px, env(safe-area-inset-right)) 0
+      max(20px, env(safe-area-inset-left));
+    height: auto;
+  }
+  .pswp--nayuta .pswp__button {
+    width: auto;
+    height: auto;
+    min-height: 36px;
+    padding: 6px 10px;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #fff;
+    font: inherit;
+    line-height: var(--ny-line-height-ui);
+    text-decoration: none;
+    opacity: 1;
+  }
+  .pswp--nayuta .pswp__button:hover {
+    background: transparent;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .pswp--nayuta .pswp__button:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 3px;
+  }
+  .pswp--nayuta .pswp__button:disabled {
+    opacity: 0.35;
+  }
+  .pswp--nayuta .pswp__button--arrow {
+    top: auto;
+    bottom: max(20px, env(safe-area-inset-bottom));
+    visibility: visible;
+    min-height: 44px;
+  }
+  .pswp--nayuta .pswp__button--arrow--prev {
+    left: max(20px, env(safe-area-inset-left));
+  }
+  .pswp--nayuta .pswp__button--arrow--next {
+    right: max(20px, env(safe-area-inset-right));
+  }
+  .pswp--nayuta .pswp__counter {
+    margin: 0 auto 0 0;
+    height: auto;
+    line-height: var(--ny-line-height-ui);
+    font: inherit;
+    color: #fff;
+    text-shadow: none;
+    opacity: 1;
+  }
+  .pswp--nayuta .pswp__caption {
+    position: absolute;
+    bottom: max(76px, calc(env(safe-area-inset-bottom) + 56px));
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(900px, calc(100% - 40px));
+    max-height: 3.5em;
+    overflow-y: auto;
+    text-align: center;
+    overflow-wrap: anywhere;
+    color: var(--ny-color-text-muted);
+    line-height: var(--ny-line-height-compact);
+    padding: 4px;
+  }
+  .pswp--nayuta .pswp__img {
+    border-radius: var(--ny-radius-md);
+  }
+  .pswp--nayuta img.pswp__img {
+    opacity: 0;
+  }
+  .pswp--nayuta img.ny-lightbox-image-ready {
+    opacity: 1;
+    animation: ny-image-reveal 180ms ease-in;
+  }
+  .pswp--nayuta .pswp__img--placeholder {
+    animation: ny-image-pulse 2s ease-in-out infinite;
+  }
+  .pswp--nayuta .pswp__error-msg-container {
+    background: var(--ny-color-surface-container);
+    border-radius: var(--ny-radius-md);
+  }
+  .ny-lightbox-error {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    color: var(--ny-color-danger);
+  }
+  @keyframes ny-image-reveal {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @media (max-width: 768px) {
+    .pswp--nayuta .pswp__top-bar {
+      gap: 4px;
+    }
+    .pswp--nayuta .pswp__button {
+      min-height: 44px;
+      padding: 8px;
+      font-size: var(--ny-font-size-ui-small);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pswp--nayuta img.ny-lightbox-image-ready,
+    .pswp--nayuta .pswp__img--placeholder {
+      animation: none;
+    }
+  }
+</style>

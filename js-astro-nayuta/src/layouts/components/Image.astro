@@ -1,0 +1,68 @@
+---
+import { getImage } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+import type { HTMLAttributes } from 'astro/types';
+import { resolveImageDimensions } from '@assets/utils/image-metadata';
+
+interface Props extends Omit<HTMLAttributes<'img'>, 'src'> {
+  src?: string | ImageMetadata;
+  alt: string;
+  /** A fixed presentation ratio, such as "16 / 9" for cropped covers. */
+  ratio?: string;
+  lightbox?: boolean;
+  originalSrc?: string;
+}
+
+const {
+  src,
+  alt,
+  ratio,
+  lightbox = true,
+  originalSrc,
+  style,
+  ...attributes
+} = Astro.props;
+// Astro SVG imports are callable components carrying ImageMetadata properties.
+const metadata = typeof src !== 'string' ? src : undefined;
+const optimized = metadata ? await getImage({ src: metadata }) : undefined;
+const url = optimized?.src ?? (typeof src === 'string' ? src : undefined);
+const dimensions =
+  metadata ?? (url ? await resolveImageDimensions(url, attributes) : undefined);
+const width =
+  attributes.width ??
+  (attributes.height && dimensions
+    ? Math.round(
+        (Number(attributes.height) * dimensions.width) / dimensions.height,
+      )
+    : dimensions?.width);
+const height =
+  attributes.height ??
+  (attributes.width && dimensions
+    ? Math.round(
+        (Number(attributes.width) * dimensions.height) / dimensions.width,
+      )
+    : dimensions?.height);
+const imageRatio =
+  ratio ?? (width && height ? `${width} / ${height}` : '16 / 9');
+const imageAttributes = {
+  ...optimized?.attributes,
+  ...attributes,
+  src: url,
+  alt,
+  width,
+  height,
+  loading: attributes.loading ?? 'lazy',
+  decoding: 'async' as const,
+  style,
+};
+---
+
+<nayuta-image
+  data-lightbox={lightbox ? undefined : 'off'}
+  data-fixed-ratio={ratio}
+  data-original-src={originalSrc ?? metadata?.src ?? url}
+  style={`--ny-image-ratio:${imageRatio};${!ratio && width ? `--ny-image-width:${Number(width)}px;` : ''}`}
+>
+  <div class="ny-image-placeholder" aria-hidden="true"></div>
+  <img {...imageAttributes} />
+</nayuta-image>

@@ -1,0 +1,392 @@
+---
+import type { Page } from 'astro';
+import { render, type CollectionEntry } from 'astro:content';
+import Pagination from '@layouts/components/Pagination.astro';
+import PostListItem from '@layouts/widgets/post-list/PostListItem.astro';
+import config from '~/config';
+
+type Props = { id?: string } & (
+  | { mode?: 'static'; page: Page<CollectionEntry<'posts'>>; pageSize?: never }
+  | { mode: 'dynamic'; page?: never; pageSize?: number }
+);
+
+const { id } = Astro.props;
+const dynamic = Astro.props.mode === 'dynamic';
+const page = Astro.props.page;
+const pageSize = Astro.props.pageSize ?? config.postsPerPage ?? 10;
+if (!Number.isSafeInteger(pageSize) || pageSize < 1) {
+  throw new Error('PostList pageSize must be a positive safe integer.');
+}
+const summaries = await Promise.all(
+  (page?.data ?? []).map(async (post) => {
+    const { remarkPluginFrontmatter } = await render(post);
+    return {
+      item: {
+        href: `/posts/${post.id}`,
+        title: post.data.title,
+        publishDate: post.data.publishDate,
+        readingTimeMinutes: remarkPluginFrontmatter.readingTimeMinutes,
+        description: post.data.description,
+        draft: post.data.draft,
+      },
+      cover: post.data.cover,
+    };
+  }),
+);
+---
+
+<nayuta-post-list
+  id={id}
+  data-mode={dynamic ? 'dynamic' : 'static'}
+  data-page-size={dynamic ? pageSize : undefined}
+>
+  {
+    dynamic && (
+      <>
+        <p
+          class="post-status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          tabindex="-1"
+        >
+          Search results will appear here.
+        </p>
+        <noscript>
+          <p>
+            Search requires JavaScript. <a href="/posts">Browse all posts.</a>
+          </p>
+        </noscript>
+        <template data-post-template>
+          <PostListItem />
+        </template>
+      </>
+    )
+  }
+  <div class="post-list" aria-busy={dynamic ? 'false' : undefined}>
+    {page?.total === 0 && <p>No posts yet.</p>}
+    {
+      summaries.map(({ item, cover }) => (
+        <PostListItem item={item} cover={cover} />
+      ))
+    }
+  </div>
+  {dynamic ? <Pagination mode="dynamic" /> : page && <Pagination page={page} />}
+</nayuta-post-list>
+
+<script>
+  import type {
+    PageRequest,
+    PostHighlight,
+    PostListElement,
+    PostListPage,
+    PostSummaryData,
+  } from '@type/post-list';
+  import type { PaginationElement } from '@type/pagination';
+  import {
+    getQueryPageUrl,
+    normalizePageNumber,
+  } from '@assets/utils/pagination';
+  import { formatReadingTime } from '@assets/utils/reading-time';
+
+  class NayutaPostList extends HTMLElement implements PostListElement {
+    private state: PostListPage = {
+      items: [],
+      total: 0,
+      currentPage: 1,
+      pageSize: 10,
+    };
+    private initialized = false;
+    private loading = false;
+    private error = '';
+    private receivedItems = false;
+    private focusResults = false;
+    private paginationUrl = '';
+
+    connectedCallback() {
+      this.initialize();
+      if (this.dataset.mode !== 'dynamic') return;
+      this.addEventListener('click', this.onClick);
+      this.syncPagination();
+      this.renderStatus();
+    }
+
+    disconnectedCallback() {
+      this.removeEventListener('click', this.onClick);
+    }
+
+    private initialize() {
+      if (this.initialized) return;
+      this.state.pageSize = Number(this.dataset.pageSize) || 10;
+      this.initialized = true;
+    }
+
+    setPage(update: Partial<PostListPage>) {
+      if (this.dataset.mode !== 'dynamic') {
+        throw new Error('PostList.setPage() requires mode="dynamic".');
+      }
+      this.initialize();
+      const total = update.total ?? this.state.total;
+      const pageSize = update.pageSize ?? this.state.pageSize;
+      if (!Number.isSafeInteger(total) || total < 0) {
+        throw new Error('PostList total must be a non-negative safe integer.');
+      }
+      if (!Number.isSafeInteger(pageSize) || pageSize < 1) {
+        throw new Error('PostList pageSize must be a positive safe integer.');
+      }
+      const lastPage = Math.max(1, Math.ceil(total / pageSize));
+      const currentPage = normalizePageNumber(
+        update.currentPage ?? this.state.currentPage,
+        lastPage,
+      );
+      const pageChanged =
+        currentPage !== this.state.currentPage ||
+        pageSize !== this.state.pageSize;
+      const paginationChanged =
+        pageChanged ||
+        total !== this.state.total ||
+        this.paginationUrl !== window.location.href;
+      if (update.items === undefined && !paginationChanged) return;
+      // Prepare and validate before committing state, so a bad result cannot partly replace the list.
+      const content =
+        update.items !== undefined ? this.createItems(update.items) : undefined;
+      this.state = {
+        items: update.items ?? this.state.items,
+        total,
+        currentPage,
+        pageSize,
+      };
+      if (content) {
+        const list = this.querySelector<HTMLElement>('.post-list')!;
+        const hadFocus = list.contains(document.activeElement);
+        list.replaceChildren(content);
+        this.receivedItems = true;
+        this.loading = false;
+        this.error = '';
+        this.renderStatus();
+        if (hadFocus || this.focusResults) {
+          (
+            list.querySelector<HTMLElement>('.post-title a') ??
+            this.querySelector<HTMLElement>('.post-status')
+          )?.focus({ preventScroll: true });
+          this.focusResults = false;
+        }
+      }
+      if (paginationChanged) this.syncPagination();
+      if (pageChanged && update.items === undefined) {
+        this.setLoading(true);
+        this.dispatchEvent(
+          new CustomEvent<PageRequest>('page-request', {
+            bubbles: true,
+            detail: {
+              currentPage,
+              pageSize,
+              href: getQueryPageUrl(window.location.href, currentPage),
+            },
+          }),
+        );
+      } else {
+        this.renderStatus();
+      }
+    }
+
+    setLoading(loading: boolean) {
+      this.loading = loading;
+      if (loading) this.error = '';
+      this.renderStatus();
+    }
+
+    setError(message = '') {
+      this.error = message;
+      this.loading = false;
+      this.renderStatus();
+    }
+
+    private createItems(items: readonly PostSummaryData[]): DocumentFragment {
+      const template = this.querySelector<HTMLTemplateElement>(
+        '[data-post-template]',
+      )!;
+      const fragment = document.createDocumentFragment();
+      for (const item of items) {
+        const article = template.content.firstElementChild!.cloneNode(
+          true,
+        ) as HTMLElement;
+        const link = article.querySelector<HTMLAnchorElement>('.post-title a')!;
+        this.setHighlightedText(link, item.title, item.highlights?.title);
+        link.href = this.safeUrl(item.href);
+        article.querySelector('[data-published]')!.textContent =
+          `Published: ${item.publishDate}`;
+        article.querySelector('[data-reading]')!.textContent =
+          `Reading: ${formatReadingTime(item.readingTimeMinutes)}`;
+        if (!item.draft) article.querySelector('.badge')!.remove();
+        const description = article.querySelector('.post-description')!;
+        if (item.description)
+          this.setHighlightedText(
+            description,
+            item.description,
+            item.highlights?.description,
+          );
+        else description.remove();
+        const cover = article.querySelector('.post-cover-container')!;
+        if (item.cover) {
+          const image = cover.querySelector('img')!;
+          const host = cover.querySelector<HTMLElement>('nayuta-image')!;
+          host.dataset.originalSrc = this.safeUrl(item.cover.src);
+          image.src = host.dataset.originalSrc;
+          image.alt = item.title;
+          image.loading = 'lazy';
+          image.decoding = 'async';
+          if (item.cover.width) image.width = item.cover.width;
+          if (item.cover.height) image.height = item.cover.height;
+          if (item.cover.srcset) image.srcset = item.cover.srcset;
+          if (item.cover.sizes) image.sizes = item.cover.sizes;
+        } else cover.remove();
+        fragment.append(article);
+      }
+      return fragment;
+    }
+
+    private setHighlightedText(
+      element: Element,
+      text: string,
+      highlights: readonly PostHighlight[] = [],
+    ) {
+      const content = document.createDocumentFragment();
+      let offset = 0;
+      for (const { start, end } of highlights) {
+        if (
+          !Number.isSafeInteger(start) ||
+          !Number.isSafeInteger(end) ||
+          start < offset ||
+          end <= start ||
+          end > text.length
+        ) {
+          throw new Error(
+            'Post highlights must be ordered, non-overlapping text ranges.',
+          );
+        }
+        const mark = document.createElement('mark');
+        mark.textContent = text.slice(start, end);
+        content.append(text.slice(offset, start), mark);
+        offset = end;
+      }
+      content.append(text.slice(offset));
+      element.replaceChildren(content);
+    }
+
+    private safeUrl(value: string): string {
+      const url = new URL(value, window.location.href);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        throw new Error('Post summary links and images must use HTTP(S) URLs.');
+      }
+      return value;
+    }
+
+    private syncPagination() {
+      this.paginationUrl = window.location.href;
+      const apply = () => {
+        const pagination =
+          this.querySelector<PaginationElement>('nayuta-pagination');
+        pagination?.setPage({
+          currentPage: this.state.currentPage,
+          lastPage: Math.max(
+            1,
+            Math.ceil(this.state.total / this.state.pageSize),
+          ),
+          firstPageUrl: this.paginationUrl,
+        });
+      };
+      const pagination =
+        this.querySelector<PaginationElement>('nayuta-pagination');
+      if (typeof pagination?.setPage === 'function') apply();
+      else
+        void customElements.whenDefined('nayuta-pagination').then(() => {
+          if (this.isConnected) apply();
+        });
+    }
+
+    private renderStatus() {
+      const list = this.querySelector<HTMLElement>('.post-list');
+      const status = this.querySelector<HTMLElement>('.post-status');
+      if (!list || !status) return;
+      list.setAttribute('aria-busy', String(this.loading));
+      status.toggleAttribute(
+        'data-announcement',
+        !this.loading && !this.error && this.state.items.length > 0,
+      );
+      status.textContent =
+        this.error ||
+        (this.loading
+          ? 'Loading results…'
+          : !this.receivedItems
+            ? 'Search results will appear here.'
+            : this.state.items.length === 0
+              ? 'No results found.'
+              : `${this.state.total} results. Page ${this.state.currentPage} of ${Math.max(1, Math.ceil(this.state.total / this.state.pageSize))}.`);
+    }
+
+    private onClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      const link =
+        event.target instanceof Element
+          ? event.target.closest<HTMLAnchorElement>('a[data-page]')
+          : null;
+      if (
+        !link ||
+        link.closest('nayuta-post-list') !== this ||
+        !link.closest('nayuta-pagination') ||
+        link.hasAttribute('download') ||
+        (link.target && link.target !== '_self')
+      )
+        return;
+      event.preventDefault();
+      this.focusResults = link.contains(document.activeElement);
+      this.setPage({ currentPage: Number(link.dataset.page) });
+    };
+  }
+
+  if (!customElements.get('nayuta-post-list')) {
+    customElements.define('nayuta-post-list', NayutaPostList);
+  }
+</script>
+
+<style>
+  nayuta-post-list {
+    display: block;
+  }
+
+  nayuta-post-list[hidden] {
+    display: none;
+  }
+
+  .post-list {
+    display: flex;
+    flex-direction: column;
+    gap: calc(2 * var(--ny-space-4));
+    margin-top: var(--ny-space-6);
+  }
+
+  .post-status {
+    color: var(--ny-color-text-muted);
+  }
+
+  .post-status[data-announcement] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>

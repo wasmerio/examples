@@ -1,0 +1,489 @@
+---
+import type { Page } from 'astro';
+import { getImage } from 'astro:assets';
+import { render, type CollectionEntry } from 'astro:content';
+import Frame from '~/layouts/frame.astro';
+import Prose from '~/layouts/components/Prose.astro';
+import PostList from '~/layouts/widgets/post-list/PostList.astro';
+import { getPosts, sortPosts } from '~/assets/utils/posts';
+
+const posts = sortPosts(await getPosts()).slice(0, 2);
+const items = await Promise.all(
+  posts.map(async (post) => {
+    let cover;
+    if (typeof post.data.cover === 'string') cover = { src: post.data.cover };
+    else if (post.data.cover) {
+      const image = await getImage({ src: post.data.cover });
+      cover = {
+        src: image.src,
+        width: Number(image.attributes.width),
+        height: Number(image.attributes.height),
+      };
+    }
+    return {
+      href: `/posts/${post.id}`,
+      title: post.data.title,
+      publishDate: post.data.publishDate,
+      description: post.data.description,
+      readingTimeMinutes: (await render(post)).remarkPluginFrontmatter
+        .readingTimeMinutes,
+      cover,
+    };
+  }),
+);
+const page: Page<CollectionEntry<'posts'>> = {
+  data: posts,
+  start: 0,
+  end: 1,
+  total: 12,
+  size: 2,
+  currentPage: 1,
+  lastPage: 6,
+  url: {
+    current: '/posts',
+    prev: undefined,
+    next: '/posts/page/2',
+    first: undefined,
+    last: '/posts/page/6',
+  },
+};
+---
+
+<Frame title="PostList browser fixture" withLeftSidebar={false}>
+  <Prose>
+    <h1>PostList browser fixture</h1>
+    <h2>Static</h2>
+    <PostList id="static-list" page={page} />
+    <h2>Dynamic</h2>
+    <PostList id="dynamic-list" mode="dynamic" pageSize={2} />
+    <PostList id="other-list" mode="dynamic" />
+    <output id="test-result">Pending</output>
+  </Prose>
+</Frame>
+<script
+  id="test-items"
+  type="application/json"
+  set:html={JSON.stringify(items).replace(/</g, '\\u003c')}
+/>
+
+<script>
+  import type {
+    PageRequest,
+    PostListElement,
+    PostSummaryData,
+  } from '~/types/post-list';
+
+  const output = document.querySelector<HTMLOutputElement>('#test-result')!;
+  let checks = 0;
+  function assert(condition: unknown, message: string): void {
+    if (!condition) throw new Error(message);
+    checks++;
+  }
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 100));
+
+  async function run() {
+    await Promise.all(
+      ['nayuta-post-list', 'nayuta-pagination'].map((name) =>
+        customElements.whenDefined(name),
+      ),
+    );
+    const list = document.querySelector<PostListElement>('#dynamic-list')!;
+    const other = document.querySelector<PostListElement>('#other-list')!;
+    const staticList = document.querySelector<PostListElement>('#static-list')!;
+    const items = JSON.parse(
+      document.querySelector('#test-items')!.textContent!,
+    ) as PostSummaryData[];
+    const requests: PageRequest[] = [];
+    list.addEventListener('page-request', (event) =>
+      requests.push(event.detail),
+    );
+    const articles = () => list.querySelectorAll('.post-summary');
+    const current = () =>
+      list.querySelector('[aria-current="page"]')?.textContent;
+    const busy = () =>
+      list.querySelector('.post-list')?.getAttribute('aria-busy');
+    const params = new URLSearchParams(window.location.search);
+    document.documentElement.dataset.theme = params.get('theme') ?? 'dark';
+    assert(
+      getComputedStyle(document.body).backgroundColor ===
+        (params.get('theme') === 'light'
+          ? 'rgb(250, 250, 250)'
+          : 'rgb(16, 18, 22)'),
+      'Theme check uses distinct light and dark colors',
+    );
+    assert(
+      staticList.querySelector('nav.pagination'),
+      'Static mode renders its pagination',
+    );
+    assert(
+      !staticList.querySelector<HTMLElement>('nayuta-pagination')?.hidden,
+      'Static pagination remains visible after upgrade',
+    );
+    list.setPage({
+      items,
+      total: 12,
+      currentPage: Number(params.get('page')) || 1,
+    });
+    assert(
+      articles().length === 2,
+      'Initial page contains exactly two summaries',
+    );
+    assert(
+      current() === '[2]',
+      'Direct query-page initialization selects page 2',
+    );
+    assert(
+      requests.length === 0,
+      'Supplying results does not issue another request',
+    );
+    const original = articles()[0];
+    const staticArticle = staticList.querySelector('.post-summary')!;
+    await pause();
+    // Finish the existing link-color transition before comparing theme colors.
+    await Promise.allSettled(
+      document
+        .getAnimations()
+        .filter(
+          (animation) => animation.effect?.getTiming().iterations !== Infinity,
+        )
+        .map((animation) => animation.finished),
+    );
+    for (const selector of [
+      '.post-title',
+      '.post-title a',
+      '.post-meta',
+      '.post-description',
+      '.post-cover-container',
+      '.post-cover',
+    ]) {
+      const a = original.querySelector(selector)!;
+      const b = staticArticle.querySelector(selector)!;
+      assert(Boolean(a && b), `Both renderers contain ${selector}`);
+      const styleA = getComputedStyle(a);
+      const styleB = getComputedStyle(b);
+      for (const property of [
+        'font-size',
+        'font-weight',
+        'line-height',
+        'color',
+        'margin-top',
+        'margin-bottom',
+        'border-radius',
+        'object-fit',
+      ]) {
+        assert(
+          styleA.getPropertyValue(property) ===
+            styleB.getPropertyValue(property),
+          `${selector} shares ${property}`,
+        );
+      }
+    }
+    assert(
+      getComputedStyle(original.querySelector('.post-title')!).marginTop ===
+        '0px',
+      'Summary overrides prose heading margins',
+    );
+    assert(!list.querySelector('h2 script'), 'Titles remain text');
+    assert(
+      original.querySelector('.post-title a')!.textContent === items[0].title,
+      'HTML-like title survives as text',
+    );
+    if (params.has('visual')) {
+      other.hidden = true;
+      output.textContent = `${checks} visual checks passed`;
+      output.dataset.testResult = 'passed';
+      return;
+    }
+
+    list.setPage({ currentPage: 3 });
+    assert(current() === '[3]', 'Partial update changes the current page');
+    assert(
+      articles()[0] === original,
+      'Partial update retains the existing article DOM',
+    );
+    assert(busy() === 'true', 'Page request marks retained content busy');
+    assert(
+      requests.length === 1 &&
+        requests[0].currentPage === 3 &&
+        requests[0].pageSize === 2,
+      'Page request retains page size',
+    );
+    const requestUrl = new URL(requests[0].href, location.href);
+    assert(
+      requestUrl.searchParams.get('q') === 'Astro 中文' &&
+        requestUrl.searchParams.get('page') === '3',
+      'Query links retain search terms',
+    );
+    assert(
+      other.querySelectorAll('.post-summary').length === 0,
+      'Instances are independent',
+    );
+    list.setPage({});
+    list.setPage({ currentPage: undefined });
+    assert(
+      requests.length === 1 && articles()[0] === original && busy() === 'true',
+      'Empty/undefined patches are no-ops',
+    );
+    list.setPage({ items: [{ ...items[1], draft: true }] });
+    assert(
+      current() === '[3]' && busy() === 'false',
+      'Items-only response retains page and finishes loading',
+    );
+    assert(
+      list.querySelector('.post-status')?.textContent?.includes('12 results.'),
+      'Items-only response retains total',
+    );
+    assert(
+      list.querySelector('.badge-draft')?.textContent === 'Draft',
+      'Dynamic draft badge uses the shared component',
+    );
+    assert(
+      getComputedStyle(list.querySelector('.badge-draft')!, '::before')
+        .content === '"["',
+      'Cloned badge retains its scoped styles',
+    );
+
+    const preserved = articles()[0];
+    list.setPage({ total: 10 });
+    assert(
+      articles()[0] === preserved && requests.length === 1,
+      'Total-only update retains item nodes without another page request',
+    );
+    list.setPage({ pageSize: 5 });
+    assert(
+      current() === '[2]' && requests.at(-1)?.pageSize === 5,
+      'Page size update clamps and requests the resulting page',
+    );
+    list.setPage({ items, total: 12, pageSize: 2, currentPage: 2 });
+    const next = list.querySelector<HTMLAnchorElement>('a[rel="next"]')!;
+    next.focus();
+    next.click();
+    assert(
+      current() === '[3]' && requests.at(-1)?.currentPage === 3,
+      'Click routes through the component method',
+    );
+    list.setPage({ items });
+    assert(
+      document.activeElement === list.querySelector('.post-title a'),
+      'Completed keyboard navigation focuses the result',
+    );
+    const countBeforeReconnect = requests.length;
+    const parent = list.parentElement!;
+    list.remove();
+    parent.append(list);
+    list.querySelector<HTMLAnchorElement>('a[rel="next"]')!.click();
+    assert(
+      requests.length === countBeforeReconnect + 1,
+      'Reconnect installs exactly one click listener',
+    );
+    list.setPage({ items });
+
+    const countBeforeModifiedClick = requests.length;
+    let modifiedClickPrevented = true;
+    document.addEventListener(
+      'click',
+      (event) => {
+        modifiedClickPrevented = event.defaultPrevented;
+        // Observe the component's choice, then stop the test from opening another page.
+        event.preventDefault();
+      },
+      { once: true },
+    );
+    list.querySelector('a[rel="prev"]')!.dispatchEvent(
+      new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+      }),
+    );
+    assert(
+      !modifiedClickPrevented && requests.length === countBeforeModifiedClick,
+      'Modified clicks preserve native navigation',
+    );
+    list.setError('Example load failure');
+    assert(
+      list.querySelector('.post-status')?.textContent ===
+        'Example load failure' && busy() === 'false',
+      'Errors are readable and finish loading',
+    );
+    list.setPage({ items });
+    assert(
+      !list.querySelector('.post-status')?.textContent?.includes('failure'),
+      'A result update clears the error',
+    );
+
+    const highlighted = {
+      ...items[0],
+      title: '<img src=x onerror=alert(1)> 中文',
+      description: 'Astro <script>alert(1)<\/script> 中文',
+      highlights: {
+        title: [{ start: 29, end: 31 }],
+        description: [
+          { start: 0, end: 5 },
+          { start: 32, end: 34 },
+        ],
+      },
+    };
+    list.setPage({ items: [highlighted] });
+    assert(
+      list.querySelector('.post-title a')?.textContent === highlighted.title &&
+        list.querySelector('.post-description')?.textContent ===
+          highlighted.description,
+      'Highlighted text preserves literal markup and Unicode',
+    );
+    assert(
+      !list.querySelector('.post-title img, .post-description script') &&
+        list.querySelector('.post-title mark')?.textContent === '中文' &&
+        list.querySelectorAll('.post-description mark').length === 2,
+      'Only range markers become HTML elements',
+    );
+    const beforeBadData = articles()[0];
+    for (const update of [
+      {
+        items: [
+          { ...highlighted, highlights: { title: [{ start: 0, end: 999 }] } },
+        ],
+      },
+      {
+        items: [
+          {
+            ...highlighted,
+            highlights: {
+              title: [
+                { start: 2, end: 4 },
+                { start: 1, end: 3 },
+              ],
+            },
+          },
+        ],
+      },
+      { total: -1 },
+      { pageSize: 0 },
+      { items: [{ ...items[0], href: 'javascript:alert(1)' }] },
+      { items: [{ ...items[0], readingTimeMinutes: NaN }] },
+    ]) {
+      let threw = false;
+      try {
+        list.setPage(update);
+      } catch {
+        threw = true;
+      }
+      assert(
+        threw && articles()[0] === beforeBadData,
+        'Invalid updates leave rendered content intact',
+      );
+    }
+    for (const currentPage of [0, -2, 1.5, NaN, Infinity]) {
+      list.setPage({ currentPage, items });
+      assert(current() === '[1]', 'Invalid page normalizes to the first page');
+    }
+    list.setPage({ currentPage: 999, items });
+    assert(current() === '[6]', 'Out-of-range page clamps to the last page');
+    list.setPage({ total: 0, items: [] });
+    assert(
+      articles().length === 0 &&
+        list.querySelector('.post-status')?.textContent === 'No results found.',
+      'Explicit empty array clears the list',
+    );
+    assert(
+      list.querySelector<HTMLElement>('nayuta-pagination')?.hidden,
+      'Empty results hide pagination',
+    );
+    list.setPage({ total: 1, items: [items[0]] });
+    assert(
+      list.querySelector<HTMLElement>('nayuta-pagination')?.hidden,
+      'Single-page results hide pagination',
+    );
+
+    list.setPage({ total: 20000, currentPage: 5000, items });
+    assert(
+      list.querySelectorAll('.pagination-pages [aria-label]').length <= 5,
+      'Large result sets keep page controls bounded',
+    );
+    const pagination = list.querySelector('nayuta-pagination')!;
+    const numbers = pagination.querySelector<HTMLElement>('.pagination-pages')!;
+    list.style.width = '120px';
+    await pause();
+    assert(numbers.hidden, 'Narrow selector hides page numbers');
+    list.style.width = '600px';
+    await pause();
+    assert(!numbers.hidden, 'Selector restores numbers when space returns');
+    list.style.width = '';
+    await pause();
+
+    // The consuming page owns history. setPage with results must not create a request loop.
+    const historyRequests = requests.length;
+    history.replaceState({}, '', '?q=Astro&page=1');
+    list.setPage({ currentPage: 1, items });
+    history.pushState({}, '', '?q=Astro&page=2');
+    list.setPage({ currentPage: 2, items });
+    const back = new Promise<void>((resolve) =>
+      window.addEventListener(
+        'popstate',
+        () => {
+          list.setPage({
+            currentPage: Number(
+              new URLSearchParams(location.search).get('page'),
+            ),
+            items,
+          });
+          resolve();
+        },
+        { once: true },
+      ),
+    );
+    history.back();
+    await back;
+    assert(
+      current() === '[1]' && requests.length === historyRequests,
+      'Browser back restores results without a request loop',
+    );
+    const forward = new Promise<void>((resolve) =>
+      window.addEventListener(
+        'popstate',
+        () => {
+          list.setPage({
+            currentPage: Number(
+              new URLSearchParams(location.search).get('page'),
+            ),
+            items,
+          });
+          resolve();
+        },
+        { once: true },
+      ),
+    );
+    history.forward();
+    await forward;
+    assert(current() === '[2]', 'Browser forward restores the next page');
+    assert(
+      staticList.querySelector('.post-summary') === staticArticle,
+      'Static HTML survives custom-element registration and dynamic updates',
+    );
+    assert(
+      document.documentElement.scrollWidth <= window.innerWidth,
+      'Layout does not overflow the viewport',
+    );
+    output.textContent = `${checks} browser checks passed`;
+    output.dataset.testResult = 'passed';
+  }
+  run().catch((error) => {
+    output.dataset.testResult = 'failed';
+    output.textContent = `${checks} checks completed: ${error.message}`;
+  });
+</script>
+
+<style is:global>
+  /* Fixture-only light palette: exercise the public theme tokens without adding a site theme. */
+  :root[data-theme='light'] {
+    --ny-color-bg: #fafafa;
+    --ny-color-surface: #ffffff;
+    --ny-color-surface-container: #f0f2f5;
+    --ny-color-surface-elevated: #ffffff;
+    --ny-color-text: #20242c;
+    --ny-color-text-muted: #526071;
+    --ny-color-text-subtle: #657287;
+    --ny-color-border: #d5dbe4;
+    --ny-color-outline: #086c9e;
+  }
+</style>

@@ -1,0 +1,324 @@
+---
+import type { Page } from 'astro';
+import { getPageUrl, getVisiblePages } from '@assets/utils/pagination';
+
+type Props = {
+  ariaLabel?: string;
+} & (
+  | { mode?: 'static'; page: Pick<Page, 'currentPage' | 'lastPage' | 'url'> }
+  | { mode: 'dynamic'; page?: never }
+);
+
+const { ariaLabel = 'Pagination' } = Astro.props;
+const dynamic = Astro.props.mode === 'dynamic';
+const page = Astro.props.page;
+const currentPage = page?.currentPage ?? 1;
+const lastPage = page?.lastPage ?? 1;
+const url = page?.url;
+const firstPageUrl = url?.first ?? url?.current ?? '';
+const visiblePages = getVisiblePages(currentPage, lastPage);
+---
+
+{
+  (dynamic || lastPage > 1) && (
+    <nayuta-pagination
+      data-mode={dynamic ? 'dynamic' : 'static'}
+      hidden={dynamic ? '' : undefined}
+    >
+      <nav class="pagination" aria-label={ariaLabel} tabindex="-1">
+        {(dynamic || url?.prev) && (
+          <a
+            class="pagination-control"
+            data-prev
+            href={url?.prev}
+            rel="prev"
+            aria-label="Previous page"
+            hidden={dynamic}
+          >
+            [prev]
+          </a>
+        )}
+        <div class="pagination-pages">
+          {!dynamic &&
+            visiblePages.map((number, index) => (
+              <>
+                {index > 0 && number - visiblePages[index - 1] > 1 && (
+                  <span class="pagination-gap" aria-hidden="true">
+                    …
+                  </span>
+                )}
+                {number === currentPage ? (
+                  <span
+                    class="pagination-control"
+                    aria-current="page"
+                    aria-label={`Page ${number}, current page`}
+                  >
+                    [{number}]
+                  </span>
+                ) : (
+                  <a
+                    class="pagination-control"
+                    href={getPageUrl(firstPageUrl, number)}
+                    aria-label={`Page ${number}`}
+                  >
+                    {number}
+                  </a>
+                )}
+              </>
+            ))}
+        </div>
+        {(dynamic || url?.next) && (
+          <a
+            class="pagination-control"
+            data-next
+            href={url?.next}
+            rel="next"
+            aria-label="Next page"
+            hidden={dynamic}
+          >
+            [next]
+          </a>
+        )}
+      </nav>
+      {dynamic && (
+        <>
+          <template data-number>
+            <a class="pagination-control" />
+          </template>
+          <template data-current>
+            <span class="pagination-control" aria-current="page" />
+          </template>
+          <template data-gap>
+            <span class="pagination-gap" aria-hidden="true">
+              …
+            </span>
+          </template>
+        </>
+      )}
+    </nayuta-pagination>
+  )
+}
+
+<script>
+  import type { PaginationElement, PaginationState } from '@type/pagination';
+  import {
+    getQueryPageUrl,
+    getVisiblePages,
+    normalizePageNumber,
+  } from '@assets/utils/pagination';
+
+  class NayutaPagination extends HTMLElement implements PaginationElement {
+    private observer?: ResizeObserver;
+    private state: PaginationState = {
+      currentPage: 1,
+      lastPage: 1,
+      firstPageUrl: '',
+    };
+    private navigation?: HTMLElement;
+    private numbers?: HTMLElement;
+
+    connectedCallback() {
+      this.navigation =
+        this.querySelector<HTMLElement>('.pagination') ?? undefined;
+      this.numbers =
+        this.querySelector<HTMLElement>('.pagination-pages') ?? undefined;
+      if (!this.navigation || !this.numbers) return;
+      this.observer?.disconnect();
+      this.observer = new ResizeObserver(() => this.fit());
+      this.navigation.dataset.fit = '';
+      this.observer.observe(this.navigation);
+      if (this.dataset.mode === 'dynamic') this.render();
+      this.fit();
+      void document.fonts.ready.then(() => {
+        if (this.isConnected) this.fit();
+      });
+    }
+
+    disconnectedCallback() {
+      this.observer?.disconnect();
+    }
+
+    setPage(update: Partial<PaginationState>) {
+      if (this.dataset.mode !== 'dynamic') {
+        throw new Error('Pagination.setPage() requires mode="dynamic".');
+      }
+      const lastPage = update.lastPage ?? this.state.lastPage;
+      if (!Number.isSafeInteger(lastPage) || lastPage < 1) {
+        throw new Error('Pagination lastPage must be a positive safe integer.');
+      }
+      this.state = {
+        currentPage: normalizePageNumber(
+          update.currentPage ?? this.state.currentPage,
+          lastPage,
+        ),
+        lastPage,
+        firstPageUrl:
+          update.firstPageUrl ??
+          (this.state.firstPageUrl || window.location.href),
+      };
+      this.render();
+    }
+
+    private clone<T extends HTMLElement>(selector: string): T {
+      const template = this.querySelector<HTMLTemplateElement>(selector)!;
+      return template.content.firstElementChild!.cloneNode(true) as T;
+    }
+
+    private render() {
+      if (!this.navigation || !this.numbers) return;
+      const { currentPage, lastPage, firstPageUrl } = this.state;
+      const active = this.navigation.contains(document.activeElement)
+        ? (document.activeElement as HTMLElement)
+        : null;
+      const focusedPage = active?.dataset.page;
+      this.hidden = lastPage <= 1;
+      const fragment = document.createDocumentFragment();
+      const pages = getVisiblePages(currentPage, lastPage);
+      pages.forEach((number, index) => {
+        if (index > 0 && number - pages[index - 1] > 1) {
+          fragment.append(this.clone('[data-gap]'));
+        }
+        const current = number === currentPage;
+        const control = this.clone<HTMLElement>(
+          current ? '[data-current]' : '[data-number]',
+        );
+        control.textContent = current ? `[${number}]` : String(number);
+        control.setAttribute(
+          'aria-label',
+          `Page ${number}${current ? ', current page' : ''}`,
+        );
+        if (!current) {
+          (control as HTMLAnchorElement).href = getQueryPageUrl(
+            firstPageUrl,
+            number,
+          );
+          control.dataset.page = String(number);
+        }
+        fragment.append(control);
+      });
+      this.numbers.replaceChildren(fragment);
+      for (const [selector, number, visible] of [
+        ['[data-prev]', currentPage - 1, currentPage > 1],
+        ['[data-next]', currentPage + 1, currentPage < lastPage],
+      ] as const) {
+        const control = this.querySelector<HTMLAnchorElement>(selector)!;
+        control.hidden = !visible;
+        if (visible) {
+          control.href = getQueryPageUrl(firstPageUrl, number);
+          control.dataset.page = String(number);
+        } else {
+          control.removeAttribute('href');
+          delete control.dataset.page;
+        }
+      }
+      if (active && (!active.isConnected || active.hidden || this.hidden)) {
+        const target = Array.from(
+          this.navigation.querySelectorAll<HTMLAnchorElement>('a[data-page]'),
+        ).find((link) => !link.hidden && link.dataset.page === focusedPage);
+        (target ?? this.navigation).focus({ preventScroll: true });
+      }
+      this.fit();
+    }
+
+    private fit() {
+      const navigation = this.navigation;
+      const numbers = this.numbers;
+      if (!navigation || !numbers || this.hidden || !this.isConnected) return;
+      const numbersHadFocus = numbers.contains(document.activeElement);
+      numbers.hidden = false;
+      const children = Array.from(navigation.children).filter(
+        (child) => !(child as HTMLElement).hidden,
+      );
+      const gap = parseFloat(getComputedStyle(navigation).columnGap) || 0;
+      const neededWidth = children.reduce(
+        (width, child) => width + child.getBoundingClientRect().width,
+        gap * Math.max(0, children.length - 1),
+      );
+      numbers.hidden = neededWidth > navigation.getBoundingClientRect().width;
+      if (numbers.hidden && numbersHadFocus) {
+        (
+          navigation.querySelector<HTMLAnchorElement>('a[rel]:not([hidden])') ??
+          navigation
+        ).focus({ preventScroll: true });
+      }
+    }
+  }
+
+  if (!customElements.get('nayuta-pagination')) {
+    customElements.define('nayuta-pagination', NayutaPagination);
+  }
+</script>
+
+<style>
+  nayuta-pagination {
+    display: block;
+  }
+
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: var(--ny-space-1) var(--ny-space-2);
+    margin-block: var(--ny-space-6);
+    font-family: var(--ny-font-ui);
+    font-size: var(--ny-font-size-meta);
+    font-weight: 400;
+    line-height: var(--ny-line-height-ui);
+  }
+
+  .pagination-pages {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--ny-space-2);
+  }
+
+  .pagination[data-fit],
+  .pagination[data-fit] .pagination-pages {
+    flex-wrap: nowrap;
+  }
+
+  .pagination[data-fit] .pagination-pages {
+    flex-shrink: 0;
+  }
+
+  nayuta-pagination[hidden],
+  .pagination [hidden] {
+    display: none;
+  }
+
+  .pagination .pagination-control {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--ny-space-6);
+    min-height: var(--ny-space-6);
+    background: none;
+    border: 0;
+    padding: 0;
+    color: var(--ny-color-text-muted);
+    font-weight: 400;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .pagination a.pagination-control:hover {
+    color: var(--ny-color-outline);
+  }
+
+  .pagination a.pagination-control:focus-visible {
+    outline: calc(var(--ny-space-1) / 2) solid var(--ny-color-outline);
+    outline-offset: var(--ny-space-1);
+  }
+
+  .pagination .pagination-control[aria-current='page'] {
+    color: var(--ny-color-text);
+    font-weight: 700;
+  }
+
+  .pagination-gap {
+    color: var(--ny-color-text-muted);
+  }
+</style>

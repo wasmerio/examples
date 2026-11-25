@@ -1,0 +1,200 @@
+---
+import config from '~/config';
+import { getPosts } from '@assets/utils/posts';
+import Frame from '@layouts/frame.astro';
+import Prose from '@layouts/components/Prose.astro';
+import PostList from '@layouts/widgets/post-list/PostList.astro';
+
+const title = 'Search';
+const hasSearchablePosts = (await getPosts()).some(
+  (post) => !post.data.exclude_in_search,
+);
+const breadcrumbs = [
+  { text: 'Home', href: '/' },
+  { text: 'Posts', href: '/posts' },
+  { text: title, href: '/search' },
+];
+---
+
+<Frame title={title} breadcrumbs={breadcrumbs}>
+  <meta slot="head" name="robots" content="noindex" />
+
+  <Prose>
+    <nayuta-search-page
+      data-site-title={config.title}
+      data-has-posts={hasSearchablePosts}
+    >
+      <h1 class="page-title">{title}</h1>
+
+      <PostList mode="dynamic" />
+      <p data-search-fallback hidden><a href="/posts">Browse all posts.</a></p>
+    </nayuta-search-page>
+  </Prose>
+</Frame>
+
+<script>
+  import type {
+    PageRequest,
+    PostHighlight,
+    PostListElement,
+    PostSummaryData,
+  } from '@type/post-list';
+  import type { Pagefind, SearchMatch, SearchResultData } from '@type/search';
+
+  class NayutaSearchPage extends HTMLElement {
+    private sequence = 0;
+    private list!: PostListElement;
+    private query = '';
+    private searchResults?: Promise<SearchMatch[]>;
+
+    async connectedCallback() {
+      const sequence = ++this.sequence;
+      await customElements.whenDefined('nayuta-post-list');
+      if (!this.current(sequence)) return;
+      this.list = this.querySelector('nayuta-post-list')!;
+      this.list.addEventListener('page-request', this.onPageRequest);
+      window.addEventListener('popstate', this.onPopState);
+      void this.load();
+    }
+
+    disconnectedCallback() {
+      this.sequence++;
+      this.list?.removeEventListener('page-request', this.onPageRequest);
+      window.removeEventListener('popstate', this.onPopState);
+    }
+
+    private onPageRequest = (event: CustomEvent<PageRequest>) => {
+      history.pushState(null, '', event.detail.href);
+      void this.load();
+    };
+
+    private onPopState = () => {
+      void this.load();
+    };
+
+    private async load() {
+      const sequence = ++this.sequence;
+      const params = new URLSearchParams(location.search);
+      const query = params.get('q')?.trim() ?? '';
+      const rawPage = params.get('page');
+      const currentPage =
+        rawPage === null || rawPage === '' ? 1 : Number(rawPage);
+      if (
+        (rawPage && !/^\d+$/.test(rawPage)) ||
+        !Number.isSafeInteger(currentPage) ||
+        currentPage < 1
+      ) {
+        location.replace('/404.html');
+        return;
+      }
+
+      const title = query ? `Search: ${query}` : 'Search';
+      this.querySelector('h1')!.textContent = title;
+      document.title = `${title} - ${this.dataset.siteTitle}`;
+      document
+        .querySelectorAll<HTMLAnchorElement>('.breadcrumbs a[href^="/search"]')
+        .forEach((crumb) => {
+          crumb.textContent = title;
+          crumb.href = query
+            ? `/search?${new URLSearchParams({ q: query })}`
+            : '/search';
+        });
+      document
+        .querySelectorAll<HTMLInputElement>('.search-form input[name="q"]')
+        .forEach((input) => {
+          input.value = query;
+        });
+      const fallback = this.querySelector<HTMLElement>(
+        '[data-search-fallback]',
+      )!;
+      fallback.hidden = true;
+      this.list.setLoading(true);
+
+      try {
+        if (query !== this.query) {
+          this.query = query;
+          this.searchResults = undefined;
+        }
+        if (query && !this.searchResults)
+          this.searchResults = this.search(query);
+        const matches = query ? await this.searchResults! : [];
+        if (!this.current(sequence)) return;
+        const pageSize = Number(this.list.dataset.pageSize);
+        if (currentPage > Math.max(1, Math.ceil(matches.length / pageSize))) {
+          location.replace('/404.html');
+          return;
+        }
+        const start = (currentPage - 1) * pageSize;
+        const data = await Promise.all(
+          matches.slice(start, start + pageSize).map((match) => match.data()),
+        );
+        if (!this.current(sequence)) return;
+        this.list.setPage({
+          items: data.map((match) => this.summary(match)),
+          total: matches.length,
+          currentPage,
+        });
+        fallback.hidden = matches.length > 0;
+      } catch {
+        if (!this.current(sequence)) return;
+        this.searchResults = undefined;
+        this.list.setPage({ items: [], total: 0, currentPage: 1 });
+        this.list.setError('Search is unavailable.');
+        fallback.hidden = false;
+      }
+    }
+
+    private async search(query: string): Promise<SearchMatch[]> {
+      if (this.dataset.hasPosts === 'false') return [];
+      const moduleUrl = '/pagefind/pagefind.js';
+      const pagefind: Pagefind = await import(/* @vite-ignore */ moduleUrl);
+      return (await pagefind.search(query)).results;
+    }
+
+    private summary(match: SearchResultData): PostSummaryData {
+      // Read Pagefind's marked excerpt in an inert template. Only text and ranges
+      // reach PostList; source markup and attributes never enter the live document.
+      const template = document.createElement('template');
+      template.innerHTML = match.excerpt;
+      let description = '';
+      const highlights: PostHighlight[] = [];
+      const visit = (node: Node) => {
+        const start = description.length;
+        if (node.nodeType === Node.TEXT_NODE) description += node.textContent;
+        else node.childNodes.forEach(visit);
+        if (
+          node instanceof Element &&
+          node.tagName === 'MARK' &&
+          description.length > start
+        ) {
+          highlights.push({ start, end: description.length });
+        }
+      };
+      template.content.childNodes.forEach(visit);
+      return {
+        href: match.url,
+        title: match.meta.title,
+        publishDate: match.meta.publishDate,
+        readingTimeMinutes: Number(match.meta.readingTimeMinutes),
+        draft: match.meta.draft === 'true',
+        description,
+        highlights: { description: highlights },
+      };
+    }
+
+    private current(sequence: number) {
+      return this.isConnected && sequence === this.sequence;
+    }
+  }
+
+  if (!customElements.get('nayuta-search-page')) {
+    customElements.define('nayuta-search-page', NayutaSearchPage);
+  }
+</script>
+
+<style>
+  nayuta-search-page {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+</style>

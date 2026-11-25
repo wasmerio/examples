@@ -1,0 +1,257 @@
+<!-- Set before body parsing so a slow, progressive image never flashes through. -->
+<script is:inline>
+  document.documentElement.dataset.nyImages = '';
+  setTimeout(() => {
+    if (!customElements.get('nayuta-image'))
+      delete document.documentElement.dataset.nyImages;
+  }, 8000);
+</script>
+
+<script>
+  class NayutaImage extends HTMLElement {
+    private image?: HTMLImageElement;
+    private controller?: AbortController;
+    private observer?: MutationObserver;
+    private generation = 0;
+
+    connectedCallback() {
+      this.controller?.abort();
+      this.controller = new AbortController();
+      this.image = this.querySelector('img') ?? undefined;
+      if (!this.image) return;
+      if (!this.querySelector('.ny-image-placeholder')) {
+        const placeholder = document.createElement('span');
+        placeholder.className = 'ny-image-placeholder';
+        placeholder.setAttribute('aria-hidden', 'true');
+        this.prepend(placeholder);
+      }
+      const { signal } = this.controller;
+      this.image.addEventListener('load', () => void this.reveal(), { signal });
+      this.image.addEventListener('error', () => this.fail(), { signal });
+      this.observer = new MutationObserver(() => this.reset());
+      this.observer.observe(this, {
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['src', 'srcset', 'sizes', 'media'],
+      });
+      this.reset();
+    }
+
+    disconnectedCallback() {
+      this.generation++;
+      this.controller?.abort();
+      this.observer?.disconnect();
+    }
+
+    private reset() {
+      this.generation++;
+      this.dataset.state = 'loading';
+      this.setAttribute('aria-busy', 'true');
+      this.querySelector('.ny-image-error')?.remove();
+      if (!this.dataset.fixedRatio) {
+        const w = this.image?.getAttribute('width');
+        const h = this.image?.getAttribute('height');
+        this.style.setProperty(
+          '--ny-image-ratio',
+          Number(w) > 0 && Number(h) > 0 ? `${w} / ${h}` : '16 / 9',
+        );
+        if (Number(w) > 0) this.style.setProperty('--ny-image-width', `${w}px`);
+        else this.style.removeProperty('--ny-image-width');
+      }
+      if (this.image?.complete && this.image.getAttribute('src')) {
+        if (this.image.naturalWidth) void this.reveal();
+        else this.fail();
+      }
+    }
+
+    private async reveal() {
+      const image = this.image;
+      const generation = ++this.generation;
+      if (!image) return;
+      try {
+        await image.decode();
+      } catch {
+        if (generation === this.generation && this.isConnected) this.fail();
+        return;
+      }
+      if (generation !== this.generation || !this.isConnected) return;
+      if (!image.naturalWidth || !image.naturalHeight) return this.fail();
+      if (!this.dataset.fixedRatio) {
+        this.style.setProperty(
+          '--ny-image-ratio',
+          `${image.naturalWidth} / ${image.naturalHeight}`,
+        );
+        if (!image.hasAttribute('width'))
+          this.style.setProperty('--ny-image-width', `${image.naturalWidth}px`);
+      }
+      // Flush the hidden state even for already-cached images.
+      void image.offsetWidth;
+      this.dataset.state = 'ready';
+      this.setAttribute('aria-busy', 'false');
+      this.dispatchEvent(
+        new CustomEvent('nayuta:image-ready', { bubbles: true }),
+      );
+    }
+
+    private fail() {
+      this.generation++;
+      this.dataset.state = 'error';
+      this.setAttribute('aria-busy', 'false');
+      if (this.querySelector('.ny-image-error')) return;
+      const error = document.createElement('span');
+      error.className = 'ny-image-error';
+      error.setAttribute('role', 'img');
+      error.setAttribute(
+        'aria-label',
+        `Image unavailable${this.image?.alt ? `: ${this.image.alt}` : ''}`,
+      );
+      // Static, trusted SVG. Error labels and authored text never enter HTML.
+      error.innerHTML =
+        '<svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="16" cy="16" r="12"/><path d="m7.5 24.5 17-17"/></svg>';
+      this.append(error);
+    }
+  }
+
+  if (!customElements.get('nayuta-image'))
+    customElements.define('nayuta-image', NayutaImage);
+  class NayutaProse extends HTMLElement {
+    private observer?: MutationObserver;
+    connectedCallback() {
+      this.enhance();
+      this.observer = new MutationObserver(() => this.enhance());
+      this.observer.observe(this, { childList: true, subtree: true });
+    }
+    disconnectedCallback() {
+      this.observer?.disconnect();
+    }
+    private enhance() {
+      this.querySelectorAll<HTMLImageElement>('img').forEach((image) => {
+        if (
+          image.closest('nayuta-image, button') ||
+          image.hasAttribute('data-image-native')
+        )
+          return;
+        const host = document.createElement('nayuta-image');
+        if (image.dataset.lightbox)
+          host.dataset.lightbox = image.dataset.lightbox;
+        const target = image.closest('picture') ?? image;
+        image.loading ||= 'lazy';
+        image.decoding = 'async';
+        const marker = document.createComment('image');
+        target.replaceWith(marker);
+        host.append(target);
+        marker.replaceWith(host);
+      });
+    }
+  }
+  if (!customElements.get('nayuta-prose'))
+    customElements.define('nayuta-prose', NayutaProse);
+</script>
+
+<style is:global>
+  html[data-ny-images]
+    .prose
+    img:not(nayuta-image img):not([data-image-native]) {
+    visibility: hidden;
+  }
+  nayuta-image > picture {
+    display: contents;
+  }
+  nayuta-image[data-fixed-ratio] {
+    aspect-ratio: var(--ny-image-ratio);
+  }
+  nayuta-image[data-fixed-ratio] img {
+    height: 100%;
+    object-fit: cover;
+    object-position: top center;
+  }
+
+  nayuta-image {
+    position: relative;
+    display: inline-block;
+    vertical-align: middle;
+    width: min(100%, var(--ny-image-width, 100%));
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid var(--ny-color-border);
+    border-radius: var(--ny-radius-md);
+    background: var(--ny-color-surface-container);
+    line-height: 0;
+  }
+  nayuta-image > .ny-image-placeholder {
+    display: none;
+  }
+  nayuta-image img {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    border: 0;
+    border-radius: 0;
+  }
+  html[data-ny-images] nayuta-image > .ny-image-placeholder {
+    display: block;
+    width: 100%;
+    aspect-ratio: var(--ny-image-ratio, 16 / 9);
+    background: color-mix(
+      in srgb,
+      var(--ny-color-primary) 8%,
+      var(--ny-color-surface-container)
+    );
+    animation: ny-image-pulse 2s ease-in-out infinite;
+  }
+  html[data-ny-images] nayuta-image img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    opacity: 0;
+  }
+  html[data-ny-images] nayuta-image[data-fixed-ratio] img {
+    object-fit: cover;
+    object-position: top center;
+  }
+  html[data-ny-images] nayuta-image[data-state='ready'] img {
+    opacity: 1;
+    transition: opacity 180ms ease-in;
+  }
+  html[data-ny-images]
+    nayuta-image:is([data-state='ready'], [data-state='error'])
+    > .ny-image-placeholder {
+    animation: none;
+    background: var(--ny-color-surface-container);
+  }
+  .ny-image-error {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--ny-color-danger);
+  }
+  @keyframes ny-image-pulse {
+    0%,
+    100% {
+      background-color: color-mix(
+        in srgb,
+        var(--ny-color-primary) 8%,
+        var(--ny-color-surface-container)
+      );
+    }
+    50% {
+      background-color: color-mix(
+        in srgb,
+        var(--ny-color-primary) 22%,
+        var(--ny-color-surface-container)
+      );
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html[data-ny-images] nayuta-image > .ny-image-placeholder {
+      animation: none;
+    }
+    html[data-ny-images] nayuta-image[data-state='ready'] img {
+      transition: none;
+    }
+  }
+</style>

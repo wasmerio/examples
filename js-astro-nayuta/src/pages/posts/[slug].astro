@@ -1,0 +1,182 @@
+---
+import Image from '@layouts/components/Image.astro';
+import { render } from 'astro:content';
+import { formatReadingTime } from '@assets/utils/reading-time';
+import { getPosts } from '@assets/utils/posts';
+import Badge from '@layouts/components/Badge.astro';
+import Frame from '@layouts/frame.astro';
+import Prose from '@layouts/components/Prose.astro';
+import Tag from '@layouts/components/Tag.astro';
+import CopyrightCard from '@layouts/widgets/CopyrightCard.astro';
+import config from '~/config';
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  return posts.map((post) => ({
+    params: { slug: post.id },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content, headings, remarkPluginFrontmatter } = await render(post);
+const readingTime = formatReadingTime(
+  remarkPluginFrontmatter.readingTimeMinutes,
+);
+const showCopyright =
+  post.data.copyright?.enabled ?? config.copyright?.enabled ?? false;
+const copyrightLicense =
+  post.data.copyright?.license ?? config.copyright?.license;
+if (showCopyright && !copyrightLicense) {
+  throw new Error(
+    `Post "${post.id}" enables the copyright card without a Creative Commons license. Set copyright.license in its front matter or src/config.ts.`,
+  );
+}
+
+const breadcrumbs = [
+  { text: 'Home', href: '/' },
+  { text: 'Posts', href: '/posts' },
+  { text: post.data.title, href: `/posts/${post.id}` },
+];
+---
+
+<Frame
+  title={post.data.title}
+  entry={post}
+  headings={headings}
+  isPost={true}
+  breadcrumbs={breadcrumbs}
+>
+  <Prose>
+    <div data-pagefind-body={post.data.exclude_in_search ? undefined : ''}>
+      {
+        post.data.cover && (
+          <div class="post-cover-container">
+            <Image
+              class="post-cover"
+              src={post.data.cover}
+              alt={post.data.title}
+              ratio="16 / 9"
+              loading="eager"
+            />
+          </div>
+        )
+      }
+
+      <h1
+        class="page-title"
+        data-pagefind-meta="title[data-title]"
+        data-title={post.data.title}
+      >
+        {post.data.draft && <Badge variant="draft">Draft</Badge>}
+        {post.data.title}
+      </h1>
+      <p
+        class="post-meta"
+        data-pagefind-ignore
+        data-pagefind-meta="publishDate[data-publish-date], readingTimeMinutes[data-reading-minutes], draft[data-draft]"
+        data-publish-date={post.data.publishDate}
+        data-reading-minutes={remarkPluginFrontmatter.readingTimeMinutes}
+        data-draft={post.data.draft}
+      >
+        Published: {post.data.publishDate} &nbsp;•&nbsp; Reading Time: {
+          readingTime
+        }
+      </p>
+      <Content />
+    </div>
+    {
+      showCopyright && copyrightLicense && (
+        <CopyrightCard
+          title={post.data.title}
+          pathname={Astro.url.pathname}
+          license={copyrightLicense}
+        />
+      )
+    }
+  </Prose>
+
+  {
+    post.data.tags.length > 0 && (
+      <nav class="post-tags" aria-label="Post tags">
+        <ul>
+          {post.data.tags.map((tag) => (
+            <li>
+              <Tag href={`/tag/${encodeURIComponent(tag)}`} rel="tag">
+                {tag}
+              </Tag>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    )
+  }
+</Frame>
+
+<style>
+  :global(.prose) .page-title {
+    --ny-badge-font-size: var(--ny-font-size-meta);
+
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--ny-space-2);
+  }
+
+  :global(.prose) .post-meta {
+    color: var(--ny-color-text-subtle);
+    font-size: var(--ny-font-size-meta);
+    line-height: var(--ny-line-height-compact);
+    margin-bottom: var(--ny-space-5);
+  }
+
+  .post-tags {
+    --ny-tag-font-size: var(--ny-font-size-meta);
+    margin-top: var(--ny-space-6);
+    padding-top: var(--ny-space-4);
+    border-top: 1px solid var(--ny-color-border);
+  }
+
+  .post-tags ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ny-space-2);
+    list-style: none;
+  }
+
+  .post-tags li {
+    min-width: 0;
+    max-width: 100%;
+  }
+</style>
+
+<style is:global>
+  /* Premium post-specific cover styles */
+  .post-cover-container {
+    width: 100%;
+    margin: 16px 0 28px 0;
+    border-radius: var(--ny-radius-lg);
+    overflow: hidden;
+    border: 1px solid var(--ny-color-border);
+    aspect-ratio: 16 / 9;
+    background-color: var(--ny-color-surface-container);
+    box-shadow: 0 8px 30px var(--ny-color-shadow);
+  }
+
+  .post-cover-container nayuta-image {
+    display: block;
+    width: 100%;
+    border: none;
+    border-radius: 0;
+  }
+
+  .prose .post-cover {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top center;
+    display: block;
+    border: none;
+    border-radius: 0;
+  }
+</style>

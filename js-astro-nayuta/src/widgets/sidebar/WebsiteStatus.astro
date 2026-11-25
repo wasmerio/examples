@@ -1,0 +1,221 @@
+---
+import { getPosts } from '@assets/utils/posts';
+import Widget from '@widgets/sidebar/Widget.astro';
+import config from '~/config';
+
+interface Props {
+  /** Widget box title, defaults to 'Website Status' */
+  title?: string;
+  /** Widget header more link URL */
+  moreHref?: string;
+  /**
+   * Launch date of the website (e.g. '2024-01-01').
+   * Used to calculate the running time on the client side.
+   * Defaults to `config.since` or the earliest post date.
+   */
+  startDate?: string | Date;
+  /** Alias for `startDate` */
+  since?: string | Date;
+  /** Whether to show the total posts count (default: true) */
+  showPosts?: boolean;
+  /** Whether to show the running duration (default: true) */
+  showRunning?: boolean;
+  /** Whether to show the last updated date (default: true) */
+  showLastUpdated?: boolean;
+  /** Whether to show the total word count (default: false) */
+  showWordCount?: boolean;
+  /** Custom override for total posts count */
+  postsCount?: number;
+  /** Custom override for last updated date string */
+  lastUpdated?: string;
+  /** Running display format: 'days' (e.g. '1024 days') or 'detailed' (e.g. '1024d 12h') */
+  runningFormat?: 'days' | 'detailed';
+  /** Additional custom status rows */
+  customRows?: Array<{ label: string; value: string | number }>;
+}
+
+const {
+  title = 'Website Status',
+  moreHref,
+  startDate,
+  since,
+  showPosts = true,
+  showRunning = true,
+  showLastUpdated = true,
+  showWordCount = false,
+  postsCount,
+  lastUpdated,
+  runningFormat = 'days',
+  customRows = [],
+} = Astro.props;
+
+const posts = await getPosts();
+const finalPostCount = postsCount !== undefined ? postsCount : posts.length;
+
+// Sort by date descending to find latest post
+const sortedPosts = [...posts].sort((a, b) => {
+  return (
+    new Date(b.data.publishDate).getTime() -
+    new Date(a.data.publishDate).getTime()
+  );
+});
+
+// Resolve launch / start date
+const resolvedStartDate =
+  startDate ||
+  since ||
+  config.since ||
+  (sortedPosts.length > 0
+    ? sortedPosts[sortedPosts.length - 1].data.publishDate
+    : '2024-01-01');
+
+const startDateObj = new Date(resolvedStartDate);
+const startDateIso = !isNaN(startDateObj.getTime())
+  ? startDateObj.toISOString()
+  : '2024-01-01T00:00:00.000Z';
+
+// Calculate SSR fallback running days (in case JS is disabled, avoiding blank text or layout shift)
+const ssrNow = Date.now();
+const ssrDiff = Math.max(0, ssrNow - startDateObj.getTime());
+const ssrDays = Math.floor(ssrDiff / (1000 * 60 * 60 * 24));
+const ssrRunningText =
+  runningFormat === 'detailed'
+    ? `${ssrDays}d ${Math.floor((ssrDiff / (1000 * 60 * 60)) % 24)}h`
+    : `${ssrDays} ${ssrDays === 1 ? 'day' : 'days'}`;
+
+// Resolve latest post date
+const latestPostDate =
+  lastUpdated ||
+  (sortedPosts.length > 0 ? sortedPosts[0].data.publishDate : 'None');
+
+// Calculate total words if requested
+let formattedTotalWords = '';
+if (showWordCount) {
+  const totalWords = posts.reduce((acc, p) => {
+    const text = p.body || '';
+    const cjk = (text.match(/[\u4e00-\u9fa5\u3040-\u30ff]/g) || []).length;
+    const latin = (
+      text.replace(/[\u4e00-\u9fa5\u3040-\u30ff]/g, ' ').match(/\b\w+\b/g) || []
+    ).length;
+    return acc + cjk + latin;
+  }, 0);
+  formattedTotalWords =
+    totalWords >= 10000
+      ? `${(totalWords / 1000).toFixed(1)}k`
+      : totalWords.toLocaleString();
+}
+---
+
+<Widget title={title} moreHref={moreHref}>
+  <div class="status-list">
+    {
+      showPosts && (
+        <div class="status-row">
+          <span class="status-label">Posts</span>
+          <span class="status-value">{finalPostCount}</span>
+        </div>
+      )
+    }
+    {
+      showWordCount && (
+        <div class="status-row">
+          <span class="status-label">Total Words</span>
+          <span class="status-value">{formattedTotalWords}</span>
+        </div>
+      )
+    }
+    {
+      showRunning && (
+        <div class="status-row">
+          <span class="status-label">Running</span>
+          <span
+            class="status-value"
+            data-website-status-running
+            data-start-date={startDateIso}
+            data-format={runningFormat}
+          >
+            {ssrRunningText}
+          </span>
+        </div>
+      )
+    }
+    {
+      showLastUpdated && (
+        <div class="status-row">
+          <span class="status-label">Last Updated</span>
+          <span class="status-value">{latestPostDate}</span>
+        </div>
+      )
+    }
+    {
+      customRows.map((row) => (
+        <div class="status-row">
+          <span class="status-label">{row.label}</span>
+          <span class="status-value">{row.value}</span>
+        </div>
+      ))
+    }
+  </div>
+</Widget>
+
+<script>
+  function updateRunningTimes() {
+    const elements = document.querySelectorAll<HTMLElement>(
+      '[data-website-status-running]',
+    );
+    const now = new Date();
+
+    elements.forEach((el) => {
+      const startDateStr = el.getAttribute('data-start-date');
+      if (!startDateStr) return;
+
+      const startDate = new Date(startDateStr);
+      if (isNaN(startDate.getTime())) return;
+
+      const diffTime = Math.max(0, now.getTime() - startDate.getTime());
+      const format = el.getAttribute('data-format') || 'days';
+      const days = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      if (format === 'detailed') {
+        const hours = Math.floor((diffTime / (1000 * 60 * 60)) % 24);
+        el.textContent = `${days}d ${hours}h`;
+      } else {
+        el.textContent = `${days} ${days === 1 ? 'day' : 'days'}`;
+      }
+    });
+  }
+
+  // Initial calculation on client mount
+  updateRunningTimes();
+
+  // Keep in sync periodically
+  setInterval(updateRunningTimes, 60000);
+
+  // Support Astro View Transitions and page navigation
+  document.addEventListener('astro:page-load', updateRunningTimes);
+  document.addEventListener('astro:after-swap', updateRunningTimes);
+</script>
+
+<style>
+  .status-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .status-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: var(--ny-font-size-ui-small);
+    line-height: 1.6;
+  }
+
+  .status-label {
+    color: var(--ny-color-text-muted);
+  }
+
+  .status-value {
+    color: var(--ny-color-text);
+    font-weight: 500;
+  }
+</style>

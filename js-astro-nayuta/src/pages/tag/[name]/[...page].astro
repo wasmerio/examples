@@ -1,0 +1,55 @@
+---
+import type { GetStaticPaths, InferGetStaticPropsType } from 'astro';
+import type { CollectionEntry } from 'astro:content';
+import config from '~/config';
+import { getPosts, sortPosts } from '@assets/utils/posts';
+import { paginateList } from '@assets/utils/pagination';
+import Frame from '@layouts/frame.astro';
+import Prose from '@layouts/components/Prose.astro';
+import PostList from '@layouts/widgets/post-list/PostList.astro';
+
+export const getStaticPaths = (async ({ paginate }) => {
+  const posts = sortPosts(await getPosts());
+  const postsByTag = new Map<string, CollectionEntry<'posts'>[]>();
+  for (const post of posts) {
+    for (const tag of post.data.tags) {
+      const taggedPosts = postsByTag.get(tag);
+      if (taggedPosts) taggedPosts.push(post);
+      else postsByTag.set(tag, [post]);
+    }
+  }
+
+  return [...postsByTag].flatMap(([tag, taggedPosts]) =>
+    paginateList(paginate, taggedPosts, {
+      pageSize: config.postsPerPage,
+      params: { name: tag },
+    }).map((route) => ({ ...route, props: { ...route.props, tag } })),
+  );
+}) satisfies GetStaticPaths;
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+const { tag, page } = Astro.props;
+const title =
+  page.currentPage === 1
+    ? `Tag: ${tag}`
+    : `Tag: ${tag} — Page ${page.currentPage}`;
+const breadcrumbs = [
+  { text: 'Home', href: '/' },
+  { text: 'Posts', href: '/posts' },
+  { text: `Tag: ${tag}`, href: `/tag/${encodeURIComponent(tag)}` },
+];
+if (page.currentPage > 1) {
+  breadcrumbs.push({
+    text: `Page ${page.currentPage}`,
+    href: page.url.current,
+  });
+}
+---
+
+<Frame title={title} breadcrumbs={breadcrumbs}>
+  <Prose>
+    <h1 class="page-title">Tag: {tag}</h1>
+
+    <PostList page={page} />
+  </Prose>
+</Frame>

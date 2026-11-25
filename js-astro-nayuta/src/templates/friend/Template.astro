@@ -1,0 +1,272 @@
+---
+import type { TemplateProps } from '@type/template';
+import type { schema } from '@templates/friend';
+import LinkCard from '@layouts/components/LinkCard.astro';
+import Prose from '@layouts/components/Prose.astro';
+
+type Props = TemplateProps<typeof schema>;
+const { entry } = Astro.props;
+const data = entry.data;
+
+const friends = data.friends;
+const configuredCategories = data.categories || [];
+
+let displaySections: Array<{
+  id: string;
+  title: string;
+  friends: typeof friends;
+}> = [];
+
+if (configuredCategories.length > 0) {
+  const knownIds = new Set(configuredCategories.map((c) => c.id));
+  displaySections = configuredCategories.map((cat) => ({
+    id: cat.id,
+    title: cat.title,
+    friends: friends.filter((f) => f.category === cat.id),
+  }));
+
+  const remainingFriends = friends.filter(
+    (f) => !f.category || !knownIds.has(f.category),
+  );
+  if (remainingFriends.length > 0) {
+    displaySections.push({
+      id: 'other',
+      title: 'More Connections',
+      friends: remainingFriends,
+    });
+  }
+} else {
+  const uniqueKeys: string[] = [];
+  friends.forEach((f) => {
+    const key = f.category || '';
+    if (!uniqueKeys.includes(key)) {
+      uniqueKeys.push(key);
+    }
+  });
+
+  displaySections = uniqueKeys.map((key) => ({
+    id: key || 'default',
+    title: key ? key : 'Friends & Connections',
+    friends: friends.filter((f) => (f.category || '') === key),
+  }));
+}
+
+const mySite = data.mySite;
+const mySiteLogo = mySite ? mySite.avatar : null;
+---
+
+<div class="friend-page">
+  <header class="page-header">
+    <h1 class="page-title">{data.title}</h1>
+  </header>
+
+  {
+    Astro.slots.has('default') && (
+      <div class="top-prose-wrapper">
+        <Prose>
+          <slot />
+        </Prose>
+      </div>
+    )
+  }
+
+  {
+    displaySections
+      .filter((section) => section.friends.length > 0)
+      .map((section) => (
+        <section class="friend-section" id={`category-${section.id}`}>
+          <div class="section-header">
+            <h2 class="section-title">
+              <span class="section-symbol">&gt;</span>
+              {section.title}
+            </h2>
+            <span class="section-count">{section.friends.length} Profiles</span>
+          </div>
+          <div class="friends-grid">
+            {section.friends.map((friend) => (
+              <LinkCard {...friend} />
+            ))}
+          </div>
+        </section>
+      ))
+  }
+
+  {
+    mySite && (
+      <section class="exchange-section">
+        <div class="section-header">
+          <h2 class="section-title">
+            <span class="section-symbol">#</span>
+            Site Info & Link Exchange
+          </h2>
+        </div>
+
+        <div class="my-site-info-card">
+          <div class="site-info-list">
+            {mySite.name && (
+              <div class="info-row">
+                <span class="info-label">Name:</span>
+                <span class="info-value">{mySite.name}</span>
+              </div>
+            )}
+            {mySite.url && (
+              <div class="info-row">
+                <span class="info-label">URL:</span>
+                <span class="info-value">
+                  <a href={mySite.url} target="_blank">
+                    {mySite.url}
+                  </a>
+                </span>
+              </div>
+            )}
+            {mySiteLogo && (
+              <div class="info-row">
+                <span class="info-label">Avatar:</span>
+                <span class="info-value">
+                  <a href={mySiteLogo} target="_blank">
+                    {mySiteLogo}
+                  </a>
+                </span>
+              </div>
+            )}
+            {mySite.desc && (
+              <div class="info-row">
+                <span class="info-label">Bio:</span>
+                <span class="info-value">{mySite.desc}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+    )
+  }
+</div>
+
+<style>
+  .friend-page {
+    font-size: var(--ny-font-size-prose);
+    line-height: var(--ny-line-height-prose);
+    overflow-wrap: anywhere;
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+  }
+
+  .page-header {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .page-title {
+    font-size: var(--ny-font-size-title);
+    font-weight: 700;
+    color: var(--ny-color-text);
+    line-height: var(--ny-line-height-title);
+    margin: 0;
+  }
+
+  .top-prose-wrapper {
+    width: 100%;
+  }
+
+  .friend-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .section-header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--ny-space-2) var(--ny-space-4);
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--ny-color-border);
+    padding-bottom: 8px;
+  }
+
+  .section-title {
+    font-size: var(--ny-font-size-heading);
+    line-height: var(--ny-line-height-heading);
+    font-weight: 700;
+    color: var(--ny-color-text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+  }
+
+  .section-symbol {
+    color: var(--ny-color-outline);
+    font-family: var(--ny-font-code);
+  }
+
+  .section-count {
+    font-size: var(--ny-font-size-meta);
+    line-height: var(--ny-line-height-compact);
+    color: var(--ny-color-text-subtle);
+    font-family: var(--ny-font-code);
+  }
+
+  .friends-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+  }
+
+  .exchange-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .my-site-info-card {
+    background-color: var(--ny-color-surface-container);
+    border: 1px solid var(--ny-color-border);
+    border-radius: var(--ny-radius-md);
+    padding: 16px 20px;
+  }
+
+  .site-info-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: var(--ny-font-size-prose);
+  }
+
+  .info-row {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    line-height: var(--ny-line-height-prose);
+  }
+
+  .info-label {
+    width: 120px;
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--ny-color-text-muted);
+    font-family: var(--ny-font-code);
+    font-size: var(--ny-font-size-prose-small);
+  }
+
+  .info-value {
+    color: var(--ny-color-text);
+    word-break: break-all;
+  }
+
+  @media (max-width: 640px) {
+    .friends-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .info-row {
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .info-label {
+      width: auto;
+    }
+  }
+</style>

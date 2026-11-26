@@ -1,0 +1,138 @@
+---
+import type { GetStaticPaths, InferGetStaticPropsType } from "astro";
+import { getEntries, render } from "astro:content";
+import { Image, getImage } from "astro:assets";
+import EntryCard from "@/components/journal/EntryCard.astro";
+import ShareCard from "@/components/journal/ShareCard.astro";
+import { siteConfig } from "@/config/site";
+import Icon from "@/components/ui/Icon.astro";
+import Roll from "@/components/ui/Roll.astro";
+import WorkCard from "@/components/work/WorkCard.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { formatDate, noOrphan } from "@/lib/format";
+import { authorsOf, getJournal, journalCategoryHref, journalCategoryLabel, readingTime, relatedEntries } from "@/lib/journal";
+import { getPeople, peopleById } from "@/lib/people";
+import { articleSchema } from "@/lib/schema";
+
+export const getStaticPaths = (async () => {
+  const entries = await getJournal();
+  return entries.map((entry) => ({ params: { slug: entry.id }, props: { entry, related: relatedEntries(entry, entries) } }));
+}) satisfies GetStaticPaths;
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+
+const { entry, related } = Astro.props as Props;
+const { Content } = await render(entry);
+const people = peopleById(await getPeople());
+const authors = authorsOf(entry, people);
+const work = (await getEntries(entry.data.work)).filter((item) => item && !item.data.draft);
+const { title, description, date, updated, category, cover, coverAlt } = entry.data;
+const share = cover ? await getImage({ src: cover, width: 1200 }) : undefined;
+---
+
+<BaseLayout title={title} description={description} image={cover} imageAlt={coverAlt} type="article" structuredData={articleSchema(entry, authors, share?.src)}>
+  <article>
+    <header class="shell pt-[calc(var(--header-h)+clamp(2.5rem,6vw,6rem))]">
+      <div class="mx-auto max-w-[44rem]">
+        <a href="/journal/" class="rise inline-flex items-center gap-2 font-medium">
+          <Icon name="arrow-left" class="size-4" />
+          <Roll text="Journal" />
+        </a>
+        <p class="meta rise mt-[clamp(2rem,4vw,3rem)] flex flex-wrap items-center gap-x-3 gap-y-2" style="--i:1">
+          <a href={journalCategoryHref(category)} class="chip chip-sm text-ink">{journalCategoryLabel(category)}</a>
+          <time datetime={date.toISOString()}>{formatDate(date)}</time>
+          <span aria-hidden="true">·</span>
+          <span>{readingTime(entry.body)} min read</span>
+          {
+            updated && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>
+                  Updated <time datetime={updated.toISOString()}>{formatDate(updated)}</time>
+                </span>
+              </>
+            )
+          }
+        </p>
+        <h1 class="display display-lg mt-8">
+          <span class="mask-line" style="--i:2"><span>{title}</span></span>
+        </h1>
+        <p class="lead rise mt-8" style="--i:3">{noOrphan(description)}</p>
+        <ul class="rise mt-8 flex flex-wrap gap-6" style="--i:4">
+          {
+            authors.map((person) => (
+              <li class="flex items-center gap-3">
+                <Image src={person.data.portrait} alt="" width={96} height={96} class="size-12 rounded-full object-cover object-[50%_25%]" />
+                <span>
+                  <span class="block font-semibold">{person.data.name}</span>
+                  <span class="block text-sm text-mute">{person.data.role}</span>
+                </span>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </header>
+
+    {
+      cover && (
+        <div class="mt-[clamp(2.5rem,5vw,4.5rem)] px-(--gutter)">
+          <div class="media parallax entry-cover" style={`aspect-ratio:${cover.width}/${cover.height}`}>
+            <Image src={cover} alt={coverAlt ?? ""} widths={[800, 1400, 2000, 2400]} sizes="100vw" loading="eager" fetchpriority="high" />
+          </div>
+        </div>
+      )
+    }
+
+    <div class="shell section">
+      <div class="prose entry-prose mx-auto max-w-[44rem]">
+        <Content />
+      </div>
+      <div class="mx-auto mt-16 max-w-[44rem]">
+        <ShareCard title={title} url={new URL(`/journal/${entry.id}/`, siteConfig.siteUrl).toString()} />
+      </div>
+    </div>
+  </article>
+
+  {
+    work.length > 0 && (
+      <section class="shell pb-[clamp(5rem,10vw,9rem)]" aria-labelledby="work-title">
+        <h2 id="work-title" class="display display-md">
+          The work in this story
+        </h2>
+        <div class="mt-10 grid gap-8 md:grid-cols-2">
+          {work.map((item) => item && <WorkCard work={item} />)}
+        </div>
+      </section>
+    )
+  }
+
+  {
+    related.length > 0 && (
+      <section class="on-ink section" aria-labelledby="more-title">
+        <div class="shell">
+          <h2 id="more-title" class="display display-lg">
+            Keep reading
+          </h2>
+          <div class="mt-12 grid gap-x-8 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
+            {related.map((item, index) => (
+              <EntryCard entry={item} class={index === 2 ? "sm:max-lg:hidden" : undefined} />
+            ))}
+          </div>
+        </div>
+      </section>
+    )
+  }
+</BaseLayout>
+
+<style>
+  .entry-cover {
+    border-radius: var(--radius);
+  }
+
+  .entry-prose > :global(p:first-child) {
+    font-size: 1.3em;
+    line-height: 1.45;
+    color: var(--ink);
+  }
+</style>

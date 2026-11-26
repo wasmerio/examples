@@ -1,0 +1,265 @@
+---
+import type { GetStaticPaths, InferGetStaticPropsType } from "astro";
+import { render } from "astro:content";
+import { Image, getImage } from "astro:assets";
+import Icon from "@/components/ui/Icon.astro";
+import Roll from "@/components/ui/Roll.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { noOrphan } from "@/lib/format";
+import { outbound } from "@/lib/links";
+import { workSchema } from "@/lib/schema";
+import { disciplineLabel, getWork, nextWork, transitionName, workHref } from "@/lib/work";
+
+export const getStaticPaths = (async () => {
+  const work = await getWork();
+  return work.map((item) => ({ params: { slug: item.id }, props: { item, next: nextWork(work, item) } }));
+}) satisfies GetStaticPaths;
+
+type Props = InferGetStaticPropsType<typeof getStaticPaths>;
+
+const { item, next } = Astro.props as Props;
+const { Content } = await render(item);
+const data = item.data;
+const ink = data.ink === "light" ? "ink-light" : "ink-dark";
+const nextInk = next.data.ink === "light" ? "ink-light" : "ink-dark";
+const share = await getImage({ src: data.cover, width: 1200 });
+const [paired, ...wide] = data.stills;
+
+const facts = [
+  { label: "Client", value: data.title },
+  { label: "Sector", value: data.sector },
+  { label: "Year", value: String(data.year) },
+  ...(data.location ? [{ label: "Location", value: data.location }] : []),
+  { label: "Services", value: data.disciplines.map(disciplineLabel).join(", ") },
+];
+---
+
+<BaseLayout
+  title={`${data.title}: ${data.headline}`}
+  description={data.summary}
+  image={data.cover}
+  imageAlt={data.coverAlt}
+  structuredData={workSchema(item, share.src)}
+  headerTone={data.ink === "light" ? "dark" : "light"}
+  headerSurface={data.color}
+>
+  <header class:list={["on-tint case-head", ink]} style={`--tint:${data.color}`}>
+    <div class="shell pt-[calc(var(--header-h)+clamp(2rem,5vw,4.5rem))]">
+      <a href="/work/" class="rise inline-flex items-center gap-2 font-medium">
+        <Icon name="arrow-left" class="size-4" />
+        <Roll text="All work" />
+      </a>
+      <ul class="meta rise mt-[clamp(2rem,4vw,3rem)] flex flex-wrap gap-2" style="--i:1">
+        {data.disciplines.map((key) => <li class="chip chip-sm text-ink">{disciplineLabel(key)}</li>)}
+      </ul>
+
+      <h1 class="display case-title mt-[clamp(1.75rem,3vw,2.75rem)]">
+        <span class="mask-line" style="--i:1"><span>{data.title}</span></span>
+      </h1>
+      <p class="subhead rise mt-4 text-[clamp(1.25rem,0.9rem+1.4vw,2.25rem)]" style="--i:2">{data.headline}</p>
+
+      <div class="rise mt-[clamp(2.5rem,5vw,4.5rem)] grid gap-10 lg:grid-cols-12" style="--i:3">
+        <dl class="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3 lg:col-span-6 lg:grid-cols-3">
+          {
+            facts.map((fact) => (
+              <div>
+                <dt class="meta">{fact.label}</dt>
+                <dd class="mt-1 font-medium">{fact.value}</dd>
+              </div>
+            ))
+          }
+        </dl>
+        <div class="lg:col-span-6">
+          <p class="lead">{noOrphan(data.summary)}</p>
+          {
+            data.website && (
+              <a href={data.website} class="btn btn-ghost mt-8" {...outbound(data.website)}>
+                <Roll text="Visit the site" />
+                <span class="btn-dot">
+                  <Icon name="arrow-up-right" class="size-4" />
+                </span>
+              </a>
+            )
+          }
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="case-cover" style={`--tint:${data.color}`}>
+    <div
+      class="media cover-frame"
+      data-vt={transitionName(item)}
+      style={`view-transition-name:${transitionName(item)};aspect-ratio:${data.cover.width}/${data.cover.height}`}
+    >
+      <Image
+        src={data.cover}
+        alt={data.coverAlt}
+        widths={[800, 1400, 2000, 2400]}
+        sizes="100vw"
+        loading="eager"
+        fetchpriority="high"
+      />
+    </div>
+  </div>
+
+  <section class="shell section pb-[clamp(3rem,2rem+4vw,6rem)]" aria-label="The story">
+    <div class="prose case-prose mx-auto max-w-[44rem]">
+      <Content />
+    </div>
+  </section>
+
+  {
+    paired && (
+      <section class="shell grid items-center gap-[clamp(2rem,5vw,5rem)] lg:grid-cols-12" aria-label="Gallery">
+        <div class="media reveal-img still-portrait lg:col-span-6" style={`aspect-ratio:${paired.src.width}/${paired.src.height}`}>
+          <Image src={paired.src} alt={paired.alt} widths={[600, 1000, 1400]} sizes="(min-width: 64rem) 50vw, 100vw" />
+        </div>
+        {data.testimonial ? (
+          <figure class="lg:col-span-6">
+            <blockquote class="case-quote reveal">
+              <p>“{noOrphan(data.testimonial.quote)}”</p>
+            </blockquote>
+            <figcaption class="reveal mt-8 flex items-center gap-4">
+              <span class="h-0.5 w-10" style={`background:${data.color}`} />
+              <span>
+                <span class="block font-semibold">{data.testimonial.name}</span>
+                <span class="block text-mute">{data.testimonial.role}</span>
+              </span>
+            </figcaption>
+          </figure>
+        ) : (
+          wide[0] && (
+            <div class="media reveal-img still-portrait lg:col-span-6" style={`aspect-ratio:${wide[0].src.width}/${wide[0].src.height}`}>
+              <Image src={wide[0].src} alt={wide[0].alt} widths={[600, 1000, 1400]} sizes="(min-width: 64rem) 50vw, 100vw" />
+            </div>
+          )
+        )}
+      </section>
+    )
+  }
+
+  {
+    (data.testimonial ? wide : wide.slice(1)).map((still) => (
+      <div class="media mt-[clamp(3rem,7vw,7rem)]" style={`aspect-ratio:${still.src.width}/${still.src.height}`}>
+        <Image src={still.src} alt={still.alt} widths={[800, 1400, 2000, 2400]} sizes="100vw" />
+      </div>
+    ))
+  }
+
+  {
+    data.results.length > 0 && (
+      <section class="shell section" aria-labelledby="results-title">
+        <h2 id="results-title" class="display display-lg">
+          The results
+        </h2>
+        <dl class="mt-[clamp(2.5rem,5vw,4rem)] grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+          {data.results.map((result) => (
+            <div class="reveal flex flex-col-reverse justify-end">
+              <dt class="mt-4 max-w-[24ch] text-lg text-ink-2">{noOrphan(result.label)}</dt>
+              <dd class="display display-xl">{result.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    )
+  }
+
+  {
+    data.credits.length > 0 && (
+      <section class="shell pb-[clamp(5rem,10vw,10rem)]" aria-labelledby="credits-title">
+        <div class="grid gap-8 lg:grid-cols-12">
+          <h2 id="credits-title" class="display display-sm self-start lg:col-span-4">
+            Credits
+          </h2>
+          <dl class="grid grid-cols-2 gap-x-8 gap-y-6 sm:grid-cols-4 lg:col-span-8">
+            {data.credits.map((credit) => (
+              <div>
+                <dt class="text-sm text-mute">{credit.role}</dt>
+                <dd class="mt-1 font-medium">{credit.name}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+    )
+  }
+
+  {
+    next.id !== item.id && (
+      <a href={workHref(next)} class:list={["on-tint next group block", nextInk]} style={`--tint:${next.data.color}`}>
+        <div class="shell grid items-end gap-10 py-[clamp(4rem,9vw,9rem)] lg:grid-cols-12">
+          <div class="lg:col-span-7">
+            <p class="inline-flex items-center gap-2 font-medium">
+              Next project
+              <Icon name="arrow-right" class="size-4" />
+            </p>
+            <p class="display display-xxl mt-6">{next.data.title}</p>
+            <p class="subhead mt-4 text-[clamp(1.2rem,0.9rem+1.2vw,2rem)]">{next.data.headline}</p>
+          </div>
+          <div class="media next-media lg:col-span-5" data-vt={transitionName(next)}>
+            <Image src={next.data.cover} alt="" widths={[600, 1000, 1400]} sizes="(min-width: 64rem) 40vw, 100vw" class="zoom-img" />
+          </div>
+        </div>
+      </a>
+    )
+  }
+</BaseLayout>
+
+<style>
+  .case-head {
+    padding-bottom: clamp(3rem, 6vw, 6rem);
+  }
+
+  .case-title {
+    font-size: clamp(3.2rem, 0.6rem + 10.5vw, 14rem);
+    line-height: 0.85;
+  }
+
+  .case-cover {
+    background: linear-gradient(var(--tint) 30%, transparent 30%);
+    padding-inline: var(--gutter);
+  }
+
+  .cover-frame {
+    border-radius: var(--radius);
+  }
+
+  .case-prose :global(h2:first-child) {
+    margin-top: 0;
+  }
+
+  .case-prose {
+    font-size: clamp(1.15rem, 1rem + 0.45vw, 1.4rem);
+  }
+
+  .still-portrait {
+    border-radius: var(--radius);
+  }
+
+  .still-portrait :global(img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .case-quote {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(1.5rem, 0.9rem + 1.8vw, 2.6rem);
+    line-height: 1.1;
+    letter-spacing: -0.045em;
+    text-wrap: balance;
+  }
+
+  .next-media {
+    aspect-ratio: 4 / 3;
+    border-radius: var(--radius);
+    transform: rotate(2deg) scale(0.92);
+    transition: transform 0.9s var(--ease-out-expo);
+  }
+
+  .next:hover .next-media {
+    transform: none;
+  }
+</style>

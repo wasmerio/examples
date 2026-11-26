@@ -1,0 +1,123 @@
+---
+import Card from "./Card.astro";
+import { getCollection } from "astro:content";
+import { withBase } from "../utils/slugify";
+import { getLangFromUrl, useTranslatedPath } from "../i18n/utils";
+
+interface RawPost {
+  // collection item shape:
+  id?: string;
+  data?: {
+    title?: string;
+    description?: string;
+    heroImage?: any;
+    pubDate?: Date | string;
+  };
+
+  // flattened shape:
+  title?: string;
+  description?: string;
+  heroImage?: any;
+  pubDate?: Date | string;
+
+  // optional link if not a collection item:
+  href?: string;
+}
+
+export interface Props {
+  heading?: string;
+  posts?: RawPost[];
+  limit?: number;
+  viewAllHref?: string;
+  viewAllLabel?: string;
+}
+
+let {
+  heading = "Blog",
+  posts = [],
+  limit = 6,
+  viewAllHref,
+  viewAllLabel = "View all posts",
+} = Astro.props as Props;
+
+function getPostData(item: RawPost) {
+  return item && (item as any).data ? (item as any).data : item;
+}
+
+if (posts.length === 0) {
+  console.warn(
+    '[PostList] No posts provided; fetching from "blog" collection.',
+  );
+  posts = posts
+    .concat((await getCollection("blog")) as unknown as RawPost[])
+    .sort((a, b) => {
+      const aDate = new Date((a as any)?.data?.pubDate ?? 0).valueOf();
+      const bDate = new Date((b as any)?.data?.pubDate ?? 0).valueOf();
+      return bDate - aDate;
+    });
+}
+const lang = getLangFromUrl(Astro.url);
+const translatePath = useTranslatedPath(lang);
+
+const localizedPosts = posts.filter((post) => {
+  const id = (post as any).id;
+  return typeof id === "string" ? id.startsWith(`${lang}/`) : true;
+});
+
+const visiblePosts =
+  typeof limit === "number" ? localizedPosts.slice(0, limit) : localizedPosts;
+---
+
+<section>
+  <div>
+    <div class="grid grid-cols-1 border-base-200">
+      <header class="space-y-2 max-w-2xl lg:pb-12">
+        <p class="eyebrow m-0">Some thoughts</p>
+        <h2
+          class="text-3xl sm:text-4xl font-semibold leading-tight text-ink m-0"
+        >
+          Blog
+        </h2>
+        <p class="text-muted m-0">Stories and more about development</p>
+      </header>
+      <div
+        class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-y-20 gap-x-8"
+      >
+        {
+          visiblePosts.map((post) => {
+            const p = getPostData(post) || {};
+            const id = (post as any).id;
+            const normalizedId =
+              typeof id === "string" ? id.replace(/^[^/]+\//, "") : undefined;
+            const href = id
+              ? withBase(translatePath(`/blog/${normalizedId}/`))
+              : p.href
+                ? withBase(p.href)
+                : undefined;
+            const rawDate = p.pubDate ?? null;
+            const pubDate = rawDate
+              ? rawDate instanceof Date
+                ? rawDate
+                : new Date(rawDate)
+              : undefined;
+
+            return (
+              <Card
+                title={p.title}
+                href={href}
+                image={p.heroImage}
+                imageAlt={p.title}
+                description={p.description}
+                date={pubDate}
+              />
+            );
+          })
+        }
+        <Card
+          title={viewAllLabel}
+          href={withBase(viewAllHref ?? translatePath("/blog/"))}
+        />
+      </div>
+    </div>
+  </div>
+</section>

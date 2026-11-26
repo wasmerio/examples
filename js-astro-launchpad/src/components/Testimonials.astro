@@ -1,0 +1,118 @@
+---
+interface Testimonial {
+	quote: string;
+	author: string;
+	role?: string;
+	avatar?: string;
+}
+
+import { getCollection } from 'astro:content';
+import { Icon } from 'astro-icon/components';
+import { getLangFromUrl } from '../i18n/utils';
+
+interface Props {
+	eyebrow?: string;
+	title?: string;
+	testimonials?: Testimonial[];
+}
+
+const { eyebrow, title, testimonials } = Astro.props;
+const lang = getLangFromUrl(Astro.url);
+
+let items: Testimonial[] = testimonials ?? [];
+
+if (!testimonials) {
+	const entries = await getCollection('testimonials');
+  items = entries
+    .filter((entry) => entry.id.startsWith(`${lang}/`))
+    .map((entry) => entry.data as Testimonial);
+}
+---
+
+<section class="space-y-6 testimonial-section">
+  <header class="space-y-2 max-w-2xl">
+    {eyebrow && <p class="eyebrow m-0">{eyebrow}</p>}
+    {title && <h2 class="text-3xl sm:text-4xl font-semibold leading-tight text-ink m-0">{title}</h2>}
+  </header>
+
+  <div class="slider w-full flex flex-col justify-center items-center relative overflow-hidden min-h-55 md:min-h-65">
+    {items.map((t, i) => (
+      <article class="slide absolute inset-0 flex items-center justify-center px-2" data-index={i}>
+        <div class="w-full max-w-180 rounded-2xl border border-border bg-surface px-6 py-5 shadow-sm relative">
+          <Icon name="tabler:quote" size={28} class="text-border absolute top-4 right-5 opacity-60" />
+          <blockquote class="not-italic text-base md:text-lg leading-relaxed mb-4 text-ink m-0">{t.quote}</blockquote>
+          <div class="flex items-center gap-3">
+            {t.avatar && <img src={t.avatar} alt={`Avatar de ${t.author}`} class="w-10 h-10 rounded-full object-cover ring-2 ring-border" />}
+            <div>
+              <p class="text-sm font-semibold text-ink m-0">{t.author}</p>
+              {t.role && <p class="text-xs text-muted m-0">{t.role}</p>}
+            </div>
+          </div>
+        </div>
+      </article>
+    ))}
+  </div>
+
+  <div class="w-full flex justify-center items-center gap-4">
+    <button data-dir="-1" aria-label="Anterior" class="slider-nav group rounded-full border border-border bg-surface p-2.5 shadow-sm transition-all duration-200 hover:border-ink/25 hover:shadow-md active:scale-95 cursor-pointer">
+      <Icon name="tabler:chevron-left" size={18} class="transition-transform duration-200 group-hover:-translate-x-0.5" />
+    </button>
+    <div class="flex items-center gap-1.5">
+      {items.map((_, i) => (
+        <button class="relative p-3 cursor-pointer group" data-dot={i} aria-label={`Ir a testimonio ${i + 1}`}>
+          <span class={`slider-dot block h-1.5 rounded-full transition-all duration-300 ${i === 0 ? 'w-5 bg-ink' : 'w-1.5 bg-ink/20'}`} />
+        </button>
+      ))}
+    </div>
+    <button data-dir="1" aria-label="Siguiente" class="slider-nav group rounded-full border border-border bg-surface p-2.5 shadow-sm transition-all duration-200 hover:border-ink/25 hover:shadow-md active:scale-95 cursor-pointer">
+      <Icon name="tabler:chevron-right" size={18} class="transition-transform duration-200 group-hover:translate-x-0.5" />
+    </button>
+  </div>
+</section>
+
+<script>
+import { gsap } from 'gsap';
+
+const section = document.querySelector('.testimonial-section');
+if (section) {
+  const slides = gsap.utils.toArray<HTMLElement>('.slide', section);
+  const dots = section.querySelectorAll<HTMLElement>('.slider-dot') as NodeListOf<HTMLElement>;
+  const total = slides.length;
+  let current = 0;
+  let tweening = false;
+
+  // Posición inicial
+  slides.forEach((s, i) => i > 0 && gsap.set(s, { xPercent: 100 }));
+
+  const goTo = (next: number) => {
+    if (tweening || next === current) return;
+    tweening = true;
+    const dir = next > current ? 1 : -1;
+
+    gsap.set(slides[next], { xPercent: dir * 100 });
+    gsap.to(slides[current], { xPercent: dir * -100, onComplete: () => { tweening = false; } });
+    gsap.to(slides[next], { xPercent: 0 });
+
+    dots[current].className = 'slider-dot block h-1.5 rounded-full transition-all duration-300 w-1.5 bg-ink/20';
+    dots[next].className = 'slider-dot block h-1.5 rounded-full transition-all duration-300 w-5 bg-ink';
+
+    current = next;
+  };
+
+  const advance = (dir: number) => goTo((current + dir + total) % total);
+
+  // Navegación
+  section.querySelectorAll<HTMLElement>('.slider-nav').forEach((btn) =>
+    btn.addEventListener('click', () => advance(Number(btn.dataset.dir)))
+  );
+
+  section.querySelectorAll<HTMLElement>('[data-dot]').forEach((btn) =>
+    btn.addEventListener('click', () => goTo(Number(btn.dataset.dot)))
+  );
+
+  // Auto-play con pausa en hover
+  let timer = setInterval(() => advance(1), 10000);
+  section.addEventListener('mouseenter', () => clearInterval(timer));
+  section.addEventListener('mouseleave', () => (timer = setInterval(() => advance(1), 10000)));
+}
+</script>

@@ -1,0 +1,129 @@
+---
+import { Icon } from 'astro-icon/components';
+---
+
+<div transition:persist class="forced-colors:hidden">
+	<button
+		type="button"
+		data-theme-toggle
+		class="theme-toggler ui-pressable"
+		aria-label="Switch to dark theme"
+		title="Switch to dark theme"
+		data-theme="light"
+	>
+		<Icon name="ri:sun-fill" class="theme-icon-light size-5 fill-current" />
+		<Icon name="ri:moon-line" class="theme-icon-dark size-5 fill-current" />
+	</button>
+</div>
+
+<style>
+	.theme-toggler {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		height: 2.15rem;
+		width: 2.15rem;
+		color: var(--color-text);
+		opacity: 0.88;
+		transition:
+			transform var(--motion-gentle),
+			background var(--motion-gentle),
+			color var(--motion-gentle),
+			opacity var(--motion-gentle),
+			box-shadow var(--motion-gentle);
+	}
+
+	.theme-toggler:hover,
+	.theme-toggler:focus-visible {
+		opacity: 1;
+	}
+
+	.theme-toggler .theme-icon-dark {
+		display: none;
+	}
+
+	.theme-toggler[data-theme='dark'] .theme-icon-light {
+		display: none;
+	}
+
+	.theme-toggler[data-theme='dark'] .theme-icon-dark {
+		display: block;
+	}
+</style>
+
+<script>
+	import { theme } from '~/store';
+
+	const themeToggleSelector = '[data-theme-toggle]';
+	type ThemeToggleWindow = Window & {
+		__themeToggleSubscribed?: boolean;
+		__themeToggleMediaBound?: boolean;
+	};
+
+	const resolveTheme = (rawTheme: string) => {
+		if (rawTheme === 'dark' || rawTheme === 'light') {
+			return rawTheme;
+		}
+		return window.matchMedia('(prefers-color-scheme: dark)').matches
+			? 'dark'
+			: 'light';
+	};
+
+	const syncThemeButtons = (document: Document, resolvedTheme: 'dark' | 'light') => {
+		const buttons = Array.from(document.querySelectorAll(themeToggleSelector));
+		for (const button of buttons) {
+			if (!(button instanceof HTMLButtonElement)) {
+				continue;
+			}
+
+			button.setAttribute('data-theme', resolvedTheme);
+			const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark';
+			button.setAttribute('aria-label', `Switch to ${nextTheme} theme`);
+			button.setAttribute('title', `Switch to ${nextTheme} theme`);
+		}
+	};
+
+	const applyTheme = (document: Document, rawTheme: string) => {
+		const resolvedTheme = resolveTheme(rawTheme);
+		document.documentElement.classList.remove('dark', 'light', 'os-default');
+		document.documentElement.classList.add(resolvedTheme);
+		syncThemeButtons(document, resolvedTheme);
+		return resolvedTheme;
+	};
+
+	const bindToggle = (document: Document) => {
+		applyTheme(document, theme.get());
+		const buttons = Array.from(document.querySelectorAll(themeToggleSelector));
+		for (const button of buttons) {
+			if (!(button instanceof HTMLButtonElement)) {
+				continue;
+			}
+
+			button.onclick = () => {
+				const currentTheme =
+					button.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+				theme.set(currentTheme === 'dark' ? 'light' : 'dark');
+			};
+		}
+	};
+
+	const themeWindow = window as ThemeToggleWindow;
+	if (!themeWindow.__themeToggleSubscribed) {
+		theme.subscribe((newTheme) => {
+			applyTheme(document, newTheme);
+		});
+		themeWindow.__themeToggleSubscribed = true;
+	}
+
+	bindToggle(document);
+	document.addEventListener('astro:before-swap', (ev) => bindToggle(ev.newDocument));
+
+	if (!themeWindow.__themeToggleMediaBound) {
+		window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+			if (theme.get() === 'os-default') {
+				applyTheme(document, 'os-default');
+			}
+		});
+		themeWindow.__themeToggleMediaBound = true;
+	}
+</script>

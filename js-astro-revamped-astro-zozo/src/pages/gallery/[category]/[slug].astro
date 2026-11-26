@@ -1,0 +1,758 @@
+---
+import { render } from 'astro:content';
+import ScaffoldLayout from '~/layouts/ScaffoldLayout.astro';
+import {
+	getGalleryCategory,
+	getGalleryEntries,
+	getGalleryItem,
+	getGalleryItemsByCategory,
+} from '~/utils/gallery';
+
+export const getStaticPaths = async () => {
+	const items = await getGalleryEntries();
+	return items.map((item) => ({
+		params: { category: item.data.category, slug: item.data.slug },
+		props: { categorySlug: item.data.category, slug: item.data.slug },
+	}));
+};
+
+const { categorySlug, slug } = Astro.props;
+const category = getGalleryCategory(categorySlug);
+const item = await getGalleryItem(categorySlug, slug);
+const categoryItems = await getGalleryItemsByCategory(categorySlug);
+const itemIndex = categoryItems.findIndex((entry) => entry.data.slug === slug);
+
+if (!category || !item) {
+	throw new Error(`Unknown gallery item: ${categorySlug}/${slug}`);
+}
+
+const previousItem =
+	categoryItems[(itemIndex - 1 + categoryItems.length) % categoryItems.length];
+const nextItem = categoryItems[(itemIndex + 1) % categoryItems.length];
+const hasFocusCharacters = Boolean(item.data.focusCharacters?.length);
+const defaultFocus = item.data.focusCharacters?.[0];
+const { Content } = await render(item);
+const hasStory = Boolean(item.body?.trim().length);
+const positionLabel = `${String(itemIndex + 1).padStart(2, '0')} / ${String(categoryItems.length).padStart(2, '0')}`;
+---
+
+<ScaffoldLayout
+	title={`Gallery / ${item.data.title}`}
+	description={item.data.summary}
+	currentNav={undefined}
+>
+	<section class="gallery-detail-heading">
+		<div>
+			<a class="gallery-back-link" href={`/gallery/${category.slug}/`}>{category.title}</a>
+			<p>{item.data.eyebrow}</p>
+			<h1>{item.data.title}</h1>
+			<span>{item.data.summary}</span>
+		</div>
+		<div class="gallery-detail-meta">
+			<span>{positionLabel}</span>
+			{item.data.year && <span>{item.data.year}</span>}
+			{item.data.location && <span>{item.data.location}</span>}
+			{item.data.credit && <span>{item.data.credit}</span>}
+			{hasFocusCharacters && <span>Character Focus</span>}
+		</div>
+	</section>
+
+	<section class="gallery-viewer-layout">
+		<div
+			class="gallery-stage-panel"
+			data-gallery-shortcuts
+			data-prev-href={`/gallery/${category.slug}/${previousItem.data.slug}/`}
+			data-next-href={`/gallery/${category.slug}/${nextItem.data.slug}/`}
+			data-focus-scope={hasFocusCharacters ? '' : undefined}
+			data-selected-focus={defaultFocus?.id}
+		>
+			<div
+				class:list={['gallery-stage-frame', { 'has-focus-map': hasFocusCharacters }]}
+			>
+				<img
+					src={item.data.image.src}
+					width={item.data.image.width}
+					height={item.data.image.height}
+					alt={item.data.alt}
+					loading="eager"
+					decoding="async"
+				/>
+
+				<a class="gallery-stage-arrow prev" href={`/gallery/${category.slug}/${previousItem.data.slug}/`}>
+					<span aria-hidden="true">&larr;</span>
+					<span class="sr-only">Previous image</span>
+				</a>
+				<a class="gallery-stage-arrow next" href={`/gallery/${category.slug}/${nextItem.data.slug}/`}>
+					<span aria-hidden="true">&rarr;</span>
+					<span class="sr-only">Next image</span>
+				</a>
+
+				{
+					hasFocusCharacters && (
+						<>
+							<div class="gallery-focus-highlight" data-focus-highlight></div>
+							<div class="gallery-focus-caption" data-focus-caption>{defaultFocus?.name}</div>
+							{
+								item.data.focusCharacters?.map((focus) => (
+									<button
+										type="button"
+										class="gallery-focus-target"
+										data-focus-trigger
+										data-focus-id={focus.id}
+										data-focus-name={focus.name}
+										data-focus-role={focus.role}
+										data-focus-note={focus.note}
+										data-focus-x={focus.x}
+										data-focus-y={focus.y}
+										data-focus-width={focus.width}
+										data-focus-height={focus.height}
+										data-focus-accent={focus.accent}
+										data-focus-portrait-src={focus.portrait.src}
+										data-focus-portrait-width={focus.portrait.width}
+										data-focus-portrait-height={focus.portrait.height}
+										style={`--x:${focus.x}%; --y:${focus.y}%; --w:${focus.width}%; --h:${focus.height}%; --accent:${focus.accent};`}
+										aria-label={`Highlight ${focus.name}`}
+										aria-pressed={focus.id === defaultFocus?.id ? 'true' : 'false'}
+									></button>
+								))
+							}
+						</>
+					)
+				}
+			</div>
+
+			{
+				hasFocusCharacters && (
+					<>
+						<section class="gallery-focus-spotlight" aria-live="polite">
+							<img
+								data-focus-portrait
+								src={defaultFocus?.portrait.src}
+								width={defaultFocus?.portrait.width}
+								height={defaultFocus?.portrait.height}
+								alt={defaultFocus ? `${defaultFocus.name} portrait` : ''}
+								loading="eager"
+								decoding="async"
+							/>
+							<div class="gallery-focus-spotlight-copy">
+								<p class="gallery-focus-spotlight-eyebrow">Character Focus</p>
+								<h2 data-focus-nameplate>{defaultFocus?.name}</h2>
+								<span data-focus-role>{defaultFocus?.role}</span>
+								<p data-focus-note>{defaultFocus?.note}</p>
+							</div>
+						</section>
+
+						<section class="gallery-focus-roster" aria-label="Character roster">
+							{
+								item.data.focusCharacters?.map((focus) => (
+									<button
+										type="button"
+										class="gallery-focus-card"
+										data-focus-trigger
+										data-focus-id={focus.id}
+										data-focus-name={focus.name}
+										data-focus-role={focus.role}
+										data-focus-note={focus.note}
+										data-focus-x={focus.x}
+										data-focus-y={focus.y}
+										data-focus-width={focus.width}
+										data-focus-height={focus.height}
+										data-focus-accent={focus.accent}
+										data-focus-portrait-src={focus.portrait.src}
+										data-focus-portrait-width={focus.portrait.width}
+										data-focus-portrait-height={focus.portrait.height}
+										aria-pressed={focus.id === defaultFocus?.id ? 'true' : 'false'}
+									>
+										<img
+											src={focus.portrait.src}
+											width={focus.portrait.width}
+											height={focus.portrait.height}
+											alt={`${focus.name} portrait`}
+											loading="lazy"
+											decoding="async"
+										/>
+										<div>
+											<strong>{focus.name}</strong>
+											<span>{focus.role}</span>
+											<p>{focus.note}</p>
+										</div>
+									</button>
+								))
+							}
+						</section>
+					</>
+				)
+			}
+
+			<nav class="gallery-thumb-strip" aria-label="All images in this category">
+				{
+					categoryItems.map((entry) => (
+						<a
+							class:list={['gallery-thumb-card', { active: entry.data.slug === item.data.slug }]}
+							href={`/gallery/${category.slug}/${entry.data.slug}/`}
+						>
+							<img
+								src={entry.data.image.src}
+								width={entry.data.image.width}
+								height={entry.data.image.height}
+								alt={entry.data.alt}
+								loading="lazy"
+								decoding="async"
+							/>
+							<span>{entry.data.title}</span>
+						</a>
+					))
+				}
+			</nav>
+		</div>
+
+		<aside class="gallery-notes-panel">
+			<div class="gallery-notes-card">
+				<p class="gallery-notes-eyebrow">Notes</p>
+				<h2>{item.data.notesTitle ?? 'About this image'}</h2>
+				{
+					item.data.notes.map((note) => (
+						<p>{note}</p>
+					))
+				}
+			</div>
+		</aside>
+	</section>
+	{
+		hasStory && (
+			<section class="gallery-story-panel">
+				<p class="gallery-notes-eyebrow">Story</p>
+				<article class="gallery-story-prose prose max-w-none dark:prose-invert">
+					<Content />
+				</article>
+			</section>
+		)
+	}
+</ScaffoldLayout>
+
+<style is:global>
+	.gallery-detail-heading {
+		display: grid;
+		gap: 1rem;
+		padding: 1.4rem 0 1.1rem;
+	}
+
+	.gallery-detail-heading p,
+	.gallery-detail-heading span {
+		margin: 0;
+		color: var(--color-muted);
+	}
+
+	.gallery-detail-heading h1 {
+		margin: 0.35rem 0 0.5rem;
+		font-size: clamp(2.2rem, 5.5vw, 4rem);
+		line-height: 0.98;
+		text-wrap: balance;
+		overflow-wrap: anywhere;
+	}
+
+	.gallery-detail-heading > div:first-child span {
+		display: block;
+		max-width: 42rem;
+		line-height: 1.65;
+		overflow-wrap: anywhere;
+	}
+
+	.gallery-detail-meta {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.6rem;
+	}
+
+	.gallery-detail-meta span {
+		border-radius: var(--radius-chip);
+		border: 1px solid var(--color-border);
+		background: color-mix(in srgb, var(--color-surface) 88%, var(--color-accent-soft));
+		padding: 0.5rem 0.85rem;
+		font-size: 0.78rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.gallery-viewer-layout {
+		display: grid;
+		gap: 1.25rem;
+		padding-bottom: 1.25rem;
+	}
+
+	.gallery-stage-panel {
+		display: grid;
+		gap: 1rem;
+		min-width: 0;
+	}
+
+	.gallery-stage-panel[data-focus-scope] {
+		gap: 1.1rem;
+	}
+
+	.gallery-stage-frame {
+		position: relative;
+		overflow: hidden;
+		border-radius: var(--radius-card);
+		border: 1px solid var(--color-border);
+		background: radial-gradient(circle at top left, color-mix(in srgb, var(--color-accent-soft) 44%, transparent), transparent 35%), linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 95%, var(--color-accent-soft) 5%), color-mix(in srgb, var(--color-surface-2) 88%, var(--color-surface) 12%));
+	}
+
+	.gallery-stage-frame img {
+		display: block;
+		width: 100%;
+		height: auto;
+		max-height: 72dvh;
+		object-fit: contain;
+	}
+
+	.gallery-stage-arrow {
+		position: absolute;
+		top: 50%;
+		display: inline-flex;
+		height: 2.75rem;
+		width: 2.75rem;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-button);
+		border: 1px solid color-mix(in srgb, var(--color-surface) 18%, transparent);
+		background: color-mix(in srgb, var(--color-text) 72%, transparent);
+		color: var(--color-surface);
+		text-decoration: none;
+		transform: translateY(-50%);
+		backdrop-filter: blur(12px);
+	}
+
+	.gallery-stage-arrow.prev {
+		left: 0.85rem;
+	}
+
+	.gallery-stage-arrow.next {
+		right: 0.85rem;
+	}
+
+	.gallery-focus-highlight {
+		position: absolute;
+		left: var(--focus-x, 12%);
+		top: var(--focus-y, 12%);
+		width: var(--focus-width, 18%);
+		height: var(--focus-height, 48%);
+		border-radius: var(--radius-soft);
+		border: 2px solid var(--focus-accent, var(--color-accent));
+		box-shadow: 0 0 0 999rem color-mix(in srgb, var(--color-text) 22%, transparent), 0 0 30px color-mix(in srgb, var(--focus-accent, var(--color-accent)) 42%, transparent);
+		transition: left 220ms ease, top 220ms ease, width 220ms ease, height 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+		pointer-events: none;
+	}
+
+	.gallery-focus-caption {
+		position: absolute;
+		left: 1rem;
+		bottom: 1rem;
+		max-width: calc(100% - 2rem);
+		border-radius: var(--radius-chip);
+		background: color-mix(in srgb, var(--color-text) 78%, transparent);
+		padding: 0.55rem 0.9rem;
+		color: var(--color-surface);
+		font-size: 0.82rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		backdrop-filter: blur(12px);
+	}
+
+	.gallery-focus-target {
+		position: absolute;
+		left: var(--x);
+		top: var(--y);
+		width: var(--w);
+		height: var(--h);
+		border: 0;
+		background: transparent;
+		cursor: pointer;
+	}
+
+	.gallery-focus-roster {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+		gap: 0.85rem;
+	}
+
+	.gallery-focus-spotlight {
+		display: grid;
+		grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+		gap: 1rem;
+		align-items: center;
+		border-radius: var(--radius-card);
+		border: 1px solid var(--color-border);
+		background: linear-gradient(135deg, color-mix(in srgb, var(--color-surface) 96%, var(--color-accent-soft) 4%), color-mix(in srgb, var(--color-surface-2) 88%, var(--color-surface) 12%));
+		padding: 1rem;
+	}
+
+	.gallery-focus-spotlight img {
+		aspect-ratio: 4 / 5;
+		width: 100%;
+		border-radius: var(--radius-media);
+		object-fit: cover;
+		box-shadow: 0 1rem 2rem rgba(var(--color-shadow-rgb), 0.12);
+	}
+
+	.gallery-focus-spotlight-copy {
+		display: grid;
+		gap: 0.35rem;
+		min-width: 0;
+	}
+
+	.gallery-focus-spotlight-eyebrow,
+	.gallery-focus-spotlight-copy span {
+		margin: 0;
+		font-size: 0.76rem;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--color-muted);
+	}
+
+	.gallery-focus-spotlight-copy h2,
+	.gallery-focus-spotlight-copy p {
+		margin: 0;
+	}
+
+	.gallery-focus-spotlight-copy h2 {
+		font-size: clamp(1.5rem, 2vw, 2rem);
+		overflow-wrap: anywhere;
+	}
+
+	.gallery-focus-spotlight-copy p:last-child {
+		padding-top: 0.15rem;
+		line-height: 1.7;
+		color: color-mix(in srgb, var(--color-muted) 92%, var(--color-text));
+		overflow-wrap: anywhere;
+	}
+
+	.gallery-focus-card {
+		display: grid;
+		grid-template-columns: 5rem 1fr;
+		gap: 0.85rem;
+		align-items: center;
+		min-width: 0;
+		border-radius: var(--radius-soft);
+		border: 1px solid var(--color-border);
+		background: color-mix(in srgb, var(--color-surface) 94%, var(--color-accent-soft));
+		padding: 0.8rem;
+		text-align: left;
+		color: inherit;
+		transition:
+			transform var(--motion-gentle),
+			border-color var(--motion-gentle),
+			box-shadow var(--motion-gentle);
+	}
+
+	.gallery-focus-card:hover,
+	.gallery-focus-card:focus-visible {
+		transform: translateY(-2px);
+	}
+
+	.gallery-focus-card img {
+		aspect-ratio: 1;
+		width: 100%;
+		border-radius: var(--radius-media);
+		object-fit: cover;
+	}
+
+	.gallery-focus-card strong,
+	.gallery-focus-card span,
+	.gallery-focus-card p {
+		display: block;
+		margin: 0;
+	}
+
+	.gallery-focus-card strong {
+		font-size: 1rem;
+		overflow-wrap: anywhere;
+	}
+
+	.gallery-focus-card span {
+		margin-top: 0.18rem;
+		font-size: 0.78rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-muted);
+	}
+
+	.gallery-focus-card p {
+		margin-top: 0.38rem;
+		font-size: 0.9rem;
+		line-height: 1.55;
+		color: color-mix(in srgb, var(--color-muted) 92%, var(--color-text));
+		overflow-wrap: anywhere;
+	}
+
+	.gallery-focus-card.active {
+		border-color: var(--card-accent, var(--color-accent));
+		box-shadow: 0 0 0 1px var(--card-accent, var(--color-accent));
+	}
+
+	.gallery-thumb-strip {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+		gap: 0.8rem;
+		align-items: start;
+	}
+
+	.gallery-thumb-card {
+		display: grid;
+		gap: 0.45rem;
+		min-width: 0;
+		text-decoration: none;
+		color: inherit;
+	}
+
+	.gallery-thumb-card img {
+		aspect-ratio: 4 / 3;
+		width: 100%;
+		border-radius: var(--radius-media);
+		border: 1px solid transparent;
+		object-fit: cover;
+	}
+
+	.gallery-thumb-card span {
+		font-size: 0.82rem;
+		line-height: 1.4;
+		overflow-wrap: anywhere;
+	}
+
+	.gallery-thumb-card.active img {
+		border-color: var(--color-accent);
+	}
+
+	@media (max-width: 720px) {
+		.gallery-focus-spotlight {
+			grid-template-columns: 1fr;
+		}
+
+		.gallery-thumb-strip {
+			grid-auto-flow: column;
+			grid-auto-columns: minmax(8rem, 46vw);
+			overflow-x: auto;
+			padding-bottom: 0.35rem;
+			scroll-snap-type: x proximity;
+		}
+
+		.gallery-thumb-card {
+			scroll-snap-align: start;
+		}
+	}
+
+	.gallery-notes-panel {
+		display: grid;
+	}
+
+	.gallery-notes-card {
+		display: grid;
+		gap: 0.6rem;
+		height: fit-content;
+		min-width: 0;
+		border-radius: var(--radius-card);
+		border: 1px solid var(--color-border);
+		background: color-mix(in srgb, var(--color-surface) 94%, var(--color-accent-soft));
+		padding: 1.15rem;
+	}
+
+	.gallery-notes-eyebrow {
+		margin: 0;
+		font-size: 0.78rem;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--color-muted);
+	}
+
+	.gallery-notes-card h2,
+	.gallery-notes-card p {
+		margin: 0;
+	}
+
+	.gallery-notes-card h2 {
+		font-size: 1.4rem;
+	}
+
+	.gallery-notes-card p {
+		line-height: 1.7;
+		color: color-mix(in srgb, var(--color-muted) 92%, var(--color-text));
+		overflow-wrap: anywhere;
+	}
+
+	.gallery-story-panel {
+		margin-top: 1rem;
+		display: grid;
+		gap: 0.9rem;
+		border-radius: var(--radius-card);
+		border: 1px solid var(--color-border);
+		background: color-mix(in srgb, var(--color-surface) 95%, var(--color-accent-soft) 5%);
+		padding: 1.15rem;
+	}
+
+	.gallery-story-prose {
+		--tw-prose-body: var(--color-text);
+		--tw-prose-headings: var(--color-text);
+		--tw-prose-links: var(--color-accent);
+		--tw-prose-bold: var(--color-text);
+		--tw-prose-bullets: var(--color-border);
+		--tw-prose-counters: var(--color-muted);
+		--tw-prose-hr: var(--color-border);
+		--tw-prose-invert-body: var(--color-text);
+		--tw-prose-invert-headings: var(--color-text);
+		--tw-prose-invert-links: var(--color-accent);
+		--tw-prose-invert-bold: var(--color-text);
+	}
+
+	.gallery-story-prose :where(p:first-child) {
+		margin-top: 0;
+	}
+
+	@media (min-width: 1100px) {
+		.gallery-viewer-layout {
+			grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 0.7fr);
+			align-items: start;
+		}
+
+		.gallery-notes-card {
+			position: sticky;
+			top: 1rem;
+		}
+	}
+</style>
+
+<script is:inline type="module">
+	const focusRoots = document.querySelectorAll('[data-focus-scope]');
+
+	for (const root of focusRoots) {
+		if (!(root instanceof HTMLElement)) continue;
+
+		const triggers = Array.from(root.querySelectorAll('[data-focus-trigger]'));
+		const highlight = root.querySelector('[data-focus-highlight]');
+		const caption = root.querySelector('[data-focus-caption]');
+		const portrait = root.querySelector('[data-focus-portrait]');
+		const nameplate = root.querySelector('[data-focus-nameplate]');
+		const role = root.querySelector('[data-focus-role]');
+		const note = root.querySelector('[data-focus-note]');
+		let selectedFocusId = root.dataset.selectedFocus ?? '';
+
+		const applyFocus = (focusId) => {
+			const activeTrigger = triggers.find((trigger) => {
+				return trigger instanceof HTMLElement && trigger.dataset.focusId === focusId;
+			});
+
+			if (!(activeTrigger instanceof HTMLElement)) return;
+			if (!(highlight instanceof HTMLElement)) return;
+
+			const x = activeTrigger.dataset.focusX ?? '10';
+			const y = activeTrigger.dataset.focusY ?? '10';
+			const width = activeTrigger.dataset.focusWidth ?? '18';
+			const height = activeTrigger.dataset.focusHeight ?? '48';
+			const accent = activeTrigger.dataset.focusAccent ?? '#f59e0b';
+
+			root.style.setProperty('--focus-x', `${x}%`);
+			root.style.setProperty('--focus-y', `${y}%`);
+			root.style.setProperty('--focus-width', `${width}%`);
+			root.style.setProperty('--focus-height', `${height}%`);
+			root.style.setProperty('--focus-accent', accent);
+
+			if (caption instanceof HTMLElement) {
+				caption.textContent = activeTrigger.dataset.focusName ?? '';
+			}
+
+			if (portrait instanceof HTMLImageElement) {
+				portrait.src = activeTrigger.dataset.focusPortraitSrc ?? portrait.src;
+				portrait.width = Number(activeTrigger.dataset.focusPortraitWidth ?? portrait.width);
+				portrait.height = Number(activeTrigger.dataset.focusPortraitHeight ?? portrait.height);
+				portrait.alt = `${activeTrigger.dataset.focusName ?? ''} portrait`;
+			}
+
+			if (nameplate instanceof HTMLElement) {
+				nameplate.textContent = activeTrigger.dataset.focusName ?? '';
+			}
+
+			if (role instanceof HTMLElement) {
+				role.textContent = activeTrigger.dataset.focusRole ?? '';
+			}
+
+			if (note instanceof HTMLElement) {
+				note.textContent = activeTrigger.dataset.focusNote ?? '';
+			}
+
+			for (const trigger of triggers) {
+				if (!(trigger instanceof HTMLElement)) continue;
+				trigger.classList.toggle('active', trigger.dataset.focusId === focusId);
+				trigger.setAttribute('aria-pressed', trigger.dataset.focusId === focusId ? 'true' : 'false');
+				if (trigger.classList.contains('gallery-focus-card')) {
+					trigger.style.setProperty('--card-accent', trigger.dataset.focusAccent ?? '#f59e0b');
+				}
+			}
+		};
+
+		const fallbackFocusId =
+			selectedFocusId ||
+			(triggers[0] instanceof HTMLElement ? triggers[0].dataset.focusId ?? '' : '');
+
+		applyFocus(fallbackFocusId);
+
+		for (const trigger of triggers) {
+			if (!(trigger instanceof HTMLElement)) continue;
+
+			trigger.addEventListener('mouseenter', () => {
+				applyFocus(trigger.dataset.focusId ?? fallbackFocusId);
+			});
+
+			trigger.addEventListener('focus', () => {
+				applyFocus(trigger.dataset.focusId ?? fallbackFocusId);
+			});
+
+			trigger.addEventListener('click', () => {
+				selectedFocusId = trigger.dataset.focusId ?? fallbackFocusId;
+				root.dataset.selectedFocus = selectedFocusId;
+				applyFocus(selectedFocusId);
+			});
+		}
+
+		root.addEventListener('mouseleave', () => {
+			applyFocus(root.dataset.selectedFocus ?? fallbackFocusId);
+		});
+	}
+
+	const shortcutRoots = document.querySelectorAll('[data-gallery-shortcuts]');
+
+	for (const root of shortcutRoots) {
+		if (!(root instanceof HTMLElement)) continue;
+
+		root.addEventListener('keydown', (event) => {
+			if (!(event instanceof KeyboardEvent)) return;
+			if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+
+			const target = event.target;
+			if (
+				target instanceof HTMLElement &&
+				(target.tagName === 'INPUT' ||
+					target.tagName === 'TEXTAREA' ||
+					target.tagName === 'SELECT' ||
+					target.tagName === 'A' ||
+					target.tagName === 'BUTTON' ||
+					target.tagName === 'SUMMARY' ||
+					target.isContentEditable ||
+					(target !== root &&
+						target.closest(
+							'a, button, input, textarea, select, summary, [role="button"]',
+						)))
+				) {
+				return;
+			}
+			if (event.key === 'ArrowLeft' && root.dataset.prevHref) {
+				window.location.href = root.dataset.prevHref;
+			}
+
+			if (event.key === 'ArrowRight' && root.dataset.nextHref) {
+				window.location.href = root.dataset.nextHref;
+			}
+		});
+
+		root.tabIndex = 0;
+	}
+</script>
+

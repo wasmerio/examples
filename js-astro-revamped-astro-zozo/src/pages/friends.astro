@@ -1,0 +1,148 @@
+---
+import FriendCard from '~/components/FriendCard.astro';
+import PageHeading from '~/components/PageHeading.astro';
+import ScaffoldLayout from '~/layouts/ScaffoldLayout.astro';
+import { friends, type FriendLink } from '~/data/friends';
+
+const trim = (value?: string) => value?.trim() ?? '';
+
+const normalizedFriends = friends
+	.map((friend: FriendLink) => ({
+		id: trim(friend.id),
+		avatar: trim(friend.avatar),
+		bio: trim(friend.bio),
+		link: trim(friend.link),
+	}))
+	.filter((friend) => friend.id || friend.avatar || friend.bio || friend.link);
+
+const collator = new Intl.Collator(['zh-Hans-u-co-pinyin', 'zh', 'en'], {
+	numeric: true,
+	sensitivity: 'base',
+});
+
+const getSortKey = (friend: (typeof normalizedFriends)[number]) =>
+	friend.id || friend.link || friend.bio || '';
+
+const sortedFriends = [...normalizedFriends].sort((a, b) =>
+	collator.compare(getSortKey(a), getSortKey(b)),
+);
+---
+
+<ScaffoldLayout title="Friends" description="A few sample friend links for the theme demo." currentNav="Friends">
+	<PageHeading title="Friends" />
+	{
+		sortedFriends.length > 0 ? (
+			<div class="relative mt-4">
+				<ul
+					id="friends-track"
+					class="friends-grid grid w-full gap-4 px-2 py-3"
+				>
+					{
+						sortedFriends.map((friend, index) => (
+							<FriendCard {...friend} index={index} />
+						))
+					}
+				</ul>
+			</div>
+		) : (
+			<div class="mt-8 rounded-[var(--radius-card)] border border-dashed border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-6 text-sm text-[var(--color-muted)]">
+				<p>
+					No friend links yet. Edit <code>src/data/friends.ts</code> to add avatar, ID, bio,
+					and link.
+				</p>
+			</div>
+		)
+	}
+</ScaffoldLayout>
+
+<style>
+	.friends-grid {
+		scroll-behavior: smooth;
+		align-items: stretch;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+		overflow: visible;
+	}
+</style>
+
+<script>
+	const setupFriendsTrack = () => {
+		const windowWithCleanup = window as Window & {
+			__friendsTrackCleanup?: () => void;
+		};
+		windowWithCleanup.__friendsTrackCleanup?.();
+
+		const track = document.getElementById('friends-track');
+		if (!track) {
+			return;
+		}
+
+		const cards = () => Array.from(track.querySelectorAll('[data-friend-card]'));
+
+		const setCardOpen = (card: Element, open: boolean) => {
+			card.setAttribute('data-open', open ? 'true' : 'false');
+			const trigger = card.querySelector('[data-friend-toggle]');
+			if (trigger) {
+				trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+			}
+		};
+
+		const closeAll = (exceptCard: Element | null = null) => {
+			for (const card of cards()) {
+				if (exceptCard && card === exceptCard) {
+					continue;
+				}
+				setCardOpen(card, false);
+			}
+		};
+
+		const handleTrackClick = (event: MouseEvent) => {
+			const target = event.target;
+			if (!(target instanceof Element)) {
+				return;
+			}
+
+			const trigger = target.closest('[data-friend-toggle]');
+			if (!trigger) {
+				return;
+			}
+
+			const card = trigger.closest('[data-friend-card]');
+			if (!card) {
+				return;
+			}
+
+			const willOpen = card.getAttribute('data-open') !== 'true';
+			closeAll(card);
+			setCardOpen(card, willOpen);
+		};
+
+		const handleDocumentClick = (event: MouseEvent) => {
+			const target = event.target;
+			if (!(target instanceof Node)) {
+				return;
+			}
+			if (!track.contains(target)) {
+				closeAll();
+			}
+		};
+
+		const handleKeydown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				closeAll();
+			}
+		};
+
+		track.addEventListener('click', handleTrackClick);
+		document.addEventListener('click', handleDocumentClick);
+		document.addEventListener('keydown', handleKeydown);
+
+		windowWithCleanup.__friendsTrackCleanup = () => {
+			track.removeEventListener('click', handleTrackClick);
+			document.removeEventListener('click', handleDocumentClick);
+			document.removeEventListener('keydown', handleKeydown);
+		};
+	};
+
+	setupFriendsTrack();
+	document.addEventListener('astro:page-load', setupFriendsTrack);
+</script>

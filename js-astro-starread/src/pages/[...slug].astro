@@ -1,0 +1,144 @@
+---
+import { getCollection, render } from 'astro:content';
+import BaseLayout from '@theme/layouts/Article.astro';
+import ArticleNav from '@theme/components/ArticleNav.astro';
+import {
+  formatDate,
+  getCoverImage,
+  countWords
+} from '@theme/components/Frontmatter';
+
+export const prerender = true;
+
+export async function getStaticPaths() {
+  const supportedLangs = ['zh', 'en', 'ja', 'ko', 'ru'];
+  const defaultLang = 'zh';
+  
+  const docs = await getCollection('docs', ({ data }) => {
+    return data.published !== false;
+  });
+  
+  const reservedRoutes = ['search', 'category', 'tag', 'notes', 'articles', 'zh', 'en', 'ja', 'ko', 'ru', 'config'];
+  
+  const isValidPath = (path) => {
+    if (!path || typeof path !== 'string') {
+      return false;
+    }
+    const trimmed = path.replace(/^\/|\/$/g, '');
+    if (!trimmed || trimmed.length === 0) {
+      return false;
+    }
+    if (trimmed.includes('undefined') || trimmed.includes('null')) {
+      return false;
+    }
+    return true;
+  };
+
+  function parseEntryId(entryId) {
+    const parts = entryId.split('/');
+    if (supportedLangs.includes(parts[0])) {
+      return {
+        lang: parts[0],
+        topic: parts.slice(1).join('/'),
+        id: entryId
+      };
+    }
+    return {
+      lang: defaultLang,
+      topic: entryId,
+      id: entryId
+    };
+  }
+
+  const paths = [];
+
+  const sortedEntries = [...docs].sort((a, b) =>
+    new Date(b.data.date || 0).getTime() - new Date(a.data.date || 0).getTime()
+  );
+
+  sortedEntries.forEach((entry, index) => {
+    const { lang, topic, id } = parseEntryId(entry.id);
+
+    let slug;
+    if (lang === defaultLang) {
+      slug = topic;
+    } else {
+      slug = `${lang}/${topic}`;
+    }
+
+    const prev = index < sortedEntries.length - 1 ? sortedEntries[index + 1] : null;
+    const next = index > 0 ? sortedEntries[index - 1] : null;
+
+    if (isValidPath(slug)) {
+      paths.push({
+        params: { slug },
+        props: {
+          entry,
+          lang,
+          topic,
+          prev,
+          next,
+        },
+        // 增量构建缓存键：正文/frontmatter（含日期、封面）与前后相邻文章
+        // 任一变化都会改变该键，避免 ArticleNav 显示过期的邻居信息
+        cacheKey: [entry.digest, prev?.digest, next?.digest].join('|'),
+      });
+    }
+  });
+  
+  return paths;
+}
+
+const { entry, prev, next, lang, topic } = Astro.props;
+const { slug } = Astro.params;
+
+// 渲染内容
+const rendered = await render(entry);
+const wordCount = countWords(entry.body);
+const { Content } = rendered;
+
+// 相邻文章信息
+const adjacentArticles = {
+  prev: prev ? {
+    id: prev.id,
+    title: prev.data.title,
+    cover: getCoverImage(prev.data.cover),
+    date: formatDate(prev.data.date),
+    collection: prev.id.split('/')[0] || ''
+  } : null,
+  next: next ? {
+    id: next.id,
+    title: next.data.title,
+    cover: getCoverImage(next.data.cover),
+    date: formatDate(next.data.date),
+    collection: next.id.split('/')[0] || ''
+  } : null
+};
+---
+
+<BaseLayout 
+  title={entry.data.title}
+  entry={entry}
+  wordCount={wordCount}
+  formatDate={formatDate}
+  date={formatDate(entry.data.date)}
+  tags={entry.data.tags || []}
+  categories={entry.data.categories || []}
+  cover={getCoverImage(entry.data.cover)}
+  permalink={`/${entry.id}`}
+>
+
+  <article id="article-content" class="prose max-w-none dark:prose-invert p-4 rounded-lg shadow-sm bg-white/70 backdrop-blur-xl border border-white/20 shadow-[0_1px_0_0_rgba(255,255,255,0.6)_inset,0_8px_30px_rgba(0,0,0,0.06)] dark:bg-cyan-950/30 dark:backdrop-blur-xl dark:border-white/10 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_8px_30px_rgba(0,0,0,0.35)]">
+    <Content />
+  </article>
+
+  <div class="mb-6">
+    <ArticleNav 
+      prev={adjacentArticles.prev}
+      next={adjacentArticles.next}
+      lang={lang}
+      basePath={`/${topic}`}
+    />
+  </div>
+
+</BaseLayout>

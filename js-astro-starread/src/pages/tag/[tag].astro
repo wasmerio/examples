@@ -1,0 +1,60 @@
+---
+import { createHash } from 'node:crypto';
+import { getCollection } from 'astro:content';
+import TagLayout from '@theme/layouts/Tag.astro';
+
+export const prerender = true;
+
+export async function getStaticPaths() {
+  const docs = await getCollection('docs');
+
+  const allTags = new Set<string>();
+  docs.forEach(doc => {
+    doc.data.tags?.forEach(tag => allTags.add(tag));
+  });
+
+  // 增量构建缓存键：列表与侧栏标签计数依赖全站文档，
+  // 任一文档变化（digest 含正文与 frontmatter）都使列表页失效
+  const docsDigest = createHash('sha1')
+    .update(
+      docs
+        .map(doc => `${doc.id}:${doc.digest ?? ''}`)
+        .sort()
+        .join('\n')
+    )
+    .digest('hex');
+
+  return Array.from(allTags).map(tag => ({
+    params: { tag },
+    props: { tag },
+    cacheKey: docsDigest,
+  }));
+}
+
+const { tag } = Astro.props;
+const docsWithTag = await getCollection('docs', ({ data }) =>
+  data.tags?.includes(tag) ?? false
+);
+
+const allContent = [...docsWithTag].sort((a, b) => 
+  new Date(b.data.date).getTime() - new Date(a.data.date).getTime()
+);
+
+const allDocs = await getCollection('docs');
+const tagCounts: Record<string, number> = {};
+allDocs.forEach(doc => {
+  doc.data.tags?.forEach(tag => {
+    tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+  });
+});
+
+const pageTitle = `标签: ${tag}`;
+---
+
+<TagLayout 
+  title={pageTitle} 
+  tagName={tag} 
+  currentTag={tag} 
+  articles={allContent} 
+  allTags={tagCounts} 
+/>

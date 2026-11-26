@@ -1,0 +1,110 @@
+---
+import Base from '@theme/layouts/Base.astro';
+import Banner from '@theme/components/Banner.astro';
+import HeroSection from '@theme/components/HeroSection.astro';
+import Carousel from '@theme/components/Carousel.astro';
+import ArticleSection from '@theme/components/ArticleSection.astro';
+import LatestArticle from '@theme/components/LatestArticle.astro';
+import Progress from '@theme/widgets/Progress.astro';
+import AuthorWidget from '@theme/widgets/AuthorWidget.astro';
+import AdWidget from '@theme/widgets/AdWidget.astro';
+import TagCloud from '@theme/widgets/TagCloud.astro';
+import Statistic from '@theme/widgets/Statistic.astro';
+import { themeConfig } from '@theme/config';
+import { getCollection } from 'astro:content';
+import { countWords } from '@theme/components/Frontmatter';
+
+const sidebarConfig = themeConfig.sidebar.home;
+
+const supportedLangs = ['zh', 'en', 'ja', 'ko', 'ru'];
+
+const docs = await getCollection('docs', {
+  filter: () => true,
+  projection: {
+    data: { title: true, date: true, categories: true, tags: true, cover: true, permalink: true },
+    collection: true,
+    slug: true
+  }
+});
+
+const defaultLangDocs = docs.filter(doc => {
+  const firstSegment = doc.id.split('/')[0];
+  return !supportedLangs.includes(firstSegment);
+});
+
+const docsWithBody = await getCollection('docs', ({ data }) => data.published !== false);
+
+let totalWords = 0;
+for (const doc of docsWithBody) {
+  totalWords += countWords(doc.body);
+}
+
+const tagCounts: Record<string, number> = {};
+defaultLangDocs.forEach(item => {
+  item.data.tags?.forEach(tag => {
+    tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+  });
+});
+
+const categoryCounts: Record<string, number> = {};
+defaultLangDocs.forEach(item => {
+  item.data.categories?.forEach(category => {
+    categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+  });
+});
+
+const contentWithDates = defaultLangDocs.map(item => ({
+  ...item,
+  _sortDate: new Date(item.data.date || 0).getTime()
+}));
+
+const categoryArticles = {};
+
+themeConfig.widget.categories.forEach(category => {
+  categoryArticles[category.name] = contentWithDates.filter(item => 
+    item.data.categories?.includes(category.name) || 
+    item.data.tags?.includes(category.name)
+  );
+});
+
+const latestArticles = [...contentWithDates]
+  .sort((a, b) => b._sortDate - a._sortDate)
+  .slice(0, 5);
+
+const carouselArticles = contentWithDates
+  .filter(item => item.data.cover)
+  .sort((a, b) => b._sortDate - a._sortDate)
+  .slice(0, 5);
+---
+
+<Base title={Astro.props.title}>
+  <Fragment slot="hero">
+    <HeroSection />
+  </Fragment>
+
+  <div class="space-y-6">
+    <Banner />
+    <Carousel articles={carouselArticles.length > 0 ? carouselArticles : []} />
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+      {themeConfig.widget.categories.map((category) => (
+        <ArticleSection
+          title={category.name}
+          articles={categoryArticles[category.name] || []}
+          category={category.name}
+        />
+      ))}
+    </div>
+
+    <LatestArticle articles={docs} />
+  </div>
+
+  <Fragment slot="sidebar">
+    {sidebarConfig.progress && <Progress totalWords={totalWords} />}
+    {sidebarConfig.author && <AuthorWidget />}
+    {sidebarConfig.ad && <AdWidget />}
+    {sidebarConfig.tagcloud && <TagCloud tags={tagCounts} />}
+    {sidebarConfig.statistic && <Statistic articleCount={defaultLangDocs.length} categoryCount={Object.keys(categoryCounts).length} tagCount={Object.keys(tagCounts).length} />}
+  </Fragment>
+
+</Base>

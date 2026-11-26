@@ -1,0 +1,760 @@
+---
+import { themeConfig } from '@theme/config';
+import { Search, X, ChevronLeft, ChevronRight, CircleQuestionMark } from "@lucide/astro";
+import { getLangFromUrl, useTranslations } from '@theme/utils';
+
+const algoliaConfig = {
+  appId: import.meta.env.PUBLIC_ALGOLIA_APP_ID || '',
+  apiKey: import.meta.env.PUBLIC_ALGOLIA_SEARCH_KEY || '',
+  indexName: import.meta.env.PUBLIC_ALGOLIA_INDEX_NAME || ''
+};
+
+const hasCompleteConfig = Boolean(
+  algoliaConfig.appId &&
+  algoliaConfig.apiKey &&
+  algoliaConfig.indexName
+);
+
+const lang = getLangFromUrl(Astro.url.pathname);
+const t = useTranslations(lang);
+---
+
+<div class="docsearch-container">
+  <button
+    id="search-toggle"
+    class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors focus:outline-none"
+    aria-label={lang === 'en' ? 'Search' : lang === 'ja' ? '検索' : lang === 'ko' ? '검색' : lang === 'ru' ? 'Поиск' : '搜索'}
+  >
+    <Search class="h-5 w-5 text-gray-700 dark:text-gray-300" />
+  </button>
+</div>
+
+<div 
+  id="search-modal" 
+  class="fixed inset-0 z-[9999] flex items-start justify-center pt-16 px-4 hidden bg-black/50 dark:bg-black/70 backdrop-blur-sm view-transition-name:search-modal"
+>
+    <div 
+      class="w-full max-w-2xl bg-white dark:bg-gray-900 rounded-lg shadow-xl overflow-hidden flex flex-col view-transition-name:search-content"
+    >
+      <div class="p-4 border-b dark:border-gray-800 flex items-center justify-between">
+        <div class="relative w-full">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+            <Search class="h-5 w-5" />
+          </span>
+          <input
+            id="search-input"
+            type="text"
+            placeholder={t.search.placeholder}
+            class="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-800 border-0 rounded-md text-gray-900 dark:text-white text-base focus:ring-2 focus:ring-blue-500 outline-none"
+          />
+        </div>
+        <button
+          id="search-close"
+          class="ml-2 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          aria-label={lang === 'en' ? 'Close' : lang === 'ja' ? '閉じる' : lang === 'ko' ? '닫기' : lang === 'ru' ? 'Закрыть' : '关闭'}
+        >
+          <X class="h-5 w-5" />
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto max-h-[60vh]">
+        <div id="search-initial" class="search-initial-state">
+          <div class="text-center py-12">
+            <div class="inline-flex items-center justify-center w-16 h-16 mb-4 rounded-full bg-blue-100 dark:bg-blue-900/30">
+              <Search class="h-8 w-8 text-blue-600 dark:text-blue-400" />
+            </div>
+            <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+              {t.search.initialTip}
+            </p>
+          </div>
+        </div>
+
+        <div id="search-loading" class="search-loading-state hidden">
+          <div class="text-center py-10">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-200 dark:border-gray-700 border-t-blue-500 mb-4"></div>
+            <p class="text-gray-500 dark:text-gray-400">{t.search.loading}</p>
+          </div>
+        </div>
+
+        <div id="search-results" class="search-results-state hidden">
+          <div class="search-results-header border-b dark:border-gray-800 px-4 py-2 flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+            <span id="search-results-count">
+              {lang === 'en' ? 'Found 0 results' : lang === 'ja' ? '結果 0 件' : lang === 'ko' ? '결과 0 개' : lang === 'ru' ? 'Найдено 0 результатов' : '找到 0 个结果'}
+            </span>
+            <span class="text-xs" id="search-query"></span>
+          </div>
+          <div class="p-2 space-y-1" id="search-results-list"></div>
+          
+          <div id="search-pagination" class="mt-3 pb-3 flex justify-center items-center gap-2 hidden">
+            <button id="prev-page" class="px-3 py-1 rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+              <ChevronLeft class="h-4 w-4" />
+            </button>
+            <div id="page-numbers" class="flex gap-1"></div>
+            <button id="next-page" class="px-3 py-1 rounded bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+              <ChevronRight class="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div id="search-no-results" class="search-no-results hidden">
+          <div class="text-center py-12 px-4">
+            <div class="inline-flex items-center justify-center w-16 h-16 mb-4 rounded-full bg-gray-100 dark:bg-gray-800">
+              <CircleQuestionMark class="h-8 w-8 text-gray-500 dark:text-gray-400" />
+            </div>
+            <p class="text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+              {t.search.noResults.split('{query}')[0]}<span id="search-no-results-query" class="font-medium"></span>{t.search.noResults.split('{query}')[1] || ''}
+            </p>
+            <div class="mt-4">
+              <button 
+                id="search-clear"
+                class="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 rounded-md text-gray-700 dark:text-gray-300 transition-colors"
+              >
+                {t.search.clear}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="p-3 bg-gray-50 dark:bg-gray-800 border-t dark:border-gray-700 flex flex-wrap items-center justify-between text-xs text-gray-500 dark:text-gray-400 gap-2">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <div class="flex items-center gap-1">
+            <kbd class="px-2 py-1 bg-primary dark:bg-secondary rounded text-gray-700 dark:text-gray-300">⌘</kbd>
+             <kbd class="px-2 py-1 bg-primary dark:bg-secondary rounded text-gray-700 dark:text-gray-300">K</kbd>
+            <span>{t.search.shortcuts.open}</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <kbd class="px-2 py-1 bg-primary dark:bg-secondary rounded text-gray-700 dark:text-gray-300">↓</kbd>
+            <kbd class="px-2 py-1 bg-primary dark:bg-secondary rounded text-gray-700 dark:text-gray-300">↑</kbd>
+            <span>{t.search.shortcuts.browse}</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <kbd class="px-2 py-1 bg-primary dark:bg-secondary rounded text-gray-700 dark:text-gray-300">Enter</kbd>
+            <span>{t.search.shortcuts.select}</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <kbd class="px-2 py-1 bg-primary dark:bg-secondary rounded text-gray-700 dark:text-gray-300">Esc</kbd>
+            <span>{t.search.shortcuts.close}</span>
+          </div>
+        </div>
+        <div id="search-provider" class="flex items-center gap-1.5"></div>
+      </div>
+    </div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/algoliasearch@4/dist/algoliasearch-lite.umd.js"></script>
+
+<script define:vars={{ algoliaConfig, lang }} client:idle>
+(function() {
+  // 移除全局初始化检查，允许在页面切换时重新初始化
+  // 但保留模态框移动逻辑
+  
+  // 将搜索模态框移动到 body 下 - 确保在所有页面中都能正确执行
+  function moveModalToBody() {
+    const searchModal = document.getElementById('search-modal');
+    if (searchModal && searchModal.parentElement.tagName !== 'BODY') {
+      document.body.appendChild(searchModal);
+    }
+  }
+
+  // 立即执行模态框移动，确保在所有情况下都能生效
+  moveModalToBody();
+  
+  // 同时监听 DOMContentLoaded 事件，确保在动态加载的情况下也能生效
+  document.addEventListener('DOMContentLoaded', moveModalToBody);
+  
+  // 监听 Astro 页面切换事件，确保在页面切换后重新执行
+  document.addEventListener('astro:page-load', moveModalToBody);
+  document.addEventListener('astro:after-swap', moveModalToBody);
+  document.addEventListener('astro:after-view-transitions', moveModalToBody);
+  
+  // 重置初始化状态，允许重新初始化
+  window.__searchInitialized = false;
+
+  let currentLang = lang;
+
+  function getLangFromUrl(url) {
+    const path = url.replace(/^\/|\/$/g, '');
+    const firstSegment = path.split('/')[0];
+    const supportedLangs = ['zh', 'en', 'ja', 'ko', 'ru'];
+    if (supportedLangs.includes(firstSegment)) {
+      return firstSegment;
+    }
+    return 'zh';
+  }
+
+  function updateLang() {
+    currentLang = getLangFromUrl(window.location.pathname);
+  }
+
+  document.addEventListener('astro:page-load', updateLang);
+  document.addEventListener('astro:after-swap', updateLang);
+
+  const searchToggle = document.getElementById('search-toggle');
+  const searchModal = document.getElementById('search-modal');
+  const searchInput = document.getElementById('search-input');
+  const searchClose = document.getElementById('search-close');
+  const searchClear = document.getElementById('search-clear');
+  const initialState = document.getElementById('search-initial');
+  const loadingState = document.getElementById('search-loading');
+  const resultsState = document.getElementById('search-results');
+  const noResultsState = document.getElementById('search-no-results');
+  const resultsList = document.getElementById('search-results-list');
+  const resultsCount = document.getElementById('search-results-count');
+  const searchQueryDisplay = document.getElementById('search-query');
+  const noResultsQuery = document.getElementById('search-no-results-query');
+  const paginationContainer = document.getElementById('search-pagination');
+  const prevPageBtn = document.getElementById('prev-page');
+  const nextPageBtn = document.getElementById('next-page');
+  const pageNumbers = document.getElementById('page-numbers');
+  const searchProvider = document.getElementById('search-provider');
+
+  let searchClient = null;
+  let searchIndex = null;
+  let localSearchData = null;
+  let isUsingAlgolia = false;
+  let isOpen = false;
+  let currentQuery = '';
+  let currentPage = 0;
+  let totalPages = 0;
+  let totalHits = 0;
+  let currentResultIndex = -1;
+  let searchTimeout = null;
+  const hitsPerPage = 10;
+
+  const hasConfig = Boolean(algoliaConfig.appId && algoliaConfig.apiKey && algoliaConfig.indexName);
+
+  function updateSearchProvider(useAlgolia) {
+    if (useAlgolia) {
+      searchProvider.innerHTML = `
+        <svg height="1.2em" className="ais-PoweredBy-logo" viewBox="0 0 572 64" style={{ width: 'auto' }}>
+          <path fill="currentColor" d="M16 48.3c-3.4 0-6.3-.6-8.7-1.7A12.4 12.4 0 0 1 1.9 42C.6 40 0 38 0 35.4h6.5a6.7 6.7 0 0 0 3.9 6c1.4.7 3.3 1.1 5.6 1.1 2.2 0 4-.3 5.4-1a7 7 0 0 0 3-2.4 6 6 0 0 0 1-3.4c0-1.5-.6-2.8-1.9-3.7-1.3-1-3.3-1.6-5.9-1.8l-4-.4c-3.7-.3-6.6-1.4-8.8-3.4a10 10 0 0 1-3.3-7.9c0-2.4.6-4.6 1.8-6.4a12 12 0 0 1 5-4.3c2.2-1 4.7-1.6 7.5-1.6s5.5.5 7.6 1.6a12 12 0 0 1 5 4.4c1.2 1.8 1.8 4 1.8 6.7h-6.5a6.4 6.4 0 0 0-3.5-5.9c-1-.6-2.6-1-4.4-1s-3.2.3-4.4 1c-1.1.6-2 1.4-2.6 2.4-.5 1-.8 2-.8 3.1a5 5 0 0 0 1.5 3.6c1 1 2.6 1.7 4.7 1.9l4 .3c2.8.2 5.2.8 7.2 1.8 2.1 1 3.7 2.2 4.9 3.8a9.7 9.7 0 0 1 1.7 5.8c0 2.5-.7 4.7-2 6.6a13 13 0 0 1-5.6 4.4c-2.4 1-5.2 1.6-8.4 1.6Zm35.6 0c-2.6 0-4.8-.4-6.7-1.3a13 13 0 0 1-4.7-3.5 17.1 17.1 0 0 1-3.6-10.4v-1c0-2 .3-3.8 1-5.6a13 13 0 0 1 7.3-8.3 15 15 0 0 1 6.3-1.4A13.2 13.2 0 0 1 64 24.3c1 2.2 1.6 4.6 1.6 7.2V34H39.4v-4.3h21.8l-1.8 2.2c0-2-.3-3.7-.9-5.1a7.3 7.3 0 0 0-2.7-3.4c-1.2-.7-2.7-1.1-4.6-1.1s-3.4.4-4.7 1.3a8 8 0 0 0-2.9 3.6c-.6 1.5-.9 3.3-.9 5.4 0 2 .3 3.7 1 5.3a7.9 7.9 0 0 0 2.8 3.7c1.3.8 3 1.3 5 1.3s3.8-.5 5.1-1.3c1.3-1 2.1-2 2.4-3.2h6a11.8 11.8 0 0 1-7 8.7 16 16 0 0 1-6.4 1.2ZM80 48c-2.2 0-4-.3-5.7-1a8.4 8.4 0 0 1-3.7-3.3 9.7 9.7 0 0 1-1.3-5.2c0-2 .5-3.8 1.5-5.2a9 9 0 0 1 4.3-3.1c1.8-.7 4-1 6.7-1H89v4.1h-7.5c-2 0-3.4.5-4.4 1.4-1 1-1.6 2.1-1.6 3.6s.5 2.7 1.6 3.6c1 1 2.5 1.4 4.4 1.4 1.1 0 2.2-.2 3.2-.7 1-.4 1.9-1 2.6-2 .6-1 1-2.4 1-4.2l1.7 2.1c-.2 2-.7 3.8-1.5 5.2a9 9 0 0 1-3.4 3.3 12 12 0 0 1-5.3 1Zm9.5-.7v-8.8h-1v-10c0-1.8-.5-3.2-1.4-4.1-1-1-2.4-1.4-4.2-1.4a142.9 142.9 0 0 0-10.2.4v-5.6a74.8 74.8 0 0 1 8.6-.4c3 0 5.5.4 7.5 1.2s3.4 2 4.4 3.6c1 1.7 1.4 4 1.4 6.7v18.4h-5Zm12.9 0V17.8h5v12.3h-.2c0-4.2 1-7.4 2.8-9.5a11 11 0 0 1 8.3-3.1h1v5.6h-2a9 9 0 0 0-6.3 2.2c-1.5 1.5-2.2 3.6-2.2 6.4v15.6h-6.4Zm34.4 1a15 15 0 0 1-6.6-1.3c-1.9-.9-3.4-2-4.7-3.5a15.5 15.5 0 0 1-2.7-5c-.6-1.7-1-3.6-1-5.4v-1c0-2 .4-3.8 1-5.6a15 15 0 0 1 2.8-4.9c1.3-1.5 2.8-2.6 4.6-3.5a16.4 16.4 0 0 1 13.3.2c2 1 3.5 2.3 4.8 4a12 12 0 0 1 2 6H144c-.2-1.6-1-3-2.2-4.1a7.5 7.5 0 0 0-5.2-1.7 8 8 0 0 0-4.7 1.3 8 8 0 0 0-2.8 3.6 13.8 13.8 0 0 0 0 10.3c.6 1.5 1.5 2.7 2.8 3.6s2.8 1.3 4.8 1.3c1.5 0 2.7-.2 3.8-.8a7 7 0 0 0 2.6-2c.7-1 1-2 1.2-3.2h6.2a11 11 0 0 1-2 6.2 15.1 15.1 0 0 1-11.8 5.5Zm19.7-1v-40h6.4V31h-1.3c0-3 .4-5.5 1.1-7.6a9.7 9.7 0 0 1 3.5-4.8A9.9 9.9 0 0 1 172 17h.3c3.5 0 6 1.1 7.9 3.5 1.7 2.3 2.6 5.7 2.6 10v16.8h-6.4V29.6c0-2.1-.6-3.8-1.8-5a6.4 6.4 0 0 0-4.8-1.8c-2 0-3.7.7-5 2a7.8 7.8 0 0 0-1.9 5.5v17h-6.4Zm63.8 1a12.2 12.2 0 0 1-10.9-6.2 19 19 0 0 1-1.8-7.3h1.4v12.5h-5.1v-40h6.4v19.8l-2 3.5c.2-3.1.8-5.7 1.9-7.7a11 11 0 0 1 4.4-4.5c1.8-1 3.9-1.5 6.1-1.5a13.4 13.4 0 0 1 12.8 9.1c.7 1.9 1 3.8 1 6v1c0 2.2-.3 4.1-1 6a13.6 13.6 0 0 1-13.2 9.4Zm-1.2-5.5a8.4 8.4 0 0 0 7.9-5c.7-1.5 1.1-3.3 1.1-5.3s-.4-3.8-1.1-5.3a8.7 8.7 0 0 0-3.2-3.6 9.6 9.6 0 0 0-9.2-.2 8.5 8.5 0 0 0-3.3 3.2c-.8 1.4-1.3 3-1.3 5v2.3a9 9 0 0 0 1.3 4.8 9 9 0 0 0 3.4 3c1.4.7 2.8 1 4.4 1Zm27.3 3.9-10-28.9h6.5l9.5 28.9h-6Zm-7.5 12.2v-5.7h4.9c1 0 2-.1 2.9-.4a4 4 0 0 0 2-1.4c.4-.7.9-1.6 1.2-2.7l8.6-30.9h6.2l-9.3 32.4a14 14 0 0 1-2.5 5 8.9 8.9 0 0 1-4 2.8c-1.5.6-3.4.9-5.6.9h-4.4Zm9-12.2v-5.2h6.4v5.2H248Z"></path><path fill="#003DFF" d="M534.4 9.1H528a.8.8 0 0 1-.7-.7V1.8c0-.4.2-.7.6-.8l6.5-1c.4 0 .8.2.9.6v7.8c0 .4-.4.7-.8.7zM428 35.2V.8c0-.5-.3-.8-.7-.8h-.2l-6.4 1c-.4 0-.7.4-.7.8v35c0 1.6 0 11.8 12.3 12.2.5 0 .8-.4.8-.8V43c0-.4-.3-.7-.6-.8-4.5-.5-4.5-6-4.5-7zm106.5-21.8H528c-.4 0-.7.4-.7.8v34c0 .4.3.8.7.8h6.5c.4 0 .8-.4.8-.8v-34c0-.5-.4-.8-.8-.8zm-17.7 21.8V.8c0-.5-.3-.8-.8-.8l-6.5 1c-.4 0-.7.4-.7.8v35c0 1.6 0 11.8 12.3 12.2.4 0 .8-.4.8-.8V43c0-.4-.3-.7-.7-.8-4.4-.5-4.4-6-4.4-7zm-22.2-20.6a16.5 16.5 0 0 1 8.6 9.3c.8 2.2 1.3 4.8 1.3 7.5a19.4 19.4 0 0 1-4.6 12.6 14.8 14.8 0 0 1-5.2 3.6c-2 .9-5.2 1.4-6.8 1.4a21 21 0 0 1-6.7-1.4 15.4 15.4 0 0 1-8.6-9.3 21.3 21.3 0 0 1 0-14.4 15.2 15.2 0 0 1 8.6-9.3c2-.8 4.3-1.2 6.7-1.2s4.6.4 6.7 1.2zm-6.7 27.6c2.7 0 4.7-1 6.2-3s2.2-4.3 2.2-7.8-.7-6.3-2.2-8.3-3.5-3-6.2-3-4.7 1-6.1 3c-1.5 2-2.2 4.8-2.2 8.3s.7 5.8 2.2 7.8 3.5 3 6.2 3zm-88.8-28.8c-6.2 0-11.7 3.3-14.8 8.2a18.6 18.6 0 0 0 4.8 25.2c1.8 1.2 4 1.8 6.2 1.7s.1 0 .1 0h.9c4.2-.7 8-4 9.1-8.1v7.4c0 .4.3.7.8.7h6.4a.7.7 0 0 0 .7-.7V14.2c0-.5-.3-.8-.7-.8h-13.5zm6.3 26.5a9.8 9.8 0 0 1-5.7 2h-.5a10 10 0 0 1-9.2-14c1.4-3.7 5-6.3 9-6.3h6.4v18.3zm152.3-26.5h13.5c.5 0 .8.3.8.7v33.7c0 .4-.3.7-.8.7h-6.4a.7.7 0 0 1-.8-.7v-7.4c-1.2 4-4.8 7.4-9 8h-.1a4.2 4.2 0 0 1-.5.1h-.9a10.3 10.3 0 0 1-7-2.6c-4-3.3-6.5-8.4-6.5-14.2 0-3.7 1-7.2 3-10 3-5 8.5-8.3 14.7-8.3zm.6 28.4c2.2-.1 4.2-.6 5.7-2V21.7h-6.3a9.8 9.8 0 0 0-9 6.4 10.2 10.2 0 0 0 9.1 13.9h.5zM452.8 13.4c-6.2 0-11.7 3.3-14.8 8.2a18.5 18.5 0 0 0 3.6 24.3 10.4 10.4 0 0 0 13 .6c2.2-1.5 3.8-3.7 4.5-6.1v7.8c0 2.8-.8 5-2.2 6.3-1.5 1.5-4 2.2-7.5 2.2l-6-.3c-.3 0-.7.2-.8.5l-1.6 5.5c-.1.4.1.8.5 1h.1c2.8.4 5.5.6 7 .6 6.3 0 11-1.4 14-4.1 2.7-2.5 4.2-6.3 4.5-11.4V14.2c0-.5-.4-.8-.8-.8h-13.5zm6.3 8.2v18.3a9.6 9.6 0 0 1-5.6 2h-1a10.3 10.3 0 0 1-8.8-14c1.4-3.7 5-6.3 9-6.3h6.4zM291 31.5A32 32 0 0 1 322.8 0h30.8c.6 0 1.2.5 1.2 1.2v61.5c0 1.1-1.3 1.7-2.2 1l-19.2-17a18 18 0 0 1-11 3.4 18.1 18.1 0 1 1 18.2-14.8c-.1.4-.5.7-.9.6-.1 0-.3 0-.4-.2l-3.8-3.4c-.4-.3-.6-.8-.7-1.4a12 12 0 1 0-2.4 8.3c.4-.4 1-.5 1.6-.2l14.7 13.1v-46H323a26 26 0 1 0 10 49.7c.8-.4 1.6-.2 2.3.3l3 2.7c.3.2.3.7 0 1l-.2.2a32 32 0 0 1-47.2-28.6z"></path>
+        </svg>
+      `;
+    } else {
+      searchProvider.innerHTML = `
+        <svg class="h-4 w-4 text-gray-500 dark:text-gray-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg>
+        <span class="text-gray-600 dark:text-gray-400">本地离线搜索</span>
+      `;
+    }
+  }
+
+  async function initializeAlgolia() {
+    if (!hasConfig) return false;
+    try {
+      searchClient = algoliasearch(algoliaConfig.appId, algoliaConfig.apiKey);
+      searchIndex = searchClient.initIndex(algoliaConfig.indexName);
+      await searchIndex.search('', { hitsPerPage: 0 });
+      isUsingAlgolia = true;
+      updateSearchProvider(true);
+      console.log('✅ Algolia 连接成功');
+      return true;
+    } catch (error) {
+      console.warn('⚠️ Algolia 连接失败，切换到本地搜索');
+      return false;
+    }
+  }
+
+  let localSearchDataPromise = null;
+  
+  function loadLocalSearchData() {
+    // 实现单例模式避免重复加载
+    if (!localSearchDataPromise) {
+      localSearchDataPromise = (async () => {
+        try {
+          // 尝试从localStorage读取缓存
+          const cachedData = localStorage.getItem('localSearchCache');
+          const cachedTime = localStorage.getItem('localSearchCacheTime');
+          const now = Date.now();
+          
+          // 如果缓存存在且在24小时内，使用缓存
+          if (cachedData && cachedTime && (now - parseInt(cachedTime)) < 24 * 60 * 60 * 1000) {
+            localSearchData = JSON.parse(cachedData);
+            console.log('✅ 从缓存加载本地搜索数据，共', localSearchData.length, '条');
+            return true;
+          }
+          
+          // 否则从服务器加载并压缩请求
+          const response = await fetch('/data.json', {
+            headers: {
+              'Accept-Encoding': 'gzip, deflate, br'
+            }
+          });
+          
+          if (!response.ok) throw new Error('无法加载数据');
+          
+          localSearchData = await response.json();
+          
+          // 缓存数据到localStorage
+          try {
+            localStorage.setItem('localSearchCache', JSON.stringify(localSearchData));
+            localStorage.setItem('localSearchCacheTime', now.toString());
+          } catch (e) {
+            console.warn('⚠️ 无法缓存搜索数据到localStorage');
+          }
+          
+          console.log('✅ 本地搜索数据加载成功，共', localSearchData.length, '条');
+          return true;
+        } catch (error) {
+          console.error('❌ 加载本地数据失败:', error);
+          return false;
+        }
+      })();
+    }
+    
+    return localSearchDataPromise;
+  }
+
+  function localSearch(query, page = 0) {
+    if (!query.trim()) {
+      return { hits: [], nbHits: 0, nbPages: 0, page: 0 };
+    }
+    if (!localSearchData) {
+      console.error('❌ localSearchData is null/undefined');
+      return { hits: [], nbHits: 0, nbPages: 0, page: 0 };
+    }
+    console.log('🔍 本地搜索:', { query, dataCount: localSearchData.length });
+
+    const searchTerms = query.toLowerCase().split(/\s+/).filter(term => term.length > 0);
+    if (searchTerms.length === 0) {
+      return { hits: [], nbHits: 0, nbPages: 0, page: 0 };
+    }
+
+    const results = localSearchData
+      .map(item => {
+        let score = 0;
+        const title = (item.title || '').toLowerCase();
+        const content = (item.content || '').toLowerCase();
+        
+        searchTerms.forEach(term => {
+          if (title.includes(term)) {
+            score += 10;
+            if (title === term) score += 20;
+            else if (title.startsWith(term)) score += 15;
+          }
+          if (content.includes(term)) {
+            score += 1;
+            const occurrences = (content.match(new RegExp(escapeRegex(term), 'g')) || []).length;
+            score += occurrences * 0.5;
+          }
+        });
+        
+        return { ...item, _score: score };
+      })
+      .filter(item => item._score > 0)
+      .sort((a, b) => b._score - a._score);
+
+    const nbHits = results.length;
+    console.log('📊 搜索结果:', { nbHits, searchTerms });
+    
+    const nbPages = Math.ceil(nbHits / hitsPerPage);
+    const start = page * hitsPerPage;
+    const hits = results.slice(start, start + hitsPerPage).map(item => {
+      const highlightedTitle = highlightLocalText(item.title || '', searchTerms);
+      const highlightedContent = highlightLocalText(
+        item.content ? item.content.substring(0, 200) : '',
+        searchTerms
+      );
+      
+      return {
+        ...item,
+        _highlightResult: {
+          title: { value: highlightedTitle },
+          content: { value: highlightedContent }
+        },
+        _snippetResult: {
+          content: { value: highlightedContent + '...' }
+        }
+      };
+    });
+
+    return { hits, nbHits, nbPages, page };
+  }
+
+  function highlightLocalText(text, terms) {
+    if (!text) return '';
+    let result = text;
+    terms.forEach(term => {
+      const regex = new RegExp(`(${escapeRegex(term)})`, 'gi');
+      result = result.replace(regex, '<mark class="bg-yellow-200 dark:bg-yellow-700 text-gray-900 dark:text-white">\$1</mark>');
+    });
+    return result;
+  }
+
+  function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function renderResults(hits) {
+      resultsList.innerHTML = '';
+      hits.forEach((hit, index) => {
+        const div = document.createElement('div');
+        div.className = 'search-result-item p-3 rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors border-l-2 border-transparent';
+        div.dataset.index = index;
+        div.dataset.url = hit.url || hit.route || hit.objectID;
+        
+        // 关键修复：处理 Algolia 的 <em> 标签高亮
+        const title = (hit._highlightResult?.title?.value || hit.title || '无标题')
+          .replace(/<em>/g, '<mark class="bg-yellow-200 dark:bg-yellow-700 text-gray-900 dark:text-white">')
+          .replace(/<\/em>/g, '</mark>');
+        const content = (hit._snippetResult?.content?.value || hit._highlightResult?.content?.value || hit.content || '')
+          .replace(/<em>/g, '<mark class="bg-yellow-200 dark:bg-yellow-700 text-gray-900 dark:text-white">')
+          .replace(/<\/em>/g, '</mark>');
+      const coverUrl = hit.cover || hit.image || '';
+      
+      div.innerHTML = `
+        <div class="flex gap-3">
+          ${coverUrl ? `
+            <div class="flex-shrink-0">
+              <img 
+                src="${coverUrl}" 
+                alt="${hit.title || '封面'}"
+                class="w-20 h-20 object-cover rounded-md"
+                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+              />
+              <div class="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-md flex items-center justify-center hidden">
+                <svg class="h-8 w-8 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>
+              </div>
+            </div>
+          ` : `
+            <div class="flex-shrink-0 w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-md flex items-center justify-center">
+              <svg class="h-8 w-8 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg>
+            </div>
+          `}
+          <div class="flex-1 min-w-0">
+            <h4 class="font-medium text-gray-900 dark:text-white mb-1 line-clamp-1">${title}</h4>
+            <p class="text-sm text-gray-600 dark:text-gray-400 line-clamp-2 mb-1">${content}</p>
+            ${hit.url ? `
+              <span class="text-xs text-blue-500 hover:text-blue-600 inline-flex items-center gap-1">
+                ${t.search.viewDetails}
+                <svg class="h-3 w-3" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              </span>
+            ` : ''}
+          </div>
+        </div>
+      `;
+      
+      div.addEventListener('click', () => { const targetUrl = hit.url || hit.route; if (targetUrl) window.location.href = targetUrl; });
+      div.addEventListener('mouseenter', () => setActiveResult(index));
+      resultsList.appendChild(div);
+    });
+  }
+
+  function setActiveResult(index) {
+    const items = resultsList.querySelectorAll('.search-result-item');
+    items.forEach((item, i) => {
+      if (i === index) {
+        item.classList.add('bg-gray-100', 'dark:bg-gray-800', 'border-blue-500');
+        currentResultIndex = index;
+        item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } else {
+        item.classList.remove('bg-gray-100', 'dark:bg-gray-800', 'border-blue-500');
+      }
+    });
+  }
+
+  function renderPagination() {
+    if (totalPages <= 1) {
+      paginationContainer.classList.add('hidden');
+      return;
+    }
+    paginationContainer.classList.remove('hidden');
+    pageNumbers.innerHTML = '';
+    prevPageBtn.disabled = currentPage === 0;
+    nextPageBtn.disabled = currentPage >= totalPages - 1;
+
+    const maxButtons = 7;
+    let startPage = Math.max(0, currentPage - Math.floor(maxButtons / 2));
+    let endPage = Math.min(totalPages - 1, startPage + maxButtons - 1);
+    if (endPage - startPage < maxButtons - 1) {
+      startPage = Math.max(0, endPage - maxButtons + 1);
+    }
+
+    if (startPage > 0) {
+      addPageButton(0);
+      if (startPage > 1) pageNumbers.appendChild(createEllipsis());
+    }
+    for (let i = startPage; i <= endPage; i++) addPageButton(i);
+    if (endPage < totalPages - 1) {
+      if (endPage < totalPages - 2) pageNumbers.appendChild(createEllipsis());
+      addPageButton(totalPages - 1);
+    }
+  }
+
+  function addPageButton(pageNum) {
+    const button = document.createElement('button');
+    button.textContent = pageNum + 1;
+    button.className = `px-3 py-1 rounded text-sm transition-colors ${
+      pageNum === currentPage
+        ? 'bg-blue-500 text-white'
+        : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+    }`;
+    button.addEventListener('click', () => {
+      currentPage = pageNum;
+      performSearch(currentQuery);
+    });
+    pageNumbers.appendChild(button);
+  }
+
+  function createEllipsis() {
+    const span = document.createElement('span');
+    span.textContent = '...';
+    span.className = 'px-2 text-gray-500';
+    return span;
+  }
+
+  async function performSearch(query) {
+    currentQuery = query;
+    if (!query.trim()) {
+      showInitialState();
+      return;
+    }
+    showLoadingState();
+
+    try {
+      let result;
+      if (isUsingAlgolia && searchIndex) {
+        result = await searchIndex.search(query, {
+          page: currentPage,
+          hitsPerPage: hitsPerPage,
+          attributesToSnippet: ['content:30'],
+          snippetEllipsisText: '...',
+        });
+      } else {
+        if (!localSearchData) {
+          console.log('📥 本地搜索数据未加载，正在加载...');
+          await loadLocalSearchData();
+        }
+        result = localSearch(query, currentPage);
+      }
+
+      totalHits = result.nbHits;
+      totalPages = result.nbPages;
+
+      console.log('搜索:', {
+        query,
+        provider: isUsingAlgolia ? 'Algolia' : '本地',
+        page: currentPage + 1,
+        totalHits
+      });
+
+      if (result.hits.length > 0) {
+        showResultsState(result.hits, query);
+      } else {
+        showNoResultsState(query);
+      }
+    } catch (error) {
+      console.error('搜索失败:', error);
+      if (isUsingAlgolia) {
+        isUsingAlgolia = false;
+        updateSearchProvider(false);
+        performSearch(query);
+      } else {
+        showNoResultsState(query);
+      }
+    }
+  }
+
+  function showInitialState() {
+    initialState.classList.remove('hidden');
+    loadingState.classList.add('hidden');
+    resultsState.classList.add('hidden');
+    noResultsState.classList.add('hidden');
+    currentResultIndex = -1;
+  }
+
+  function showLoadingState() {
+    initialState.classList.add('hidden');
+    loadingState.classList.remove('hidden');
+    resultsState.classList.add('hidden');
+    noResultsState.classList.add('hidden');
+  }
+
+  function showResultsState(hits, query) {
+    initialState.classList.add('hidden');
+    loadingState.classList.add('hidden');
+    resultsState.classList.remove('hidden');
+    noResultsState.classList.add('hidden');
+    resultsCount.textContent = `${totalHits} ${currentLang === 'en' ? 'results found' : currentLang === 'ja' ? '件の結果' : currentLang === 'ko' ? '개의 결과' : currentLang === 'ru' ? 'результатов' : '个结果'}`;
+    searchQueryDisplay.textContent = `"${query}"`;
+    renderResults(hits);
+    renderPagination();
+    currentResultIndex = -1;
+  }
+
+  function showNoResultsState(query) {
+    initialState.classList.add('hidden');
+    loadingState.classList.add('hidden');
+    resultsState.classList.add('hidden');
+    noResultsState.classList.remove('hidden');
+    noResultsQuery.textContent = query;
+  }
+
+  function openSearch() {
+    isOpen = true;
+    searchModal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    searchInput.focus();
+    showInitialState();
+  }
+
+  function closeSearch() {
+    isOpen = false;
+    searchModal.classList.add('hidden');
+    document.body.style.overflow = '';
+    searchInput.value = '';
+    currentPage = 0;
+    currentQuery = '';
+    showInitialState();
+  }
+
+  searchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    const query = e.target.value.trim();
+    if (!query) {
+      showInitialState();
+      return;
+    }
+    searchTimeout = setTimeout(() => {
+      currentPage = 0;
+      performSearch(query);
+    }, 300);
+  });
+
+  searchInput.addEventListener('keydown', (e) => {
+    const items = resultsList.querySelectorAll('.search-result-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (items.length > 0) {
+        currentResultIndex = Math.min(currentResultIndex + 1, items.length - 1);
+        setActiveResult(currentResultIndex);
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (items.length > 0) {
+        currentResultIndex = Math.max(currentResultIndex - 1, 0);
+        setActiveResult(currentResultIndex);
+      }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (currentResultIndex >= 0 && items[currentResultIndex]) {
+        items[currentResultIndex].click();
+      }
+    }
+  });
+
+  prevPageBtn.addEventListener('click', () => {
+    if (currentPage > 0) {
+      currentPage--;
+      performSearch(currentQuery);
+    }
+  });
+
+  nextPageBtn.addEventListener('click', () => {
+    if (currentPage < totalPages - 1) {
+      currentPage++;
+      performSearch(currentQuery);
+    }
+  });
+
+  searchToggle?.addEventListener('click', openSearch);
+  searchClose?.addEventListener('click', closeSearch);
+  searchClear?.addEventListener('click', () => {
+    searchInput.value = '';
+    showInitialState();
+  });
+  searchModal?.addEventListener('click', (e) => {
+    if (e.target === searchModal) closeSearch();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      isOpen ? closeSearch() : openSearch();
+    }
+    if (e.key === 'Escape' && isOpen) {
+      closeSearch();
+    }
+  });
+
+  // 初始化 - 在页面加载时立即初始化
+  let searchInitialized = false;
+  
+  async function initializeSearch() {
+    if (searchInitialized) return;
+    searchInitialized = true;
+    
+    const algoliaOk = await initializeAlgolia();
+    if (!algoliaOk) {
+      await loadLocalSearchData();
+      updateSearchProvider(false);
+    }
+  }
+  
+  // 页面加载完成后立即初始化
+  document.addEventListener('DOMContentLoaded', initializeSearch);
+  document.addEventListener('astro:page-load', () => {
+    searchInitialized = false;
+    initializeSearch();
+  });
+  
+  // 点击搜索按钮打开搜索
+  searchToggle?.addEventListener('click', openSearch);
+})();
+</script>
+
+<style>
+  mark {
+    padding: 0 2px;
+    border-radius: 2px;
+  }
+
+  .search-result-item {
+    animation: fadeIn 0.2s ease-in;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .overflow-y-auto::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .overflow-y-auto::-webkit-scrollbar-thumb {
+    background: rgba(156, 163, 175, 0.5);
+    border-radius: 3px;
+  }
+
+  .dark .overflow-y-auto::-webkit-scrollbar-thumb {
+    background: rgba(75, 85, 99, 0.5);
+  }
+
+    /* Algolia 高亮样式 - 确保 em 标签也能正确显示 */
+  .search-result-item em,
+  .search-result-item mark {
+    background-color: #fef08a;
+    color: #1f2937;
+    font-style: normal;
+    padding: 0 2px;
+    border-radius: 2px;
+  }
+
+  .dark .search-result-item em,
+  .dark .search-result-item mark {
+    background-color: #a16207;
+    color: #ffffff;
+  }
+
+</style>

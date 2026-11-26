@@ -1,0 +1,257 @@
+---
+import { themeConfig } from '@theme/config';
+import { getLangFromUrl, useTranslations } from '@theme/utils';
+import { formatDate, getCoverImage, getAuthorInfo } from '@theme/components/Frontmatter';
+import PostCard from '@theme/components/PostCard.astro';
+import { LayoutGrid, ChevronLeft, ChevronRight } from "@lucide/astro";
+import type { CarouselProps } from '@theme/scripts/type/components';
+
+interface Props extends CarouselProps {}
+
+const currentLang = getLangFromUrl(Astro.url.pathname);
+const t = useTranslations(currentLang);
+
+const { articles = [] } = Astro.props;
+const { LatestArticle } = themeConfig.widget;
+const { layout = 'vertical' } = themeConfig.widget.carousel;
+const [widthRatio, heightRatio] = LatestArticle.defaultAspectRatio.split(':').map(Number);
+const imageHeight = Math.round(200 * heightRatio / widthRatio);
+import { Image } from 'astro:assets';
+
+const supportedLangs = ['zh', 'en', 'ja', 'ko', 'ru'];
+const defaultLangArticles = articles.filter(article => {
+  const firstSegment = article.id.split('/')[0];
+  return !supportedLangs.includes(firstSegment);
+});
+
+// 处理文章数据
+const processedArticles = defaultLangArticles.map(article => ({
+  ...article,
+  processed: {
+    date: formatDate(article.data.date),
+    cover: getCoverImage(article.data.cover),
+    author: getAuthorInfo(article.data.author),
+    category: article.data.categories?.[0] || '未分类'
+  }
+}));
+---
+
+<div class="relative bg-white/70 backdrop-blur-xl border border-gray-200/50 shadow-[0_1px_0_0_rgba(255,255,255,0.6)_inset,0_8px_30px_rgba(0,0,0,0.06)] dark:bg-gray-900/70 dark:backdrop-blur-xl dark:border-gray-700/50 dark:shadow-[0_1px_0_0_rgba(255,255,255,0.08)_inset,0_8px_30px_rgba(0,0,0,0.35)] rounded-lg shadow-sm overflow-hidden">
+  <div class="px-4 py-3 border-b border-gray-200 dark:border-white/10 flex justify-between items-center">
+    <div class="flex items-center space-x-2">
+          <LayoutGrid class="w-5 h-5 text-primary dark:text-secondary" />
+          <h2 class="font-bold text-lg text-gray-900 dark:text-white">{t.widget.carousel.title}</h2>
+        </div>
+    <div class="flex space-x-2">
+      <button id="prev-btn" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-white/15" aria-label="上一张">
+        <ChevronLeft class="h-5 w-5 text-gray-500" />
+      </button>
+      <button id="next-btn" class="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-white/15" aria-label="下一张">
+        <ChevronRight class="h-5 w-5 text-gray-500" />
+      </button>
+    </div>
+  </div>
+
+  <div class="p-4 overflow-hidden" id="carousel-container">
+    <div id="carousel-track" class="flex transition-transform duration-700 ease-in-out space-x-4" data-total-slides={processedArticles.length}>
+      {processedArticles.length > 0 ? (
+        // 根据文章数量决定是否使用无缝轮播
+        processedArticles.length > 1 ? (
+          // 无缝轮播：在开头添加最后一个项目，在结尾添加第一个项目
+          [...processedArticles.slice(-1), ...processedArticles, ...processedArticles.slice(0, 1)].map((article, index) => (
+            <div class="min-w-[200px]">
+              {layout === 'horizontal' ? (
+                <PostCard article={article} layout="horizontal" />
+              ) : (
+                <PostCard article={article} layout="vertical" />
+              )}
+            </div>
+          ))
+        ) : (
+          // 只有一篇文章时，不使用无缝轮播，直接显示
+          processedArticles.map((article) => (
+            <div class="min-w-[200px]">
+              {layout === 'horizontal' ? (
+                <PostCard article={article} layout="horizontal" />
+              ) : (
+                <PostCard article={article} layout="vertical" />
+              )}
+            </div>
+          ))
+        )
+      ) : (
+        <div class="flex-1 text-center py-12 text-gray-500">
+          {currentLang === 'zh' ? '暂无文章数据' : currentLang === 'en' ? 'No articles' : currentLang === 'ja' ? '記事がありません' : currentLang === 'ko' ? '기사가 없습니다' : 'Нет статей'}
+        </div>
+      )}
+    </div>
+  </div>
+
+  <div class="flex justify-center py-2 space-x-2">
+    {processedArticles.map((_, index) => (
+      <button 
+        key={index} 
+        class:list={[
+          'w-2.5 h-2.5 rounded-full transition-all duration-300',
+          index === 0 ? 'bg-primary dark:bg-secondary w-8' : 'bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500'
+        ]} 
+        aria-label={`切换到第 ${index + 1} 张幻灯片`} 
+        data-index={index}
+      ></button>
+    ))}
+  </div>
+</div>
+
+<script client:idle>
+    (() => {
+      const track = document.getElementById('carousel-track');
+      const slides = document.querySelectorAll('#carousel-track > a');
+      const indicators = document.querySelectorAll('[data-index]');
+      const prevBtn = document.getElementById('prev-btn');
+      const nextBtn = document.getElementById('next-btn');
+      
+      if (!track || !prevBtn || !nextBtn) return;
+      
+      const totalSlides = parseInt(track.dataset.totalSlides);
+      const isSingleSlide = totalSlides === 1;
+      let slideWidth;
+      let currentIndex = 1;
+      let timer;
+      const autoplayInterval = 4000;
+      let isTransitioning = false;
+
+      function initCarousel() {
+        if (slides.length === 0) return;
+        
+        slideWidth = slides[0].offsetWidth + 16;
+
+        if (isSingleSlide) {
+          currentIndex = 0;
+          track.style.transform = 'translateX(0)';
+          prevBtn.disabled = true;
+          nextBtn.disabled = true;
+          prevBtn.classList.add('opacity-50', 'cursor-not-allowed');
+          nextBtn.classList.add('opacity-50', 'cursor-not-allowed');
+          return;
+        }
+
+        track.style.transform = `translateX(-${currentIndex * slideWidth}px)`;
+      }
+
+      function startAutoplay() {
+        if (isSingleSlide) return;
+        timer = setInterval(moveToNext, autoplayInterval);
+      }
+
+      function stopAutoplay() {
+        clearInterval(timer);
+      }
+
+      function updateIndicators() {
+        const activeIndex = (currentIndex - 1 + totalSlides) % totalSlides;
+        indicators.forEach((indicator, index) => {
+          if (index === activeIndex) {
+            indicator.classList.add('bg-primary', 'dark:bg-secondary', 'w-8');
+            indicator.classList.remove('bg-gray-300', 'dark:bg-gray-600');
+          } else {
+            indicator.classList.remove('bg-primary', 'dark:bg-secondary', 'w-8');
+            indicator.classList.add('bg-gray-300', 'dark:bg-gray-600', 'hover:bg-gray-400', 'dark:hover:bg-gray-500');
+          }
+        });
+      }
+
+      function updateCarousel() {
+        if (isTransitioning || isSingleSlide) return;
+        
+        isTransitioning = true;
+        track.style.transform = `translateX(-${currentIndex * slideWidth}px)`;
+        
+        setTimeout(() => {
+          isTransitioning = false;
+        }, 700);
+
+        updateIndicators();
+      }
+
+      function resetCarouselPosition() {
+        if (currentIndex >= slides.length - 1) {
+          currentIndex = 1;
+          track.style.transition = 'none';
+          track.style.transform = `translateX(-${currentIndex * slideWidth}px)`;
+          setTimeout(() => {
+            track.style.transition = 'transform duration-700 ease-in-out';
+          }, 50);
+        } else if (currentIndex <= 0) {
+          currentIndex = slides.length - 2;
+          track.style.transition = 'none';
+          track.style.transform = `translateX(-${currentIndex * slideWidth}px)`;
+          setTimeout(() => {
+            track.style.transition = 'transform duration-700 ease-in-out';
+          }, 50);
+        }
+      }
+
+      function moveToNext() {
+        if (isTransitioning || isSingleSlide) return;
+        
+        currentIndex++;
+        updateCarousel();
+        setTimeout(resetCarouselPosition, 700);
+      }
+
+      function moveToPrev() {
+        if (isTransitioning || isSingleSlide) return;
+        
+        currentIndex--;
+        updateCarousel();
+        setTimeout(resetCarouselPosition, 700);
+      }
+
+      prevBtn.addEventListener('click', () => {
+        moveToPrev();
+        stopAutoplay();
+        startAutoplay();
+      });
+
+      nextBtn.addEventListener('click', () => {
+        moveToNext();
+        stopAutoplay();
+        startAutoplay();
+      });
+
+      indicators.forEach((indicator) => {
+        indicator.addEventListener('click', () => {
+          if (isSingleSlide) return;
+          
+          const targetIndex = parseInt(indicator.dataset.index);
+          currentIndex = targetIndex + 1;
+          updateCarousel();
+          stopAutoplay();
+          startAutoplay();
+        });
+      });
+
+      const container = document.getElementById('carousel-container');
+      if (container) {
+        container.addEventListener('mouseenter', stopAutoplay);
+        container.addEventListener('mouseleave', startAutoplay);
+      }
+
+      window.addEventListener('resize', () => {
+        initCarousel();
+      });
+
+      initCarousel();
+      startAutoplay();
+    })();
+  </script>
+<style>
+  #carousel-container::-webkit-scrollbar {
+    display: none;
+  }
+  .group:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    transition: all 0.3s ease;
+  }
+</style>

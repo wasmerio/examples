@@ -1,0 +1,95 @@
+---
+import { getCollection } from "astro:content";
+import { type CollectionEntry } from "astro:content";
+import Layout from "@/app/layouts/Layout.astro";
+import Animation from "@/app/components/Animation.astro";
+import Footer from "@/app/components/Footer.astro";
+import readingTime from "@/app/utils/readingTime";
+import { Tag } from "@components/common/Tag";
+import PostComments from "@/app/components/PostComments.astro";
+
+type Props = CollectionEntry<"blog"> & {
+  prev: { slug: string; title: string } | undefined;
+  next: { slug: string; title: string } | undefined;
+};
+
+export async function getStaticPaths() {
+  const posts = await getCollection("blog");
+  const sortedPosts = posts.sort(
+    (a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime(),
+  );
+
+  return sortedPosts.map((post, index) => ({
+    params: { slug: post.slug },
+    props: {
+      ...post,
+      prev:
+        index + 1 < sortedPosts.length
+          ? {
+              slug: sortedPosts[index + 1].slug,
+              title: sortedPosts[index + 1].data.title,
+            }
+          : null,
+      next:
+        index > 0
+          ? {
+              slug: sortedPosts[index - 1].slug,
+              title: sortedPosts[index - 1].data.title,
+            }
+          : null,
+    },
+  }));
+}
+
+const post = Astro.props;
+const { Content } = await post.render();
+
+const estimatedReadTimeText = readingTime(post.body);
+
+const tags = post.data.tags || [];
+---
+
+<Layout
+  title={post.data.title}
+  description={post.data.summary || `${post.data.title} | jtfox.dev`}
+>
+  <main class="max-w-3xl mx-auto px-4 pt-12">
+    <Animation>
+      {
+        post.data.image ? (
+          <div
+            class="relative h-64 mb-8 rounded-lg overflow-hidden"
+            style={`background-image: url(${post.data.image}); background-size: contain; background-position: center; background-repeat: no-repeat; background-color: rgba(0, 0, 0, 0.05);`}
+          >
+            <div class="absolute inset-0 bg-gradient-to-t from-gray-900/80 to-transparent" />
+            <h1 class="absolute bottom-4 left-4 text-2xl font-bold text-white">
+              {post.data.title}
+            </h1>
+          </div>
+        ) : (
+          <h1 class="text-2xl font-bold mb-8 text-gray-800 dark:text-white">
+            {post.data.title}
+          </h1>
+        )
+      }
+      <div class="flex items-center justify-between mb-4">
+        <p class="text-md text-gray-400">
+          {estimatedReadTimeText}
+        </p>
+        <div class="flex flex-wrap gap-2 max-w-[70%]">
+          {tags.map((tag) => <Tag>{tag}</Tag>)}
+        </div>
+      </div>
+    </Animation>
+    <Animation delay={0.2}>
+      <article>
+        <Content />
+      </article>
+    </Animation>
+    <Animation delay={0.3}>
+      <Footer prevPost={post.prev} nextPost={post.next} postType="blog" />
+    </Animation>
+
+    <PostComments />
+  </main>
+</Layout>

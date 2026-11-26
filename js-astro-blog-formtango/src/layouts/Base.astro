@@ -1,0 +1,177 @@
+---
+import '@fontsource-variable/newsreader/opsz.css';
+import '@fontsource-variable/newsreader/opsz-italic.css';
+import '@fontsource-variable/bricolage-grotesque/wght.css';
+import '../styles/global.css';
+import { SITE, NAV } from '../site';
+import { link } from '../lib/url';
+
+interface Props {
+  title?: string;
+  description?: string;
+  type?: 'website' | 'article';
+}
+
+const { title, description = SITE.description, type = 'website' } = Astro.props;
+const pageTitle = title ? `${title} | ${SITE.title}` : `${SITE.title}: ${SITE.tagline}`;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const here = Astro.url.pathname;
+
+function isCurrent(href: string): boolean {
+  const target = link(href);
+  if (href === '/') return here === target || here.startsWith(link('/posts/'));
+  return here.startsWith(target);
+}
+---
+
+<!doctype html>
+<html lang={SITE.lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={SITE.author} />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href={link('/favicon.svg')} />
+    <link rel="alternate" type="application/rss+xml" title={SITE.title} href={link('/rss.xml')} />
+    <link rel="sitemap" href={link('/sitemap-index.xml')} />
+    <meta property="og:type" content={type} />
+    <meta property="og:title" content={title ?? SITE.title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content={SITE.title} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="theme-color" content="#f3eee3" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#15130f" media="(prefers-color-scheme: dark)" />
+    <script is:inline>
+      // Apply a saved theme before the page paints, so there is no flash.
+      (function () {
+        try {
+          var saved = localStorage.getItem('theme');
+          if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header">
+      <div class="wrap">
+        <a class="brand" href={link('/')} aria-label={`${SITE.title}, home`}>
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M13.5 6h11v2.6h-2.6V26h-2.6V8.6h-2.5V26h-2.6v-7.6c-3.9-.2-6.7-2.8-6.7-6.2C7.5 8.6 10.2 6 13.5 6z"
+            ></path>
+          </svg>
+          {SITE.title}
+        </a>
+        <nav class="site-nav" aria-label="Main">
+          <ul>
+            {
+              NAV.map((item) => (
+                <li>
+                  <a href={link(item.href)} aria-current={isCurrent(item.href) ? 'page' : undefined}>
+                    {item.label}
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+        </nav>
+        <button class="theme-toggle" type="button" data-theme-toggle aria-label="Switch between light and dark theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"></circle>
+            <path fill="currentColor" d="M12 3a9 9 0 0 1 0 18z"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+
+    <slot name="after-main" />
+
+    <footer class="site-footer">
+      <div class="wrap">
+        <p>&copy; {new Date().getFullYear()} {SITE.author}</p>
+        <ul>
+          <li><a href={link('/rss.xml')}>RSS feed</a></li>
+          <li><a href={link('/tags/')}>Tags</a></li>
+          <li><a href={link('/contact/')}>Contact</a></li>
+        </ul>
+        <p>Forms handled by <a href="https://formtango.com">FormTango</a></p>
+      </div>
+    </footer>
+
+    <script is:inline>
+      // Light / dark switch. Follows the system until someone chooses, then remembers.
+      (function () {
+        var toggle = document.querySelector('[data-theme-toggle]');
+        if (!toggle) return;
+        toggle.addEventListener('click', function () {
+          var root = document.documentElement;
+          var current =
+            root.dataset.theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          var next = current === 'dark' ? 'light' : 'dark';
+          root.dataset.theme = next;
+          try {
+            localStorage.setItem('theme', next);
+          } catch (e) {}
+        });
+      })();
+
+      // Sends each form to its FormTango address without leaving the page.
+      // With JavaScript off, the forms still work as a normal POST.
+      // While an address in src/forms.ts still contains "YOUR_", the form runs in demo mode.
+      (function () {
+        document.querySelectorAll('form[data-contact]').forEach(function (form) {
+          var status = form.querySelector('[data-status]');
+          var button = form.querySelector('button[type="submit"]');
+          var label = button.textContent;
+
+          function say(text, kind) {
+            status.textContent = text;
+            status.dataset.kind = kind;
+            status.hidden = false;
+          }
+
+          form.addEventListener('submit', function (event) {
+            event.preventDefault();
+            if (form.action.indexOf('YOUR_') !== -1) {
+              say(
+                'Demo mode: nothing was sent. Add your FormTango form address in src/forms.ts and this form will send for real.',
+                'info'
+              );
+              return;
+            }
+            button.disabled = true;
+            button.textContent = 'Sending…';
+            fetch(form.action, { method: 'POST', headers: { Accept: 'application/json' }, body: new FormData(form) })
+              .then(function (response) {
+                return response.json().then(function (body) {
+                  if (!response.ok || !body.ok) throw body;
+                });
+              })
+              .then(function () {
+                form.reset();
+                say(form.dataset.success || 'Thanks! Your message has been sent.', 'ok');
+              })
+              .catch(function (body) {
+                say((body && body.error) || 'Something went wrong. Please try again.', 'error');
+              })
+              .then(function () {
+                button.disabled = false;
+                button.textContent = label;
+              });
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>

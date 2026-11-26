@@ -1,0 +1,610 @@
+/* Common navigation, mobile drawer and menu states.
+   Drawer animations: "kinetic deck" - layers slide in like a deck of cards,
+   links break up with stagger, hamburger morphs into X.
+   System: czysty CSS transitions + klasy is-open (bez GSAP). */
+
+@layer components {
+  :root {
+    --ui-nav-anim-dur: 460ms;
+    --ui-nav-anim-dur-fast: 240ms;
+    /* Easing z referencyjnej animacji (Gsap "main" 0.65, 0.01, 0.05, 0.99):
+       a decisive start and a long deceleration, the nature of a deck of cards*/
+    --ui-nav-anim-ease: cubic-bezier(0.65, 0.01, 0.05, 0.99);
+    /* Deck Layers (Curtain) Delays*/
+    --ui-nav-anim-lag: 80ms;
+    /* Base content delay: the curtains should close before the links go live,
+       as in the reference (arrival track <- panels <- content only)*/
+    --ui-nav-anim-content-lag: 300ms;
+    --ui-nav-anim-stagger: 45ms;
+  }
+
+  /* ─── Mobile nav: full-screen drawer ─────────────────────────────── */
+
+  .ui-nav-drawer-root {
+    position: fixed;
+    inset: 0;
+    /* Dlaczego width: 100vw: inset:0 daje szerokosc clientWidth (394 - pasek
+       przewijania), pozostawialo za drawerem 15px golej strony przy desktop;
+       100vw obejmuje rowniez pasek, wiec pokrycie jest calkowite */
+    width: 100vw;
+    z-index: var(--ui-nav-drawer-root-z);
+    visibility: hidden;
+    pointer-events: none;
+    /* visibility switches only after the animation is closed,
+       so that the fall of the layers is visible before the tree is hidden*/
+    transition: visibility 0s linear var(--ui-nav-anim-dur);
+  }
+
+  .ui-nav-drawer-root.is-open {
+    visibility: visible;
+    pointer-events: auto;
+    transition: visibility 0s linear 0s;
+  }
+
+  /* Backdrop: fade + slightly blur the content underneath*/
+  .ui-nav-drawer-backdrop {
+    position: absolute;
+    inset: 0;
+    background-color: color-mix(in oklab, var(--color-brand-dark) 72%, transparent);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    transition: opacity var(--ui-nav-anim-dur-fast) var(--ui-nav-anim-ease);
+  }
+
+  .ui-nav-drawer-root.is-open .ui-nav-drawer-backdrop {
+    opacity: 1;
+  }
+
+  /* ─── Sheet - full screen ───────────────────── ─────────────────────*/
+
+  .ui-nav-drawer--sheet {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    height: 100%;
+    width: 100%;
+    flex-direction: column;
+    /* Why banner: darkness is provided only by deck layers,
+       which enter from the right. If the sheet were opaque, the whole thing
+       it was covered immediately and the curtains would not be visible.*/
+    background-color: transparent;
+    color: var(--ui-nav-drawer-link);
+    padding: env(safe-area-inset-top, 0px) var(--ui-nav-drawer-padding-x) env(safe-area-inset-bottom, 0px);
+    /* Why 0.75rem instead of 1rem: the close button must be seated
+       exactly where the hamburger is in the navbar (header has py-4, icon
+       sits 4px higher than the raw padding repeat)*/
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+    padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* ─── Deck: 3 opaque curtains enter from the right ──────────*/
+
+  /* Why: movement decoration without content, pointer-events none and aria-hidden.
+     The curtains are opaque (thinner variants of the drawer background) and slide in
+     z prawej (translateX 102% -> 0) ze staggerem 90ms: najpierw ta z
+     primary tint (the darkest), then white, finally the base tint.
+     The "deck of cards" effect can be seen in motion (front edges) and at rest
+     everything is covered by the top layer and the appearance is uniform.*/
+  .ui-nav-drawer__deck {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .ui-nav-drawer__layer {
+    position: absolute;
+    inset: 0;
+    transform: translateX(102%);
+    will-change: transform;
+    transition: transform var(--ui-nav-anim-dur) var(--ui-nav-anim-ease);
+  }
+
+  .ui-nav-drawer__layer--1 {
+    z-index: 1;
+    background: color-mix(in oklab, var(--color-brand-primary) 14%, var(--ui-nav-drawer-bg));
+  }
+
+  .ui-nav-drawer__layer--2 {
+    z-index: 2;
+    background: color-mix(in oklab, white 7%, var(--ui-nav-drawer-bg));
+    transition-delay: calc(var(--ui-nav-anim-lag) * 1.1);
+  }
+
+  .ui-nav-drawer__layer--3 {
+    z-index: 3;
+    background: var(--ui-nav-drawer-bg);
+    transition-delay: calc(var(--ui-nav-anim-lag) * 2.2);
+  }
+
+  .ui-nav-drawer-root.is-open .ui-nav-drawer__layer {
+    transform: translateX(0);
+  }
+
+  /* ─── Drawer content: content above layers ──────────────────────────*/
+
+  .ui-nav-drawer__content {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+  }
+
+  /* ─── Drawer top: close button (hamburger morph) ────────────*/
+
+  .ui-nav-drawer__top {
+    display: flex;
+    shrink: 0;
+    justify-content: flex-end;
+    padding-bottom: 1.5rem;
+  }
+
+  /* Close button - the same dimensions and layout as MenuToggle in the navbar,
+     so that X lies exactly where the hamburger used to be ("icon continuity").
+     The bars are in a hamburger layout (column, 5px gap) and only after
+     When you open the drawer, they morph in X, so there is no graphics jump.*/
+  .ui-nav-drawer__close {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: var(--radius-xl);
+    border: none;
+    background: transparent;
+    color: white;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+    transition:
+      opacity 160ms linear 0s,
+      background-color 0.2s ease;
+  }
+
+  .ui-nav-drawer-root.is-open .ui-nav-drawer__close {
+    opacity: 1;
+    transition:
+      opacity 240ms linear calc(var(--ui-nav-anim-content-lag) + 100ms),
+      background-color 0.2s ease;
+  }
+
+  .ui-nav-drawer__close:hover {
+    background-color: color-mix(in oklab, white 8%, transparent);
+  }
+
+  .ui-nav-drawer__close:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-brand-primary);
+  }
+
+  /* Paski: w spoczynku poziome (hamburger), przy is-open morf do X.
+     Dlaczego opoznienia 340ms w stanie zamknietym: przy kliknieciu X nie
+     widaC "odbijania" ikony z powrotem w hamburgera - przycisk najpierw
+     zanika (opacity 160ms), a paski cofaja sie dopiero gdy jest niewidoczny
+     (opoznienie domyka sie przed ukryciem drzewa po 460ms). */
+  .ui-nav-drawer__close-bar {
+    display: block;
+    width: 1.375rem;
+    height: 2px;
+    background-color: white;
+    border-radius: 1px;
+    transition:
+      transform 340ms var(--ui-nav-anim-ease) 340ms,
+      translate 340ms var(--ui-nav-anim-ease) 340ms,
+      opacity 180ms linear 340ms;
+  }
+
+  /* Morph doesn't move on opening until the whole thing is is-open -
+     hence transition on changes after base declarations*/
+  /* Morf do X przy otwarciu: natychmiast (bez opoznien z base) */
+  .ui-nav-drawer-root.is-open .ui-nav-drawer__close-bar {
+    transition:
+      transform 340ms var(--ui-nav-anim-ease) 0s,
+      translate 340ms var(--ui-nav-anim-ease) 0s,
+      opacity 180ms linear 0s;
+  }
+
+  .ui-nav-drawer-root.is-open .ui-nav-drawer__close-bar:nth-child(1) {
+    translate: 0 7px;
+    transform: rotate(45deg);
+  }
+
+  .ui-nav-drawer-root.is-open .ui-nav-drawer__close-bar:nth-child(2) {
+    opacity: 0;
+  }
+
+  .ui-nav-drawer-root.is-open .ui-nav-drawer__close-bar:nth-child(3) {
+    translate: 0 -7px;
+    transform: rotate(-45deg);
+  }
+
+  /* ─── Drawer scroller ────────────────────────────────────────────── */
+
+  .ui-nav-drawer__scroller {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  /* Dlaczego margin-block: auto na nav zamiast justify-content: center
+     on scroller: with content higher than the flex center viewport
+     cuts off the beginning of the list (you can't scroll to the top), and auto
+     the margins at the elevation turn into 0 and the list is there
+     przewijalna normalnie */
+  .ui-nav-drawer__nav {
+    margin-block: auto;
+  }
+
+  /* Subjective scrollbar for larger sublists: thin, barely
+     widoczny, bez natywnego paska w stylu Windows */
+  .ui-nav-drawer__scroller::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  .ui-nav-drawer__scroller::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, white 14%, transparent);
+    border-radius: 10px;
+  }
+
+  .ui-nav-drawer__scroller::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* ─── Nav links ──────────────────────────────────────────────────── */
+
+  .ui-nav-drawer__nav {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    width: 100%;
+  }
+
+  .ui-nav-drawer__item {
+    width: 100%;
+  }
+
+  /* Links: break from the bottom, stagger calculated with --stagger (set
+     in MobileDrawer per menu item). When closed, they fall quickly
+     without waiting for the close to be short and decisive.
+     CTA uses the same mechanics (it is the last element of nav), different
+     just classy if he ever wanted an accent.*/
+  .ui-nav-drawer__link,
+  .ui-nav-drawer__cta {
+    display: block;
+    width: 100%;
+    max-width: 22rem;
+    margin-inline: auto;
+    border-radius: var(--radius-lg);
+    padding: 0.75rem 1rem;
+    text-align: center;
+    font-family: var(--font-heading);
+    font-size: 1.375rem;
+    line-height: 1.3;
+    font-weight: 700;
+    letter-spacing: var(--ui-type-heading-tracking, -0.02em);
+    color: var(--ui-nav-drawer-link);
+    text-decoration: none;
+    opacity: 0;
+    translate: 0 1.25rem;
+    transition:
+      translate var(--ui-nav-anim-dur-fast) var(--ui-nav-anim-ease),
+      opacity 160ms linear,
+      color 150ms ease;
+  }
+
+  .ui-nav-drawer-root.is-open .ui-nav-drawer__link,
+  .ui-nav-drawer-root.is-open .ui-nav-drawer__cta {
+    opacity: 1;
+    translate: 0 0;
+    transition:
+      translate var(--ui-nav-anim-dur) var(--ui-nav-anim-ease)
+        calc(var(--ui-nav-anim-content-lag) + var(--stagger, 0) * var(--ui-nav-anim-stagger)),
+      opacity 240ms linear
+        calc(var(--ui-nav-anim-content-lag) + var(--stagger, 0) * var(--ui-nav-anim-stagger)),
+      color 150ms ease;
+  }
+
+  @media (hover: hover) {
+    .ui-nav-drawer__link:hover,
+    .ui-nav-drawer__cta:hover {
+      color: var(--ui-nav-drawer-link-hover);
+    }
+  }
+
+  .ui-nav-drawer__link:focus-visible,
+  .ui-nav-drawer__cta:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-brand-primary);
+  }
+
+  /* ─── Wiersz linku z rozwijaniem podstron ────────────────────────── */
+
+  /* Why: chevron is positioned absolutely at the right end of the line,
+     thanks to which the link remains centered identically to the others
+     menu items (without shifting and without artificial spacing).*/
+  .ui-nav-drawer__link-row {
+    position: relative;
+    display: block;
+    width: 100%;
+    max-width: 22rem;
+    margin-inline: auto;
+  }
+
+  .ui-nav-drawer__link-row .ui-nav-drawer__link {
+    max-width: none;
+  }
+
+  .ui-nav-drawer__expand {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    translate: 0 calc(-50% + 1.25rem);
+    display: flex;
+    height: 2.75rem;
+    width: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background-color: transparent;
+    border-radius: var(--radius-xl);
+    color: var(--ui-nav-drawer-muted);
+    cursor: pointer;
+    opacity: 0;
+    /* Why without background hover: brightening the ball behind the chevron looks
+       jak artefakt; hover to sama zmiana koloru, jak przy linkach */
+    transition:
+      translate var(--ui-nav-anim-dur-fast) var(--ui-nav-anim-ease),
+      opacity 160ms linear,
+      color 0.2s ease;
+  }
+
+  /* Same input cadence as link inline (stagger after --stagger),
+     so that the chevron doesn't pop up before the label goes up*/
+  .ui-nav-drawer-root.is-open .ui-nav-drawer__expand {
+    opacity: 1;
+    translate: 0 -50%;
+    transition:
+      translate var(--ui-nav-anim-dur) var(--ui-nav-anim-ease)
+        calc(var(--ui-nav-anim-content-lag) + var(--stagger, 0) * var(--ui-nav-anim-stagger)),
+      opacity 240ms linear
+        calc(var(--ui-nav-anim-content-lag) + var(--stagger, 0) * var(--ui-nav-anim-stagger)),
+      color 0.2s ease;
+  }
+
+  .ui-nav-drawer__expand:hover {
+    color: var(--ui-nav-drawer-link-hover);
+  }
+
+  .ui-nav-drawer__expand:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-brand-primary);
+  }
+
+  /* Chevron: 180 rotation on sublist opening*/
+  .ui-nav-drawer__chevron {
+    width: 1rem;
+    height: 1rem;
+    transition: transform 260ms var(--ui-nav-anim-ease);
+  }
+
+  .ui-nav-drawer__item.is-open .ui-nav-drawer__chevron {
+    transform: rotate(180deg);
+  }
+
+  /* ─── Submenu (accordion: grid-template-rows 0fr -> 1fr) ─────────── */
+
+  /* Why: height animation via grid instead of max-height -
+     no magic values ​​and hardcoded pixels, smooth both
+     both for short and long opening.*/
+  .ui-nav-drawer__sub {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+      grid-template-rows 260ms var(--ui-nav-anim-ease),
+      opacity 180ms linear;
+  }
+
+  .ui-nav-drawer__item.is-open .ui-nav-drawer__sub {
+    grid-template-rows: 1fr;
+    opacity: 1;
+  }
+
+  .ui-nav-drawer__sub-inner {
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .ui-nav-drawer__sub-nav {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0.375rem 0 0.75rem;
+    width: 100%;
+    max-width: 22rem;
+    margin-inline: auto;
+  }
+
+  .ui-nav-drawer__sub-link {
+    display: block;
+    width: 100%;
+    border-radius: var(--radius-lg);
+    padding: 0.625rem 1.5rem;
+    text-align: center;
+    font-family: var(--font-body);
+    font-size: 1rem;
+    line-height: 1.4;
+    font-weight: 600;
+    color: var(--ui-nav-drawer-muted);
+    text-decoration: none;
+    transition: color 150ms ease;
+  }
+
+  @media (hover: hover) {
+    .ui-nav-drawer__sub-link:hover {
+      color: var(--ui-nav-drawer-link-hover);
+    }
+  }
+
+
+  /* ─── Social links ───────────────────────────────────────────────── */
+
+  .ui-nav-drawer__social-row {
+    display: flex;
+    flex-shrink: 0;
+    justify-content: center;
+    gap: 0.75rem;
+    opacity: 0;
+    translate: 0 0.75rem;
+    transition:
+      translate var(--ui-nav-anim-dur-fast) var(--ui-nav-anim-ease),
+      opacity 160ms linear;
+  }
+
+  .ui-nav-drawer-root.is-open .ui-nav-drawer__social-row {
+    opacity: 1;
+    translate: 0 0;
+    transition:
+      translate var(--ui-nav-anim-dur) var(--ui-nav-anim-ease)
+        calc(var(--ui-nav-anim-content-lag) + var(--ui-nav-anim-lag) * 2 + var(--ui-nav-anim-stagger) * 3),
+      opacity 240ms linear calc(var(--ui-nav-anim-content-lag) + var(--ui-nav-anim-lag) * 2);
+  }
+
+  .ui-nav-drawer__social-link {
+    display: flex;
+    height: 3rem;
+    width: 3rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-full);
+    border: 1px solid color-mix(in oklab, white 18%, transparent);
+    background-color: color-mix(in oklab, white 8%, transparent);
+    font-size: 1.25rem;
+    line-height: 1;
+    color: var(--ui-nav-drawer-link);
+    text-decoration: none;
+    transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease;
+  }
+
+  @media (hover: hover) {
+    .ui-nav-drawer__social-link:hover {
+      color: var(--ui-nav-drawer-link-hover);
+      border-color: color-mix(in oklab, var(--color-brand-accent) 55%, transparent);
+      background-color: color-mix(in oklab, var(--color-brand-accent) 12%, transparent);
+    }
+  }
+
+  /* ─── Hamburger toggle ───────────────────────────────────────────── */
+
+  .ui-nav-menu-toggle {
+    position: relative;
+    z-index: 1010;
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: var(--radius-xl);
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.2s ease;
+  }
+
+  .ui-nav-menu-toggle:hover {
+    background-color: color-mix(in oklab, currentColor 8%, transparent);
+  }
+
+  .ui-nav-menu-toggle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-brand-primary);
+  }
+
+  @media (min-width: 64rem) {
+    .ui-nav-menu-toggle {
+      width: 3rem;
+      height: 3rem;
+    }
+  }
+
+  /* Bars: morph do X po otwarciu draweru (klasa is-open dodawana z JS) */
+  .ui-nav-menu-toggle__bar {
+    display: block;
+    width: 1.375rem;
+    height: 2px;
+    background-color: currentColor;
+    border-radius: 1px;
+    transition:
+      transform 340ms var(--ui-nav-anim-ease),
+      opacity 180ms linear,
+      translate 340ms var(--ui-nav-anim-ease);
+  }
+
+  @media (min-width: 64rem) {
+    .ui-nav-menu-toggle__bar {
+      width: 1.5rem;
+    }
+  }
+
+  .ui-nav-menu-toggle.is-open .ui-nav-menu-toggle__bar:nth-child(1) {
+    /* transition to middle bar: (2px bar + 5px gap) / 2 = 7px*/
+    translate: 0 7px;
+    transform: rotate(45deg);
+  }
+
+  .ui-nav-menu-toggle.is-open .ui-nav-menu-toggle__bar:nth-child(2) {
+    opacity: 0;
+  }
+
+  .ui-nav-menu-toggle.is-open .ui-nav-menu-toggle__bar:nth-child(3) {
+    translate: 0 -7px;
+    transform: rotate(-45deg);
+  }
+
+  /* ─── Reduced motion: drawer switches instantly ─────────────*/
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-nav-drawer-root {
+      transition: none;
+    }
+
+    .ui-nav-drawer-root .ui-nav-drawer__layer,
+    .ui-nav-drawer-root .ui-nav-drawer__link,
+    .ui-nav-drawer-root .ui-nav-drawer__expand,
+    .ui-nav-drawer-root .ui-nav-drawer__cta,
+    .ui-nav-drawer-root .ui-nav-drawer__social-row,
+    .ui-nav-drawer-root .ui-nav-drawer__close,
+    .ui-nav-drawer-root .ui-nav-drawer-backdrop,
+    .ui-nav-drawer-root.is-open .ui-nav-drawer__link,
+    .ui-nav-drawer-root.is-open .ui-nav-drawer__expand,
+    .ui-nav-drawer-root.is-open .ui-nav-drawer__cta,
+    .ui-nav-drawer-root.is-open .ui-nav-drawer__social-row,
+    .ui-nav-drawer-root.is-open .ui-nav-drawer__close,
+    .ui-nav-drawer-root.is-open .ui-nav-drawer-backdrop {
+      transition: none;
+      opacity: 1;
+      translate: 0 0;
+      transform: translateX(0);
+    }
+
+    .ui-nav-drawer__sub {
+      transition: none;
+    }
+  }
+}

@@ -1,0 +1,37 @@
+import Pagination from "./Pagination.astro";
+import PaginationContent from "./PaginationContent.astro";
+import PaginationEllipsis from "./PaginationEllipsis.astro";
+import PaginationItem from "./PaginationItem.astro";
+import PaginationLink from "./PaginationLink.astro";
+import PaginationNext from "./PaginationNext.astro";
+import PaginationPrevious from "./PaginationPrevious.astro";
+import { pagination, paginationContent, paginationEllipsis } from "./variants";
+
+const PaginationVariants = {
+  pagination,
+  paginationContent,
+  paginationEllipsis,
+};
+
+const PaginationParts = {
+  Root: Pagination,
+  Content: PaginationContent,
+  Ellipsis: PaginationEllipsis,
+  Item: PaginationItem,
+  Link: PaginationLink,
+  Next: PaginationNext,
+  Previous: PaginationPrevious,
+};
+
+export {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+  PaginationVariants,
+};
+
+export default PaginationParts;

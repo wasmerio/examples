@@ -1,0 +1,116 @@
+---
+import { SITE_BASE_PATH, SITE_URL } from '../../site.config.mjs';
+import { seo } from '@data';
+// Fonty z URL-em zasobu: preload używa tego samego pliku, który trafia do @font-face.
+import instrumentSansLatin from '@fontsource-variable/instrument-sans/files/instrument-sans-latin-wght-normal.woff2?url';
+import Navbar from '@components/ui/molecules/Navbar/index.astro';
+import MobileDrawer from '@components/ui/molecules/Navbar/shared/MobileDrawer.astro';
+import Footer from '@components/ui/molecules/Footer.astro';
+import { getLocale, getLocalePath, type Locale } from '../i18n';
+
+interface Props {
+  title?: string;
+  description?: string;
+  canonical?: string;
+  ogImage?: string;
+  noindex?: boolean;
+  navbarLayout?: 'centered' | 'floating' | 'local' | 'plain';
+  navbarTheme?: 'transparent' | 'light' | 'dark';
+  renderNavbar?: boolean;
+  renderMobileDrawer?: boolean;
+  renderFooter?: boolean;
+  locale?: Locale;
+}
+
+const {
+  title = seo.defaultTitle,
+  description = seo.defaultDescription,
+  canonical = Astro.url.pathname,
+  ogImage = seo.defaultOgImage,
+  noindex = !seo.index,
+  navbarLayout = 'centered',
+  navbarTheme = 'transparent',
+  renderNavbar = true,
+  renderMobileDrawer = true,
+  renderFooter = true,
+  locale = getLocale(Astro.url.pathname),
+} = Astro.props;
+
+const canonicalPath = canonical.startsWith(SITE_BASE_PATH)
+  ? canonical
+  : `${SITE_BASE_PATH}${canonical.replace(/^\//, '')}`;
+const canonicalUrl = canonical.startsWith('http')
+  ? new URL(canonical).toString()
+  : new URL(canonicalPath, SITE_URL).toString();
+const localizedUrl = (targetLocale: Locale) => new URL(`${SITE_BASE_PATH}${getLocalePath(Astro.url.pathname, targetLocale).replace(/^\//, '')}`, SITE_URL).toString();
+const robots = noindex ? 'noindex, nofollow' : `${seo.index ? 'index' : 'noindex'},${seo.follow ? 'follow' : 'nofollow'}`;
+// Ścieżka obrazu musi uwzględniać katalog demo, tak samo jak canonical.
+const ogImagePath = ogImage.startsWith('/') ? `${import.meta.env.BASE_URL.replace(/\/$/, '')}${ogImage}` : ogImage;
+const ogImageUrl = new URL(ogImagePath, SITE_URL).toString();
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}logo.svg`} />
+    <!-- Preload tylko głównego kroju: tekst nagłówków jest widoczny od razu i nie miga po podmianie fonta. -->
+    <link rel="preload" href={instrumentSansLatin} as="font" type="font/woff2" crossorigin />
+    <meta name="description" content={description} />
+    <meta name="robots" content={robots} />
+    <link rel="canonical" href={canonicalUrl} />
+    <link rel="alternate" hreflang="pl" href={localizedUrl('pl')} />
+    <link rel="alternate" hreflang="en" href={localizedUrl('en')} />
+    <link rel="alternate" hreflang="x-default" href={localizedUrl('en')} />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>{title}</title>
+  </head>
+  <body>
+    {renderNavbar && <Navbar layout={navbarLayout} theme={navbarTheme} />}
+    {renderMobileDrawer && <MobileDrawer />}
+    <main id="main-content">
+      <slot />
+    </main>
+    {renderFooter && <Footer />}
+    <script>
+      import '../scripts/motion';
+      import '../scripts/lenis';
+
+      const drawer = document.querySelector('#site-nav-drawer');
+      const menuToggle = document.querySelector('[data-navbar-toggle]');
+      const closeDrawer = () => {
+        drawer?.classList.remove('is-open');
+        menuToggle?.setAttribute('aria-expanded', 'false');
+        document.body.style.removeProperty('overflow');
+      };
+
+      menuToggle?.addEventListener('click', () => {
+        const isOpen = drawer?.classList.toggle('is-open') ?? false;
+        menuToggle.setAttribute('aria-expanded', String(isOpen));
+        document.body.style.overflow = isOpen ? 'hidden' : '';
+      });
+
+      drawer?.querySelectorAll('[data-navbar-close]').forEach((element) => {
+        element.addEventListener('click', closeDrawer);
+      });
+
+      drawer?.querySelectorAll('[data-navbar-sub-toggle]').forEach((element) => {
+        element.addEventListener('click', () => {
+          const item = element.closest('.ui-nav-drawer__item');
+          const isOpen = item?.classList.toggle('is-open') ?? false;
+          element.setAttribute('aria-expanded', String(isOpen));
+        });
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeDrawer();
+      });
+    </script>
+  </body>
+</html>

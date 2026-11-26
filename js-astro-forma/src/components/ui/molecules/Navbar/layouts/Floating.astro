@@ -1,0 +1,135 @@
+---
+import headerData from "@data/navigation/header.json";
+import Logo from "@components/ui/atoms/Logo.astro";
+import MenuToggle from "@components/ui/molecules/Navbar/shared/MenuToggle.astro";
+import type { NavTheme } from "@components/ui/molecules/Navbar/shared/nav-theme-classes";
+import { formatInternalLink } from "@utils/url";
+
+export interface Props {
+	theme?: NavTheme;
+}
+
+const { theme = "light" } = Astro.props;
+
+// Why: floating navbar has two visual states. It's at the top of the page
+// with a transparent overlay embedded in the hero (absolute), and it goes on the scroll
+// fixed bar with background and blur. Colors depend on theme: light (light theme,
+// dark text) and dark/transparent (dark hero, white text).
+const isDark = theme === "dark" || theme === "transparent";
+
+// Why: there can be no floating on subpages without a hero at the top
+// transparent overlay, because the text would be lost against the background of the section. Theme "dark"
+// it immediately renders a fixed bar (like on a homepage after a scroll) and skips it
+// second header so that there is no duplicate navigation.
+const isSolid = theme === "dark";
+
+// Static classes (overlay on hero) depending on the theme
+const staticTextClass = isDark ? "text-white" : "text-brand-dark";
+// Fixed classes (after scrolling) depending on the theme
+const fixedShellClass = isDark
+	? "border-white/10 bg-brand-dark/95 text-white shadow-lg shadow-black/20"
+	: "border-brand-dark/10 bg-[var(--ui-bg-page)]/95 text-brand-dark shadow-lg shadow-black/5";
+---
+
+<!-- Dlaczego: pierwsza nawigacja jest przezroczystym overlayem na hero (absolute),
+     so hero starts at the very top of the page and the navbar looks like part of it.
+     The second one (fixed) appears only after scrolling and enters from the top, thanks to which
+     permanent access to the menu does not take up space on the first screen.
+     W trybie solid (theme=dark, podstrony bez hero) pierwszy header jest od razu
+     fixed and dark, and the second one is not rendered at all (isSolid).-->
+<header
+	data-site-header
+	data-site-header-static
+	transition:animate="none"
+	class:list={[
+		"left-0 top-0 w-full",
+		isSolid
+			? `fixed z-[1000] border-b ${fixedShellClass}`
+			: `absolute z-[100] bg-transparent ${staticTextClass}`,
+	]}
+>
+	<div class="ui-container">
+		<div class="flex items-center justify-between gap-2 py-3 sm:gap-4 sm:py-4 lg:gap-6 lg:py-5" data-nav-inner>
+			<a href={formatInternalLink("/")} class="relative z-[1010] flex min-w-0 shrink-0 items-center">
+				<Logo variant={isDark ? "light" : "dark"} density="compact" />
+			</a>
+
+			<nav class="hidden min-w-0 flex-1 items-center justify-center gap-5 lg:flex xl:gap-8">
+				{headerData.items.map((item) => (
+					<a href={formatInternalLink(item.href)} class="ui-nav-bar-link shrink-0 opacity-75 transition-opacity hover:opacity-100">
+						{item.label}
+					</a>
+				))}
+			</nav>
+
+			<div class="relative z-[1010] flex shrink-0 items-center gap-2 sm:gap-3">
+				<!-- Dlaczego: globalny wzorzec przycisku (ui-button ui-button-primary ui-nav-cta)
+         instead of raw classes. Gives consistent hover (text swap + color slide) and dimensions
+				     z core.css. Wzorzec z NavbarMainCentered (layout Centered). -->
+				<a href={formatInternalLink(headerData.cta.href)} class="ui-button ui-button-primary ui-nav-cta hidden sm:flex">
+					<span class="ui-button-text-wrap">
+						<span class="ui-button-text-default">{headerData.cta.label}</span>
+						<span class="ui-button-text-hover">{headerData.cta.hoverLabel}</span>
+					</span>
+				</a>
+				<MenuToggle />
+			</div>
+		</div>
+	</div>
+</header>
+
+{!isSolid && (
+<header
+	data-site-header-fixed
+	transition:animate="none"
+	aria-hidden="true"
+	class:list={[
+		"pointer-events-none fixed top-0 left-0 z-[1000] w-full -translate-y-full opacity-0 shadow-lg backdrop-blur-md will-change-transform border-b",
+		fixedShellClass,
+	]}
+>
+	<div class="ui-container">
+		<div class="flex items-center justify-between gap-2 py-2.5 sm:gap-4 sm:py-3 lg:gap-6 lg:py-3.5" data-nav-inner>
+			<a href={formatInternalLink("/")} class="relative z-[1010] flex min-w-0 shrink-0 items-center">
+				<Logo variant={isDark ? "light" : "dark"} density="compact" />
+			</a>
+
+			<nav class="hidden min-w-0 flex-1 items-center justify-center gap-5 lg:flex xl:gap-8">
+				{headerData.items.map((item) => (
+					<a href={formatInternalLink(item.href)} class="ui-nav-bar-link shrink-0 opacity-75 transition-opacity hover:opacity-100">
+						{item.label}
+					</a>
+				))}
+			</nav>
+
+			<div class="relative z-[1010] flex shrink-0 items-center gap-2 sm:gap-3">
+				<a href={formatInternalLink(headerData.cta.href)} class="ui-button ui-button-primary ui-nav-cta hidden sm:flex">
+					<span class="ui-button-text-wrap">
+						<span class="ui-button-text-default">{headerData.cta.label}</span>
+						<span class="ui-button-text-hover">{headerData.cta.hoverLabel}</span>
+					</span>
+				</a>
+				<MenuToggle />
+			</div>
+		</div>
+	</div>
+</header>
+)}
+
+<style>
+	/* Why: without an explicit transition, the bar would jump out instead
+    drive in. We animate translate (entering from the top) and opacity (appearing),
+    using the translate property from Tailwind v4 instead of transform to
+    matched the -translate-y-full class.*/
+	[data-site-header-fixed] {
+		transition:
+			translate 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+			opacity 0.35s ease-out;
+	}
+
+	[data-site-header-fixed].is-visible {
+		opacity: 1;
+		pointer-events: auto;
+		translate: 0 0;
+	}
+</style>

@@ -1,0 +1,111 @@
+---
+import headerData from '@data/navigation/header.json';
+import company from '@data/global/company.json';
+import { english, getLocalePath, type Locale } from '../../../i18n';
+
+const menuId = 'mobile-menu';
+interface Props { locale?: Locale; }
+const { locale = 'en' } = Astro.props;
+const navigation = locale === 'en' ? english.nav : null;
+const links = headerData.items.map((item, index) => ({ ...item, label: navigation?.items[index] ?? item.label, href: locale === 'en' ? `/#${['uslugi', 'realizacje', 'dlaczego-my'][index]}` : `/pl/#${['uslugi', 'realizacje', 'dlaczego-my'][index]}` }));
+const ctaLabel = navigation?.cta ?? headerData.cta.label;
+---
+
+<header class="navbar relative mx-auto flex min-h-[4.5rem] w-[calc(100%_-_2rem)] max-w-[88rem] items-center justify-between gap-2 rounded-3xl border border-[color-mix(in_srgb,var(--color-brand-dark)_6%,transparent)] bg-surface px-[0.65rem] py-2 pl-6 text-brand-dark shadow-[var(--ui-elevation-soft)] md:gap-6 md:pl-7" data-navbar>
+  <a href={locale === 'en' ? '/' : '/pl/'} class="wordmark" aria-label={navigation?.home ?? 'FORMA, strona główna'}>
+    <img src={company.branding.logoImage} alt="FORMA" width="768" height="146" decoding="async" />
+  </a>
+
+  <nav class="desktop-nav" aria-label={navigation?.navLabel ?? headerData.aria.navMain}>
+    {links.map((item) => <a href={item.href} class="text-sm font-medium leading-none tracking-[-0.01em]">{item.label}</a>)}
+  </nav>
+
+  <nav class="language-switch" aria-label={navigation?.languageLabel ?? 'Wybór języka'}>
+    <a class="language-switch__option" href={getLocalePath(Astro.url.pathname, 'en')} lang="en" aria-current={locale === 'en' ? 'page' : undefined}>EN</a>
+    <a class="language-switch__option" href={getLocalePath(Astro.url.pathname, 'pl')} lang="pl" aria-current={locale === 'pl' ? 'page' : undefined}>PL</a>
+  </nav>
+  <a class="nav-cta rounded-[var(--ui-button-radius)] text-[15px] font-semibold tracking-[0.04em]" href={locale === 'en' ? '/#kontakt' : '/pl/#kontakt'}>{ctaLabel}<span class="arrow-loop" aria-hidden="true"><span class="arrow-loop-out">↗</span><span class="arrow-loop-in">↗</span></span></a>
+
+  <button
+    type="button"
+    class="menu-toggle"
+    data-menu-toggle
+    aria-controls={menuId}
+    aria-expanded="false"
+    aria-label={navigation?.menuOpen ?? headerData.aria.menuOpen}
+  >
+    <span aria-hidden="true"></span>
+    <span aria-hidden="true"></span>
+  </button>
+
+  <div class="mobile-menu" id={menuId} hidden>
+    <nav aria-label={navigation?.navLabel ?? headerData.aria.navMain}>
+      {links.map((item) => <a href={item.href} class="text-sm font-medium leading-none tracking-[-0.01em]">{item.label}</a>)}
+      <a class="mobile-cta rounded-[var(--ui-button-radius)] text-[15px] font-semibold tracking-[0.04em]" href={locale === 'en' ? '/#kontakt' : '/pl/#kontakt'}>{ctaLabel}<span class="arrow-loop" aria-hidden="true"><span class="arrow-loop-out">↗</span><span class="arrow-loop-in">↗</span></span></a>
+    </nav>
+  </div>
+</header>
+
+<script>
+  const header = document.querySelector<HTMLElement>('[data-navbar]');
+  const toggle = header?.querySelector<HTMLButtonElement>('[data-menu-toggle]');
+  const menu = header?.querySelector<HTMLDivElement>('#mobile-menu');
+
+  const setMenuOpen = (open: boolean) => {
+    if (!toggle || !menu) return;
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? (document.documentElement.lang === 'en' ? 'Close navigation menu' : 'Zamknij menu nawigacji') : (document.documentElement.lang === 'en' ? 'Open navigation menu' : 'Otwórz menu nawigacji'));
+    menu.hidden = !open;
+  };
+
+  toggle?.addEventListener('click', () => {
+    setMenuOpen(toggle.getAttribute('aria-expanded') !== 'true');
+  });
+
+  menu?.querySelectorAll('a').forEach((link) => link.addEventListener('click', () => setMenuOpen(false)));
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && toggle?.getAttribute('aria-expanded') === 'true') {
+      setMenuOpen(false);
+      toggle.focus();
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    if (header && !header.contains(event.target as Node)) setMenuOpen(false);
+  });
+
+  if (header) {
+    let current = 0;
+    let target = 0;
+    let frame = 0;
+    let previousTime = 0;
+
+    const render = (time: number) => {
+      const elapsed = previousTime ? Math.min(time - previousTime, 32) : 16;
+      previousTime = time;
+      // Stała czasowa daje podobne, spokojne przejście niezależnie od liczby klatek.
+      const progress = 1 - Math.exp(-elapsed / 115);
+      current += (target - current) * progress;
+
+      if (Math.abs(target - current) < 0.001) current = target;
+
+      header.style.setProperty('--nav-scroll-progress', current.toFixed(4));
+
+      if (current !== target) {
+        frame = requestAnimationFrame(render);
+      } else {
+        frame = 0;
+        previousTime = 0;
+      }
+    };
+
+    const update = () => {
+      target = Math.min(Math.max(window.scrollY / 220, 0), 1);
+      if (!frame) frame = requestAnimationFrame(render);
+    };
+
+    window.addEventListener('scroll', update, { passive: true });
+    update();
+  }
+</script>

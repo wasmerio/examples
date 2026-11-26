@@ -1,0 +1,168 @@
+---
+import type { LocationMapConfig } from '@utils/location-map';
+import {
+  getMapTileLayout,
+  getMapTitle,
+  getOpenStreetMapUrl,
+  validateLocationMap,
+} from '@utils/location-map';
+
+interface Props {
+  variant: 'atlas' | 'paper' | 'ink' | 'district';
+  location: LocationMapConfig;
+  label?: string;
+}
+
+const { variant, location: rawLocation, label } = Astro.props;
+const location = validateLocationMap(rawLocation);
+const district = variant === 'district';
+const zoom = district ? location.districtZoom : location.zoom;
+const { tiles, marker } = getMapTileLayout(location, zoom);
+const mapLabel = label ?? getMapTitle(location, district);
+const openStreetMapUrl = getOpenStreetMapUrl(location, zoom);
+---
+
+<figure class:list={['area-map', 'location-map', `location-map--${variant}`]}>
+  <div class="location-map-viewport">
+    {variant === 'ink' ? (
+      <div
+        class="location-map-live"
+        role="application"
+        aria-label={mapLabel}
+        data-location-map-live
+        data-latitude={location.latitude}
+        data-longitude={location.longitude}
+        data-label={location.label}
+        data-short-label={location.shortLabel}
+        data-zoom={zoom}
+        data-district-zoom={location.districtZoom}
+      ></div>
+    ) : (
+      <div class="location-map-tiles" role="img" aria-label={mapLabel}>
+        {tiles.map(({ x, y }) => (
+          <img
+            src={`https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            draggable="false"
+          />
+        ))}
+      </div>
+    )}
+    {variant !== 'ink' && (
+      <>
+        <div class="location-map-overlay" aria-hidden="true">
+          <span class="location-map-marker" style={`--marker-x:${marker.x}%;--marker-y:${marker.y}%`}>
+            <svg viewBox="0 0 32 42" fill="none">
+              <path d="M16 1.5c-8 0-14.5 6.4-14.5 14.3C1.5 26 16 40.5 16 40.5S30.5 26 30.5 15.8C30.5 7.9 24 1.5 16 1.5Z" fill="currentColor" stroke="var(--color-surface)" stroke-width="2" />
+              <circle cx="16" cy="15.5" r="4" fill="var(--color-surface)" />
+            </svg>
+          </span>
+        </div>
+        <figcaption class="location-map-meta">
+          <a class="location-map-place" href={openStreetMapUrl} target="_blank" rel="noreferrer">{location.shortLabel}</a>
+          <a class="location-map-credit" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
+        </figcaption>
+      </>
+    )}
+  </div>
+</figure>
+
+{variant === 'ink' && (
+  <script>
+    import leafletCssUrl from 'leaflet/dist/leaflet.css?url';
+    import {
+      getGoogleMapsUrl,
+      validateLocationMap,
+      type LocationMapConfig,
+    } from '@utils/location-map';
+
+    // CSS Leaflet dołączamy jako link dopiero przy inicjalizacji. Import CSS trafiłby do
+    // arkusza strony i blokowałby renderowanie nawet tam, gdzie mapy nie ma.
+    const loadLeafletCss = () =>
+      new Promise<void>((resolve) => {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = leafletCssUrl;
+        link.onload = () => resolve();
+        link.onerror = () => resolve();
+        document.head.append(link);
+      });
+
+    // Leaflet (około 150 KB) ładujemy dopiero przy zbliżeniu mapy do ekranu. Na stronie
+    // głównej mapa jest niżej, więc nie powinna dokładać kosztu do pierwszego ładowania.
+    const initMap = async (mapElement: HTMLElement) => {
+      if (mapElement.dataset.initialized) return;
+      // Flaga ustawiona przed importem chroni przed podwójną inicjalizacją przy szybkim scrollu.
+      mapElement.dataset.initialized = 'true';
+
+      const [L] = await Promise.all([import('leaflet'), loadLeafletCss()]);
+
+      const location = validateLocationMap({
+        latitude: Number(mapElement.dataset.latitude),
+        longitude: Number(mapElement.dataset.longitude),
+        label: mapElement.dataset.label ?? '',
+        shortLabel: mapElement.dataset.shortLabel ?? '',
+        zoom: Number(mapElement.dataset.zoom),
+        districtZoom: Number(mapElement.dataset.districtZoom),
+      } satisfies LocationMapConfig);
+      const zoom = Number(mapElement.dataset.zoom);
+
+      const map = L.map(mapElement, {
+        center: [location.latitude, location.longitude],
+        zoom,
+        scrollWheelZoom: false,
+        zoomControl: true,
+      });
+
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+
+      const markerIcon = L.divIcon({
+        className: 'location-map-leaflet-marker',
+        html: '<svg viewBox="0 0 32 42" fill="none" aria-hidden="true"><path d="M16 1.5c-8 0-14.5 6.4-14.5 14.3C1.5 26 16 40.5 16 40.5S30.5 26 30.5 15.8C30.5 7.9 24 1.5 16 1.5Z" fill="currentColor" stroke="var(--color-surface)" stroke-width="2"/><circle cx="16" cy="15.5" r="4" fill="var(--color-surface)"/></svg>',
+        iconSize: [32, 42],
+        iconAnchor: [16, 41],
+      });
+
+      const markerPoint = L.marker([location.latitude, location.longitude], {
+        icon: markerIcon,
+        keyboard: true,
+        title: location.label,
+      }).addTo(map);
+
+      const popup = document.createElement('div');
+      const title = document.createElement('strong');
+      title.textContent = location.label;
+      const lineBreak = document.createElement('br');
+      const link = document.createElement('a');
+      link.href = getGoogleMapsUrl(location);
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Otwórz w Google Maps ↗';
+      popup.append(title, lineBreak, link);
+      markerPoint.bindPopup(popup);
+
+      new ResizeObserver(() => map.invalidateSize({ pan: false })).observe(mapElement);
+    };
+
+    const mapElements = document.querySelectorAll<HTMLElement>('[data-location-map-live]');
+
+    // Brak IntersectionObserver oznacza starszą przeglądarkę, więc mapy startują od razu.
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          observer.unobserve(entry.target);
+          void initMap(entry.target as HTMLElement);
+        });
+      }, { rootMargin: '400px 0px' });
+      mapElements.forEach((mapElement) => observer.observe(mapElement));
+    } else {
+      mapElements.forEach((mapElement) => void initMap(mapElement));
+    }
+  </script>
+)}

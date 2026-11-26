@@ -1,0 +1,186 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "../../layouts/MainLayout.astro";
+import Hero from "../../components/Hero.astro";
+import { Search, ArrowRight } from "@lucide/astro";
+import Pagination from "../../components/Pagination.astro";
+
+export async function getStaticPaths({ paginate }) {
+  const jobs = (await getCollection("jobs")).sort(
+    (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+  );
+
+  return paginate(jobs, {
+    pageSize: 6,
+  });
+}
+
+const { page } = Astro.props;
+const jobs = (await getCollection("jobs")).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+);
+const currentJobIds = new Set(page.data.map((job) => job.id));
+---
+
+<Layout
+  title="Jobs"
+  description="Lorem ipsum dolor sit amet"
+  pubDate={new Date("August 08 2021")}
+>
+  <Hero title="Jobs" />
+
+  <section class="section bg-light-100 my-0! py-20">
+    <div class="container">
+      <form action="/jobs/" method="GET" id="job-search-form" role="search">
+        <div class="join w-full">
+          <label for="job-search" class="sr-only">
+            Search by job title or tag
+          </label>
+          <input
+            id="job-search"
+            name="q"
+            type="search"
+            class="border border-gray-200 w-full bg-white px-3"
+            placeholder="Search by job title or tag..."
+            autocomplete="off"
+          />
+
+          <button
+            type="submit"
+            class="btn btn-lg join-item bg-primary text-secondary hover:bg-secondary hover:text-white shadow-none rounded-none border-primary hover:border-secondary"
+            aria-label="Search jobs"
+          >
+            <Search size={20} />
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+      <p id="job-search-status" class="mb-6 text-lg" aria-live="polite"></p>
+
+      <div id="job-list" class="grid gap-10">
+        {
+          jobs.map((post) => (
+            <a
+              href={`/jobs/${post.id}/`}
+              class="border border-gray-200 p-10 relative"
+              data-job-card
+              data-job-title={post.data.title.toLocaleLowerCase()}
+              data-job-tags={post.data.tags.join(" ").toLocaleLowerCase()}
+              hidden={!currentJobIds.has(post.id)}
+            >
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 pb-10">
+                <div class="flex flex-col justify-between">
+                  <div>
+                    <p class="opacity-50">Job Ref: {post.data.referrer}</p>
+
+                    <h3 class="font-semibold mt-3 mb-2">{post.data.title}</h3>
+
+                    <p class="text-lg mb-6">
+                      {post.data.city}, {post.data.country}
+                    </p>
+                  </div>
+
+                  <p class="text-xl mt-auto">
+                    {post.data.currency}
+                    {post.data.min_salary.toLocaleString()} -{" "}
+                    {post.data.currency}
+                    {post.data.max_salary.toLocaleString()}{" "}
+                    {post.data.salary_period}
+                  </p>
+                </div>
+
+                <div class="grid gap-3">
+                  <div class="flex flex-wrap gap-3 items-center">
+                    {post.data.tags.map((tag) => (
+                      <button>#{tag}</button>
+                    ))}
+                  </div>
+                  <p class="whitespace-pre-line">{post.data.description}</p>
+                </div>
+              </div>
+
+              <button
+                class="btn btn-square bg-primary text-secondary hover:bg-secondary hover:text-white shadow-none rounded-none border-none btn-lg absolute right-0 bottom-0"
+                title="Next"
+              >
+                <ArrowRight />
+              </button>
+            </a>
+          ))
+        }
+      </div>
+
+      <p id="job-search-empty" class="text-xl" hidden>
+        No jobs found matching your search.
+      </p>
+
+      {
+        page.lastPage > 1 && (
+          <div id="job-pagination">
+            <Pagination page={page} />
+          </div>
+        )
+      }
+    </div>
+  </section>
+</Layout>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>("#job-search-form");
+  const input = document.querySelector<HTMLInputElement>("#job-search");
+  const cards = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-job-card]"),
+  );
+  const pagination = document.querySelector<HTMLElement>("#job-pagination");
+  const empty = document.querySelector<HTMLElement>("#job-search-empty");
+  const status = document.querySelector<HTMLElement>("#job-search-status");
+
+  const filterJobs = () => {
+    if (!input || !empty || !status) return;
+
+    const query = input.value.trim().toLocaleLowerCase();
+    let matches = 0;
+
+    cards.forEach((card) => {
+      if (!query) {
+        card.hidden = !card.hasAttribute("data-current-page");
+        return;
+      }
+
+      const title = card.dataset.jobTitle ?? "";
+      const tags = card.dataset.jobTags ?? "";
+      const isMatch = title.includes(query) || tags.includes(query);
+      card.hidden = !isMatch;
+      if (isMatch) matches += 1;
+    });
+
+    if (!query) {
+      empty.hidden = true;
+      status.textContent = "";
+      if (pagination) pagination.hidden = false;
+      return;
+    }
+
+    empty.hidden = matches > 0;
+    status.textContent = `${matches} ${matches === 1 ? "job" : "jobs"} found`;
+    if (pagination) pagination.hidden = true;
+  };
+
+  cards.forEach((card) => {
+    if (!card.hidden) card.setAttribute("data-current-page", "");
+  });
+
+  const initialQuery = new URLSearchParams(window.location.search).get("q");
+  if (input && initialQuery) input.value = initialQuery;
+  filterJobs();
+
+  input?.addEventListener("input", filterJobs);
+  form?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    filterJobs();
+  });
+</script>

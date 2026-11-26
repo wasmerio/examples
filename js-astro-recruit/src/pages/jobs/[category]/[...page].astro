@@ -1,0 +1,120 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "../../../layouts/MainLayout.astro";
+import Hero from "../../../components/Hero.astro";
+import Pagination from "../../../components/Pagination.astro";
+import { ArrowRight } from "@lucide/astro";
+
+export async function getStaticPaths({ paginate }) {
+  const toCategorySlug = (category: string) =>
+    category
+      .trim()
+      .toLocaleLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "");
+
+  const jobs = (await getCollection("jobs")).sort(
+    (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+  );
+  const categories = new Map();
+
+  jobs.forEach((job) => {
+    const slug = toCategorySlug(job.data.category);
+    const category = categories.get(slug) ?? {
+      name: job.data.category,
+      jobs: [],
+    };
+
+    category.jobs.push(job);
+    categories.set(slug, category);
+  });
+
+  return Array.from(categories.entries()).flatMap(
+    ([category, categoryData]) =>
+      paginate(categoryData.jobs, {
+        pageSize: 6,
+        params: { category },
+        props: { categoryName: categoryData.name },
+      }),
+  );
+}
+
+const { page, categoryName } = Astro.props;
+---
+
+<Layout
+  title={`${categoryName} Jobs`}
+  description={`Browse the latest ${categoryName} job opportunities.`}
+>
+  <Hero title={`${categoryName} Jobs`} />
+
+  <div class="container my-10">
+    <nav class="breadcrumbs text-sm" aria-label="Breadcrumb">
+      <ul class="flex! flex-wrap">
+        <li><a href="/">Home</a></li>
+        <li><a href="/jobs/">Jobs</a></li>
+        <li>{categoryName}</li>
+      </ul>
+    </nav>
+  </div>
+
+  <section class="section">
+    <div class="container">
+      <div class="mb-10 flex items-center justify-between gap-6 flex-wrap">
+        <div>
+          <p class="text-primary font-semibold uppercase">Job category</p>
+          <h2 class="mt-2">{categoryName}</h2>
+        </div>
+
+        <a href="/jobs/" class="btn btn-outline rounded-none">All jobs</a>
+      </div>
+
+      <div class="grid gap-10">
+        {
+          page.data.map((post) => (
+            <a
+              href={`/jobs/${post.id}/`}
+              class="border border-gray-200 p-10 relative"
+            >
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 pb-10">
+                <div class="flex flex-col justify-between">
+                  <div>
+                    <p class="opacity-50">Job Ref: {post.data.referrer}</p>
+                    <h3 class="font-semibold mt-3 mb-2">{post.data.title}</h3>
+                    <p class="text-lg mb-6">
+                      {post.data.city}, {post.data.country}
+                    </p>
+                  </div>
+
+                  <p class="text-xl mt-auto">
+                    {post.data.currency}
+                    {post.data.min_salary.toLocaleString()} -{" "}
+                    {post.data.currency}
+                    {post.data.max_salary.toLocaleString()}{" "}
+                    {post.data.salary_period}
+                  </p>
+                </div>
+
+                <div class="grid gap-3">
+                  <div class="flex flex-wrap gap-3 items-center">
+                    {post.data.tags.map((tag) => <span>#{tag}</span>)}
+                  </div>
+                  <p class="whitespace-pre-line">{post.data.description}</p>
+                </div>
+              </div>
+
+              <span
+                class="btn btn-square bg-primary text-secondary hover:bg-secondary hover:text-white shadow-none rounded-none border-none btn-lg absolute right-0 bottom-0"
+                aria-hidden="true"
+              >
+                <ArrowRight />
+              </span>
+            </a>
+          ))
+        }
+      </div>
+
+      {page.lastPage > 1 && <Pagination page={page} />}
+    </div>
+  </section>
+</Layout>

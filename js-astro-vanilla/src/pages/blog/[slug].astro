@@ -1,0 +1,123 @@
+---
+import { Picture } from 'astro:assets'
+import { type CollectionEntry, render } from 'astro:content'
+
+import Base from '@src/layouts/Base.astro'
+import Share from '@src/components/Share.astro'
+import BlogDate from '@src/components/blog/Date.astro'
+import BlogLoop from '@src/components/blog/Loop.astro'
+import BlogPager from '@src/components/blog/Pager.astro'
+
+import { SITE } from '@src/consts'
+import type { TaggedItem, PostCollectionEntry } from '@src/utils/blog'
+import { getAllPosts, readingTime, relatedPosts } from '@src/utils/blog'
+
+interface Props {
+	next: CollectionEntry<'blog'> | null
+	post: PostCollectionEntry
+	prev: CollectionEntry<'blog'> | null
+  related: PostCollectionEntry[]
+}
+
+export async function getStaticPaths () {
+	const posts = await getAllPosts()
+	const count = posts.length
+
+	return posts.map((
+    post: PostCollectionEntry,
+    index: number
+  ) => ({
+		params: { slug: post.id, },
+		props: {
+			post,
+			next: index + 1 !== count ? posts[index + 1] : null,
+			prev: index !== 0 ? posts[index - 1] : null,
+      related: relatedPosts(post, posts, SITE.RELATED_POSTS),
+		},
+	}))
+}
+
+const { next, post, prev, related } = Astro.props
+const {
+  title,
+  description,
+  heroImage: image,
+  pubDate,
+  updatedDate,
+  tagged
+} = post.data
+const { Content } = await render(post)
+---
+
+<Base {title} {description} {image}>
+	{image && (
+    <header slot="before-breadcrumbs">
+      <Picture
+        src={image} height={510} width={1020} alt=""
+        loading="eager" formats={['jpg']}
+      />
+    </header>
+  )}
+  <article>
+		<h1 class="article__title">{title}</h1>
+    <p class="article__description">{description}</p>
+    <div class="article__date">
+      <BlogDate date={pubDate} />
+      {updatedDate && (
+        <div class="article__updated">Last update: <BlogDate date={updatedDate} /></div>
+      )}
+    </div>
+    <div class="article__readingtime">{readingTime(post.body)}</div>
+    <div class="article__tags">
+      {tagged?.map((tag: TaggedItem) => (
+        <a href={tag.href}>#{tag.name}</a>
+      ))}
+    </div>
+    <hr class="article__separator" />
+    <Content />
+    <Share {title} />
+  </article>
+	<BlogPager {next} {prev} />
+  {related.length > 0 && (<BlogLoop posts={related} title="Related Posts" />)}
+</Base>
+
+<style>
+	header {
+		padding: 0;
+	}
+	.article__title {
+		line-height: 1.2;
+		margin: 0 0 .375em 0;
+    text-align: center;
+	}
+  .article__description {
+    color: var(--text-color-mid);
+    font-size: 1.5rem;
+    line-height: 1.3;
+    margin: 0;
+    text-align: center;
+  }
+  .article__date {
+    color: var(--text-color-mute);
+    margin: 1em 0;
+    text-align: center;
+  }
+  .article__updated {
+    font-size: .75rem;
+  }
+  .article__tags {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+  }
+  .article__readingtime {
+    color: var(--text-color-mid);
+    font-size: .875rem;
+    margin: .5em 0;
+    text-align: center;
+  }
+  .article__separator {
+    margin: 2rem 0 2.5em;
+  }
+</style>
+

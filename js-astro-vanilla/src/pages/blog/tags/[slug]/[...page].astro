@@ -1,0 +1,60 @@
+---
+import { slug } from 'github-slugger'
+import type { GetStaticPathsOptions, Page } from 'astro'
+
+import Base from '@src/layouts/Base.astro'
+import BlogLoop from '@src/components/blog/Loop.astro'
+import Pagination from '@src/components/Pagination.astro'
+
+import { SITE } from '@src/consts'
+import { getAllPosts } from '@src/utils/blog'
+import { permalink } from '@src/utils/permalink'
+import type { PostCollectionEntry, TaggedItem } from '@src/utils/blog'
+
+interface Props {
+  current: TaggedItem
+	page: Page<PostCollectionEntry>
+}
+
+export async function getStaticPaths (
+	{ paginate }: GetStaticPathsOptions
+) {
+  const posts = await getAllPosts()
+  const tags = [...new Set(posts.flatMap(
+    ({ data }) => data.tags || []
+  ).filter(Boolean))].map((tag: string) => ({
+    href: permalink.tags(slug(tag)),
+    name: tag,
+  }))
+
+  return tags.flatMap((tag) => paginate(posts.filter(
+    ({ data }) => data.tags.includes(tag.name)
+  ), {
+      params: { slug: slug(tag.name) },
+      props: { current: tag, },
+      pageSize: SITE.PER_PAGE
+    }
+  ))
+}
+
+const { current, page } = Astro.props
+const title = `Tagged: ${current.name}`
+const description = `Listing of all posts tagged with "${current.name}"`
+---
+
+<Base {title} {description}>
+	<header slot="before-breadcrumbs"><h1>{title}</h1></header>
+	<BlogLoop posts={page.data} />
+  <p><a href={permalink.root('blog/tags')}>View All Tags</a></p>
+	<Pagination {page} />
+</Base>
+
+<style>
+	header {
+		padding: 24px 16px;
+	}
+	header h1 {
+		line-height: 1;
+		margin: 0;
+	}
+</style>

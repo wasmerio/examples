@@ -1,0 +1,305 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import Icon from "@/components/Media/Icon.astro";
+import arrow from "@/assets/icons/arrow-full.svg";
+import close from "@/assets/icons/close.svg";
+import play from "@/assets/icons/play.svg";
+import pause from "@/assets/icons/pause.svg";
+import { slotContent } from "@/utils/slots.ts";
+
+type Emphasis = "primary" | "secondary";
+
+type Tag =
+  | (HTMLAttributes<"button"> & {
+      /** What it renders as. Defaults to `button`. */
+      element?: "button";
+      type?: "button" | "submit" | "reset";
+      /** Greys it out and stops it responding. */
+      disabled?: boolean;
+      href?: never;
+    })
+  | (Omit<HTMLAttributes<"a">, "type"> & {
+      element: "link";
+      /** Where the link goes. */
+      href?: string;
+      type?: never;
+      disabled?: never;
+    });
+
+type Kind =
+  | {
+      /**
+       * What kind of button it is.
+       *
+       * - `main` — a labelled button (default)
+       * - `link` — text on a rule that travels across on hover
+       * - `play`, `close`, `arrow` — a mark on its own, with a label for
+       *   anyone who cannot see it
+       */
+      variant?: "main";
+      /** An optional arrow that moves in its direction on hover and keyboard focus. */
+      arrow?: "right" | "up-right";
+      /**
+       * How much weight the button carries.
+       *
+       * - `primary` — filled, for the main action (default)
+       * - `secondary` — outlined, for anything sitting beside a primary
+       */
+      emphasis?: Emphasis;
+      label?: never;
+      pressed?: never;
+      direction?: never;
+    }
+  | {
+      variant: "link";
+      /** An optional arrow that moves in its direction on hover and keyboard focus. */
+      arrow?: "right" | "up-right";
+      /** A link carries no weight of its own: it is already the quietest. */
+      emphasis?: never;
+      label?: never;
+      pressed?: never;
+      direction?: never;
+    }
+  | {
+      variant: "play";
+      arrow?: never;
+      emphasis?: Emphasis;
+      /** What the control does, for anyone who cannot see its mark. Defaults to `Play`, or `Pause` when pressed is `true`. */
+      label?: string;
+      /** Whether it is playing: shows the pause mark, and reads as pressed. Defaults to `false`. */
+      pressed?: boolean;
+      direction?: never;
+    }
+  | {
+      variant: "close";
+      arrow?: never;
+      emphasis?: Emphasis;
+      /** What the control does, for anyone who cannot see its mark. Defaults to `Close`. */
+      label?: string;
+      pressed?: never;
+      direction?: never;
+    }
+  | {
+      variant: "arrow";
+      arrow?: never;
+      emphasis?: Emphasis;
+      /** What the control does, for anyone who cannot see its mark. Defaults to `Next`, or `Previous` when direction is `back`. */
+      label?: string;
+      pressed?: never;
+      /** Which way the arrow points. Defaults to `forward`. */
+      direction?: "forward" | "back";
+    };
+
+type Props = {
+  /** Set to `false` to skip rendering this component and its children. */
+  render?: boolean;
+} & Tag &
+  Kind;
+
+type AllProps = HTMLAttributes<"button"> &
+  Omit<HTMLAttributes<"a">, "type"> & {
+    render?: boolean;
+    arrow?: "right" | "up-right";
+    variant?: "main" | "link" | "play" | "close" | "arrow";
+    emphasis?: Emphasis;
+    label?: string;
+    pressed?: boolean;
+    direction?: "forward" | "back";
+    element?: "button" | "link";
+    href?: string;
+    type?: "button" | "submit" | "reset";
+  };
+
+const {
+  render = true,
+  variant = "main",
+  arrow: textArrow,
+  emphasis = "primary",
+  label,
+  pressed = false,
+  direction = "forward",
+  element = "button",
+  href,
+  type = "button",
+  class: className,
+  ...rest
+} = Astro.props as AllProps;
+
+const isLink = element === "link";
+const Tag = isLink ? "a" : "button";
+const tagAttrs = isLink
+  ? { href: href || "#" }
+  : { type: type === "submit" ? undefined : type };
+
+const marks = { play, close, arrow };
+/* main and link are written, the rest are marks with a label. */
+const isWritten = variant === "main" || variant === "link";
+const content = isWritten ? await slotContent(Astro.slots) : "";
+
+const named = {
+  play: pressed ? "Pause" : "Play",
+  close: "Close",
+  arrow: direction === "back" ? "Previous" : "Next",
+};
+---
+
+{
+  render && (isWritten ? content : true) && (
+    <Tag
+      class:list={[
+        "button_wrap",
+        emphasis !== "primary" && emphasis,
+        variant !== "main" && variant,
+        variant === "arrow" && direction === "back" && "back",
+        className,
+      ]}
+      aria-label={isWritten ? undefined : (label ?? named[variant])}
+      aria-pressed={variant === "play" ? pressed : undefined}
+      {...tagAttrs}
+      {...rest}
+    >
+      {isWritten && (
+        <span class="button_text text-style-trim">
+          <Fragment set:html={content} />
+          {textArrow && (
+            <span class:list={["button_arrow", textArrow]} aria-hidden="true">
+              {textArrow === "right" ? "→" : "↗"}
+            </span>
+          )}
+        </span>
+      )}
+      {variant === "play" && (
+        <Fragment>
+          <Icon class="button_mark button_play" src={play} variant="small" />
+          <Icon class="button_mark button_pause" src={pause} variant="small" />
+        </Fragment>
+      )}
+      {variant === "close" && (
+        <Icon class="button_mark" src={marks.close} variant="small" />
+      )}
+      {variant === "arrow" && (
+        <Icon class="button_mark" src={marks.arrow} variant="small" />
+      )}
+    </Tag>
+  )
+}
+
+<style is:global>
+  @layer components {
+    .button_wrap {
+      & .button_arrow {
+        display: inline-block;
+        margin-left: 0.35em;
+        transition: transform var(--hover-duration) var(--hover-ease);
+      }
+      &:is(:hover, :focus-visible) .button_arrow.right {
+        transform: translateX(0.2em);
+      }
+      &:is(:hover, :focus-visible) .button_arrow.up-right {
+        transform: translate(0.15em, -0.15em);
+      }
+      &.arrow .button_mark {
+        transition: translate var(--hover-duration) var(--hover-ease);
+      }
+      &.arrow:is(:hover, :focus-visible) .button_mark {
+        translate: 0.15em 0;
+      }
+      &.arrow.back:is(:hover, :focus-visible) .button_mark {
+        translate: -0.15em 0;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        & .button_arrow,
+        &.arrow .button_mark {
+          transition: none;
+          transform: none !important;
+          translate: none !important;
+        }
+      }
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0.5em;
+      padding: 0.75em 1.5em;
+      background-color: var(--button-background);
+      color: var(--button-text);
+      border: var(--border-width) solid var(--button-border);
+      border-radius: 0.5em;
+      line-height: 1.2;
+      text-decoration: none;
+      text-align: center;
+      transition:
+        background-color var(--hover-duration) var(--hover-ease),
+        color var(--hover-duration) var(--hover-ease),
+        border-color var(--hover-duration) var(--hover-ease);
+      @media (hover: hover) {
+        &:hover:not(:disabled) {
+          background-color: var(--button-background-hover);
+          color: var(--button-text-hover);
+          border-color: var(--button-border-hover);
+        }
+      }
+      &.secondary {
+        --button-background: var(--button-2-background);
+        --button-text: var(--button-2-text);
+        --button-border: var(--button-2-border);
+        --button-background-hover: var(--button-2-background-hover);
+        --button-text-hover: var(--button-2-text-hover);
+        --button-border-hover: var(--button-2-border-hover);
+      }
+      &.link {
+        --button-background: transparent;
+        --button-text: var(--link-text);
+        --button-border: var(--link-border);
+        --button-background-hover: transparent;
+        --button-text-hover: var(--link-text-hover);
+        --button-border-hover: var(--link-border);
+
+        padding: 0.4em 0;
+        border: 0;
+        border-bottom: var(--border-width) solid var(--button-border);
+        border-radius: 0;
+        background-image: linear-gradient(
+          var(--link-border-hover),
+          var(--link-border-hover)
+        );
+        background-repeat: no-repeat;
+        background-origin: border-box;
+        background-position: 100% 100%;
+        background-size: 0 var(--border-width);
+        transition:
+          background-size calc(var(--hover-duration) * 2) var(--hover-ease),
+          color var(--hover-duration) var(--hover-ease),
+          border-color var(--hover-duration) var(--hover-ease);
+        @media (hover: hover) {
+          &:hover:not(:disabled) {
+            background-position: 0 100%;
+            background-size: 100% var(--border-width);
+          }
+        }
+      }
+      &:is(.play, .close, .arrow) {
+        gap: 0;
+        padding: 0.75em;
+        border-radius: var(--radius-round);
+      }
+      &.back .button_mark {
+        rotate: 180deg;
+      }
+      &.play .button_pause {
+        display: none;
+      }
+      &.play[aria-pressed="true"] {
+        & .button_play {
+          display: none;
+        }
+        & .button_pause {
+          display: block;
+        }
+      }
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
+    }
+  }
+</style>

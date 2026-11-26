@@ -1,0 +1,188 @@
+---
+import { getCollection } from "astro:content";
+import { Image } from "astro:assets";
+import FilterBar from "../components/FilterBar.astro";
+import Layout from "../layouts/Layout.astro";
+import siteConfig from "../side.config";
+
+const projects = (await getCollection("projects", ({ data }) => !data.draft)).sort(
+  (a, b) => a.data.order - b.data.order,
+);
+const statuses = ["active", "past", "unspecified"] as const;
+const labels = {
+  active: {
+    title: "Active projects",
+    description: "Ongoing research, infrastructure, and collaborative initiatives.",
+  },
+  past: {
+    title: "Past projects",
+    description: "Completed work and earlier lines of inquiry.",
+  },
+  unspecified: {
+    title: "Other projects",
+    description: "Selected experiments, tools, and community contributions.",
+  },
+};
+const groups = statuses.map((status) => ({
+  status,
+  ...labels[status],
+  projects: projects.filter((project) => project.data.status === status),
+}));
+const pageTitle = siteConfig.pageTitles.projects.title || "Projects";
+const pageDescription = siteConfig.pageTitles.projects.description ||
+  "Selected lab and community projects with a focus on reproducible research infrastructure, learning analytics, and open collaboration.";
+---
+
+<Layout title={pageTitle} description={pageDescription} schemaType="CollectionPage">
+  <div class="page-stack">
+    <header class="page-header">
+      <h1 class="page-title">{pageTitle}</h1>
+      <p class="page-description">{pageDescription}</p>
+
+      <FilterBar
+        allIcon="i-mdi:code-braces"
+        total={projects.length}
+        items={groups.map((group) => ({
+          filter: group.status,
+          label: group.status === "unspecified" ? "other" : group.status,
+          count: group.projects.length,
+          icon: group.status === "active" ? "i-mdi:rocket-launch" : group.status === "past" ? "i-mdi:archive" : "i-mdi:folder-open",
+        }))}
+      />
+    </header>
+
+    <div id="projects-container" class="space-y-10 sm:space-y-12">
+      {groups.filter((group) => group.projects.length > 0).map((group) => (
+        <section
+          class="content-section project-section space-y-6"
+          data-filter-section={group.status}
+          aria-labelledby={`projects-${group.status}`}
+        >
+          <header class="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-1.5 border-b border-paper-300/90 pb-4 dark:border-ink-700 sm:flex sm:items-end sm:justify-between sm:gap-6">
+            <div class="contents sm:block sm:space-y-1.5">
+              <h2 id={`projects-${group.status}`} class="section-heading col-start-1 row-start-1">{group.title}</h2>
+              <p class="body-copy col-span-2 row-start-2 max-w-2xl text-ink-600 dark:text-paper-300">{group.description}</p>
+            </div>
+            <p class="entry-meta col-start-2 row-start-1 shrink-0 font-bold">
+              {group.projects.length} {group.projects.length === 1 ? "project" : "projects"}
+            </p>
+          </header>
+
+          <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {group.projects.map((project) => {
+              const isFeatured = project.data.featured;
+              const role = project.data.metadata?.find((item) => item.label.toLowerCase() === "role")?.value;
+              const isActive = project.data.status === "active";
+
+              return (
+                <article
+                  class:list={[
+                    "surface-card-hover group flex flex-col justify-between overflow-hidden",
+                    isFeatured && "md:col-span-2",
+                  ]}
+                >
+                  <div class="space-y-4">
+                    <div class="flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2">
+                        <span class={isActive ? "chip-status-active" : "chip-status-past"}>
+                          {isActive && <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />}
+                          {project.data.status}
+                        </span>
+                        {isFeatured && (
+                          <span class="chip-accent text-[11px]">
+                            <span class="i-mdi:star text-xs" aria-hidden="true" />
+                            Featured
+                          </span>
+                        )}
+                      </div>
+                      <time class="font-mono text-xs tabular-nums text-ink-500 dark:text-paper-400">
+                        {project.data.period}
+                      </time>
+                    </div>
+
+                    {isFeatured && project.data.cover && project.data.coverAlt && (
+                      <div
+                        class="overflow-hidden rounded-lg border border-paper-300/80 bg-paper-200 aspect-[16/9] sm:aspect-[21/9] dark:border-ink-700 dark:bg-ink-800"
+                        transition:name={`project-${project.id}-cover`}
+                      >
+                        <Image
+                          src={project.data.cover}
+                          format="webp"
+                          widths={[400, 800, 1200]}
+                          sizes="(min-width: 1152px) 700px, (min-width: 768px) calc(100vw - 112px), calc(100vw - 80px)"
+                          alt={project.data.coverAlt}
+                          width={project.data.cover.width}
+                          height={project.data.cover.height}
+                          loading="lazy"
+                          decoding="async"
+                          class="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]"
+                        />
+                      </div>
+                    )}
+
+                    <div class="space-y-1">
+                      <h3
+                        class="entry-title text-xl transition-colors group-hover:text-accent-700 dark:group-hover:text-accent-300"
+                        transition:name={`project-${project.id}-title`}
+                      >
+                        <a href={`/projects/${project.id}`} class="no-underline text-inherit">
+                          {project.data.title}
+                        </a>
+                      </h3>
+                      {project.data.subtitle && (
+                        <p class="font-sans text-xs font-semibold text-accent-700 dark:text-accent-300">
+                          {project.data.subtitle}
+                        </p>
+                      )}
+                    </div>
+
+                    <p class="entry-summary text-sm line-clamp-3 leading-relaxed">
+                      {project.data.summary}
+                    </p>
+
+                    {project.data.highlights?.[0] && !isFeatured && (
+                      <p class="text-xs text-ink-600 dark:text-paper-400 font-sans line-clamp-2 border-l-2 border-accent-300/60 pl-2.5 dark:border-accent-700/60">
+                        <span class="font-semibold text-ink-800 dark:text-paper-200">Highlight: </span>
+                        {project.data.highlights[0]}
+                      </p>
+                    )}
+                  </div>
+
+                  <div class="mt-5 pt-4 border-t border-paper-200/80 dark:border-ink-700/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      {role && (
+                        <span class="font-sans font-semibold text-ink-700 dark:text-paper-300 mr-1">
+                          {role}
+                        </span>
+                      )}
+                      {project.data.tech.slice(0, 3).map((tech) => (
+                        <span class="scholarly-pill">{tech}</span>
+                      ))}
+                    </div>
+
+                    <a
+                      href={`/projects/${project.id}`}
+                      class="action-link text-xs font-semibold px-0 group-hover:text-accent-900 dark:group-hover:text-accent-100"
+                    >
+                      <span>View details</span>
+                      <span
+                        class="i-mdi:arrow-right text-sm transition-transform duration-200 group-hover:translate-x-1"
+                        aria-hidden="true"
+                      />
+                    </a>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  </div>
+</Layout>
+
+<script>
+  import { setupFilterControls } from "../scripts/ui";
+
+  document.addEventListener("astro:page-load", () => setupFilterControls());
+</script>

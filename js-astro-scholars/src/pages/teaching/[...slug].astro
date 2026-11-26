@@ -1,0 +1,73 @@
+---
+import { getCollection, render, type CollectionEntry } from "astro:content";
+import DetailShell from "../../components/DetailShell.astro";
+import Layout from "../../layouts/Layout.astro";
+import { isSameCourse } from "../../lib/teaching";
+
+export async function getStaticPaths() {
+  const courses = (await getCollection("teaching", ({ data }) => !data.draft)).sort(
+    (a, b) => a.data.order - b.data.order,
+  );
+  return courses.map((course) => ({
+    params: { slug: course.id },
+    props: {
+      course,
+      otherOfferings: courses
+        .filter((offering) => offering.id !== course.id && isSameCourse(offering, course))
+        .map((offering) => ({ term: offering.data.term, href: `/teaching/${offering.id}` })),
+    },
+  }));
+}
+
+const { course, otherOfferings } = Astro.props as {
+  course: CollectionEntry<"teaching">;
+  otherOfferings: Array<{ term: string; href: string }>;
+};
+const { Content } = await render(course);
+const { data } = course;
+const status = {
+  current: "Current",
+  recent: "Recent",
+  past: "Past",
+}[data.status];
+---
+
+<Layout
+  contentSource={course.filePath}
+  title={data.title}
+  description={data.summary}
+  image={data.cover?.src}
+  imageAlt={data.coverAlt}
+  imageWidth={data.cover?.width}
+  imageHeight={data.cover?.height}
+>
+  <DetailShell
+    backHref="/teaching"
+    backLabel="All teaching"
+    title={data.title}
+    summary={data.summary}
+    transitionKey={`teaching-${course.id}`}
+    cover={data.cover}
+    coverAlt={data.coverAlt}
+    facts={[
+      { label: "Course", value: data.code },
+      { label: "Term", value: data.term },
+      { label: "Status", value: status },
+    ]}
+    tags={[...data.badges, ...data.tags]}
+    highlights={data.highlights}
+    resources={data.links}
+  >
+    {otherOfferings.length > 0 && (
+      <section aria-labelledby="other-offerings">
+        <h2 id="other-offerings">Other offerings</h2>
+        <ul>
+          {otherOfferings.map((offering) => (
+            <li><a href={offering.href}>{offering.term}</a></li>
+          ))}
+        </ul>
+      </section>
+    )}
+    <Content />
+  </DetailShell>
+</Layout>

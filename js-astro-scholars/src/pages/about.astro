@@ -1,0 +1,443 @@
+---
+import Layout from "../layouts/Layout.astro";
+import PageJumpNav from "../components/PageJumpNav.astro";
+import aboutRaw from "../data/about.yml?raw";
+import { aboutDataSchema } from "../lib/about";
+import { createUniqueSectionId } from "../lib/section-id";
+import siteConfig from "../side.config";
+import { parse } from "yaml";
+
+const aboutData = aboutDataSchema.parse(parse(aboutRaw) ?? {});
+const profile = (aboutData.profile ?? []).filter((item) => item.label && item.value);
+const experience = (aboutData.experience ?? []).filter(
+  (item) => item.role || item.organization || item.period || item.bullets?.length,
+);
+const service = (aboutData.service ?? []).filter(
+  (item) => typeof item === "string" || item.role || item.organization || item.period,
+);
+const education = (aboutData.education ?? []).filter(
+  (item) => item.degree || item.institution || item.year !== undefined,
+);
+const sections = aboutData.sections ?? [];
+
+const pageTitle = siteConfig.pageTitles.about.title || "About";
+const pageDescription = siteConfig.pageTitles.about.description || "";
+
+const fixedSectionIds = new Set(["profile", "education", "experience", "service"]);
+const usedSectionIds = new Set(fixedSectionIds);
+
+const customSections = sections
+  .map((section, index) => {
+    const label = section.title?.trim() || `Section ${index + 1}`;
+    const items = (section.items ?? []).filter(
+      (item) =>
+        typeof item === "string" ||
+        item.title ||
+        item.subtitle ||
+        item.date !== undefined ||
+        item.description ||
+        item.badges?.length ||
+        item.highlights?.length ||
+        item.links?.length,
+    );
+
+    return {
+      ...section,
+      title: label,
+      items,
+      id: createUniqueSectionId(section.title, usedSectionIds, `section-${index + 1}`),
+      label,
+    };
+  })
+  .filter((section) => section.items.length > 0);
+
+const aboutNavItems = [
+  ...(profile.length > 0 ? [{ href: "#profile", label: "Profile" }] : []),
+  ...(experience.length > 0 ? [{ href: "#experience", label: "Experience" }] : []),
+  ...(education.length > 0 ? [{ href: "#education", label: "Education" }] : []),
+  ...(service.length > 0 ? [{ href: "#service", label: "Service" }] : []),
+  ...customSections.map((section) => ({
+    href: `#${section.id}`,
+    label: section.label,
+  })),
+];
+---
+
+<Layout
+  title={pageTitle}
+  description={pageDescription}
+  schemaType="AboutPage"
+>
+  <div class="page-stack">
+    <header class="page-header">
+      <h1 class="page-title">{pageTitle}</h1>
+      <p class="page-description">{pageDescription}</p>
+    </header>
+
+    <PageJumpNav items={aboutNavItems} />
+
+    <div class="space-y-12 sm:space-y-14">
+      <!-- Profile / Academic Snapshot Section -->
+      {
+        profile.length > 0 && (
+          <section id="profile" class="content-section scroll-mt-24 space-y-4">
+            <header class="border-b border-paper-300/90 pb-3 dark:border-ink-700">
+              <h2 class="section-heading">Profile</h2>
+            </header>
+            <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {profile.map((item) => (
+                <div class="surface-card p-5 sm:p-6">
+                  <dt class="font-mono text-xs uppercase tracking-wider text-ink-500 dark:text-paper-400 font-semibold">
+                    {item.label}
+                  </dt>
+                  <dd class="entry-title mt-2 text-base sm:text-lg text-ink-950 dark:text-paper-50 leading-snug">
+                    {item.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        )
+      }
+
+      <!-- Dual Track 1: Appointments (Experience) & Degrees (Education) -->
+      {
+        (experience.length > 0 || education.length > 0) && (
+          <div class={`grid grid-cols-1 gap-8 ${experience.length > 0 && education.length > 0 ? "lg:grid-cols-2" : ""} items-start`}>
+            {experience.length > 0 && (
+              <section id="experience" class="content-section scroll-mt-24 space-y-4">
+                <header class="flex items-end justify-between gap-4 border-b border-paper-300/90 pb-3 dark:border-ink-700">
+                  <h2 class="section-heading">Experience</h2>
+                  <p class="font-mono text-xs font-semibold tabular-nums text-ink-500 dark:text-paper-400">
+                    {experience.length} {experience.length === 1 ? "appointment" : "appointments"}
+                  </p>
+                </header>
+
+                <div class="relative pl-6 sm:pl-7 border-l-2 border-paper-300/90 dark:border-ink-700 space-y-7 ml-2.5 my-3">
+                  {experience.map((exp) => (
+                    <article class="relative group">
+                      <span class="absolute -left-[31px] sm:-left-[35px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-accent-600 bg-paper-50 dark:bg-ink-950 dark:border-accent-400" aria-hidden="true"></span>
+                      <div class="space-y-2">
+                        {exp.period && (
+                          <span class="scholarly-pill font-mono text-[11px] font-semibold text-accent-800 dark:text-accent-300 bg-accent-50/80 dark:bg-accent-950/40 border-accent-300/50 dark:border-accent-700/50">
+                            {exp.period}
+                          </span>
+                        )}
+                        <div class="space-y-0.5">
+                          {exp.role && (
+                            <h3 class="entry-title text-base sm:text-lg">
+                              {exp.role}
+                            </h3>
+                          )}
+                          {exp.organization && (
+                            <p class="entry-supporting font-medium text-sm text-ink-800 dark:text-paper-200">
+                              {exp.organization}
+                            </p>
+                          )}
+                        </div>
+
+                        {exp.bullets && exp.bullets.length > 0 && (
+                          <ul class="list-disc space-y-1.5 pl-4 pt-1 marker:text-accent-500 dark:marker:text-accent-400 text-sm text-ink-600 dark:text-paper-400 leading-relaxed">
+                            {exp.bullets.map((bullet) => (
+                              <li class="body-copy pl-0.5">
+                                {bullet}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {education.length > 0 && (
+              <section id="education" class="content-section scroll-mt-24 space-y-4">
+                <header class="flex items-end justify-between gap-4 border-b border-paper-300/90 pb-3 dark:border-ink-700">
+                  <h2 class="section-heading">Education</h2>
+                  <p class="font-mono text-xs font-semibold tabular-nums text-ink-500 dark:text-paper-400">
+                    {education.length} {education.length === 1 ? "degree" : "degrees"}
+                  </p>
+                </header>
+
+                <div class="relative pl-6 sm:pl-7 border-l-2 border-paper-300/90 dark:border-ink-700 space-y-7 ml-2.5 my-3">
+                  {education.map((edu) => (
+                    <article class="relative group">
+                      <span class="absolute -left-[31px] sm:-left-[35px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-accent-600 bg-paper-50 dark:bg-ink-950 dark:border-accent-400" aria-hidden="true"></span>
+                      <div class="space-y-1.5">
+                        {edu.year !== undefined && (
+                          <span class="scholarly-pill font-mono text-[11px] font-semibold text-accent-800 dark:text-accent-300 bg-accent-50/80 dark:bg-accent-950/40 border-accent-300/50 dark:border-accent-700/50">
+                            {edu.year}
+                          </span>
+                        )}
+                        {edu.degree && (
+                          <h3 class="entry-title text-base sm:text-lg">
+                            {edu.degree}
+                          </h3>
+                        )}
+                        {edu.institution && (
+                          <p class="entry-supporting text-sm text-ink-700 dark:text-paper-300">
+                            {edu.institution}
+                          </p>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )
+      }
+
+      <!-- Dual Track 2: Academic Service & Honors / First Custom Section -->
+      {
+        (service.length > 0 || customSections.length > 0) && (
+          <div class={`grid grid-cols-1 gap-8 ${service.length > 0 && customSections.length > 0 ? "lg:grid-cols-2" : ""} items-start`}>
+            {service.length > 0 && (
+              <section id="service" class="content-section scroll-mt-24 space-y-4">
+                <header class="flex items-end justify-between gap-4 border-b border-paper-300/90 pb-3 dark:border-ink-700">
+                  <h2 class="section-heading">Academic Service</h2>
+                  <p class="font-mono text-xs font-semibold tabular-nums text-ink-500 dark:text-paper-400">
+                    {service.length} {service.length === 1 ? "record" : "records"}
+                  </p>
+                </header>
+
+                <div class="space-y-3">
+                  {service.map((item) => {
+                    if (typeof item === "string") {
+                      return (
+                        <article class="surface-card p-4">
+                          <p class="body-copy text-sm">{item}</p>
+                        </article>
+                      );
+                    }
+                    return (
+                      <article class="surface-card space-y-2 p-4 sm:p-5">
+                        {item.period && (
+                          <span class="scholarly-pill font-mono text-[11px] font-semibold text-accent-700 dark:text-accent-300">
+                            {item.period}
+                          </span>
+                        )}
+                        <div class="space-y-0.5">
+                          {item.role && (
+                            <h3 class="font-heading text-base font-semibold text-ink-950 dark:text-paper-50">
+                              {item.role}
+                            </h3>
+                          )}
+                          {item.organization && (
+                            <p class="body-copy text-sm text-ink-600 dark:text-paper-400">
+                              {item.organization}
+                            </p>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {customSections.length > 0 && (() => {
+              const primarySection = customSections[0];
+              return (
+                <section id={primarySection.id} class="content-section scroll-mt-24 space-y-4">
+                  <header class="flex items-end justify-between gap-4 border-b border-paper-300/90 pb-3 dark:border-ink-700">
+                    <h2 class="section-heading flex items-center gap-2">
+                      {primarySection.icon && (
+                        <span class={`${primarySection.icon} text-accent-600 dark:text-accent-300`} aria-hidden="true"></span>
+                      )}
+                      <span>{primarySection.title}</span>
+                    </h2>
+                    <p class="font-mono text-xs font-semibold tabular-nums text-ink-500 dark:text-paper-400">
+                      {primarySection.items?.length || 0} {(primarySection.items?.length || 0) === 1 ? "record" : "records"}
+                    </p>
+                  </header>
+
+                  <div class="space-y-3">
+                    {(primarySection.items || []).map((item) => {
+                      if (typeof item === "string") {
+                        return (
+                          <article class="surface-card p-4">
+                            <p class="body-copy text-sm">{item}</p>
+                          </article>
+                        );
+                      }
+                      const hasDetails = Boolean(item.description || item.badges?.length || item.highlights?.length);
+                      return (
+                        <article class={`surface-card p-4 sm:p-5 space-y-2.5 ${hasDetails ? "border-accent-300/70 dark:border-accent-700/60" : ""}`}>
+                          <div class="flex items-baseline justify-between gap-2">
+                            {item.title && (
+                              <h3 class="entry-title text-base sm:text-lg">
+                                {item.link ? (
+                                  <a
+                                    href={item.link}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    class="inline text-inherit no-underline transition-colors hover:text-accent-700 focus-visible:text-accent-700 dark:hover:text-accent-300 dark:focus-visible:text-accent-300"
+                                  >
+                                    <span>{item.title}</span>
+                                    <span class="i-mdi:open-in-new ml-1 inline-block align-[0.05em] text-xs" aria-hidden="true"></span>
+                                  </a>
+                                ) : item.title}
+                              </h3>
+                            )}
+                            {item.date !== undefined && (
+                              <span class="font-mono text-[11px] font-semibold text-ink-500 dark:text-paper-400 tabular-nums shrink-0">
+                                {item.date}
+                              </span>
+                            )}
+                          </div>
+
+                          {item.subtitle && (
+                            <p class="entry-meta font-medium text-xs text-accent-700 dark:text-accent-300">{item.subtitle}</p>
+                          )}
+
+                          {item.description && (
+                            <p class="entry-summary text-sm text-ink-600 dark:text-paper-300 leading-relaxed">{item.description}</p>
+                          )}
+
+                          {item.badges && item.badges.length > 0 && (
+                            <div class="flex flex-wrap gap-1.5 pt-0.5">
+                              {item.badges.map((badge) => (
+                                <span class="meta-chip text-[11px]">{badge}</span>
+                              ))}
+                            </div>
+                          )}
+
+                          {item.highlights && item.highlights.length > 0 && (
+                            <ul class="space-y-1 border-l border-accent-300/60 pl-3.5 dark:border-accent-700/60 text-xs text-ink-600 dark:text-paper-300">
+                              {item.highlights.map((highlight) => (
+                                <li class="body-copy leading-relaxed">
+                                  {highlight}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {item.links && item.links.length > 0 && (
+                            <div class="flex flex-wrap gap-2 pt-1">
+                              {item.links.map((link) => (
+                                link.href && (
+                                  <a
+                                    href={link.href}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    class="action-link px-3 text-xs"
+                                  >
+                                    <span class={link.icon ?? "i-mdi:open-in-new"} aria-hidden="true"></span>
+                                    {link.label ?? "Read more"}
+                                  </a>
+                                )
+                              ))}
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })()}
+          </div>
+        )
+      }
+
+      <!-- Remaining Custom Sections (if any) -->
+      {
+        customSections.slice(1).map((section) => (
+          <section id={section.id} class="content-section scroll-mt-24 space-y-4">
+            <header class="border-b border-paper-300/90 pb-3 dark:border-ink-700">
+              <h2 class="section-heading flex items-center gap-2">
+                {section.icon && (
+                  <span class={`${section.icon} text-accent-600 dark:text-accent-300`} aria-hidden="true"></span>
+                )}
+                <span>{section.title}</span>
+              </h2>
+            </header>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {(section.items || []).map((item) => {
+                if (typeof item === "string") {
+                  return (
+                    <article class="surface-card p-4">
+                      <p class="body-copy text-sm">{item}</p>
+                    </article>
+                  );
+                }
+                return (
+                  <article class="surface-card grid gap-4 p-5">
+                    <div class="min-w-0 space-y-2.5">
+                      <div class="space-y-1">
+                        {item.title && (
+                          <h3 class="entry-title text-base sm:text-lg">
+                            {item.link ? (
+                              <a
+                                href={item.link}
+                                target="_blank"
+                                rel="noreferrer"
+                                class="inline text-inherit no-underline transition-colors hover:text-accent-700 focus-visible:text-accent-700 dark:hover:text-accent-300 dark:focus-visible:text-accent-300"
+                              >
+                                <span>{item.title}</span>
+                                <span class="i-mdi:open-in-new ml-1 inline-block align-[0.05em] text-xs" aria-hidden="true"></span>
+                              </a>
+                            ) : item.title}
+                          </h3>
+                        )}
+                        {item.subtitle && (
+                          <p class="entry-meta font-medium text-xs text-accent-700 dark:text-accent-300">{item.subtitle}</p>
+                        )}
+                        {item.description && (
+                          <p class="entry-summary text-sm leading-relaxed">{item.description}</p>
+                        )}
+                      </div>
+
+                      {item.badges && item.badges.length > 0 && (
+                        <div class="flex flex-wrap gap-1.5">
+                          {item.badges.map((badge) => (
+                            <span class="meta-chip text-[11px]">{badge}</span>
+                          ))}
+                        </div>
+                      )}
+                      {item.highlights && item.highlights.length > 0 && (
+                        <ul class="space-y-1 border-l border-accent-200 pl-3.5 dark:border-accent-800 text-xs">
+                          {item.highlights.map((highlight) => (
+                            <li class="body-copy leading-relaxed">
+                              {highlight}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {item.links && item.links.length > 0 && (
+                        <div class="flex flex-wrap gap-2 pt-1">
+                          {item.links.map((link) => (
+                            link.href && (
+                              <a
+                                href={link.href}
+                                target="_blank"
+                                rel="noreferrer"
+                                class="action-link px-3 text-xs"
+                              >
+                                <span class={link.icon ?? "i-mdi:open-in-new"} aria-hidden="true"></span>
+                                {link.label ?? "Read more"}
+                              </a>
+                            )
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {item.date !== undefined && (
+                      <p class="entry-meta tabular-nums font-mono text-xs text-ink-500 dark:text-paper-400">
+                        {item.date}
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ))
+      }
+    </div>
+  </div>
+</Layout>

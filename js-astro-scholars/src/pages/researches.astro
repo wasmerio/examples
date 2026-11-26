@@ -1,0 +1,111 @@
+---
+import Layout from "../layouts/Layout.astro";
+import FilterBar from "../components/FilterBar.astro";
+import PublicationList from "../components/PublicationList.astro";
+import { getAllPapers } from "../lib/papers";
+import { slugifySectionId } from "../lib/section-id";
+import siteConfig from "../side.config";
+
+const papers = getAllPapers();
+const categoryOrder = [
+  "Publication",
+  "Working Paper",
+  "Work in Progress",
+  "Other",
+] as const;
+const grouped = new Map<string, typeof papers>();
+
+for (const paper of papers) {
+  const category = paper.category ?? "Other";
+  if (!grouped.has(category)) {
+    grouped.set(category, []);
+  }
+  grouped.get(category)?.push(paper);
+}
+
+const orderedCategories = [
+  ...categoryOrder.filter((category) => grouped.has(category)),
+  ...Array.from(grouped.keys())
+    .filter(
+      (category) =>
+        !categoryOrder.includes(category as (typeof categoryOrder)[number]),
+    )
+    .sort((a, b) => a.localeCompare(b)),
+];
+
+// Category icons mapping
+const categoryIcons: Record<string, string> = {
+  "Publication": "i-mdi:file-document-check",
+  "Working Paper": "i-mdi:file-document-edit",
+  "Work in Progress": "i-mdi:file-document-outline",
+  "Other": "i-mdi:file-document",
+};
+
+// Count total papers
+const totalPapers = papers.length;
+const pageTitle = siteConfig.pageTitles.researches.title || "Publications";
+const pageDescription = siteConfig.pageTitles.researches.description || 
+  "Peer-reviewed publications, workshop papers, and essays focusing on the flow of learning signals across scholarly and civic platforms.";
+---
+
+<Layout
+  title={pageTitle}
+  description={pageDescription}
+  schemaType="CollectionPage"
+>
+  <div class="page-stack">
+    <header class="page-header">
+      <h1 class="page-title">{pageTitle}</h1>
+      <p class="page-description">{pageDescription}</p>
+
+	  <FilterBar
+		total={totalPapers}
+		allIcon="i-mdi:file-document-multiple"
+		items={orderedCategories.map((category) => ({
+		  filter: slugifySectionId(category),
+		  label: category.toLowerCase(),
+		  count: grouped.get(category)?.length || 0,
+		  icon: categoryIcons[category] || "i-mdi:file-document",
+		}))}
+	  />
+    </header>
+
+    <div class="space-y-6 sm:space-y-7" id="papers-container" data-publication-total={totalPapers}>
+      {papers.length === 0 && <p data-empty-publications class="body-copy">No publications to display yet.</p>}
+      {
+        orderedCategories.map((category) => {
+          const categoryPapers = grouped.get(category);
+          if (!categoryPapers?.length) {
+            return null;
+          }
+          const categorySlug = slugifySectionId(category);
+
+          return (
+            <section
+              id={categorySlug}
+              class="content-section paper-section scroll-mt-20 space-y-4"
+              data-filter-section={categorySlug}
+            >
+              <header class="flex items-end justify-between gap-4 border-b border-paper-300/90 pb-3 dark:border-ink-700">
+				<h2 class="section-heading">{category}</h2>
+				<p class="shrink-0 font-mono text-xs font-semibold tabular-nums text-ink-500 dark:text-paper-400">
+                  {categoryPapers.length} {categoryPapers.length === 1 ? "entry" : "entries"}
+                </p>
+              </header>
+
+              <PublicationList papers={categoryPapers} />
+            </section>
+          );
+        })
+      }
+    </div>
+  </div>
+</Layout>
+
+<script>
+  import { setupFilterControls } from "../scripts/ui";
+
+  document.addEventListener("astro:page-load", () => {
+    setupFilterControls();
+  });
+</script>

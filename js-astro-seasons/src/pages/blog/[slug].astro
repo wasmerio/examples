@@ -1,0 +1,181 @@
+---
+import { getCollection, render } from 'astro:content';
+import Layout from '@/components/layout/Layout.astro';
+import Tag from '@/components/common/Tag.astro';
+import { formatPostDate, postSlug } from '@/lib/posts';
+import { slugifyTag } from '@/lib/tags';
+import { withBase } from '@/lib/paths';
+import { AUTHOR_NAME, SITE_NAME } from '@/lib/site';
+import { ANIMATED_UNDERLINE_CLASSES } from '@/lib/animatedUnderline';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  return posts
+    .filter((post) => !post.data.draft)
+    .map((post) => {
+      const slug = postSlug(post);
+      return {
+        params: { slug },
+        props: { post, slug },
+      };
+    });
+}
+
+const { post, slug } = Astro.props;
+const { Content, headings } = await render(post);
+const sectionHeadings = headings.filter((heading) => heading.depth === 2);
+const tags = post.data.tags.filter((tag) => slugifyTag(tag) !== '');
+const articleProseClasses: string[] = ['article-prose', ...ANIMATED_UNDERLINE_CLASSES];
+
+const postSchema = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: post.data.title,
+  description: post.data.description,
+  datePublished: post.data.date.toISOString(),
+  url: new URL(withBase(`/blog/${slug}/`), Astro.site).toString(),
+  author: {
+    '@type': 'Person',
+    name: AUTHOR_NAME,
+    url: new URL(withBase('/'), Astro.site).toString(),
+  },
+}).replace(/</g, '\\u003c');
+---
+
+<Layout
+  title={`${post.data.title} — ${SITE_NAME}`}
+  description={post.data.description}
+  canonicalPath={`/blog/${slug}/`}
+  ogType="article"
+>
+  <script type="application/ld+json" is:inline set:html={postSchema}></script>
+  <main class="content-shell">
+    <div class="article-layout section">
+      <aside class="article-toc" aria-label="Article sections">
+        {sectionHeadings.length > 0 && (
+          <nav class="grid border-l-[3px] border-ink">
+            {sectionHeadings.map((heading) => (
+              <a href={`#${heading.slug}`} data-heading-link={heading.slug}>
+                {heading.text}
+              </a>
+            ))}
+          </nav>
+        )}
+      </aside>
+
+      <article class="min-w-0">
+        <header class="mb-[2.35rem] border-b-4 border-ink pb-8">
+          <p class="post-meta">
+            <time datetime={post.data.date.toISOString()}>{formatPostDate(post.data.date)}</time>
+          </p>
+          <h1
+            class:list={[
+              'm-0',
+              'max-w-[22ch]',
+              'text-[clamp(2rem,4vw,3.4rem)]',
+              'leading-none',
+              'font-semibold',
+              'tracking-[0.005em]',
+              'text-ink',
+            ]}
+          >
+            {post.data.title}
+          </h1>
+          <p
+            class:list={[
+              'mt-[1.2rem]',
+              'max-w-[680px]',
+              'text-[1.18rem]',
+              'leading-[1.7]',
+              'text-[color-mix(in_srgb,var(--ink)_68%,var(--muted))]',
+            ]}
+          >
+            {post.data.description}
+          </p>
+          {tags.length > 0 && (
+            <p class="mt-4 flex max-w-[680px] flex-wrap gap-2">
+              {tags.map((tag) => (
+                <Tag href={withBase(`/tags/${slugifyTag(tag)}/`)}>#{tag}</Tag>
+              ))}
+            </p>
+          )}
+        </header>
+        <div class:list={articleProseClasses}>
+          <Content />
+        </div>
+      </article>
+    </div>
+  </main>
+
+  <script>
+    let tocObserver: IntersectionObserver | undefined;
+
+    function initToc() {
+      tocObserver?.disconnect();
+      const headings = Array.from(document.querySelectorAll('.article-prose h2[id]'));
+      const links = new Map(
+        Array.from(document.querySelectorAll('[data-heading-link]')).map((link) => [
+          link.getAttribute('data-heading-link'),
+          link,
+        ]),
+      );
+      if (headings.length === 0 || links.size === 0) return;
+
+      function setActive(id: string) {
+        for (const link of links.values()) link.removeAttribute('aria-current');
+        links.get(id)?.setAttribute('aria-current', 'true');
+      }
+
+      setActive(headings[0].id);
+      tocObserver = new IntersectionObserver(
+        (entries) => {
+          const visible = entries
+            .filter((entry) => entry.isIntersecting)
+            .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+          if (visible?.target instanceof HTMLElement) setActive(visible.target.id);
+        },
+        { rootMargin: '-18% 0px -68% 0px', threshold: 0 },
+      );
+      for (const heading of headings) tocObserver.observe(heading);
+    }
+
+    initToc();
+    document.addEventListener('astro:page-load', initToc);
+  </script>
+</Layout>
+
+<style>
+  @reference "@/styles/global.css";
+
+  .post-meta {
+    @apply mb-[0.85rem] flex flex-wrap items-center gap-[0.55rem];
+    @apply text-[0.78rem] font-bold tracking-[-0.03em] uppercase;
+    color: color-mix(in srgb, var(--ink) 58%, var(--muted));
+  }
+
+  .article-layout {
+    @apply relative grid grid-cols-[minmax(8rem,12rem)_minmax(0,860px)] items-start gap-[clamp(2rem,6vw,4rem)] pt-16;
+    @apply border-t-0;
+    @apply max-[1040px]:block max-[1040px]:max-w-[860px] max-sm:pt-[2.25rem];
+  }
+
+  .article-toc {
+    @apply sticky top-24 pt-[0.35rem] text-[0.78rem] max-[1040px]:hidden;
+    color: color-mix(in srgb, var(--ink) 58%, var(--muted));
+  }
+
+  .article-toc a {
+    @apply -ml-[3px] block border-l-[3px] border-transparent py-1.5 pl-3 leading-[1.35];
+    @apply transition-[border-color,color] duration-150 ease-[ease];
+    color: color-mix(in srgb, var(--ink) 75%, var(--muted));
+  }
+
+  .article-toc a:hover,
+  .article-toc a[aria-current='true'] {
+    @apply border-accent text-accent;
+  }
+
+  .article-toc a[aria-current='true'] {
+    @apply font-bold;
+  }
+</style>

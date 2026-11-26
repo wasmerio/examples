@@ -1,0 +1,146 @@
+---
+import Icon from '@/components/common/Icon.astro';
+import { getIcon, type IconSource } from '@/lib/icons';
+import type { ThemeChoice } from '@/lib/palette';
+
+interface ThemeOption {
+  choice: ThemeChoice;
+  label: string;
+  icon: IconSource;
+  dividerLabel?: string;
+}
+
+const DEFAULT_CHOICE: ThemeChoice = 'auto';
+
+const themeOptions: ThemeOption[] = [
+  { choice: 'auto', label: 'Automatic', icon: getIcon('calendar') },
+  { choice: 'autumn', label: 'Autumn', icon: getIcon('leaf'), dividerLabel: 'Seasons' },
+  { choice: 'winter', label: 'Winter', icon: getIcon('snowflake') },
+  { choice: 'spring', label: 'Spring', icon: getIcon('seeding') },
+  { choice: 'summer', label: 'Summer', icon: getIcon('beach') },
+  { choice: 'neon', label: 'Neon', icon: getIcon('bolt'), dividerLabel: 'Other' },
+];
+---
+
+<details class="theme-picker" id="theme-picker">
+  <summary class="theme-picker-button" aria-label="Choose theme">
+    {themeOptions.map((option: ThemeOption) => (
+      <Icon
+        icon={option.icon}
+        class:list={['picker-icon', { hidden: option.choice !== DEFAULT_CHOICE }]}
+        data-icon={option.choice}
+      />
+    ))}
+  </summary>
+  <div class="theme-picker-panel" role="group" aria-label="Theme">
+    {themeOptions.map((option: ThemeOption) => (
+      <>
+        {option.dividerLabel && (
+          <div class="theme-picker-divider" role="separator">
+            {option.dividerLabel}
+          </div>
+        )}
+        <button class="theme-picker-option" type="button" data-theme-option={option.choice} aria-pressed="false">
+          <Icon icon={option.icon} />
+          <span>{option.label}</span>
+        </button>
+      </>
+    ))}
+  </div>
+</details>
+
+<script>
+  import { applyPalette, getStoredTheme, setStoredTheme, type ThemeChoice } from '@/lib/palette';
+
+  function getPicker(): HTMLDetailsElement | null {
+    return document.querySelector<HTMLDetailsElement>('#theme-picker');
+  }
+
+  function syncPicker(): void {
+    const currentTheme: ThemeChoice = getStoredTheme();
+    const icons: NodeListOf<SVGElement> = document.querySelectorAll<SVGElement>('.picker-icon');
+    const options: NodeListOf<HTMLButtonElement> = document.querySelectorAll<HTMLButtonElement>('[data-theme-option]');
+
+    icons.forEach((icon: SVGElement): void => {
+      icon.classList.toggle('hidden', icon.dataset.icon !== currentTheme);
+    });
+    options.forEach((option: HTMLButtonElement): void => {
+      option.setAttribute('aria-pressed', String(option.dataset.themeOption === currentTheme));
+    });
+  }
+
+  function selectTheme(theme: ThemeChoice): void {
+    setStoredTheme(theme);
+    applyPalette();
+    syncPicker();
+    const picker: HTMLDetailsElement | null = getPicker();
+    if (picker) picker.open = false;
+  }
+
+  function initThemePicker(): void {
+    const options: NodeListOf<HTMLButtonElement> = document.querySelectorAll<HTMLButtonElement>('[data-theme-option]');
+    options.forEach((option: HTMLButtonElement): void => {
+      option.addEventListener('click', (): void => selectTheme(option.dataset.themeOption as ThemeChoice));
+    });
+    syncPicker();
+  }
+
+  document.addEventListener('click', (event: MouseEvent): void => {
+    const picker: HTMLDetailsElement | null = getPicker();
+    if (picker?.open && !picker.contains(event.target as Node)) picker.open = false;
+  });
+
+  document.addEventListener('keydown', (event: KeyboardEvent): void => {
+    const picker: HTMLDetailsElement | null = getPicker();
+    if (event.key === 'Escape' && picker?.open) picker.open = false;
+  });
+
+  syncPicker();
+  document.addEventListener('astro:page-load', initThemePicker);
+</script>
+
+<style>
+  @reference "@/styles/global.css";
+
+  .theme-picker {
+    @apply relative;
+  }
+
+  .theme-picker-button {
+    @apply flex size-[2.1rem] cursor-pointer list-none items-center justify-center rounded-none border-2 border-ink bg-bg-elevated text-ink;
+    @apply shadow-[3px_3px_0_0_var(--ink)] transition-[translate,box-shadow,background-color,color] duration-120 ease-[ease];
+  }
+
+  .theme-picker-button::-webkit-details-marker {
+    display: none;
+  }
+
+  .theme-picker-button::marker {
+    content: '';
+  }
+
+  .theme-picker-button:hover,
+  [open] > .theme-picker-button {
+    @apply translate-x-[1px] translate-y-[1px] shadow-[2px_2px_0_0_var(--ink)];
+  }
+
+  .theme-picker-panel {
+    @apply absolute top-[calc(100%_+_0.5rem)] right-0 z-30 grid min-w-44 p-[0.35rem];
+    @apply rounded-none border-2 border-ink bg-bg-elevated shadow-[4px_4px_0_0_var(--ink)];
+  }
+
+  .theme-picker-divider {
+    @apply mt-[0.35rem] border-t-2 border-ink px-[0.7rem] pt-[0.45rem] pb-[0.25rem];
+    @apply font-heading text-[0.7rem] font-bold tracking-[0.08em] text-muted uppercase;
+  }
+
+  .theme-picker-option {
+    @apply flex w-full cursor-pointer items-center gap-2 rounded-none px-[0.7rem] py-[0.62rem] text-left;
+    @apply font-heading text-[0.9rem] font-semibold text-ink;
+  }
+
+  .theme-picker-option:hover,
+  .theme-picker-option[aria-pressed='true'] {
+    @apply bg-accent text-bg;
+  }
+</style>

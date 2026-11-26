@@ -1,0 +1,149 @@
+---
+interface Range {
+  min: number;
+  spread: number;
+}
+
+interface Particle {
+  left: number;
+  size: number;
+  duration: number;
+  delay: number;
+  drift: number;
+  color: string;
+  shape: string;
+}
+
+interface Props {
+  family: string;
+  shapes: Record<string, string>;
+  count: number;
+  size: Range;
+  duration: Range;
+  drift: Range;
+  delaySpread: number;
+  peakOpacity: number;
+  colors?: string[];
+  shapeColors?: Record<string, string[]>;
+  stroke?: boolean;
+}
+
+const {
+  family,
+  shapes,
+  count,
+  size,
+  duration,
+  drift,
+  delaySpread,
+  peakOpacity,
+  colors = ['var(--accent)'],
+  shapeColors = {},
+  stroke = false,
+} = Astro.props;
+
+const shapeNames: string[] = Object.keys(shapes);
+
+const particles: Particle[] = Array.from({ length: count }, (_, particleIndex: number): Particle => {
+  const seed: number = particleIndex + 1;
+  const direction: number = seed % 2 === 0 ? 1 : -1;
+  const shapeName: string = shapeNames[seed % shapeNames.length];
+  const palette: string[] = shapeColors[shapeName] ?? colors;
+  return {
+    left: (seed * 37) % 100,
+    size: size.min + ((seed * 7) % size.spread),
+    duration: duration.min + ((seed * 5) % duration.spread),
+    delay: -((seed * 3) % delaySpread),
+    drift: direction * (drift.min + ((seed * 11) % drift.spread)),
+    color: palette[seed % palette.length],
+    shape: shapeName,
+  };
+});
+---
+
+<div
+  class:list={['falling-particles', { stroke }]}
+  data-family={family}
+  style={`--peak-opacity:${peakOpacity}`}
+  aria-hidden="true"
+>
+  <svg width="0" height="0" class="absolute">
+    {shapeNames.map((shapeName: string) => (
+      <symbol id={`${family}-${shapeName}`} viewBox="0 0 24 24">
+        <path d={shapes[shapeName]} />
+      </symbol>
+    ))}
+  </svg>
+  {particles.map((particle: Particle) => (
+    <svg
+      class="particle"
+      style={`--left:${particle.left}%;--size:${particle.size}px;--duration:${particle.duration}s;--delay:${particle.delay}s;--drift:${particle.drift}px;--color:${particle.color}`}
+    >
+      <use href={`#${family}-${particle.shape}`} />
+    </svg>
+  ))}
+</div>
+
+<style>
+  .falling-particles {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .particle {
+    position: absolute;
+    top: 0;
+    left: var(--left);
+    width: var(--size);
+    height: var(--size);
+    fill: var(--color);
+    opacity: 0;
+    animation: fall var(--duration) linear var(--delay) infinite;
+  }
+
+  .stroke .particle {
+    fill: none;
+    stroke: var(--color);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :global([data-palette^='autumn']) .falling-particles[data-family='autumn'],
+    :global([data-palette^='winter']) .falling-particles[data-family='winter'],
+    :global([data-palette^='spring']) .falling-particles[data-family='spring'] {
+      display: block;
+    }
+  }
+
+  @keyframes fall {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, -10vh, 0) rotate(0deg);
+    }
+    10% {
+      opacity: var(--peak-opacity);
+    }
+    25% {
+      transform: translate3d(var(--drift), 28vh, 0) rotate(90deg);
+    }
+    50% {
+      transform: translate3d(0, 55vh, 0) rotate(180deg);
+    }
+    75% {
+      transform: translate3d(calc(var(--drift) * -1), 82vh, 0) rotate(270deg);
+    }
+    90% {
+      opacity: var(--peak-opacity);
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(0, 110vh, 0) rotate(360deg);
+    }
+  }
+</style>

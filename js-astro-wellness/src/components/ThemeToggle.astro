@@ -1,0 +1,81 @@
+---
+// Theme toggle: flips `data-theme` on <html> and persists the choice.
+// The icon shows the theme you switch TO (sun in dark, moon in light) and is
+// swapped in CSS, so this button needs no JS to render correctly.
+//
+// Script uses document-level event delegation on purpose: with <ClientRouter />
+// the button element is re-created on every client-side navigation, but the
+// document listener survives, so the toggle keeps working after SPA transitions.
+---
+<button
+  type="button"
+  class="aw-theme-toggle"
+  data-theme-toggle
+  aria-label="Switch to light theme"
+  title="Switch theme"
+>
+  <span class="aw-theme-icon aw-theme-icon-sun" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="5" />
+      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+    </svg>
+  </span>
+  <span class="aw-theme-icon aw-theme-icon-moon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  </span>
+</button>
+
+<script>
+  const root = document.documentElement;
+  const STORAGE_KEY = 'theme';
+
+  const readStored = (): string | null => {
+    try {
+      return localStorage.getItem(STORAGE_KEY);
+    } catch {
+      // localStorage can throw in private browsing — fall back to OS preference.
+      return null;
+    }
+  };
+
+  // Mirror of the inline head script, so the theme also survives SPA navigation.
+  const syncTheme = () => {
+    const stored = readStored();
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = stored === 'dark' || (!stored && prefersDark) ? 'dark' : 'light';
+    root.setAttribute('data-theme', theme);
+    const toggle = document.querySelector<HTMLButtonElement>('[data-theme-toggle]');
+    toggle?.setAttribute(
+      'aria-label',
+      theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme',
+    );
+  };
+
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest('[data-theme-toggle]')) {
+      const next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      const apply = () => {
+        root.setAttribute('data-theme', next);
+        try {
+          localStorage.setItem(STORAGE_KEY, next);
+        } catch {
+          // ignore — toggle still works for the current session
+        }
+        syncTheme();
+      };
+      // Cross-fade the theme change where supported; instant flip otherwise.
+      if (document.startViewTransition) {
+        document.startViewTransition(apply);
+      } else {
+        apply();
+      }
+    }
+  });
+
+  syncTheme();
+  // Re-apply the stored/OS theme after client-side navigation.
+  document.addEventListener('astro:page-load', syncTheme);
+</script>

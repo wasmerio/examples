@@ -1,0 +1,184 @@
+---
+import { Font } from "astro:assets";
+import { ClientRouter } from "astro:transitions";
+import { resolveDefaultOgImagePath } from "@/utils/resolveDefaultOgImagePath";
+import { getAssetPath } from "@/utils/withBase";
+import config from "@/config";
+import { paletteCss } from "@/palettes";
+import PreviewPanel from "@/components/PreviewPanel.astro";
+import "@/styles/global.css";
+import CustomHead from "@/custom/Head.astro";
+import CustomBodyEnd from "@/custom/BodyEnd.astro";
+
+export type Props = {
+  title?: string;
+  description?: string;
+  ogImage?: string;
+  canonicalURL?: string;
+  ogType?: "website" | "article";
+  /** Alt text of the preview image. Defaults to the site title. */
+  ogImageAlt?: string;
+  /** Pixel size of the preview image, or `null` when it is not known. */
+  ogImageSize?: { width: number; height: number } | null;
+  /** Asks search engines to leave the page out of their index (404 page). */
+  noindex?: boolean;
+};
+
+const { site } = config;
+
+const {
+  title = site.title,
+  description = site.description,
+  ogImage = resolveDefaultOgImagePath(config),
+  canonicalURL = new URL(Astro.url.pathname, Astro.site).href,
+  ogType = "website",
+  ogImageAlt = site.title,
+  ogImageSize = { width: 1200, height: 630 },
+  noindex = false,
+} = Astro.props;
+
+const socialImageURL = new URL(ogImage, Astro.site ?? Astro.url);
+const { ambient, wordmarkGlow, statusline, palette, palettes, preview } =
+  config.appearance;
+// Only the two configured palettes ship, unless the preview panel needs all.
+const paletteStyles = preview
+  ? paletteCss(palettes.dark, palettes.light)
+  : paletteCss(
+      { [palette.dark]: palettes.dark[palette.dark]! },
+      { [palette.light]: palettes.light[palette.light]! }
+    );
+const sourceBanner = site.sourceBanner ? `<!--\n${site.sourceBanner}\n-->` : "";
+const rssHref = getAssetPath("rss.xml");
+// Applies the preview panel's session overrides before the first paint.
+const PREVIEW_BOOT = `(function () {
+  try {
+    var s = JSON.parse(sessionStorage.getItem("starglow-preview") || "{}");
+    var r = document.documentElement;
+    ["dark", "light", "ambient"].forEach(function (k) {
+      if (typeof s[k] === "string") r.dataset[k] = s[k];
+    });
+    ["glow", "statusline"].forEach(function (k) {
+      if (typeof s[k] === "boolean") r.toggleAttribute("data-" + k, s[k]);
+    });
+  } catch (e) {}
+})();`;
+---
+
+<!doctype html>
+<Fragment set:html={sourceBanner} />
+<html
+  data-ambient={ambient}
+  data-dark={palette.dark}
+  data-light={palette.light}
+  data-glow={wordmarkGlow ? "" : undefined}
+  data-statusline={statusline ? "" : undefined}
+  dir={site.dir ?? "ltr"}
+  lang={Astro.currentLocale ?? site.lang}
+  class="overflow-y-scroll motion-safe:scroll-smooth"
+>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href={getAssetPath("favicon.svg")} />
+    <link rel="canonical" href={canonicalURL} />
+    <style is:inline set:html={paletteStyles}></style>
+    {noindex && <meta name="robots" content="noindex" />}
+    <meta name="generator" content={Astro.generator} />
+
+    <Font
+      cssVariable="--font-inter"
+      preload={[{ weight: 400, style: "normal" }]}
+    />
+    <Font cssVariable="--font-jetbrains-mono" />
+    <Font cssVariable="--font-wordmark" preload />
+
+    <title>{title}</title>
+    <meta name="title" content={title} />
+    <meta name="description" content={description} />
+    <meta name="author" content={site.author} />
+    <link rel="sitemap" href={getAssetPath("sitemap-index.xml")} />
+
+    <meta property="og:type" content={ogType} />
+    <meta property="og:site_name" content={site.title} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:image" content={socialImageURL} />
+    {
+      ogImageSize && (
+        <>
+          <meta property="og:image:width" content={String(ogImageSize.width)} />
+          <meta
+            property="og:image:height"
+            content={String(ogImageSize.height)}
+          />
+        </>
+      )
+    }
+    <meta property="og:image:alt" content={ogImageAlt} />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content={canonicalURL} />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImageURL} />
+    <meta name="twitter:image:alt" content={ogImageAlt} />
+
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={site.title}
+      href={new URL(rssHref, Astro.site)}
+    />
+
+    <!-- Filled at runtime by theme.ts -->
+    <meta name="theme-color" content="" />
+
+    <slot name="head" />
+
+    {
+      site.googleVerification && (
+        <meta
+          name="google-site-verification"
+          content={site.googleVerification}
+        />
+      )
+    }
+
+    <!-- Sets data-theme before first paint: must stay inline and synchronous. -->
+    <script is:inline>
+      (function () {
+        const stored = localStorage.getItem("theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)"
+        ).matches;
+        const theme = stored ?? (prefersDark ? "dark" : "light");
+        const root = document.firstElementChild;
+        root?.setAttribute("data-theme", theme);
+        root?.classList.toggle("dark", theme === "dark");
+        // Expose value so theme.ts can skip re-detection.
+        window.__theme = { value: theme };
+      })();
+    </script>
+
+    {preview && <script is:inline set:html={PREVIEW_BOOT} />}
+
+    <ClientRouter />
+
+    <CustomHead {title} {description} />
+  </head>
+  <body class="bg-background font-app text-foreground flex min-h-svh flex-col">
+    <slot />
+    {
+      // After the page head in tree order, so it can anchor to it.
+      (preview || ambient !== "none") && (
+        <div class="band-light" aria-hidden="true" />
+      )
+    }
+    <script>
+      import "@/scripts/theme";
+    </script>
+    {preview && <PreviewPanel />}
+    <CustomBodyEnd />
+  </body>
+</html>

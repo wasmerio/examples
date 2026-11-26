@@ -1,0 +1,118 @@
+---
+import { getEntry, render } from "astro:content";
+import { getRelativeLocaleUrl } from "astro:i18n";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+import Main from "@/components/Main.astro";
+import ItemRow from "@/components/ItemRow.astro";
+import ProjectRow from "@/components/ProjectRow.astro";
+import { getAllItems } from "@/utils/content/items";
+import { getVisibleProjects, sortProjects } from "@/utils/content/projects";
+import { todoMarkerText } from "@/utils/rehypeTodoMarkers";
+import { homeGraph, requireSite, toJsonLd } from "@/utils/jsonLd";
+import { useTranslations } from "@/i18n";
+import config from "@/config";
+
+const { posts: postsConfig } = config;
+
+const locale = Astro.currentLocale ?? config.site.lang;
+const t = useTranslations(locale);
+
+const intro = await getEntry("pages", "home");
+if (!intro) {
+  throw new Error("[pages] src/content/pages/home.md is missing");
+}
+const { Content } = await render(intro);
+const specialties = (intro.data.specialties ?? []).map(label => ({
+  label,
+  marker: todoMarkerText(label),
+}));
+
+// Posts and notes in one list, newest first.
+const writing = (await getAllItems()).slice(0, postsConfig.perIndex * 2);
+const projects = sortProjects(
+  (await getVisibleProjects()).filter(project => project.data.featured)
+).slice(0, postsConfig.perIndex);
+
+const homeJsonLd = toJsonLd(
+  homeGraph(requireSite(Astro.site), {
+    name: config.site.author,
+    siteName: config.site.title,
+    siteDescription: config.site.description,
+    inLanguage: config.site.lang,
+    sameAs: config.socials.map(social => social.url),
+    jobTitle: config.person.jobTitle,
+    description: config.person.description,
+  })
+);
+---
+
+<Layout canonicalURL={intro.data.canonicalUrl}>
+  <Fragment slot="head">
+    <script type="application/ld+json" is:inline set:html={homeJsonLd} />
+  </Fragment>
+  <Header />
+  <Main pageTitle={config.site.title} hideTitle>
+    <Fragment slot="head">
+      <div class="page-lead">
+        <Content />
+      </div>
+      {
+        specialties.length > 0 && (
+          <p class="page-sub meta" aria-label={t.home.specialties}>
+            {specialties.map(({ label, marker }, index) => (
+              <>
+                {index > 0 && " · "}
+                {marker ? (
+                  <mark class="todo-marker" data-pagefind-ignore>
+                    {marker}
+                  </mark>
+                ) : (
+                  label
+                )}
+              </>
+            ))}
+          </p>
+        )
+      }
+    </Fragment>
+
+    {
+      writing.length > 0 && (
+        <section id="writing" aria-labelledby="writing-heading">
+          <div class="section-head">
+            <h2 id="writing-heading">{t.home.writing}</h2>
+            <a href={getRelativeLocaleUrl(locale, "blog")}>
+              {t.home.archive} <span aria-hidden="true">→</span>
+            </a>
+          </div>
+          <ul class="index">
+            {writing.map(item => (
+              <ItemRow item={item} showKind />
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {
+      projects.length > 0 && (
+        <section id="featured-projects" aria-labelledby="projects-heading">
+          <div class="section-head">
+            <h2 id="projects-heading">{t.home.projects}</h2>
+            <a href={getRelativeLocaleUrl(locale, "projects")}>
+              {t.home.allProjects} <span aria-hidden="true">→</span>
+            </a>
+          </div>
+          <ul class="index">
+            {projects.map(project => (
+              <ProjectRow project={project} />
+            ))}
+          </ul>
+        </section>
+      )
+    }
+  </Main>
+  <Footer />
+</Layout>

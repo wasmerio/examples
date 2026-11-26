@@ -1,0 +1,58 @@
+---
+import type { GetStaticPathsOptions } from "astro";
+import { getRelativeLocaleUrl } from "astro:i18n";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Main from "@/components/Main.astro";
+import ItemRow from "@/components/ItemRow.astro";
+import Footer from "@/components/Footer.astro";
+import Pagination from "@/components/Pagination.astro";
+import { getUniqueTags } from "@/utils/getUniqueTags";
+import { getAllItems } from "@/utils/content/items";
+import { slugifyAll } from "@/utils/slugify";
+import { useTranslations } from "@/i18n";
+import config from "@/config";
+
+export async function getStaticPaths({ paginate }: GetStaticPathsOptions) {
+  const items = await getAllItems();
+
+  return getUniqueTags(items).flatMap(({ tag, tagName }) =>
+    paginate(
+      items.filter(item => slugifyAll(item.tags).includes(tag)),
+      {
+        params: { tag },
+        props: { tagName },
+        pageSize: config.posts.perPage,
+      }
+    )
+  );
+}
+
+const { page, tagName } = Astro.props;
+
+const locale = Astro.currentLocale ?? config.site.lang;
+const t = useTranslations(locale);
+---
+
+<Layout title={`${t.pages.tagTitle}: ${tagName} | ${config.site.title}`}>
+  <Header />
+
+  <Main
+    pageTitle={`${t.pages.tagTitle}: ${tagName}`}
+    pageDesc={`${t.pages.tagDesc} "${tagName}".`}
+  >
+    <Fragment slot="meta">
+      <span></span>
+      <a class="back-link" href={getRelativeLocaleUrl(locale, "tags")}>
+        <span aria-hidden="true">←</span>
+        {t.nav.tags}
+      </a>
+    </Fragment>
+    <ul class="index">
+      {page.data.map(item => <ItemRow item={item} showKind />)}
+    </ul>
+    <Pagination {page} />
+  </Main>
+
+  <Footer />
+</Layout>

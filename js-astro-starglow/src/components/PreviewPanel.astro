@@ -1,0 +1,138 @@
+---
+import config from "@/config";
+
+/**
+ * Floating preview panel (appearance.preview): switch palette, ambient
+ * light, wordmark glow and statusline live. Changes are kept in
+ * sessionStorage for this browser tab only; the inline script in Layout
+ * applies them before the first paint.
+ */
+const { palettes } = config.appearance;
+const options = (record: Record<string, { label: string }>) =>
+  Object.entries(record).map(([value, { label }]) => ({ value, label }));
+const dark = options(palettes.dark);
+const light = options(palettes.light);
+const ambient = ["none", "light", "breathe", "dawn"];
+---
+
+<details class="preview-panel" data-pagefind-ignore>
+  <summary>preview</summary>
+  <form class="preview-body" aria-label="Theme preview">
+    <label>
+      <span>dark</span>
+      <select name="dark">
+        {dark.map(o => <option value={o.value}>{o.label}</option>)}
+      </select>
+    </label>
+    <label>
+      <span>light</span>
+      <select name="light">
+        {light.map(o => <option value={o.value}>{o.label}</option>)}
+      </select>
+    </label>
+    <label>
+      <span>ambient</span>
+      <select name="ambient">
+        {ambient.map(value => <option value={value}>{value}</option>)}
+      </select>
+    </label>
+    <label class="preview-check">
+      <input type="checkbox" name="glow" />
+      <span>wordmark glow</span>
+    </label>
+    <label class="preview-check">
+      <input type="checkbox" name="statusline" />
+      <span>statusline</span>
+    </label>
+    <button type="reset">reset</button>
+  </form>
+</details>
+
+<script>
+  const KEY = "starglow-preview";
+  type State = Record<string, string | boolean>;
+
+  const root = document.documentElement;
+  const read = (): State => {
+    try {
+      return JSON.parse(sessionStorage.getItem(KEY) ?? "{}") as State;
+    } catch {
+      return {};
+    }
+  };
+  const write = (state: State) =>
+    sessionStorage.setItem(KEY, JSON.stringify(state));
+
+  /** The attributes as they are now: configured defaults plus overrides. */
+  function current(): State {
+    return {
+      dark: root.dataset.dark ?? "",
+      light: root.dataset.light ?? "",
+      ambient: root.dataset.ambient ?? "none",
+      glow: root.hasAttribute("data-glow"),
+      statusline: root.hasAttribute("data-statusline"),
+    };
+  }
+
+  function apply(state: State) {
+    for (const key of ["dark", "light", "ambient"]) {
+      if (typeof state[key] === "string") root.dataset[key] = state[key];
+    }
+    for (const key of ["glow", "statusline"]) {
+      if (typeof state[key] === "boolean")
+        root.toggleAttribute(`data-${key}`, state[key]);
+    }
+  }
+
+  function setup() {
+    const form = document.querySelector<HTMLFormElement>(".preview-panel form");
+    if (!form) return;
+    const defaults = { ...current(), ...read() };
+    // Configured values, before any override: what "reset" goes back to.
+    const initial = root.dataset.previewDefaults
+      ? (JSON.parse(root.dataset.previewDefaults) as State)
+      : current();
+    root.dataset.previewDefaults = JSON.stringify(initial);
+
+    const fill = (state: State) => {
+      for (const [key, value] of Object.entries(state)) {
+        const field = form.elements.namedItem(key);
+        if (field instanceof HTMLInputElement) field.checked = Boolean(value);
+        else if (field instanceof HTMLSelectElement)
+          field.value = String(value);
+      }
+    };
+    fill(defaults);
+
+    form.addEventListener("change", event => {
+      const target = event.target as HTMLInputElement | HTMLSelectElement;
+      const state = { ...read() };
+      state[target.name] =
+        target instanceof HTMLInputElement && target.type === "checkbox"
+          ? target.checked
+          : target.value;
+      write(state);
+      apply(state);
+      // Show the palette just picked: switch to its mode.
+      const mode = root.dataset.theme;
+      if (
+        (target.name === "dark" && mode !== "dark") ||
+        (target.name === "light" && mode !== "light")
+      ) {
+        document.querySelector<HTMLButtonElement>("#theme-btn")?.click();
+      }
+    });
+    form.addEventListener("reset", event => {
+      event.preventDefault();
+      sessionStorage.removeItem(KEY);
+      apply(initial);
+      fill(initial);
+    });
+  }
+
+  setup();
+  document.addEventListener("astro:after-swap", () => {
+    apply(read());
+    setup();
+  });
+</script>

@@ -1,0 +1,116 @@
+---
+import config from "@/config";
+import { useTranslations } from "@/i18n";
+
+type Props = {
+  /** The page's one canonical URL, written at build time. */
+  url: string;
+};
+
+const { url } = Astro.props;
+const t = useTranslations(Astro.currentLocale ?? config.site.lang);
+// A real link: without JavaScript, or without the clipboard API (plain-HTTP
+// LAN dev), it stays a "Permalink" link to the clean URL. The script below
+// turns it into a copy button only when the clipboard is available.
+---
+
+<a
+  href={url}
+  data-copy-link
+  data-label-idle={t.post.copyLink}
+  data-label-copied={t.post.linkCopied}
+  data-label-failed={t.post.copyFailed}
+  data-msg-success={t.a11y.linkCopySuccess}
+  data-msg-failure={t.a11y.linkCopyFailure}
+  class="copy-link text-btn"
+>
+  <span data-copy-link-label>{t.post.permalink}</span>
+</a>
+
+<script>
+  const COPIED_MS = 1500;
+  const FAILED_MS = 2000;
+
+  // The page-level status region rendered by ArticleEnhancements.
+  function announce(message: string | undefined): void {
+    const status = document.querySelector<HTMLElement>(
+      '[role="status"][data-copy-success]'
+    );
+    if (!status || !message) return;
+    status.textContent = "";
+    // A fresh text node each time so a repeated message is announced again.
+    requestAnimationFrame(() => {
+      status.textContent = message;
+    });
+  }
+
+  function bind(link: HTMLAnchorElement): void {
+    const label = link.querySelector<HTMLElement>("[data-copy-link-label]");
+    const { labelIdle, labelCopied, labelFailed } = link.dataset;
+    if (!label || !labelIdle || !labelCopied || !labelFailed) return;
+
+    // No clipboard API (plain HTTP): stay a working Permalink link.
+    if (!navigator.clipboard?.writeText) return;
+
+    label.textContent = labelIdle;
+    link.setAttribute("role", "button");
+
+    let resetTimer: ReturnType<typeof setTimeout> | undefined;
+    const flash = (text: string, ms: number): void => {
+      label.textContent = text;
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(() => {
+        label.textContent = labelIdle;
+      }, ms);
+    };
+
+    link.addEventListener("click", async event => {
+      event.preventDefault();
+      try {
+        // The href is the canonical written at build time, never the address bar.
+        await navigator.clipboard.writeText(link.href);
+        flash(labelCopied, COPIED_MS);
+        announce(link.dataset.msgSuccess);
+      } catch {
+        flash(labelFailed, FAILED_MS);
+        announce(link.dataset.msgFailure);
+      }
+    });
+
+    // role="button" on a link: Enter already clicks it. Space follows the
+    // button pattern: keydown only holds scrolling back, keyup activates, and
+    // a held key (keydown repeat) never activates again.
+    const isSpace = (event: KeyboardEvent): boolean =>
+      event.key === " " || event.key === "Spacebar";
+    let spaceHeld = false;
+    link.addEventListener("keydown", event => {
+      if (!isSpace(event)) return;
+      event.preventDefault();
+      if (!event.repeat) spaceHeld = true;
+    });
+    link.addEventListener("keyup", event => {
+      if (!isSpace(event) || !spaceHeld) return;
+      event.preventDefault();
+      spaceHeld = false;
+      link.click();
+    });
+    link.addEventListener("blur", () => {
+      spaceHeld = false;
+    });
+  }
+
+  function bindAll(): void {
+    for (const link of document.querySelectorAll<HTMLAnchorElement>(
+      "a[data-copy-link]"
+    )) {
+      if (link.dataset.bound) continue;
+      link.dataset.bound = "true";
+      bind(link);
+    }
+  }
+
+  // The bundled module runs once; astro:page-load fires after every
+  // client-side navigation, and the data-bound guard prevents a second binding.
+  document.addEventListener("astro:page-load", bindAll);
+  bindAll();
+</script>

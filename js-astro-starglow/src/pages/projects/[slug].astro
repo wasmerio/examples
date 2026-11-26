@@ -1,0 +1,163 @@
+---
+import { type CollectionEntry, getEntry } from "astro:content";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+import Main from "@/components/Main.astro";
+import RelatedContent from "@/components/RelatedContent.astro";
+import BackButton from "@/pages/blog/[...slug]/_components/BackButton.astro";
+import { getProjectUrl, getVisibleProjects } from "@/utils/content/projects";
+import { postToItem, type ContentItem } from "@/utils/content/items";
+import { postFilter } from "@/utils/postFilter";
+import { requireSite, softwareSourceCode, toJsonLd } from "@/utils/jsonLd";
+import { resolveDefaultOgImagePath } from "@/utils/resolveDefaultOgImagePath";
+import config from "@/config";
+import { tplStr, useTranslations } from "@/i18n";
+
+export async function getStaticPaths() {
+  const projects = await getVisibleProjects();
+  return Promise.all(
+    projects.map(async project => {
+      if (project.body?.trim()) {
+        throw new Error(
+          `[projects] ${project.filePath}: project pages render metadata only; remove the Markdown body`
+        );
+      }
+      const related: ContentItem[] = [];
+      for (const ref of project.data.relatedPosts) {
+        const post = await getEntry(ref);
+        if (!post) {
+          throw new Error(
+            `[projects] ${project.filePath}: relatedPosts "${ref.id}" not found (use the post id, e.g. 2026/my-post)`
+          );
+        }
+        if (postFilter(post)) related.push(postToItem(post));
+      }
+      return { params: { slug: project.id }, props: { project, related } };
+    })
+  );
+}
+
+type Props = {
+  project: CollectionEntry<"projects">;
+  related: ContentItem[];
+};
+
+const { project, related } = Astro.props;
+const { title, description, stack, status, githubUrl, docsUrl, websiteUrl } =
+  project.data;
+const t = useTranslations(Astro.currentLocale ?? config.site.lang);
+
+const links = [
+  { label: t.project.source, href: githubUrl },
+  { label: t.project.docs, href: docsUrl },
+  { label: t.project.website, href: websiteUrl },
+].filter(link => link.href);
+const generatedOg = config.features.dynamicOgImage;
+
+// Computed once and passed to Layout too, so the JSON-LD, canonical and
+// og:image can never disagree.
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const image = new URL(
+  generatedOg
+    ? `${getProjectUrl(project.id)}index.png`
+    : resolveDefaultOgImagePath(config),
+  Astro.site
+).href;
+const projectJsonLd = toJsonLd(
+  softwareSourceCode({
+    site: requireSite(Astro.site),
+    name: title,
+    description,
+    url: canonical,
+    image,
+    codeRepository: githubUrl,
+    keywords: stack,
+    authorName: config.site.author,
+  })
+);
+---
+
+<Layout
+  title={`${title} | ${config.site.title}`}
+  description={description}
+  canonicalURL={canonical}
+  ogImage={image}
+  ogImageAlt={generatedOg
+    ? tplStr(t.og.imageAlt, { type: t.content.typeProject, title })
+    : undefined}
+>
+  <Fragment slot="head">
+    <script type="application/ld+json" is:inline set:html={projectJsonLd} />
+  </Fragment>
+  <Header />
+
+  <Main pageTitle={title} trackBack={false} data-pagefind-body>
+    <Fragment slot="meta">
+      <p class="meta">
+        <span>{t.content.typeProject.toLowerCase()}</span>
+        <span aria-hidden="true"> · </span>
+        <span class="status" data-status={status}>
+          {t.project.status[status].toLowerCase()}
+        </span>
+        {
+          import.meta.env.DEV && project.data.draft && (
+            <>
+              <span aria-hidden="true"> · </span>
+              <span>{t.post.draft.toLowerCase()}</span>
+            </>
+          )
+        }
+      </p>
+      <BackButton />
+    </Fragment>
+
+    {
+      import.meta.env.DEV && project.data.draft && (
+        <p class="draft-note" data-pagefind-ignore>
+          {t.post.draftNotice}
+        </p>
+      )
+    }
+
+    <p class="plain-text">{description}</p>
+
+    {
+      (stack.length > 0 || links.length > 0) && (
+        <dl class="facts">
+          {stack.length > 0 && (
+            <>
+              <dt>{t.project.stack.toLowerCase()}</dt>
+              <dd class="meta">{stack.join(" · ")}</dd>
+            </>
+          )}
+          {links.length > 0 && (
+            <>
+              <dt>{t.project.links.toLowerCase()}</dt>
+              <dd>
+                <ul>
+                  {links.map(link => (
+                    <li>
+                      <a href={link.href} class="text-link">
+                        {link.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </dd>
+            </>
+          )}
+        </dl>
+      )
+    }
+
+    {
+      related.length > 0 && (
+        <div data-pagefind-ignore>
+          <RelatedContent items={related} title={t.project.relatedPosts} />
+        </div>
+      )
+    }
+  </Main>
+  <Footer />
+</Layout>

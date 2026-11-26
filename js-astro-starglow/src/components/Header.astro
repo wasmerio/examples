@@ -1,0 +1,180 @@
+---
+import { getRelativeLocaleUrl } from "astro:i18n";
+import IconSunHigh from "@/assets/icons/IconSunHigh.svg";
+import IconSearch from "@/assets/icons/IconSearch.svg";
+import IconMoon from "@/assets/icons/IconMoon.svg";
+import { stripBase, stripLocale } from "@/utils/withBase";
+import { useTranslations } from "@/i18n";
+import config from "@/config";
+
+const { site, features } = config;
+
+const locale = Astro.currentLocale ?? config.site.lang;
+const t = useTranslations(locale);
+
+// Without the base prefix, so isActive works under any deploy subdirectory.
+const relativePath = stripBase(Astro.url.pathname);
+const pathWithoutTrailingSlash =
+  relativePath.endsWith("/") && relativePath !== "/"
+    ? relativePath.slice(0, -1)
+    : relativePath;
+
+const currentPath = stripLocale(pathWithoutTrailingSlash, locale);
+
+const isActive = (path: string) => {
+  const currentPathArray = currentPath.split("/").filter(p => p.trim());
+  const pathArray = path.split("/").filter(p => p.trim());
+  return currentPath === path || currentPathArray[0] === pathArray[0];
+};
+
+const homeUrl = getRelativeLocaleUrl(locale, "");
+const navItems = [
+  {
+    path: "/blog",
+    href: getRelativeLocaleUrl(locale, "blog"),
+    label: t.nav.blog,
+  },
+  {
+    path: "/notes",
+    href: getRelativeLocaleUrl(locale, "notes"),
+    label: t.nav.notes,
+  },
+  {
+    path: "/projects",
+    href: getRelativeLocaleUrl(locale, "projects"),
+    label: t.nav.projects,
+  },
+  { path: "/lab", href: getRelativeLocaleUrl(locale, "lab"), label: t.nav.lab },
+  {
+    path: "/about",
+    href: getRelativeLocaleUrl(locale, "about"),
+    label: t.nav.about,
+  },
+];
+---
+
+<a id="skip-to-content" href="#main-content" class="skip-link">
+  {t.a11y.skipToContent}
+</a>
+
+<header class="band">
+  <div class="col">
+    <div class="site-bar">
+      <a
+        href={homeUrl}
+        class="wordmark"
+        aria-current={currentPath === "/" ? "page" : undefined}
+      >
+        {site.wordmark}<span class="cursor" aria-hidden="true">_</span>
+      </a>
+      <div class="site-tools">
+        {
+          features.search !== false && (
+            <a
+              id="search-link"
+              href={getRelativeLocaleUrl(locale, "search")}
+              class="icon-btn"
+              title={t.nav.search}
+              aria-label={t.nav.search}
+              aria-current={isActive("/search") ? "page" : undefined}
+            >
+              <IconSearch aria-hidden="true" />
+            </a>
+          )
+        }
+        {
+          features.lightAndDarkMode && (
+            <button
+              id="theme-btn"
+              type="button"
+              class="icon-btn"
+              title={t.a11y.toggleTheme}
+              aria-label={t.a11y.toggleTheme}
+              aria-pressed="false"
+            >
+              <IconMoon class="icon-moon" aria-hidden="true" />
+              <IconSunHigh class="icon-sun" aria-hidden="true" />
+            </button>
+          )
+        }
+      </div>
+    </div>
+    <nav class="site-nav" aria-label={t.a11y.mainNav}>
+      <ul>
+        {
+          navItems.map(item => (
+            <li>
+              <a
+                href={item.href}
+                aria-current={isActive(item.path) ? "page" : undefined}
+              >
+                {item.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<script>
+  function handleSkipToContent() {
+    const skipLink = document.getElementById("skip-to-content");
+    if (!skipLink) return;
+    skipLink.addEventListener("click", e => {
+      if (
+        e.defaultPrevented ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.shiftKey ||
+        e.button !== 0
+      )
+        return;
+      e.preventDefault();
+      const target = document.getElementById("main-content");
+      if (target) {
+        target.setAttribute("tabindex", "-1");
+        target.addEventListener(
+          "blur",
+          () => target.removeAttribute("tabindex"),
+          {
+            once: true,
+          }
+        );
+        target.focus();
+        target.scrollIntoView();
+      }
+    });
+  }
+
+  // "/" opens search from anywhere except a text field. Bound once: the
+  // listener survives client-side navigation.
+  function onSlash(event: KeyboardEvent) {
+    if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey)
+      return;
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.isContentEditable ||
+        target.closest("input, textarea, select, [contenteditable='true']"))
+    )
+      return;
+    const input = document.querySelector<HTMLInputElement>(
+      ".pagefind-ui__search-input"
+    );
+    if (input) {
+      event.preventDefault();
+      input.focus();
+      return;
+    }
+    const link = document.querySelector<HTMLAnchorElement>("#search-link");
+    if (!link) return;
+    event.preventDefault();
+    link.click();
+  }
+  document.addEventListener("keydown", onSlash);
+
+  handleSkipToContent();
+  document.addEventListener("astro:after-swap", handleSkipToContent);
+</script>

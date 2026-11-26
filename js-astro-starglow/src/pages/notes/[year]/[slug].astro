@@ -1,0 +1,143 @@
+---
+import { type CollectionEntry, getCollection, render } from "astro:content";
+import Layout from "@/layouts/Layout.astro";
+import Header from "@/components/Header.astro";
+import Footer from "@/components/Footer.astro";
+import Main from "@/components/Main.astro";
+import Statusline from "@/components/Statusline.astro";
+import Tag from "@/components/Tag.astro";
+import ArticleEnhancements from "@/components/ArticleEnhancements.astro";
+import CopyLink from "@/components/CopyLink.astro";
+import Syndication from "@/components/Syndication.astro";
+import BackButton from "@/pages/blog/[...slug]/_components/BackButton.astro";
+import PostMeta from "@/pages/blog/[...slug]/_components/PostMeta.astro";
+import PostToc from "@/pages/blog/[...slug]/_components/PostToc.astro";
+import { getNoteParts } from "@/utils/content/entryIds";
+import { formatNoteDate, getNoteDate, getNoteUrl } from "@/utils/content/notes";
+import { isVisible } from "@/utils/content/visibility";
+import { readingTime } from "@/utils/readingTime";
+import { slugifyStr } from "@/utils/slugify";
+import { toTransitionName } from "@/utils/toTransitionName";
+import { article, requireSite, toJsonLd } from "@/utils/jsonLd";
+import { resolveDefaultOgImagePath } from "@/utils/resolveDefaultOgImagePath";
+import config from "@/config";
+import { tplStr, useTranslations } from "@/i18n";
+
+export async function getStaticPaths() {
+  const notes = (await getCollection("notes")).filter(isVisible);
+  return notes.map(note => ({
+    params: getNoteParts(note.id),
+    props: { note },
+  }));
+}
+
+type Props = { note: CollectionEntry<"notes"> };
+
+const { note } = Astro.props;
+const t = useTranslations(Astro.currentLocale ?? config.site.lang);
+
+const { Content, headings } = await render(note);
+const { date, year } = getNoteDate(note);
+const formatted = date ? formatNoteDate(date) : undefined;
+const generatedOg = config.features.dynamicOgImage;
+
+// Computed once and passed to Layout too, so the JSON-LD, canonical and
+// og:image can never disagree.
+const canonical =
+  note.data.canonicalUrl ?? new URL(Astro.url.pathname, Astro.site).href;
+const image = new URL(
+  generatedOg
+    ? `${getNoteUrl(note.id)}index.png`
+    : resolveDefaultOgImagePath(config),
+  Astro.site
+).href;
+// A note dated only by its folder year has no date to state.
+const noteJsonLd = toJsonLd(
+  article({
+    site: requireSite(Astro.site),
+    headline: note.data.title,
+    description: note.data.description,
+    url: canonical,
+    image,
+    dateModified: formatted?.iso,
+    inLanguage: config.site.lang,
+    authorName: config.site.author,
+  })
+);
+---
+
+<Layout
+  title={`${note.data.title} | ${config.site.title}`}
+  description={note.data.description}
+  ogType="article"
+  canonicalURL={canonical}
+  ogImage={image}
+  ogImageAlt={generatedOg
+    ? tplStr(t.og.imageAlt, {
+        type: t.content.typeNote,
+        title: note.data.title,
+      })
+    : undefined}
+>
+  <Fragment slot="head">
+    <script type="application/ld+json" is:inline set:html={noteJsonLd} />
+  </Fragment>
+  <Header />
+
+  <Main
+    pageTitle={note.data.title}
+    titleStyle={{ viewTransitionName: toTransitionName(`note:${note.id}`) }}
+    trackBack={false}
+    data-pagefind-body
+  >
+    <Fragment slot="meta">
+      <PostMeta
+        kind={t.content.typeNote.toLowerCase()}
+        date={date}
+        {year}
+        draft={note.data.draft}
+        minutes={readingTime(note.body ?? "")}
+      />
+      <BackButton />
+    </Fragment>
+
+    {
+      import.meta.env.DEV && note.data.draft && (
+        <p class="draft-note" data-pagefind-ignore>
+          {t.post.draftNotice}
+        </p>
+      )
+    }
+
+    <div class="post-body">
+      <PostToc headings={config.features.toc ? headings : []} />
+      <article id="article" class="app-prose">
+        <Content />
+      </article>
+    </div>
+    <ArticleEnhancements />
+
+    {
+      note.data.tags.length > 0 && (
+        <ul class="post-tags" aria-label={t.post.tagLabel}>
+          {note.data.tags.map(tag => (
+            <Tag tag={slugifyStr(tag)} tagName={tag} />
+          ))}
+        </ul>
+      )
+    }
+
+    <div
+      class:list={[
+        "share-row",
+        { "share-row-solo": note.data.tags.length === 0 },
+      ]}
+      data-pagefind-ignore
+    >
+      <CopyLink url={canonical} />
+      <Syndication urls={note.data.syndication} />
+    </div>
+  </Main>
+  <Footer />
+  <Statusline filePath={note.filePath} />
+</Layout>

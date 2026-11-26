@@ -1,0 +1,188 @@
+---
+/**
+ * ProgressiveImage Component
+ *
+ * A progressive loading image component that:
+ * - Shows a blur placeholder instantly
+ * - Lazy loads the full image
+ * - Smoothly transitions from blur to sharp
+ *
+ * Usage:
+ * ```astro
+ * import ProgressiveImage from '../components/ProgressiveImage.astro';
+ * import myImage from '../assets/my-image.jpg';
+ * import placeholder from '../assets/placeholders/my-image-placeholder.jpg';
+ *
+ * <ProgressiveImage
+ *   src={myImage}
+ *   placeholder={placeholder}
+ *   alt="Description"
+ *   class="w-full h-64"
+ * />
+ * ```
+ *
+ * Or with inline base64 placeholder:
+ * ```astro
+ * <ProgressiveImage
+ *   src={myImage}
+ *   placeholderSrc="data:image/jpeg;base64,..."
+ *   alt="Description"
+ * />
+ * ```
+ */
+
+import { Image } from "astro:assets";
+
+interface Props {
+  src: ImageMetadata;
+  alt: string;
+  placeholder?: ImageMetadata;
+  placeholderSrc?: string;
+  class?: string;
+  imgClass?: string;
+  width?: number;
+  height?: number;
+  loading?: "lazy" | "eager";
+  decoding?: "async" | "auto" | "sync";
+}
+
+const {
+  src,
+  alt,
+  placeholder,
+  placeholderSrc,
+  class: className = "",
+  imgClass = "",
+  width,
+  height,
+  loading = "lazy",
+  decoding = "async",
+} = Astro.props;
+
+// Generate unique ID for this instance
+const instanceId = `progressive-${Math.random().toString(36).slice(2, 9)}`;
+
+// Determine placeholder source
+let blurSrc = placeholderSrc;
+if (placeholder && !blurSrc) {
+  // If placeholder is an ImageMetadata, we'll use it directly
+  blurSrc = placeholder.src;
+}
+---
+
+<div
+  class:list={["progressive-image-container relative overflow-hidden", className]}
+  data-progressive-image={instanceId}
+>
+  {/* Blur placeholder - shown immediately */}
+  {blurSrc && (
+    <img
+      src={blurSrc}
+      alt=""
+      aria-hidden="true"
+      class:list={[
+        "progressive-placeholder absolute inset-0 w-full h-full object-cover",
+        "blur-sm scale-105 transition-opacity duration-500 ease-out",
+        imgClass,
+      ]}
+      data-placeholder
+    />
+  )}
+
+  {/* Full resolution image - lazy loaded */}
+  <Image
+    src={src}
+    alt={alt}
+    width={width}
+    height={height}
+    loading={loading}
+    decoding={decoding}
+    class:list={[
+      "progressive-image w-full h-full object-cover",
+      "transition-opacity duration-500 ease-out opacity-0",
+      imgClass,
+    ]}
+    data-full-image
+    onload={`this.classList.remove('opacity-0'); this.classList.add('opacity-100'); const placeholder = this.parentElement.querySelector('[data-placeholder]'); if (placeholder) placeholder.classList.add('opacity-0');`}
+  />
+</div>
+
+<style>
+  .progressive-image-container {
+    /* Ensure container has dimensions */
+    min-height: 1px;
+  }
+
+  .progressive-placeholder {
+    /* Smooth blur effect */
+    filter: blur(8px);
+    transform: scale(1.05);
+  }
+
+  .progressive-image.opacity-100 + .progressive-placeholder,
+  .progressive-placeholder.opacity-0 {
+    pointer-events: none;
+  }
+
+  /* Fallback for browsers without JS */
+  @media (scripting: none) {
+    .progressive-placeholder {
+      display: none;
+    }
+    .progressive-image {
+      opacity: 1 !important;
+    }
+  }
+</style>
+
+<script>
+  // Use event delegation for progressive image loading (memory efficient)
+  // Single listener handles all progressive images without memory leaks
+
+  // Handle image load events via delegation
+  document.addEventListener("load", (e) => {
+    const target = e.target as HTMLElement;
+    if (target.matches?.("[data-full-image]")) {
+      target.classList.remove("opacity-0");
+      target.classList.add("opacity-100");
+      const placeholder = target.parentElement?.querySelector("[data-placeholder]");
+      if (placeholder) {
+        placeholder.classList.add("opacity-0");
+      }
+    }
+  }, true); // Use capture phase for load events
+
+  // Handle image error events via delegation
+  document.addEventListener("error", (e) => {
+    const target = e.target as HTMLElement;
+    if (target.matches?.("[data-full-image]")) {
+      const placeholder = target.parentElement?.querySelector("[data-placeholder]") as HTMLElement;
+      if (placeholder) {
+        placeholder.classList.remove("opacity-0");
+        placeholder.style.filter = "blur(0)";
+      }
+    }
+  }, true); // Use capture phase for error events
+
+  // Check for already-loaded images (from cache) - runs once on initial load
+  // and after each view transition
+  function checkCachedImages() {
+    document.querySelectorAll("[data-full-image]").forEach((img) => {
+      const fullImage = img as HTMLImageElement;
+      if (fullImage.complete && fullImage.naturalWidth > 0) {
+        fullImage.classList.remove("opacity-0");
+        fullImage.classList.add("opacity-100");
+        const placeholder = fullImage.parentElement?.querySelector("[data-placeholder]");
+        if (placeholder) {
+          placeholder.classList.add("opacity-0");
+        }
+      }
+    });
+  }
+
+  // Run on initial load
+  checkCachedImages();
+
+  // Re-check after view transitions
+  document.addEventListener("astro:page-load", checkCachedImages);
+</script>

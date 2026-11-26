@@ -1,0 +1,90 @@
+---
+interface Props {
+  number: string; // Example: "850+"
+  class?: string;
+}
+
+const { number, class: className = "" } = Astro.props;
+
+// Extract the numeric part and any suffix (like '+' or '%')
+const numericPart = parseFloat(number.replace(/[^0-9.-]/g, ""));
+const suffix = number.replace(/[0-9.-]/g, "");
+---
+
+<div class={className}>
+  <span class="number-counter" data-target={numericPart} data-suffix={suffix}>
+    0{suffix}
+  </span>
+</div>
+
+<style>
+  .number-counter {
+    display: inline-block;
+    font-variant-numeric: tabular-nums;
+    min-width: 1ch;
+  }
+</style>
+
+<script>
+  // Use a single IntersectionObserver for all counters (memory efficient)
+  // This prevents memory leaks from creating new observers on each navigation
+  const counterObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const counter = entry.target as HTMLElement;
+
+          // Skip if already animated
+          if (counter.dataset.animated === "true") return;
+          counter.dataset.animated = "true";
+
+          const target = parseFloat(counter.getAttribute("data-target") || "0");
+          const suffix = counter.getAttribute("data-suffix") || "";
+          const duration = 2000;
+          let startTime: number | null = null;
+          let lastValue = -1;
+
+          const updateCounter = (timestamp: number) => {
+            if (!startTime) startTime = timestamp;
+            const progress = Math.min((timestamp - startTime) / duration, 1);
+
+            // Use easeOutCubic for smooth animation
+            const easeProgress = 1 - Math.pow(1 - progress, 3);
+            const current = Math.floor(easeProgress * target);
+
+            if (current !== lastValue) {
+              counter.textContent = current.toString() + suffix;
+              lastValue = current;
+            }
+
+            if (progress < 1) {
+              requestAnimationFrame(updateCounter);
+            } else {
+              counter.textContent = target.toString() + suffix;
+            }
+          };
+
+          requestAnimationFrame(updateCounter);
+          counterObserver.unobserve(counter);
+        }
+      });
+    },
+    { threshold: 0.5 }
+  );
+
+  // Initialize counters - works for both initial load and view transitions
+  function initCounters() {
+    document.querySelectorAll(".number-counter").forEach((counter) => {
+      // Reset animation state for view transitions (new page content)
+      if (counter.getAttribute("data-animated") !== "true") {
+        counterObserver.observe(counter);
+      }
+    });
+  }
+
+  // Run on initial DOM load
+  initCounters();
+
+  // Re-run when Astro navigates (view transitions)
+  document.addEventListener("astro:page-load", initCounters);
+</script>

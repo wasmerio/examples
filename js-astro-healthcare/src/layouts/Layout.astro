@@ -1,0 +1,178 @@
+---
+// src/layouts/Layout.astro
+import { ClientRouter } from "astro:transitions";
+import Nav from "../components/Nav.astro";
+import Footer from "../components/Footer.astro";
+import ThemeSwitcher from "../components/ThemeSwitcher.astro";
+import "../styles/tailwind.css";
+import nav from "../data/navigation.json";
+
+interface Props {
+	title?: string;
+	description?: string;
+}
+
+const { title, description } = Astro.props;
+
+const defaultTitle = nav.brand.name;
+const defaultDescription =
+	"Professional Healthcare Services - Expert care delivered to your home";
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<!-- Required meta tags -->
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="generator" content={Astro.generator} />
+		<title>{title ?? defaultTitle}</title>
+		<meta name="description" content={description ?? defaultDescription} />
+
+		<!-- Open Graph / Social Media -->
+		<meta property="og:type" content="website" />
+		<meta property="og:title" content={title ?? defaultTitle} />
+		<meta property="og:description" content={description ?? defaultDescription} />
+
+		<!-- Theme Color -->
+		<meta name="theme-color" content="#1a4d3e" />
+
+		<!-- Favicon placeholder - replace with your own -->
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+		<!-- Client Router for smooth SPA-like navigation (Astro 7+) -->
+		<ClientRouter />
+	</head>
+	<body
+		class="bg-theme-surface-muted font-sans text-theme-text-primary antialiased selection:bg-theme-primary-lighter/50 selection:text-theme-primary-darker"
+	>
+		<Nav />
+		<main>
+			<!-- The page-specific content will be injected here -->
+			<slot />
+		</main>
+		<Footer />
+
+		<!-- Navigation Progress Bar -->
+		<div
+			id="nav-progress"
+			class="fixed top-0 left-0 h-1 bg-theme-primary z-[100] transition-all duration-300 ease-out"
+			style="width: 0%; opacity: 0;"
+		></div>
+
+		<!-- Theme Switcher -->
+		<ThemeSwitcher />
+	</body>
+
+	<script>
+		// ========================================
+		// CRITICAL: Fix mobile back/forward swipe flash
+		// ========================================
+		// Bypass Astro's view transition for traverse (back/forward) navigation
+		// to let the browser use native bfcache for instant, flash-free navigation
+		document.addEventListener("astro:before-preparation", (event) => {
+			const navEvent = event as any;
+			if (navEvent.navigationType === "traverse") {
+				event.preventDefault(); // Let browser handle natively with bfcache
+			}
+		});
+
+		// ========================================
+		// Scroll Position Handling
+		// ========================================
+		// Scroll to top instantly before swap to prevent scroll flash on forward navigation
+		document.addEventListener("astro:before-swap", (event) => {
+			const swapEvent = event as any;
+			if (swapEvent.navigationType === "push" || swapEvent.navigationType === "replace") {
+				window.scrollTo({ top: 0, behavior: "instant" });
+				if (swapEvent.newDocument) {
+					swapEvent.newDocument.documentElement.style.scrollBehavior = "auto";
+				}
+			}
+		});
+
+		// ========================================
+		// Reset UI State on Navigation
+		// ========================================
+		document.addEventListener("astro:page-load", () => {
+			// Close mobile menu (astro-navbar uses 'hidden' class)
+			const mobileMenu = document.querySelector(".mobile-menu");
+			if (mobileMenu && !mobileMenu.classList.contains("hidden")) {
+				mobileMenu.classList.add("hidden");
+			}
+
+			// Reset mobile menu button state
+			const menuButton = document.getElementById("astronav-menu");
+			if (menuButton) {
+				menuButton.setAttribute("aria-expanded", "false");
+			}
+
+			// Reset header visibility (if using hide-on-scroll)
+			const header = document.querySelector("header");
+			if (header) {
+				(header as HTMLElement).style.transform = "translateY(0)";
+			}
+		});
+
+		// ========================================
+		// Navigation Loading Feedback (Progress Bar)
+		// ========================================
+		let progressInterval: ReturnType<typeof setInterval> | null = null;
+		let progressValue = 0;
+
+		document.addEventListener("astro:before-preparation", () => {
+			const progressBar = document.getElementById("nav-progress");
+			if (!progressBar) return;
+
+			// Reset and show progress bar
+			progressValue = 0;
+			progressBar.style.width = "0%";
+			progressBar.style.opacity = "1";
+
+			// Animate progress (simulated, reaches ~90% before actual load completes)
+			progressInterval = setInterval(() => {
+				progressValue += (90 - progressValue) * 0.1;
+				progressBar.style.width = `${progressValue}%`;
+			}, 50);
+		});
+
+		document.addEventListener("astro:page-load", () => {
+			const progressBar = document.getElementById("nav-progress");
+			if (!progressBar) return;
+
+			// Clear the interval
+			if (progressInterval) {
+				clearInterval(progressInterval);
+				progressInterval = null;
+			}
+
+			// Complete the progress bar
+			progressBar.style.width = "100%";
+
+			// Hide after completion
+			setTimeout(() => {
+				progressBar.style.opacity = "0";
+				setTimeout(() => {
+					progressBar.style.width = "0%";
+				}, 300);
+			}, 150);
+		});
+	</script>
+
+	<style is:global>
+		/* Touch feedback for mobile navigation */
+		a, button {
+			-webkit-tap-highlight-color: transparent;
+		}
+
+		a:active:not(:disabled),
+		button:active:not(:disabled) {
+			transform: scale(0.98);
+		}
+
+		/* Ensure buttons/links with explicit transforms don't get overridden */
+		.hover\:scale-105:active {
+			transform: scale(1.02) !important;
+		}
+	</style>
+</html>

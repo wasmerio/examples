@@ -1,0 +1,197 @@
+---
+/**
+ * ThemeSwitcher - Floating widget for live theme preview
+ *
+ * Showcases design system flexibility by allowing instant color scheme switching.
+ * Persists selection in localStorage for consistent experience across sessions.
+ */
+---
+
+<div
+  id="theme-switcher"
+  class="fixed bottom-4 right-4 z-50"
+>
+  <!-- Toggle Button - Icon only, mobile only -->
+  <button
+    id="theme-toggle"
+    class="w-10 h-10 rounded-full bg-theme-primary/90 text-white shadow-md hover:shadow-lg hover:bg-theme-primary transition-all duration-300 flex items-center justify-center"
+    aria-label="Toggle theme switcher"
+    aria-expanded="false"
+  >
+    <svg
+      class="w-4 h-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
+      ></path>
+    </svg>
+  </button>
+
+  <!-- Theme Panel -->
+  <div
+    id="theme-panel"
+    class="absolute bottom-16 right-0 w-72 bg-theme-surface rounded-xl shadow-2xl border border-theme-border overflow-hidden transform scale-95 opacity-0 pointer-events-none transition-all duration-200 origin-bottom-right"
+    role="dialog"
+    aria-label="Theme selector"
+  >
+    <!-- Header -->
+    <div class="px-4 py-3 bg-theme-surface-muted border-b border-theme-border">
+      <h3 class="text-sm font-semibold text-theme-text-primary">Design System</h3>
+      <p class="text-xs text-theme-text-muted">Switch color themes</p>
+    </div>
+
+    <!-- Theme Options -->
+    <div id="theme-options" class="p-2 max-h-80 overflow-y-auto">
+      <!-- Populated by JavaScript -->
+    </div>
+
+    <!-- Footer -->
+    <div class="px-4 py-2 bg-theme-surface-muted border-t border-theme-border">
+      <p class="text-xs text-theme-text-muted text-center">
+        Preference saved locally
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+  import {
+    themePresets,
+    getCurrentThemeId,
+    saveThemePreference,
+    initTheme,
+  } from "../lib/theme-presets";
+
+  function setupThemeSwitcher() {
+    const toggle = document.getElementById("theme-toggle");
+    const panel = document.getElementById("theme-panel");
+    const optionsContainer = document.getElementById("theme-options");
+
+    if (!toggle || !panel || !optionsContainer) return;
+    const toggleEl = toggle as HTMLButtonElement;
+    const panelEl = panel as HTMLDivElement;
+    const optionsEl = optionsContainer as HTMLDivElement;
+
+    if (toggleEl.dataset.bound === "true") return;
+    toggleEl.dataset.bound = "true";
+
+    let isOpen = false;
+
+    // Build theme options
+    function renderOptions() {
+      const currentTheme = getCurrentThemeId();
+      optionsEl.innerHTML = themePresets
+        .map(
+          (theme) => `
+          <button
+            data-theme-id="${theme.id}"
+            class="theme-option w-full flex items-center gap-3 p-3 rounded-lg transition-all duration-200 hover:bg-theme-surface-hover ${
+              theme.id === currentTheme
+                ? "bg-theme-primary/10 ring-2 ring-theme-primary"
+                : ""
+            }"
+          >
+            <div
+              class="w-8 h-8 rounded-full ring-2 ring-white shadow-md flex-shrink-0"
+              style="background: linear-gradient(135deg, ${theme.colors.primary} 50%, ${theme.colors.primaryLighter} 50%)"
+            ></div>
+            <div class="text-left">
+              <div class="text-sm font-medium text-theme-text-primary">${theme.name}</div>
+              <div class="text-xs text-theme-text-muted">${theme.description}</div>
+            </div>
+            ${
+              theme.id === currentTheme
+                ? `<svg class="w-5 h-5 text-theme-primary ml-auto flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                  </svg>`
+                : ""
+            }
+          </button>
+        `
+        )
+        .join("");
+
+      // Attach click handlers
+      optionsEl.querySelectorAll(".theme-option").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const themeId = btn.getAttribute("data-theme-id");
+          if (themeId) {
+            saveThemePreference(themeId);
+            renderOptions(); // Re-render to update selection
+          }
+        });
+      });
+    }
+
+    // Toggle panel
+    function togglePanel() {
+      isOpen = !isOpen;
+      toggleEl.setAttribute("aria-expanded", String(isOpen));
+
+      if (isOpen) {
+        panelEl.classList.remove("scale-95", "opacity-0", "pointer-events-none");
+        panelEl.classList.add("scale-100", "opacity-100", "pointer-events-auto");
+        renderOptions();
+      } else {
+        panelEl.classList.add("scale-95", "opacity-0", "pointer-events-none");
+        panelEl.classList.remove("scale-100", "opacity-100", "pointer-events-auto");
+      }
+    }
+
+    // Close on outside click
+    function handleClickOutside(e: MouseEvent) {
+      const switcher = document.getElementById("theme-switcher");
+      if (isOpen && switcher && !switcher.contains(e.target as Node)) {
+        togglePanel();
+      }
+    }
+
+    // Close on escape
+    function handleEscape(e: KeyboardEvent) {
+      if (isOpen && e.key === "Escape") {
+        togglePanel();
+      }
+    }
+
+    toggleEl.addEventListener("click", togglePanel);
+    document.addEventListener("click", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    // Listen for external theme changes
+    window.addEventListener("theme-changed", () => {
+      if (isOpen) renderOptions();
+    });
+
+    // Initialize theme on load
+    initTheme();
+  }
+
+  // Run on initial load and after view transitions
+  setupThemeSwitcher();
+  document.addEventListener("astro:page-load", setupThemeSwitcher);
+</script>
+
+<style>
+  /* Smooth color transitions when theme changes */
+  :global(*) {
+    transition:
+      background-color 300ms ease,
+      border-color 300ms ease,
+      color 150ms ease;
+  }
+
+  /* Exclude elements that shouldn't transition */
+  :global(img),
+  :global(video),
+  :global(svg path),
+  :global([data-no-transition]) {
+    transition: none !important;
+  }
+</style>

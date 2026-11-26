@@ -1,0 +1,82 @@
+---
+/**
+ * Comment providers render in their own iframe or on their own schedule, so
+ * they cannot read the page theme by themselves. `appearance.js` flips
+ * `<html class="dark">` and fires `themeChanged`; this listens for it and
+ * forwards the new mode to the provider's API.
+ *
+ * Providers that mount asynchronously pass `initial={false}` and get one
+ * sync once their frame is in the DOM, which avoids a flash of the wrong theme.
+ */
+type Props = {
+  provider: "giscus" | "utterances" | "twikoo" | "artalk" | "comentario"
+  /** Selector for the container that holds the provider's markup. */
+  container: string
+  /** Sync once on load, before any theme change. */
+  initial?: boolean
+}
+
+const { provider, container, initial = true } = Astro.props
+---
+
+<script is:inline define:vars={{ provider, container, initial }}>
+  ;(() => {
+    const root = document.querySelector(container)
+
+    const isDark = () => document.documentElement.classList.contains("dark")
+
+    function sync() {
+      if (!root) return
+
+      switch (provider) {
+        case "giscus": {
+          const frame = root.querySelector("iframe.giscus-frame")
+          frame?.contentWindow?.postMessage(
+            { giscus: { setConfig: { theme: isDark() ? "dark" : "light" } } },
+            "https://giscus.app",
+          )
+          break
+        }
+        case "utterances": {
+          const frame = root.querySelector("iframe.utterances-frame")
+          frame?.contentWindow?.postMessage(
+            {
+              type: "set-theme",
+              theme: isDark() ? "github-dark" : "github-light",
+            },
+            "https://utteranc.es",
+          )
+          break
+        }
+        case "twikoo":
+          window.twikoo?.update()
+          break
+        case "artalk":
+          window.artalk?.setDarkMode(isDark() ? "dark" : "light")
+          break
+        case "comentario":
+          root
+            .querySelector("comentario-comments")
+            ?.setAttribute("theme", isDark() ? "dark" : "light")
+          break
+        default:
+          break
+      }
+    }
+
+    if (initial) sync()
+    document.addEventListener("themeChanged", sync)
+
+    // iframe-based providers need one more sync after the frame finishes loading.
+    if ((provider === "giscus" || provider === "utterances") && root) {
+      const observer = new MutationObserver(() => {
+        const frame = root.querySelector("iframe")
+        if (!frame) return
+        observer.disconnect()
+        frame.addEventListener("load", sync, { once: true })
+        sync()
+      })
+      observer.observe(root, { childList: true, subtree: true })
+    }
+  })()
+</script>

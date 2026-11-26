@@ -1,0 +1,233 @@
+---
+import Icon from "@/components/Icon.astro"
+import { t } from "@/i18n"
+import type { SeriesContext } from "@/lib/posts"
+
+type Crumb = { label: string; href?: string }
+
+type Props = {
+  crumbs: Crumb[]
+  series?: SeriesContext | null
+  /** Article pages collapse into a title capsule while scrolling. */
+  collapsible?: boolean
+}
+
+const { crumbs, series, collapsible = false } = Astro.props
+const trail: Crumb[] = [{ label: t.nav.home, href: "/" }, ...crumbs]
+const current = trail[trail.length - 1]
+import { url } from "@/lib/url"
+---
+
+<header
+  id="context-bar"
+  data-collapsed="false"
+  data-visible="true"
+  data-collapsible={collapsible ? "true" : undefined}
+>
+  <div class="context-top">
+    <nav aria-label={t.nav.breadcrumb} class="context-crumbs">
+      <ol class="crumb-trail">
+        {trail.map((item, index) => (
+            <>
+              {index > 0 && (
+                <li class="crumb-sep" aria-hidden="true">
+                  <Icon name="chevron-right" size="sm" class="icon-directional" />
+                </li>
+              )}
+              <li class="crumb-node">
+                {item.href && index < trail.length - 1 ? (
+                  <a
+                    href={url(item.href)}
+                    class="crumb"
+                    title={item.label}
+                    aria-label={index === 0 ? item.label : undefined}
+                  >
+                    {index === 0 ? (
+                      <>
+                        <Icon name="home" size="sm" />
+                        <span class="hidden max-w-32 truncate sm:inline">{item.label}</span>
+                      </>
+                    ) : (
+                      <span class="max-w-40 truncate sm:max-w-56">{item.label}</span>
+                    )}
+                  </a>
+                ) : (
+                  <span class="crumb crumb-current" aria-current="page" title={item.label}>
+                    <span class="max-w-56 truncate sm:max-w-96">{item.label}</span>
+                  </span>
+                )}
+              </li>
+            </>
+          ))}
+      </ol>
+    </nav>
+
+    {collapsible && (
+        <button
+          id="context-pill"
+          type="button"
+          class="context-pill"
+          aria-label={`${t.nav.breadcrumb}: ${current.label}`}
+          title={current.label}
+        >
+          <span class="context-pill-title truncate">{current.label}</span>
+          {series && (
+              <span class="context-pill-badge tabular-nums">
+                {series.current}/{series.total}
+              </span>
+            )}
+        </button>
+      )}
+  </div>
+
+  {series && (
+      <>
+        <div class="series-bar">
+          <button
+            id="series-progress"
+            type="button"
+            class="series-trigger"
+            popovertarget="series-popover"
+            aria-controls="series-popover"
+            aria-expanded="false"
+            aria-label={t.context.seriesPartOf(series.current, series.total)}
+          >
+            <span class="text-primary shrink-0">
+              <Icon name="layers" size="sm" />
+            </span>
+            <span class="series-title truncate">{series.name}</span>
+            <span class="series-badge tabular-nums">
+              {series.current}/{series.total}
+            </span>
+            <span class="series-chevron" aria-hidden="true">
+              <Icon name="chevron-down" size="sm" />
+            </span>
+          </button>
+
+          <ol class="series-steps" aria-label={series.name}>
+            {series.parts.map((part, index) => {
+              const step = index + 1
+              const isCurrent = step === series.current
+              const isPast = step < series.current
+              return (
+                <>
+                  {index > 0 && (
+                    <li
+                      class:list={[
+                        "series-step-line",
+                        step <= series.current && "series-step-line-active",
+                      ]}
+                      aria-hidden="true"
+                    />
+                  )}
+                  <li class="series-step-item">
+                    <a
+                      href={url(`/posts/${part.id}/`)}
+                      class:list={[
+                        "series-dot",
+                        isCurrent && "series-dot-current",
+                        !isCurrent && isPast && "series-dot-past",
+                      ]}
+                      aria-current={isCurrent ? "page" : undefined}
+                      aria-label={`${step}. ${part.data.title}`}
+                    >
+                      <span>{step}</span>
+                      <span class="series-dot-toast" role="tooltip">
+                        <span class="text-muted-foreground font-mono">{step}.</span>
+                        <span class="truncate">{part.data.title}</span>
+                      </span>
+                    </a>
+                  </li>
+                </>
+              )
+            })}
+          </ol>
+
+          <div class="series-actions">
+            {series.prev ? (
+              <a
+                href={url(`/posts/${series.prev.id}/`)}
+                class="series-step"
+                aria-label={t.context.seriesPrev}
+                title={`${t.context.seriesPrev}: ${series.prev.data.title}`}
+              >
+                <Icon name="chevron-left" size="sm" class="icon-directional" />
+              </a>
+            ) : (
+              <span class="series-step" aria-disabled="true">
+                <Icon name="chevron-left" size="sm" class="icon-directional" />
+              </span>
+            )}
+
+            {series.next ? (
+              <a
+                href={url(`/posts/${series.next.id}/`)}
+                class="series-step"
+                aria-label={t.context.seriesNext}
+                title={`${t.context.seriesNext}: ${series.next.data.title}`}
+              >
+                <Icon name="chevron-right" size="sm" class="icon-directional" />
+              </a>
+            ) : (
+              <span class="series-step" aria-disabled="true">
+                <Icon name="chevron-right" size="sm" class="icon-directional" />
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div id="series-popover" popover class="p-0" aria-label={series.name}>
+          <div class="border-border flex items-center justify-between gap-3 border-b px-3.5 py-2.5">
+            <div class="flex min-w-0 items-center gap-2">
+              <span class="text-primary shrink-0">
+                <Icon name="layers" size="sm" />
+              </span>
+              <span class="text-foreground truncate text-xs font-semibold">
+                {series.name}
+              </span>
+            </div>
+            <a
+              href={series.href}
+              class="text-muted-foreground hover:text-foreground inline-flex shrink-0 items-center gap-1 text-xs transition-colors"
+            >
+              <span>{t.context.seriesViewSeries}</span>
+              <Icon name="arrow-right" size="sm" class="icon-directional" />
+            </a>
+          </div>
+
+          <ol class="max-h-72 space-y-0.5 overflow-y-auto p-1.5">
+            {series.parts.map((part, index) => {
+              const step = index + 1
+              const isCurrent = step === series.current
+              return (
+                <li>
+                  <a
+                    href={url(`/posts/${part.id}/`)}
+                    class:list={[
+                      "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-xs transition-colors",
+                      isCurrent
+                        ? "bg-accent text-accent-foreground font-medium"
+                        : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+                    ]}
+                    aria-current={isCurrent ? "page" : undefined}
+                  >
+                    <span
+                      class:list={[
+                        "inline-flex size-5 shrink-0 items-center justify-center rounded font-mono text-xs tabular-nums",
+                        isCurrent
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground",
+                      ]}
+                    >
+                      {step}
+                    </span>
+                    <span class="truncate">{part.data.title}</span>
+                  </a>
+                </li>
+              )
+            })}
+          </ol>
+        </div>
+      </>
+    )}
+</header>

@@ -1,0 +1,84 @@
+---
+/**
+ * Tabs rendered as a real tablist, so the labels are in the HTML and the first
+ * panel is readable with JavaScript disabled. Astro cannot read a child
+ * component's props, so the panel markup is rendered first and the labels are
+ * collected from the `data-tab-label` attributes the `Tab` component emits.
+ */
+type Props = {
+  id?: string
+}
+
+const { id } = Astro.props
+
+const DECODE: Record<string, string> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+  "&#34;": '"',
+}
+
+const decode = (value: string) =>
+  value.replace(/&(amp|lt|gt|quot|#39|#34);/g, (entity) => DECODE[entity])
+
+/** Panel ids only have to be unique within the page; each page renders once. */
+const counters = new Map<string, number>()
+const page = Astro.url.pathname
+const ordinal = (counters.get(page) ?? 0) + 1
+counters.set(page, ordinal)
+
+const wrapperId = id ?? `tabs-${ordinal}`
+
+const inner = await Astro.slots.render("default")
+const labels = [...inner.matchAll(/data-tab-label="([^"]*)"/g)].map((match) =>
+  decode(match[1]),
+)
+
+let panelIndex = 0
+const panels = inner.replace(
+  /<section\b([^>]*\bdata-tabs-panel\b[^>]*)>/g,
+  (_match, attrs: string) => {
+    const panelId = `${wrapperId}-panel-${panelIndex}`
+    const hidden = panelIndex === 0 ? "" : " hidden"
+    panelIndex += 1
+    return `<section${attrs} id="${panelId}" aria-labelledby="${panelId}-tab"${hidden}>`
+  },
+)
+---
+
+<div
+  id={wrapperId}
+  class="tabs-wrapper border-border bg-card text-foreground my-6 rounded-lg border"
+  data-tabs
+>
+  <div
+    class="tabs-nav-shell overflow-x-auto p-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+  >
+    <div
+      class="tabs-nav border-border bg-muted text-muted-foreground inline-flex min-w-max items-center gap-0.5 rounded-md border p-0.5"
+      role="tablist"
+    >
+      {labels.map((label, index) => {
+        const panelId = `${wrapperId}-panel-${index}`
+        return (
+          <button
+            id={`${panelId}-tab`}
+            type="button"
+            role="tab"
+            class="tabs-trigger focus-visible:ring-ring/50 inline-flex items-center justify-center rounded-sm px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            aria-controls={panelId}
+            aria-selected={index === 0 ? "true" : "false"}
+            tabindex={index === 0 ? 0 : -1}
+            data-tab-target={panelId}
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  </div>
+
+  <div class="tabs-panels px-3 pb-3 sm:px-4 sm:pb-4" set:html={panels} />
+</div>

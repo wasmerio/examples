@@ -1,0 +1,114 @@
+{{/* Resolve responsive image data for Markdown images and covers.
+
+  Local raster resources get a width ladder derived from `contentWidth` and,
+  for JPEG/PNG sources, a parallel WebP srcset. External and static images keep
+  their original URL and only receive the shared `sizes` value.
+
+  Params:
+  - context: current page context
+  - src: image path or URL
+  - sizes: optional override for the sizes attribute
+
+  Stores: imageUrl, imageSrcset, imageWebpSrcset, imageSizes, imageWidth,
+  imageHeight
+*/}}
+
+{{- $context := .context -}}
+{{- $src := .src | string -}}
+{{- $imageConfig := partialCached "config/image.html" $context "image" -}}
+
+{{/* 初始化核心变量 */}}
+{{- $resource := false -}}
+{{- $isExternal := false -}}
+{{- $finalUrl := "" -}}
+{{- $searchPath := $src -}}
+{{- $isRootRelative := hasPrefix $src "/" -}}
+{{- $width := 0 -}}
+{{- $height := 0 -}}
+{{- $srcset := "" -}}
+{{- $webpSrcset := "" -}}
+
+{{/* 检查是否为外部URL */}}
+{{- if or
+	(hasPrefix $src "http://")
+	(hasPrefix $src "https://")
+	(hasPrefix $src "data:")
+	(hasPrefix $src "blob:")
+-}}
+	{{- $isExternal = true -}}
+	{{- $finalUrl = $src -}}
+{{- else -}}
+	{{/* 统一路径格式，避免带前导 / 的 relURL 在子路径站点下失效 */}}
+	{{- if hasPrefix $src "./" -}}
+		{{- $searchPath = strings.TrimPrefix "./" $src -}}
+	{{- else if hasPrefix $src "/" -}}
+		{{- $searchPath = strings.TrimPrefix "/" $src -}}
+	{{- end -}}
+
+	{{/* 根路径只查全局资源或静态文件；相对路径优先查页面资源 */}}
+	{{- if not $isRootRelative -}}
+		{{- with $context.Resources.GetMatch $searchPath -}}
+			{{- $resource = . -}}
+			{{- $finalUrl = .RelPermalink -}}
+		{{- end -}}
+	{{- end -}}
+
+	{{- if not $resource -}}
+		{{- with resources.Get $searchPath -}}
+			{{- $resource = . -}}
+			{{- $finalUrl = .RelPermalink -}}
+		{{- else -}}
+			{{- $finalUrl = $searchPath | relURL -}}
+		{{- end -}}
+	{{- end -}}
+{{- end -}}
+
+{{/* 读取尺寸，并按内容宽度生成响应式宽度阶梯 */}}
+{{- if and $resource (not $isExternal) -}}
+	{{- $mediaType := $resource.MediaType.SubType -}}
+	{{- if in (slice "jpeg" "jpg" "png" "gif" "webp" "avif") $mediaType -}}
+		{{- $width = $resource.Width -}}
+		{{- $height = $resource.Height -}}
+	{{- end -}}
+
+	{{- if and (gt $width 0) (in (slice "jpeg" "jpg" "png" "webp" "avif") $mediaType) -}}
+		{{- $maxWidth := int (math.Min (float $width) (mul $imageConfig.contentWidthPx 2)) -}}
+		{{- $widths := slice -}}
+		{{- range $imageConfig.widthRatios -}}
+			{{- $candidate := int (math.Round (mul $imageConfig.contentWidthPx .)) -}}
+			{{- if and (gt $candidate 0) (lt $candidate $width) (le $candidate $maxWidth) -}}
+				{{- $widths = $widths | append $candidate -}}
+			{{- end -}}
+		{{- end -}}
+		{{- $widths = $widths | append $maxWidth | uniq | sort -}}
+
+		{{- $convertWebp := and $imageConfig.webp (in (slice "jpeg" "jpg" "png") $mediaType) -}}
+		{{- $parts := slice -}}
+		{{- $webpParts := slice -}}
+		{{- range $widths -}}
+			{{- $url := $finalUrl -}}
+			{{- if lt . $width -}}
+				{{- $url = ($resource.Resize (printf "%dx" .)).RelPermalink -}}
+			{{- end -}}
+			{{- $parts = $parts | append (printf "%s %dw" $url .) -}}
+			{{- if $convertWebp -}}
+				{{- $webp := $resource.Process (printf "resize %dx webp q%d" . $imageConfig.quality) -}}
+				{{- $webpParts = $webpParts | append (printf "%s %dw" $webp.RelPermalink .) -}}
+			{{- end -}}
+		{{- end -}}
+		{{- $srcset = delimit $parts ", " -}}
+		{{- if gt (len $webpParts) 0 -}}
+			{{- $webpSrcset = delimit $webpParts ", " -}}
+		{{- end -}}
+	{{- end -}}
+{{- end -}}
+
+{{- $sizes := .sizes | default $imageConfig.sizes -}}
+
+{{/* 设置核心数据到上下文 */}}
+{{- $context.Store.Set "imageUrl" $finalUrl -}}
+{{- $context.Store.Set "imageSrcset" $srcset -}}
+{{- $context.Store.Set "imageWebpSrcset" $webpSrcset -}}
+{{- $context.Store.Set "imageSizes" $sizes -}}
+{{- $context.Store.Set "imageWidth" $width -}}
+{{- $context.Store.Set "imageHeight" $height -}}

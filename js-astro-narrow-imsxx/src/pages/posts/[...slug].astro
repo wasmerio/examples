@@ -1,0 +1,169 @@
+---
+import Base from "@/layouts/Base.astro"
+import Icon from "@/components/Icon.astro"
+import RelatedPosts from "@/components/content/RelatedPosts.astro"
+import Comments from "@/components/features/Comments.astro"
+import { siteConfig } from "@/config/site"
+import {
+  getPosts,
+  readingTime,
+  seriesInfo,
+  summaryOf,
+  wordCount,
+} from "@/lib/posts"
+import { resolveLicense, resolveToggle } from "@/lib/toggles"
+import { formatDate, isoDate } from "@/lib/date"
+import { render } from "astro:content"
+import { t } from "@/i18n"
+
+export async function getStaticPaths() {
+  const posts = await getPosts()
+  return posts.map((post, i) => ({
+    params: { slug: post.id },
+    props: { post, prev: posts[i + 1], next: posts[i - 1] },
+  }))
+}
+
+const { post, prev, next } = Astro.props
+const { Content, headings } = await render(post)
+const series = await seriesInfo(post)
+
+const pageToc = resolveToggle(post.data.toc, siteConfig.toc.enabled)
+const pageComments = resolveToggle(
+  post.data.comments,
+  siteConfig.comments.enabled,
+)
+const pageProvider =
+  typeof post.data.comments === "object"
+    ? (post.data.comments.provider ?? siteConfig.comments.provider)
+    : siteConfig.comments.provider
+const pageGallery =
+  typeof post.data.gallery === "object"
+    ? post.data.gallery
+    : post.data.gallery === false
+      ? { enabled: false }
+      : undefined
+const pageMermaid = resolveToggle(post.data.mermaid, siteConfig.mermaid.enabled)
+const pageLightbox = resolveToggle(
+  post.data.lightbox,
+  siteConfig.lightbox.enabled,
+)
+const license = resolveLicense(post.data.license, siteConfig.post.license)
+
+const hasMermaid = pageMermaid && /```mermaid\b/.test(post.body ?? "")
+const hasImages = /!\[[^\]]*\]\(/.test(post.body ?? "")
+const crumbs = [{ label: "文章", href: "/posts" }, { label: post.data.title }]
+import { url } from "@/lib/url"
+---
+
+<Base
+  title={`${post.data.title} | ${siteConfig.title}`}
+  description={summaryOf(post)}
+  crumbs={crumbs}
+  series={series}
+  headings={headings}
+  hasMermaid={hasMermaid}
+  hasImages={hasImages}
+  tocEnabled={pageToc}
+  commentsEnabled={pageComments && pageProvider !== ""}
+  lightboxEnabled={pageLightbox}
+  gallery={pageGallery}
+  article
+>
+  {post.data.cover && (
+    <div class="border-border mb-8 overflow-hidden rounded-lg border">
+      <img
+        src={url(post.data.cover)}
+        alt={post.data.title}
+        class="aspect-video max-h-96 w-full object-cover"
+        loading="eager"
+        fetchpriority="high"
+        decoding="async"
+      />
+    </div>
+  )}
+
+  <header class="mb-8">
+    <div class="post-meta mb-8">
+      <h1
+        class="text-foreground text-2xl leading-tight font-semibold tracking-tight md:text-3xl"
+      >
+        {post.data.title}
+      </h1>
+
+      {summaryOf(post) && (
+              <p class="text-muted-foreground mt-3 text-base leading-relaxed">
+                {summaryOf(post)}
+              </p>
+            )}
+
+      <div
+        class="text-muted-foreground mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+      >
+        <time datetime={isoDate(post.data.date)}>
+          {formatDate(post.data.date)}
+        </time>
+        <span>{t.article.readingTime(readingTime(post.body ?? ""))}</span>
+        <span>{t.article.wordCount(wordCount(post.body ?? ""))}</span>
+        {post.data.updated && (
+          <span>
+            {t.article.updated} {formatDate(post.data.updated)}
+          </span>
+        )}
+        {license && (
+                <span class="inline-flex items-center gap-1">
+                  <span class="text-primary shrink-0">
+                    <Icon name="license" size="xs" />
+                  </span>
+                  <span>{license}</span>
+                </span>
+              )}
+      </div>
+
+      {post.data.tags.length > 0 && (
+              <div class="mt-4 flex flex-wrap items-center gap-1.5">
+                {post.data.tags.map((tag) => (
+                  <a
+                    href={url(`/tags/${tag}`)}
+                    class="border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground inline-flex h-5 items-center rounded-md border px-1.5 text-xs transition-colors"
+                  >
+                    {tag}
+                  </a>
+                ))}
+              </div>
+            )}
+    </div>
+  </header>
+
+  <article class="prose max-w-none">
+    <Content />
+  </article>
+
+  <nav
+    class="border-border mt-10 flex items-start justify-between gap-4 border-t pt-6 text-sm"
+  >
+    {prev ? (
+            <a href={url(`/posts/${prev.id}`)} class="group max-w-[45%]">
+              <span class="text-muted-foreground block text-xs">{t.article.prev}</span>
+              <span class="text-foreground group-hover:text-primary mt-1 block transition-colors">
+                {prev.data.title}
+              </span>
+            </a>
+          ) : (
+            <span />
+          )}
+    {next ? (
+            <a href={url(`/posts/${next.id}`)} class="group ml-auto max-w-[45%] text-right">
+              <span class="text-muted-foreground block text-xs">{t.article.next}</span>
+              <span class="text-foreground group-hover:text-primary mt-1 block transition-colors">
+                {next.data.title}
+              </span>
+            </a>
+          ) : (
+            <span />
+          )}
+  </nav>
+
+  <RelatedPosts post={post} />
+  <Comments enabled={pageComments} provider={pageProvider} />
+</Base>

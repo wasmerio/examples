@@ -1,0 +1,288 @@
+---
+import "@/styles/main.css"
+import "katex/dist/katex.min.css"
+import { siteConfig } from "@/config/site"
+import { colorSchemeKeys } from "@/lib/themes"
+import { isRtl, t } from "@/i18n"
+import Dock from "@/components/ui/Dock.astro"
+import ReadingProgress from "@/components/ui/ReadingProgress.astro"
+import ContextBar from "@/components/ui/ContextBar.astro"
+import Toc from "@/components/ui/Toc.astro"
+import SearchModal from "@/components/ui/SearchModal.astro"
+import NavMenu from "@/components/ui/NavMenu.astro"
+import Mermaid from "@/components/features/Mermaid.astro"
+import Announcement from "@/components/features/Announcement.astro"
+import Analytics from "@/components/features/Analytics.astro"
+import Gallery from "@/components/features/Gallery.astro"
+import Footer from "@/components/ui/Footer.astro"
+import type { SeriesContext } from "@/lib/posts"
+import type { MarkdownHeading } from "astro"
+
+type Crumb = { label: string; href?: string }
+
+type Props = {
+  title: string
+  description?: string
+  image?: string
+  noindex?: boolean
+  crumbs?: Crumb[]
+  series?: SeriesContext | null
+  /** Article pages get the collapsible context bar; other page kinds keep the trail. */
+  article?: boolean
+  headings?: MarkdownHeading[]
+  showReadingProgress?: boolean
+  hasMermaid?: boolean
+  hasImages?: boolean
+  tocEnabled?: boolean
+  /** Set by pages that actually render a comments section, not by the site switch. */
+  commentsEnabled?: boolean
+  lightboxEnabled?: boolean
+  /** Page-level gallery overrides, merged over the site defaults. */
+  gallery?: Partial<typeof siteConfig.gallery>
+}
+
+const {
+  title,
+  description = siteConfig.description,
+  image,
+  noindex = false,
+  crumbs,
+  series,
+  article = false,
+  headings,
+  showReadingProgress = siteConfig.readingProgress.enabled,
+  hasMermaid = false,
+  hasImages = false,
+  tocEnabled = siteConfig.toc.enabled,
+  // Upstream keys the dock button off "this page rendered a comments section"
+  // (a store flag), not off the site switch, so pages without one stay clean.
+  commentsEnabled = false,
+  lightboxEnabled = siteConfig.lightbox.enabled,
+  gallery: pageGallery,
+} = Astro.props
+
+const hasToc = Boolean(
+  tocEnabled &&
+    headings?.some((heading) => heading.depth === 2 || heading.depth === 3),
+)
+
+/** Site gallery defaults with the page's own overrides applied. */
+const galleryConfig = { ...siteConfig.gallery, ...pageGallery }
+/** Upstream only wires the gallery/lightbox when the page actually has figures. */
+const galleryActive = Boolean(galleryConfig.enabled && hasImages)
+const lightboxActive = Boolean(lightboxEnabled && hasImages)
+const searchEnabled = siteConfig.search.enabled
+
+const canonical = new URL(Astro.url.pathname, Astro.site)
+const ogImage = new URL(
+  url(image ?? siteConfig.images[0] ?? "/images/og-default.avif"),
+  Astro.site,
+)
+
+const pageStyle = [
+  `--content-width-base: ${siteConfig.contentWidth}`,
+  `--backdrop-blur-base: ${siteConfig.backdropBlur}px`,
+  `--grain-size-base: ${siteConfig.grainSize}`,
+].join("; ")
+import { url } from "@/lib/url"
+---
+
+<!doctype html>
+<html
+  lang={siteConfig.lang}
+  dir={isRtl ? "rtl" : "ltr"}
+  data-theme={siteConfig.colorScheme}
+  data-toc-pinned="false"
+>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{title}</title>
+    <meta name="description" content={description}>
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="canonical" href={canonical}>
+    <link
+      rel="icon"
+      href={url(siteConfig.favicon.svg ?? "/favicon.svg")}
+      type="image/svg+xml"
+    >
+    <link rel="manifest" href={url("/site.webmanifest")}>
+    <meta
+      name="theme-color"
+      content={siteConfig.pwa.themeColor}
+      media="(prefers-color-scheme: light)"
+    >
+    <meta
+      name="theme-color"
+      content={siteConfig.pwa.darkThemeColor}
+      media="(prefers-color-scheme: dark)"
+    >
+    {siteConfig.pwa.appleTouchIcon && (
+      <link rel="apple-touch-icon" href={url(siteConfig.pwa.appleTouchIcon)} />
+    )}
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={siteConfig.title}
+      href={url("/rss.xml")}
+    >
+
+    <meta property="og:type" content="website">
+    <meta property="og:title" content={title}>
+    <meta property="og:description" content={description}>
+    <meta property="og:url" content={canonical}>
+    <meta property="og:image" content={ogImage}>
+    <meta name="twitter:card" content="summary_large_image">
+    {siteConfig.keywords.length > 0 && (
+      <meta name="keywords" content={siteConfig.keywords.join(", ")} />
+    )}
+
+    <script
+      is:inline
+      define:vars={{
+        schemes: colorSchemeKeys,
+        defaultScheme: siteConfig.colorScheme,
+        defaultBlur: siteConfig.backdropBlur,
+        defaultGrain: siteConfig.grainSize,
+      }}
+    >
+      // Restore theme, width, blur and grain before first paint.
+      ;(() => {
+        const root = document.documentElement
+        const read = (key) => {
+          try {
+            return localStorage.getItem(key)
+          } catch {
+            return null
+          }
+        }
+
+        const storedScheme = read("colorScheme")
+        root.setAttribute(
+          "data-theme",
+          schemes.includes(storedScheme) ? storedScheme : defaultScheme,
+        )
+
+        const width = Number.parseInt(read("contentWidth"), 10)
+        if (Number.isInteger(width) && width >= 40 && width <= 90) {
+          root.style.setProperty("--content-width", `${width}rem`)
+        }
+
+        const storedBlur = Number.parseInt(read("backdropBlur"), 10)
+        const blur =
+          Number.isInteger(storedBlur) && storedBlur >= 0 && storedBlur <= 24
+            ? storedBlur
+            : defaultBlur
+        root.style.setProperty("--backdrop-blur", `${blur}px`)
+        root.style.setProperty(
+          "--surface-alpha",
+          `${blur > 0 ? Math.max(68, 92 - Math.round((blur / 24) * 20)) : 100}%`,
+        )
+
+        const storedGrain = Number.parseInt(read("grainSize"), 10)
+        const grain =
+          Number.isInteger(storedGrain) &&
+          storedGrain >= 0 &&
+          storedGrain <= 100
+            ? storedGrain
+            : defaultGrain
+        root.style.setProperty(
+          "--grain-size",
+          `${Math.round(64 + grain * 2.5)}px`,
+        )
+        root.style.setProperty(
+          "--grain-opacity",
+          grain > 0 ? (0.04 + (grain / 100) * 0.2).toFixed(3) : "0",
+        )
+
+        const pinned = read("tocPinned")
+        if (pinned === "true" || pinned === "false") {
+          root.setAttribute("data-toc-pinned", pinned)
+        }
+
+        const modes = ["light", "dark", "system"]
+        const applyMode = () => {
+          const value = read("theme")
+          const mode = modes.includes(value) ? value : "system"
+          root.classList.toggle(
+            "dark",
+            mode === "dark" ||
+              (mode === "system" &&
+                matchMedia("(prefers-color-scheme: dark)").matches),
+          )
+        }
+        applyMode()
+        matchMedia("(prefers-color-scheme: dark)").addEventListener(
+          "change",
+          applyMode,
+        )
+      })()
+    </script>
+
+    <slot name="head" />
+  </head>
+
+  <body class="min-h-screen">
+    <div id="bg-grain" aria-hidden="true"></div>
+    <a class="skip-link" href="#main-content">{t.ui.skipToContent}</a>
+    {showReadingProgress && <ReadingProgress />}
+
+    <div id="page-container" style={pageStyle}>
+      <Announcement />
+      {crumbs && crumbs.length > 0 && (
+        <ContextBar
+          crumbs={crumbs}
+          series={series}
+          collapsible={article}
+        />
+      )}
+
+      <main id="main-content" tabindex="-1" class="page-main">
+        <div class="page-content">
+          <slot />
+        </div>
+      </main>
+
+      <Footer />
+    </div>
+
+    <Dock showToc={hasToc} showComments={commentsEnabled} />
+    {hasToc && headings && <Toc headings={headings} />}
+    {searchEnabled && <SearchModal />}
+    <NavMenu />
+    <Mermaid enabled={hasMermaid} />
+    <Gallery gallery={galleryActive} lightbox={lightboxActive} />
+    <script
+      id="gallery-config"
+      type="application/json"
+      set:html={JSON.stringify({
+        gallery: galleryActive,
+        lightbox: lightboxActive,
+        galleryOptions: {
+          defaultLayout: galleryConfig.defaultLayout,
+          gap: galleryConfig.gap,
+          targetRowHeight: galleryConfig.targetRowHeight,
+          lastRowBehavior: galleryConfig.lastRowBehavior,
+          columnWidth: galleryConfig.columnWidth,
+          columns: galleryConfig.columns,
+        },
+      })}
+    />
+
+    <Analytics />
+    {searchEnabled && (
+      <script
+        id="search-config"
+        type="application/json"
+        set:html={JSON.stringify({
+          searchIndexURL: url("/search-index.json"),
+        })}
+      />
+    )}
+    <slot name="overlays" />
+
+    <script>
+      import "@/scripts/main.js"
+    </script>
+  </body>
+</html>

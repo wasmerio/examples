@@ -1,0 +1,127 @@
+---
+import { Icon } from "astro-icon/components";
+import { navBarConfig, siteConfig } from "../config";
+import { LinkPresets } from "../constants/link-presets";
+import { LinkPreset, type NavBarLink } from "../types/config";
+import {
+	getSearchIndexItems,
+	type SearchIndexItem,
+} from "../utils/search-utils";
+import { url } from "../utils/url-utils";
+import SearchPanel from "./Search.svelte";
+import DisplaySettings from "./widget/DisplaySettings.svelte";
+import NavMenuPanel from "./widget/NavMenuPanel.astro";
+
+const className = Astro.props.class;
+
+let links: NavBarLink[] = navBarConfig.links.map(
+	(item: NavBarLink | LinkPreset): NavBarLink => {
+		if (typeof item === "number") {
+			return LinkPresets[item];
+		}
+		return item;
+	},
+);
+
+const desktopLinks = links.filter((link) => !link.external && link.url !== "/");
+const githubLink =
+	links.find((link) => link.external && /github/i.test(link.name)) ||
+	links.find((link) => link.external);
+const brandButtonClass = "scale-animation nav-brand-btn";
+const navButtonClass = "scale-animation nav-pill-btn";
+const iconButtonClass = "scale-animation nav-icon-btn";
+
+let devSearchIndex: SearchIndexItem[] = [];
+if (import.meta.env.DEV) {
+	devSearchIndex = await getSearchIndexItems({ includeDraft: false });
+}
+---
+<nav id="navbar" class="z-50 onload-animation">
+	<div class:list={[
+		className,
+		"site-navbar-shell"]}>
+        <div class="site-navbar-left">
+            <a href={url('/')} class={brandButtonClass}>
+                {siteConfig.title}
+            </a>
+            <div class="nav-desktop-links">
+                {desktopLinks.map((l) => {
+                    return <a aria-label={l.name} href={url(l.url)} class={navButtonClass}>
+                        <div class="flex items-center">
+                            {l.name}
+                        </div>
+                    </a>;
+                })}
+            </div>
+        </div>
+        <div class="site-navbar-right">
+            <SearchPanel client:only="svelte" localIndex={devSearchIndex}></SearchPanel>
+            {githubLink && (
+                <a aria-label={githubLink.name} href={githubLink.url} target="_blank" class={iconButtonClass}>
+                    <Icon name="fa6-brands:github" class="text-[1.05rem]"></Icon>
+                </a>
+            )}
+            <a aria-label="RSS" href={url("/rss.xml")} class={iconButtonClass}>
+                <Icon name="material-symbols:rss-feed-rounded" class="text-[1.15rem]"></Icon>
+            </a>
+            {!siteConfig.themeColor.fixed && (
+                <button aria-label="Display Settings" class:list={[iconButtonClass, "hidden md:flex"]} id="display-settings-switch">
+                    <Icon name="material-symbols:palette-outline" class="text-[1.1rem]"></Icon>
+                </button>
+            )}
+            <button aria-label="Menu" name="Nav Menu" class:list={[iconButtonClass, "md:hidden"]} id="nav-menu-switch">
+                <Icon name="material-symbols:menu-rounded" class="text-[1.15rem]"></Icon>
+            </button>
+        </div>
+    </div>
+    <NavMenuPanel links={links}></NavMenuPanel>
+    <DisplaySettings client:only="svelte"></DisplaySettings>
+</nav>
+
+<script>
+function bindPanelToggle(buttonId: string, panelId: string) {
+    document.addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const button = target.closest(`#${buttonId}`);
+        if (!button) return;
+
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+        panel.classList.toggle("float-panel-closed");
+    });
+}
+
+const windowState = window as Window & { __astroArgonPanelToggleBound__?: boolean };
+if (!windowState.__astroArgonPanelToggleBound__) {
+    bindPanelToggle("display-settings-switch", "display-setting");
+    bindPanelToggle("nav-menu-switch", "nav-menu-panel");
+    windowState.__astroArgonPanelToggleBound__ = true;
+}
+</script>
+
+{import.meta.env.PROD && <script is:inline define:vars={{scriptUrl: url('/pagefind/pagefind.js')}}>
+async function loadPagefind() {
+    try {
+        const pagefind = await import(scriptUrl);
+        await pagefind.options({
+            excerptLength: 20
+        });
+        window.pagefind = pagefind;
+        document.dispatchEvent(new CustomEvent('pagefindready'));
+    } catch {
+        window.pagefind = {
+            search: () => Promise.resolve({ results: [] }),
+            options: () => Promise.resolve(),
+        };
+        document.dispatchEvent(new CustomEvent('pagefindloaderror'));
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadPagefind);
+} else {
+    loadPagefind();
+}
+</script>}

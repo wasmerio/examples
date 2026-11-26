@@ -1,0 +1,126 @@
+---
+import { render, type CollectionEntry } from "astro:content";
+import { Icon } from "astro-icon/components";
+import { formatDateToYYYYMMDD } from "../utils/date-utils";
+import { getCategoryUrl, getDir } from "../utils/url-utils";
+import ImageWrapper from "./misc/ImageWrapper.astro";
+
+interface Props {
+	class?: string;
+	entry: CollectionEntry<"posts">;
+	title: string;
+	url: string;
+	published: Date;
+	category: string | null;
+	image: string;
+	description: string;
+	style?: string;
+}
+const {
+	entry,
+	title,
+	url,
+	published,
+	category,
+	image,
+	description,
+	style,
+} = Astro.props;
+const className = Astro.props.class;
+
+const hasCover = image !== undefined && image !== null && image !== "";
+
+const postIdDir = getDir(entry.id);
+const postBasePath = entry.filePath
+	? getDir(entry.filePath.replace(/\\/g, "/")).replace(/^src\//, "")
+	: postIdDir === "/"
+		? "content/posts/"
+		: `content/posts/${postIdDir}`;
+
+const { remarkPluginFrontmatter } = await render(entry);
+
+function hashStringToHue(value: string): number {
+	let hash = 0;
+	for (let i = 0; i < value.length; i++) {
+		hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+	}
+	return hash % 360;
+}
+
+const categoryHue = category ? hashStringToHue(category.trim()) : 0;
+---
+<div
+	class:list={[
+		"post-card",
+		{ "post-card-with-cover": hasCover },
+		className,
+	]}
+	style={style}
+>
+	<div class:list={["post-card-body", { "post-card-body-with-cover": hasCover }]}>
+		{category && (
+			<a
+				href={getCategoryUrl(category)}
+				style={`--cat-hue:${categoryHue}deg`}
+				class="badge badge-sm post-category-chip post-card-category"
+			>
+				{category.trim()}
+			</a>
+		)}
+		<a
+			href={url}
+			class="post-card-title group"
+		>
+			{title}
+			<Icon
+				class="post-card-title-icon"
+				name="material-symbols:chevron-right-rounded"
+			/>
+		</a>
+
+		<div class:list={["post-card-excerpt", { "line-clamp-2": !description }]}>
+			{description || remarkPluginFrontmatter.excerpt}
+		</div>
+
+		<div class="post-card-meta">
+			<div class="post-card-meta-item">
+				<Icon name="material-symbols:calendar-today-outline-rounded" class="text-[0.95rem]"></Icon>
+				<div class="font-medium">{formatDateToYYYYMMDD(published)}</div>
+			</div>
+			<div class="post-card-meta-sep">|</div>
+			<div class="font-medium">{remarkPluginFrontmatter.words} 字</div>
+		</div>
+	</div>
+
+	{hasCover && (
+		<div class="post-card-cover">
+			<ImageWrapper src={image} basePath={postBasePath} alt="Cover Image of the Post" class="w-full h-full" />
+		</div>
+	)}
+</div>
+
+<style>
+	.post-category-chip {
+		background: color-mix(in oklab, hsl(var(--cat-hue) 70% 86%) 64%, var(--card-bg));
+		color: color-mix(in oklab, hsl(var(--cat-hue) 40% 30%) 58%, var(--deep-text));
+		border-color: color-mix(in oklab, hsl(var(--cat-hue) 56% 72%) 56%, var(--border-divider));
+	}
+
+	:global(html[data-theme="argon-dark"]) .post-card .post-category-chip,
+	:global(html[data-theme="dracula"]) .post-card .post-category-chip {
+		background: color-mix(in oklab, hsl(var(--cat-hue) 48% 42%) 40%, var(--card-bg));
+		color: color-mix(in oklab, var(--color-base-content) 92%, #ffffff 8%);
+		border-color: color-mix(in oklab, hsl(var(--cat-hue) 52% 64%) 34%, var(--border-divider));
+	}
+
+	.post-category-chip:hover {
+		background: color-mix(in oklab, hsl(var(--cat-hue) 72% 80%) 70%, var(--card-bg));
+		color: var(--primary);
+	}
+
+	:global(html[data-theme="argon-dark"]) .post-card .post-category-chip:hover,
+	:global(html[data-theme="dracula"]) .post-card .post-category-chip:hover {
+		background: color-mix(in oklab, hsl(var(--cat-hue) 52% 46%) 48%, var(--card-bg));
+		color: #ffffff;
+	}
+</style>

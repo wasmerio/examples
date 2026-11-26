@@ -1,0 +1,653 @@
+---
+// njX Shop — base layout: announcement bar, header with live cart button,
+// cart drawer (client-side, nanostores), footer.
+import '../styles/global.css';
+import { commerce, providerName } from '../lib/commerce';
+import { SITE, ANNOUNCEMENT, HEADER, SEARCH, FOOTER, THANKS_MODAL, CART, NAV_DRAWER } from '../constants/components';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = SITE.defaultTitle,
+  description = SITE.defaultDescription,
+} = Astro.props;
+
+// Active nav item: bg-tile/text-ink are tokens, they follow the theme automatically
+const path = Astro.url.pathname.replace(/\/$/, "") || "/";
+const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
+const navCls = (href: string, base: string, active: string) =>
+  `${base} ${isActive(href) ? active : ""}`.trim();
+
+// Client-side search index (small catalog → inline JSON is the right tool)
+const searchIndex = JSON.stringify(
+  (await commerce.listProducts()).map((p) => ({
+    handle: p.handle,
+    title: p.title,
+    price: p.price.amount,
+    tags: p.tags.join(' '),
+    image: p.images[0]?.src ?? '',
+  })),
+);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script is:inline>
+      // restore theme before first paint (no flash)
+      if (localStorage.getItem('njx-shop-theme') === 'dark') {
+        document.documentElement.classList.add('dark');
+      }
+    </script>
+  </head>
+  <body class="bg-paper font-sans text-ink antialiased" data-provider={providerName} data-search-index={searchIndex}>
+    <p class="flex flex-wrap items-center justify-center gap-x-2 bg-pine px-4 py-2 text-center text-[13px] font-medium text-pine-soft">
+      <span>{ANNOUNCEMENT.text}</span>
+      <span class="opacity-50">·</span>
+      <a
+        href={ANNOUNCEMENT.linkHref}
+        target="_blank"
+        rel="noopener"
+        class="font-semibold text-white underline underline-offset-2 hover:opacity-90"
+      >{ANNOUNCEMENT.linkLabel}</a>
+    </p>
+
+    <header class="sticky top-2 z-40 mx-auto w-full max-w-6xl px-3 sm:top-3 sm:px-5">
+      <div class="overflow-hidden rounded-2xl border border-line bg-paper/90 shadow-sm backdrop-blur">
+      <nav class="flex h-14 items-center justify-between px-3 sm:h-16 sm:px-5">
+        <div class="flex items-center gap-3">
+          <a href="/" class="flex items-center gap-2.5">
+            <img src={SITE.logoDark} alt="" class="logo-on-light h-8 w-8 rounded-lg" />
+            <img src={SITE.logoLight} alt="" class="logo-on-dark h-8 w-8 rounded-lg" />
+            <span class="font-display text-[21px] font-bold tracking-tight">{SITE.name}</span>
+          </a>
+          <!-- on mobile the theme toggle lives in the nav drawer -->
+          <button id="theme-button" data-theme-toggle class="hidden rounded-md p-2.5 text-muted hover:bg-tile hover:text-ink sm:block" aria-label={HEADER.aria.theme}>
+            <svg data-icon-moon width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+            </svg>
+            <svg data-icon-sun class="hidden" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" />
+            </svg>
+          </button>
+        </div>
+        <div class="hidden items-center gap-1 text-[15px] text-muted sm:flex">
+          {HEADER.navLinks.map((l) => (
+            <a href={l.href} class={navCls(l.href, "rounded-md px-3 py-2 hover:bg-tile hover:text-ink", "bg-tile text-ink")}>{l.label}</a>
+          ))}
+        </div>
+        <div class="flex items-center gap-1">
+        <button id="search-button" class="rounded-md p-2.5 text-muted hover:bg-tile hover:text-ink" aria-label={HEADER.aria.search} aria-expanded="false">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+          </svg>
+        </button>
+        <a href="/account" class="hidden rounded-md p-2.5 text-muted hover:bg-tile hover:text-ink sm:block" aria-label={HEADER.aria.account}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
+          </svg>
+        </a>
+        <a href="/favorites" class="relative hidden rounded-md p-2.5 text-muted hover:bg-tile hover:text-ink sm:block" aria-label={HEADER.aria.favorites}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20.5c-5.5-3.6-8.5-6.9-8.5-10.4A4.6 4.6 0 0 1 8.1 5.4c1.6 0 3 .8 3.9 2.1a4.7 4.7 0 0 1 3.9-2.1 4.6 4.6 0 0 1 4.6 4.7c0 3.5-3 6.8-8.5 10.4z" />
+          </svg>
+          <span id="fav-count" class="absolute -right-0.5 -top-0.5 hidden rounded-full bg-pine px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"></span>
+        </a>
+        <button
+          id="cart-button"
+          class="relative flex items-center gap-1.5 rounded-md border border-line px-3.5 py-2.5 hover:border-ink"
+          aria-label={HEADER.aria.cart}
+        >
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="9" cy="21" r="1.4" />
+            <circle cx="19" cy="21" r="1.4" />
+            <path d="M2.5 3h2l2.6 12.6a2 2 0 0 0 2 1.6h9.2a2 2 0 0 0 2-1.6L22 7H6" />
+          </svg>
+          <span
+            id="cart-count"
+            class="absolute -right-1.5 -top-1.5 hidden rounded-full bg-pine px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white"
+          ></span>
+        </button>
+        <button id="nav-button" class="rounded-md p-2.5 text-muted hover:bg-tile hover:text-ink" aria-label={HEADER.aria.menu} aria-expanded="false">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <path d="M3 5.5h14M3 10h14M3 14.5h14" />
+          </svg>
+        </button>
+        </div>
+      </nav>
+      <!-- search panel -->
+      <div id="search-panel" class="hidden border-t border-line bg-paper">
+        <div class="mx-auto max-w-6xl px-5 py-4">
+          <div class="flex items-center gap-3 rounded-md border border-line px-4 focus-within:border-pine">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" class="shrink-0 text-muted">
+              <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
+            </svg>
+            <input
+              id="search-input"
+              type="search"
+              placeholder={SEARCH.placeholder}
+              class="w-full bg-transparent py-3 text-[15px] outline-none placeholder:text-muted"
+              autocomplete="off"
+            />
+            <kbd class="hidden rounded border border-line px-1.5 py-0.5 text-[11px] text-muted sm:block">{SEARCH.escHint}</kbd>
+          </div>
+          <div id="search-results" class="hidden gap-4 py-5 sm:grid-cols-4"></div>
+          <p id="search-empty" class="hidden py-6 text-center text-[14px] text-muted">{SEARCH.emptyText}</p>
+        </div>
+      </div>
+      </div>
+    </header>
+
+    <slot />
+
+    <footer class="mx-auto w-full max-w-6xl px-3 pb-8 sm:px-5">
+      <div class="rounded-2xl border border-line bg-tile/60">
+      <div class="grid gap-8 px-5 py-8 sm:grid-cols-[1.2fr_1fr] sm:gap-10 sm:px-10 sm:py-12">
+        <div>
+          <p class="flex items-center gap-2 font-display text-xl font-bold"><img src={SITE.logoDark} alt="" class="logo-on-light h-7 w-7 rounded-md" /><img src={SITE.logoLight} alt="" class="logo-on-dark h-7 w-7 rounded-md" />{SITE.name}</p>
+          <p class="mt-3 max-w-[36ch] text-[14px] leading-relaxed text-muted">{FOOTER.tagline}</p>
+        </div>
+        <nav class="grid grid-cols-2 gap-8 text-[14px] sm:grid-cols-3" aria-label="Footer">
+          {FOOTER.columns.map((col) => (
+            <div>
+              <p class="font-semibold">{col.title}</p>
+              <ul class="mt-3 space-y-2 text-muted">
+                {col.links.map((l) => (
+                  <li>
+                    <a
+                      href={l.href}
+                      class={l.href.startsWith('/')
+                        ? navCls(l.href, "hover:text-ink hover:underline underline-offset-4", "text-ink font-semibold underline")
+                        : "hover:text-ink hover:underline underline-offset-4"}
+                    >{l.label}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </nav>
+      </div>
+      <!-- ── Built with: the theme's tech stack ── -->
+      <!-- mobile: reversed column — logos on top, legal links below -->
+      <div class="flex flex-col-reverse items-center gap-y-4 border-t border-line px-5 py-4 sm:flex-row sm:flex-wrap sm:justify-between sm:gap-x-8 sm:px-10 sm:py-5">
+        <div class="flex flex-wrap items-center gap-5 text-[13px] text-muted">
+          {FOOTER.legalLinks.map((l) => (
+            <a href={l.href} class={navCls(l.href, "hover:text-ink hover:underline underline-offset-4", "text-ink font-semibold underline")}>{l.label}</a>
+          ))}
+        </div>
+        <!-- mobile: 3+2 grid with a centered second row; sm+: single row -->
+        <div class="tech-row grid w-full grid-cols-6 items-center justify-items-center gap-y-3 sm:flex sm:w-auto sm:flex-wrap sm:gap-5">
+          <img src="/tech/astro.png" alt="Astro" title="Astro" class="col-span-2 h-9 w-auto" loading="lazy" />
+          <img src="/tech/tailwind.png" alt="Tailwind CSS" title="Tailwind CSS" class="col-span-2 h-7 w-auto" loading="lazy" />
+          <img src="/tech/nodejs.png" alt="Node.js" title="Node.js" class="col-span-2 h-9 w-auto" loading="lazy" />
+          <img src="/tech/shopify.png" alt="Shopify" title="Shopify" class="col-span-2 col-start-2 h-9 w-auto" loading="lazy" />
+          <img src="/tech/cloudflare.png" alt="Cloudflare" title="Cloudflare" class="col-span-2 h-9 w-auto" loading="lazy" />
+        </div>
+      </div>
+      </div>
+    </footer>
+
+    <!-- ── Demo thank-you modal ── -->
+    <div id="thanks-modal" class="fixed inset-0 z-[60] hidden items-center justify-center p-5">
+      <div class="absolute inset-0 bg-ink/50" data-thanks-close></div>
+      <div class="relative w-full max-w-sm rounded-xl bg-paper p-8 text-center shadow-2xl">
+        <p class="text-4xl">{THANKS_MODAL.emoji}</p>
+        <h3 class="mt-3 font-display text-2xl font-bold">{THANKS_MODAL.title}</h3>
+        <p class="mt-2 text-[14px] leading-relaxed text-muted">{THANKS_MODAL.text}</p>
+        <a
+          href={THANKS_MODAL.starHref}
+          target="_blank"
+          rel="noopener"
+          class="mt-5 block w-full rounded-md bg-pine py-3 text-[15px] font-semibold text-white hover:bg-pine-deep"
+        >{THANKS_MODAL.starLabel}</a>
+        <button data-thanks-close class="mt-2 w-full rounded-md py-2.5 text-[14px] text-muted hover:text-ink">
+          {THANKS_MODAL.keepLabel}
+        </button>
+        <p class="mt-3 text-[12px] text-muted">
+          Made by <a href={THANKS_MODAL.madeByHref} target="_blank" rel="noopener" class="underline underline-offset-2 hover:text-ink">{THANKS_MODAL.madeByLabel}</a>
+          · <a href={THANKS_MODAL.moreHref} target="_blank" rel="noopener" class="underline underline-offset-2 hover:text-ink">{THANKS_MODAL.moreLabel}</a>
+        </p>
+      </div>
+    </div>
+
+    <!-- ── Cart drawer ── -->
+    <div id="cart-backdrop" class="fixed inset-0 z-40 bg-ink/40" aria-hidden="true"></div>
+    <aside
+      id="cart-drawer"
+      class="fixed bottom-4 right-4 top-4 z-50 flex w-[calc(100%-2rem)] max-w-md flex-col overflow-hidden rounded-2xl border border-line bg-paper shadow-2xl"
+      aria-label={CART.ariaDrawer}
+    >
+      <div class="flex items-center justify-between border-b border-line px-6 py-5">
+        <h2 class="flex items-center gap-2 font-display text-xl font-bold"><img src={SITE.logoDark} alt="" class="logo-on-light h-7 w-7 rounded-md" /><img src={SITE.logoLight} alt="" class="logo-on-dark h-7 w-7 rounded-md" />{SITE.name}</h2>
+        <div class="flex items-center gap-1">
+          <button id="cart-clear" class="hidden rounded-md px-2.5 py-2 text-[13px] text-muted hover:text-ink" aria-label={CART.ariaClear}>
+            {CART.clearLabel}
+          </button>
+          <button id="cart-close" class="rounded-md p-2 text-muted hover:text-ink" aria-label={CART.ariaClose}>✕</button>
+        </div>
+      </div>
+      <div id="cart-lines" class="flex-1 overflow-y-auto px-6 py-4"></div>
+      <div class="border-t border-line px-6 py-5">
+        <div class="flex items-center justify-between text-[15px]">
+          <span class="text-muted">{CART.subtotalLabel}</span>
+          <span id="cart-subtotal" class="font-semibold">$0</span>
+        </div>
+        <p class="mt-1 text-[13px] text-muted">{CART.shippingNote}</p>
+        <button
+          id="cart-checkout"
+          class="mt-4 w-full rounded-md bg-pine py-3.5 text-[15px] font-semibold text-white hover:bg-pine-deep disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {CART.checkoutLabel}
+        </button>
+        <p id="cart-note" class="mt-2 hidden text-center text-[13px] text-muted"></p>
+      </div>
+    </aside>
+
+    <!-- ── Nav drawer ── -->
+    <div id="nav-backdrop" class="fixed inset-0 z-40 bg-ink/40" aria-hidden="true"></div>
+    <aside id="nav-drawer" class="fixed bottom-4 right-4 top-4 z-50 flex w-[calc(100%-2rem)] max-w-sm flex-col overflow-hidden rounded-2xl border border-line bg-paper shadow-2xl" aria-label={NAV_DRAWER.ariaDrawer}>
+      <div class="flex items-center justify-between border-b border-line px-4 py-4">
+        <h2 class="flex items-center gap-2 font-display text-xl font-bold"><img src={SITE.logoDark} alt="" class="logo-on-light h-7 w-7 rounded-md" /><img src={SITE.logoLight} alt="" class="logo-on-dark h-7 w-7 rounded-md" />{SITE.name}</h2>
+        <!-- icon actions: favorites, account, theme -->
+        <div class="flex items-center gap-0.5">
+          <a href="/favorites" class="rounded-md p-2 text-muted hover:bg-tile hover:text-ink" aria-label={HEADER.aria.favorites}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 20.5c-5.5-3.6-8.5-6.9-8.5-10.4A4.6 4.6 0 0 1 8.1 5.4c1.6 0 3 .8 3.9 2.1a4.7 4.7 0 0 1 3.9-2.1 4.6 4.6 0 0 1 4.6 4.7c0 3.5-3 6.8-8.5 10.4z" />
+            </svg>
+          </a>
+          <a href="/account" class="rounded-md p-2 text-muted hover:bg-tile hover:text-ink" aria-label={HEADER.aria.account}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
+            </svg>
+          </a>
+          <button data-theme-toggle class="rounded-md p-2 text-muted hover:bg-tile hover:text-ink" aria-label={HEADER.aria.theme}>
+            <svg data-icon-moon width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+            </svg>
+            <svg data-icon-sun class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <circle cx="12" cy="12" r="4.5" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" />
+            </svg>
+          </button>
+          <button id="nav-close" class="rounded-md p-2 text-muted hover:text-ink" aria-label={NAV_DRAWER.ariaClose}>✕</button>
+        </div>
+      </div>
+      <nav class="flex-1 overflow-y-auto px-4 py-4 text-[16px] font-medium">
+        <a href={NAV_DRAWER.home.href} class={navCls(NAV_DRAWER.home.href, "block rounded-md px-3 py-3 hover:bg-tile", "bg-tile font-semibold")}>{NAV_DRAWER.home.label}</a>
+        <div class="mb-1 ml-3 border-l border-line pl-3">
+          {NAV_DRAWER.collections.map((l) => (
+            <a href={l.href} class={navCls(l.href, "block rounded-md px-3 py-2.5 text-[15px] text-muted hover:bg-tile hover:text-ink", "bg-tile !text-ink")}>{l.label}</a>
+          ))}
+        </div>
+        {NAV_DRAWER.pages.map((l) => (
+          <a href={l.href} class={navCls(l.href, "block rounded-md px-3 py-3 hover:bg-tile", "bg-tile font-semibold")}>{l.label}</a>
+        ))}
+      </nav>
+      <div class="border-t border-line px-6 py-5 text-[13px] text-muted">
+        {NAV_DRAWER.footer.builtWithLabel} <a href={NAV_DRAWER.footer.libHref} class="underline underline-offset-2 hover:text-ink">{NAV_DRAWER.footer.libLabel}</a> ·
+        <a href={NAV_DRAWER.footer.starHref} class="underline underline-offset-2 hover:text-ink">{NAV_DRAWER.footer.starLabel}</a>
+      </div>
+    </aside>
+
+    <script>
+      import { cartLines, setQuantity, cartCount, cartTotal, clearCart } from '../lib/cart';
+      import { favorites, toggleFavorite } from '../lib/favorites';
+      import { CART } from '../constants/components';
+      import type { CartLine } from '../lib/commerce/types';
+
+      const $ = (id: string) => document.getElementById(id)!;
+      const provider = document.body.dataset.provider;
+
+      function money(n: number) {
+        return '$' + (Math.round(n * 100) / 100).toString();
+      }
+
+      function render() {
+        const lines = cartLines.get();
+        const countEl = $('cart-count');
+        const n = cartCount();
+        countEl.textContent = String(n);
+        countEl.classList.toggle('hidden', n === 0);
+
+        const box = $('cart-lines');
+        if (!lines.length) {
+          box.innerHTML =
+            `<p class="py-16 text-center text-[15px] text-muted">${CART.emptyLine1}<br/>${CART.emptyLine2}</p>`;
+        } else {
+          box.innerHTML = lines
+            .map(
+              (l) => `
+              <div class="relative flex gap-4 border-b border-line py-4" data-line="${l.variantId}">
+                <button class="absolute right-0 top-4 rounded-md p-1.5 text-muted transition hover:bg-tile hover:text-ink" data-remove aria-label="Remove ${l.title} from cart">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+                </button>
+                ${l.image ? `<img src="${l.image.src}" alt="" class="h-20 w-20 rounded-md bg-tile object-cover"/>` : ''}
+                <div class="flex-1 pr-8">
+                  <p class="text-[15px] font-medium">${l.title}</p>
+                  <p class="text-[13px] text-muted">${l.variantTitle}</p>
+                  <div class="mt-2 flex items-center gap-3">
+                    <div class="flex items-center rounded-md border border-line">
+                      <button class="px-2.5 py-1 text-muted hover:text-ink" data-qty="-1" aria-label="Decrease quantity">−</button>
+                      <span class="px-1 text-[14px]">${l.quantity}</span>
+                      <button class="px-2.5 py-1 text-muted hover:text-ink" data-qty="1" aria-label="Increase quantity">+</button>
+                    </div>
+                    <span class="text-[14px] font-medium">${money(l.price.amount * l.quantity)}</span>
+                  </div>
+                </div>
+              </div>`,
+            )
+            .join('');
+        }
+        $('cart-subtotal').textContent = money(cartTotal());
+        ($('cart-checkout') as HTMLButtonElement).disabled = lines.length === 0;
+        $('cart-clear').classList.toggle('hidden', lines.length === 0);
+      }
+
+      function open() {
+        document.body.classList.add('cart-open');
+      }
+      function close() {
+        document.body.classList.remove('cart-open');
+      }
+
+      // ── Theme toggle: header button (desktop) + drawer button (mobile) ──
+      const themeToggles = document.querySelectorAll<HTMLElement>('[data-theme-toggle]');
+      function syncThemeIcon() {
+        const dark = document.documentElement.classList.contains('dark');
+        themeToggles.forEach((btn) => {
+          btn.querySelector('[data-icon-moon]')?.classList.toggle('hidden', dark);
+          btn.querySelector('[data-icon-sun]')?.classList.toggle('hidden', !dark);
+        });
+      }
+      themeToggles.forEach((btn) =>
+        btn.addEventListener('click', () => {
+          const dark = document.documentElement.classList.toggle('dark');
+          localStorage.setItem('njx-shop-theme', dark ? 'dark' : 'light');
+          syncThemeIcon();
+        })
+      );
+      syncThemeIcon();
+
+      // ── Search ──
+      const searchPanel = $('search-panel');
+      const searchInput = $('search-input') as HTMLInputElement;
+      const searchResults = $('search-results');
+      const searchEmpty = $('search-empty');
+      const index: { handle: string; title: string; price: number; tags: string; image: string }[] =
+        JSON.parse(document.body.dataset.searchIndex!);
+
+      function renderSearch(q: string) {
+        // empty query — show the whole catalog
+        const hits = q
+          ? index.filter((p) => (p.title + ' ' + p.tags).toLowerCase().includes(q)).slice(0, 8)
+          : index;
+        searchEmpty.classList.toggle('hidden', hits.length > 0);
+        searchResults.classList.toggle('hidden', hits.length === 0);
+        searchResults.classList.toggle('grid', hits.length > 0);
+        searchResults.innerHTML = hits
+          .map(
+            (p) => `
+            <a href="/products/${p.handle}" class="group flex items-center gap-3 rounded-md p-2 hover:bg-tile">
+              <img src="${p.image}" alt="" class="h-14 w-14 rounded-md bg-tile object-cover"/>
+              <span class="min-w-0">
+                <span class="block truncate text-[14px] font-medium group-hover:underline group-hover:underline-offset-4">${p.title}</span>
+                <span class="text-[13px] text-muted">$${p.price}</span>
+              </span>
+            </a>`,
+          )
+          .join('');
+      }
+
+      function toggleSearch(show?: boolean) {
+        const willShow = show ?? searchPanel.classList.contains('hidden');
+        searchPanel.classList.toggle('hidden', !willShow);
+        $('search-button').setAttribute('aria-expanded', String(willShow));
+        if (willShow) {
+          renderSearch(searchInput.value.trim().toLowerCase());
+          searchInput.focus();
+        }
+      }
+      $('search-button').addEventListener('click', () => toggleSearch());
+      searchInput.addEventListener('input', () => renderSearch(searchInput.value.trim().toLowerCase()));
+
+
+      function openNav() { document.body.classList.add('nav-open'); }
+      function closeNav() { document.body.classList.remove('nav-open'); }
+      $('nav-button').addEventListener('click', openNav);
+      $('nav-close').addEventListener('click', closeNav);
+      $('nav-backdrop').addEventListener('click', closeNav);
+
+      $('cart-button').addEventListener('click', open);
+      $('cart-close').addEventListener('click', close);
+      $('cart-clear').addEventListener('click', clearCart);
+      $('cart-backdrop').addEventListener('click', close);
+      function closeThanks() {
+        const modal = $('thanks-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+      document.querySelectorAll('[data-thanks-close]').forEach((el) => el.addEventListener('click', closeThanks));
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          close();
+          closeThanks();
+          closeNav();
+          toggleSearch(false);
+        }
+        if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          toggleSearch(true);
+        }
+      });
+
+      $('cart-lines').addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const removeBtn = target.closest('[data-remove]');
+        if (removeBtn) {
+          const row = removeBtn.closest('[data-line]') as HTMLElement;
+          setQuantity(row.dataset.line!, 0);
+          return;
+        }
+        const btn = target.closest('[data-qty]') as HTMLElement | null;
+        if (!btn) return;
+        const row = btn.closest('[data-line]') as HTMLElement;
+        const line = cartLines.get().find((l) => l.variantId === row.dataset.line);
+        if (line) setQuantity(line.variantId, line.quantity + Number(btn.dataset.qty));
+      });
+
+      // Add-to-cart: any element with data-cart-line='{json CartLine}'
+      document.addEventListener('click', (e) => {
+        const el = (e.target as HTMLElement).closest('[data-cart-line]') as HTMLElement | null;
+        if (!el) return;
+        const line = JSON.parse(el.dataset.cartLine!) as CartLine;
+        // PDP qty & variant picker apply ONLY to the main PDP button — a quick-add
+        // on a related-products card must not inherit another product's variant/qty.
+        if (!el.hasAttribute('data-quick-add')) {
+          const qtyInput = document.querySelector('[data-qty-input]') as HTMLInputElement | null;
+          line.quantity = qtyInput ? Math.max(1, Number(qtyInput.value)) : 1;
+          const picked = document.querySelector('[data-variant-picker] [aria-pressed="true"]') as HTMLElement | null;
+          if (picked) {
+            line.variantId = picked.dataset.variantId!;
+            line.variantTitle = picked.dataset.variantTitle!;
+          }
+        }
+        import('../lib/cart').then(({ addLine }) => {
+          addLine(line);
+          open();
+        });
+      });
+
+      $('cart-checkout').addEventListener('click', async () => {
+        const lines = cartLines.get();
+        if (!lines.length) return;
+        const note = $('cart-note');
+        if (provider !== 'shopify') {
+          close();
+          const modal = $('thanks-modal');
+          modal.classList.remove('hidden');
+          modal.classList.add('flex');
+          return;
+        }
+        const btn = $('cart-checkout') as HTMLButtonElement;
+        btn.disabled = true;
+        btn.textContent = CART.checkoutPreparing;
+        try {
+          const res = await fetch(
+            `https://${import.meta.env.PUBLIC_SHOPIFY_DOMAIN}/api/2025-07/graphql.json`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Shopify-Storefront-Access-Token': import.meta.env.PUBLIC_SHOPIFY_STOREFRONT_TOKEN,
+              },
+              body: JSON.stringify({
+                query: `mutation ($lines: [CartLineInput!]!) {
+                  cartCreate(input: { lines: $lines }) { cart { checkoutUrl } userErrors { message } }
+                }`,
+                variables: {
+                  lines: lines.map((l) => ({ merchandiseId: l.variantId, quantity: l.quantity })),
+                },
+              }),
+            },
+          );
+          const json = await res.json();
+          const url = json.data?.cartCreate?.cart?.checkoutUrl;
+          if (url) location.href = url;
+          else throw new Error(json.data?.cartCreate?.userErrors?.[0]?.message ?? 'cartCreate failed');
+        } catch (err) {
+          note.textContent = CART.checkoutFailedPrefix + (err as Error).message;
+          note.classList.remove('hidden');
+          btn.disabled = false;
+          btn.textContent = CART.checkoutLabel;
+        }
+      });
+
+      // ── Favorites ──
+      document.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-fav-toggle]');
+        if (!btn) return;
+        toggleFavorite(btn.dataset.favToggle!);
+      });
+      function renderFavs() {
+        const list = favorites.get();
+        document.querySelectorAll<HTMLElement>('[data-fav-toggle]').forEach((b) => {
+          b.classList.toggle('is-fav', list.includes(b.dataset.favToggle!));
+        });
+        const badge = document.getElementById('fav-count');
+        if (badge) {
+          badge.textContent = String(list.length);
+          badge.classList.toggle('hidden', list.length === 0);
+        }
+      }
+      favorites.subscribe(renderFavs);
+      renderFavs();
+
+      cartLines.subscribe(render);
+      render();
+    </script>
+
+    <!-- ── Demo device bar (demo-only — safe to delete this whole block in production) ── -->
+    <div data-pv-root>
+      <aside
+        data-pv-bar
+        class="fixed right-3 top-1/2 z-[95] hidden -translate-y-1/2 flex-col items-center gap-1 border border-line bg-paper/90 p-1.5 backdrop-blur md:flex"
+        aria-label="Preview controls"
+      >
+        <button type="button" data-pv-size="1920" title="Desktop · 1920" aria-label="Desktop 1920px" class="grid h-9 w-9 place-items-center border border-transparent text-muted transition hover:border-current hover:text-ink">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" /><path d="M8 21h8" /><path d="M12 17v4" /></svg>
+        </button>
+        <button type="button" data-pv-size="1440" title="Laptop · 1440" aria-label="Laptop 1440px" class="grid h-9 w-9 place-items-center border border-transparent text-muted transition hover:border-current hover:text-ink">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="11" /><path d="M2 19h20" /></svg>
+        </button>
+        <button type="button" data-pv-size="390" title="iPhone · 390" aria-label="Phone 390px" class="grid h-9 w-9 place-items-center border border-transparent text-muted transition hover:border-current hover:text-ink">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" /><path d="M11 18.5h2" /></svg>
+        </button>
+        <button type="button" data-pv-close hidden title="Exit preview" aria-label="Exit preview" class="grid h-9 w-9 place-items-center border border-transparent text-muted transition hover:border-current hover:text-ink">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        </button>
+      </aside>
+
+      <div data-pv-overlay class="fixed inset-0 z-[90] hidden bg-[#0a0a0a]">
+        <div data-pv-wrap class="flex h-full justify-center overflow-hidden py-5">
+          <iframe data-pv-frame title="Responsive preview" class="h-full w-full border border-white/15 bg-white [transform-origin:top_center]"></iframe>
+        </div>
+        <div data-pv-badge class="absolute bottom-3 left-1/2 -translate-x-1/2 border border-white/20 bg-black/80 px-3.5 py-1.5 text-[11px] uppercase tracking-[0.22em] text-white/75"></div>
+      </div>
+    </div>
+
+    <script is:inline>
+      (function () {
+        var root = document.querySelector('[data-pv-root]');
+        if (!root) return;
+        if (window.self !== window.top) {
+          root.remove();
+          // inside a preview iframe: external links (GitHub etc.) refuse framing — open them in a new tab
+          document.addEventListener('click', function (e) {
+            var a = e.target.closest && e.target.closest('a[href]');
+            if (!a) return;
+            var url; try { url = new URL(a.getAttribute('href'), location.href); } catch (err) { return; }
+            if (url.origin !== location.origin) { e.preventDefault(); window.open(url.href, '_blank', 'noopener'); }
+          });
+          return;
+        }
+        var overlay = root.querySelector('[data-pv-overlay]');
+        var frame = root.querySelector('[data-pv-frame]');
+        var badge = root.querySelector('[data-pv-badge]');
+        var closeBtn = root.querySelector('[data-pv-close]');
+        var buttons = [].slice.call(root.querySelectorAll('[data-pv-size]'));
+        var labels = { 1920: 'Desktop · 1920', 1440: 'Laptop · 1440', 390: 'iPhone · 390' };
+        var mode = null;
+
+        function apply() {
+          if (!mode) return;
+          var target = parseInt(mode, 10);
+          var wrap = root.querySelector('[data-pv-wrap]');
+          var scale = Math.min(1, (wrap.clientWidth - 16) / target);
+          frame.style.width = target + 'px';
+          frame.style.height = (wrap.clientHeight - 40) / scale + 'px';
+          frame.style.transform = scale < 1 ? 'scale(' + scale + ')' : '';
+          badge.textContent = labels[mode];
+        }
+        function close() {
+          mode = null;
+          overlay.classList.add('hidden');
+          closeBtn.hidden = true;
+          document.documentElement.style.overflow = '';
+          buttons.forEach(function (x) { x.classList.remove('border-pine', 'text-pine'); });
+          frame.src = 'about:blank';
+        }
+        buttons.forEach(function (b) {
+          b.addEventListener('click', function () {
+            if (mode === b.dataset.pvSize) { close(); return; }
+            mode = b.dataset.pvSize;
+            buttons.forEach(function (x) {
+              x.classList.toggle('border-pine', x === b);
+              x.classList.toggle('text-pine', x === b);
+            });
+            if (frame.src === '' || frame.src === 'about:blank') frame.src = window.location.href;
+            overlay.classList.remove('hidden');
+            closeBtn.hidden = false;
+            document.documentElement.style.overflow = 'hidden';
+            apply();
+          });
+        });
+        closeBtn.addEventListener('click', close);
+        window.addEventListener('resize', apply);
+      })();
+    </script>
+  </body>
+</html>

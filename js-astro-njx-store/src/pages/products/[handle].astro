@@ -1,0 +1,245 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import ProductCard from '../../components/ProductCard.astro';
+import { commerce } from '../../lib/commerce';
+import { PRODUCT as T } from '../../constants/pages';
+
+export async function getStaticPaths() {
+  const products = await commerce.listProducts();
+  return products.map((p) => ({ params: { handle: p.handle }, props: { product: p } }));
+}
+
+const { product } = Astro.props;
+const images = product.images;
+const img = images[0];
+const onSale = !!product.compareAtPrice;
+const firstAvailable = product.variants.find((v) => v.available) ?? product.variants[0];
+
+const related = (await commerce.listProducts({ collection: product.collectionHandles[0], limit: 5 }))
+  .filter((p) => p.handle !== product.handle)
+  .slice(0, 4);
+
+const cartLine = JSON.stringify({
+  variantId: firstAvailable?.id ?? product.id,
+  productHandle: product.handle,
+  title: product.title,
+  variantTitle: firstAvailable?.title ?? 'Default',
+  image: img,
+  price: product.price,
+  quantity: 1,
+});
+const imagesJson = JSON.stringify(images);
+---
+
+<Layout title={`${product.title} — njX Shop`} description={product.description}>
+  <nav class="mx-auto max-w-6xl px-5 pt-6 text-[13px] text-muted">
+    <a href="/" class="hover:text-ink">{T.breadcrumbHome}</a>
+    <span class="mx-1.5">/</span>
+    <a href={`/collections/${product.collectionHandles[0]}`} class="capitalize hover:text-ink">{product.collectionHandles[0]}</a>
+    <span class="mx-1.5">/</span>
+    <span class="text-ink">{product.title}</span>
+  </nav>
+
+  <section class="mx-auto grid max-w-6xl items-start gap-10 px-5 py-4 sm:py-8 md:grid-cols-2 md:gap-14">
+    <!-- Gallery: sticky, click opens lightbox -->
+    <div class="self-start md:sticky md:top-24" data-gallery data-images={imagesJson}>
+      <button
+        type="button"
+        class="group relative block w-full cursor-zoom-in overflow-hidden rounded-xl bg-tile"
+        data-gallery-open
+        aria-label="Open image gallery"
+      >
+        {img && (
+          <img
+            src={img.src}
+            alt={img.alt}
+            data-gallery-main
+            class="aspect-square w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+          />
+        )}
+        {onSale && (
+          <span class="absolute left-4 top-4 rounded-md bg-ink px-3 py-1 text-[13px] font-semibold text-paper">Sale</span>
+        )}
+        <span class="absolute bottom-3 right-3 rounded-md bg-paper/85 p-2 text-ink opacity-0 backdrop-blur transition group-hover:opacity-100">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3M11 8v6M8 11h6" />
+          </svg>
+        </span>
+      </button>
+      {images.length > 1 && (
+        <div class="mt-3 flex gap-2.5">
+          {images.map((im, i) => (
+            <button
+              type="button"
+              data-thumb={i}
+              aria-pressed={i === 0}
+              class="w-20 overflow-hidden rounded-lg border-2 border-transparent bg-tile transition aria-pressed:border-pine"
+              aria-label={`Show image ${i + 1}`}
+            >
+              <img src={im.src} alt="" class="aspect-square w-full object-cover" loading="lazy" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+
+    <div>
+      <h1 class="font-display text-[clamp(28px,4vw,40px)] font-bold leading-tight tracking-tight">{product.title}</h1>
+      <p class="mt-3 text-xl">
+        {onSale && <s class="mr-2 text-[16px] text-muted">${product.compareAtPrice!.amount}</s>}
+        <span class:list={['font-semibold', onSale && 'text-pine']}>${product.price.amount}</span>
+      </p>
+
+      <p class="mt-6 max-w-[52ch] text-[15px] leading-relaxed text-muted">{product.description}</p>
+
+      {product.variants.length > 1 && (
+        <fieldset class="mt-7" data-variant-picker>
+          <legend class="text-[14px] font-medium">{T.optionsLegend}</legend>
+          <div class="mt-2.5 flex flex-wrap gap-2">
+            {product.variants.map((v) => (
+              <button
+                type="button"
+                class:list={[
+                  'rounded-md border px-4 py-2 text-[14px] transition',
+                  v.available
+                    ? 'border-line hover:border-ink aria-pressed:border-pine aria-pressed:bg-pine-soft aria-pressed:font-semibold'
+                    : 'cursor-not-allowed border-line text-muted line-through',
+                ]}
+                aria-pressed={v.id === firstAvailable?.id}
+                disabled={!v.available}
+                data-variant-id={v.id}
+                data-variant-title={v.title}
+                onclick="const f=this.closest('[data-variant-picker]');f.querySelectorAll('[aria-pressed]').forEach(b=>b.setAttribute('aria-pressed','false'));this.setAttribute('aria-pressed','true')"
+              >
+                {v.title}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      <div class="mt-7 flex gap-3">
+        <div class="flex items-center rounded-md border border-line">
+          <button
+            type="button"
+            class="px-3.5 py-3 text-muted hover:text-ink"
+            aria-label="Decrease quantity"
+            onclick="const i=this.parentElement.querySelector('input');i.value=Math.max(1,Number(i.value)-1)"
+          >−</button>
+          <input data-qty-input type="number" value="1" min="1" class="w-10 bg-transparent text-center text-[15px] [appearance:textfield]" aria-label="Quantity" />
+          <button
+            type="button"
+            class="px-3.5 py-3 text-muted hover:text-ink"
+            aria-label="Increase quantity"
+            onclick="const i=this.parentElement.querySelector('input');i.value=Number(i.value)+1"
+          >+</button>
+        </div>
+        <button
+          type="button"
+          data-cart-line={cartLine}
+          class="flex-1 rounded-md bg-pine py-3.5 text-[15px] font-semibold text-white hover:bg-pine-deep"
+        >
+          {T.addToCart}
+        </button>
+        <button
+          type="button"
+          data-fav-toggle={product.handle}
+          class="rounded-md border border-line px-3.5 text-ink transition hover:border-pine hover:text-pine"
+          aria-label={`Add ${product.title} to favorites`}
+        >
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20.5c-5.5-3.6-8.5-6.9-8.5-10.4A4.6 4.6 0 0 1 8.1 5.4c1.6 0 3 .8 3.9 2.1a4.7 4.7 0 0 1 3.9-2.1 4.6 4.6 0 0 1 4.6 4.7c0 3.5-3 6.8-8.5 10.4z" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="mt-8 divide-y divide-line border-y border-line text-[14px]">
+        {T.accordion.map((item) => (
+          <details class="group py-3.5">
+            <summary class="flex cursor-pointer list-none items-center justify-between font-medium">
+              {item.title} <span class="text-muted transition group-open:rotate-45">+</span>
+            </summary>
+            <p class="pb-1 pt-2 leading-relaxed text-muted">{item.text}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  {related.length > 0 && (
+    <section class="mx-auto max-w-6xl px-5 py-4 sm:py-14">
+      <h2 class="font-display text-2xl font-bold tracking-tight">{T.relatedTitle}</h2>
+      <div class="mt-6 grid grid-cols-2 gap-x-5 gap-y-5 md:grid-cols-4">
+        {related.map((p) => <ProductCard product={p} />)}
+      </div>
+    </section>
+  )}
+
+  <!-- ── Lightbox ── -->
+  <div id="lightbox" class="fixed inset-0 z-[70] hidden items-center justify-center">
+    <div class="absolute inset-0 bg-ink/80" data-lb-close></div>
+    <figure class="relative z-10 w-full max-w-3xl px-5">
+      <img data-lb-img src="" alt="" class="max-h-[80vh] w-full rounded-xl object-contain" />
+      <figcaption data-lb-count class="mt-3 text-center text-[13px] text-paper/70"></figcaption>
+    </figure>
+    <button data-lb-close class="absolute right-5 top-5 z-10 rounded-md bg-paper/10 p-2.5 text-paper hover:bg-paper/20" aria-label="Close gallery">✕</button>
+    <button data-lb-prev class="absolute left-4 z-10 hidden rounded-md bg-paper/10 px-3.5 py-3 text-xl text-paper hover:bg-paper/20" aria-label="Previous image">‹</button>
+    <button data-lb-next class="absolute right-4 z-10 hidden rounded-md bg-paper/10 px-3.5 py-3 text-xl text-paper hover:bg-paper/20" aria-label="Next image">›</button>
+  </div>
+
+  <script>
+    const gallery = document.querySelector<HTMLElement>('[data-gallery]');
+    if (gallery) {
+      const images: { src: string; alt: string }[] = JSON.parse(gallery.dataset.images!);
+      const main = gallery.querySelector<HTMLImageElement>('[data-gallery-main]')!;
+      const lb = document.getElementById('lightbox')!;
+      const lbImg = lb.querySelector<HTMLImageElement>('[data-lb-img]')!;
+      const lbCount = lb.querySelector<HTMLElement>('[data-lb-count]')!;
+      const prev = lb.querySelector<HTMLElement>('[data-lb-prev]')!;
+      const next = lb.querySelector<HTMLElement>('[data-lb-next]')!;
+      let i = 0;
+
+      function setMain(idx: number) {
+        i = (idx + images.length) % images.length;
+        main.src = images[i].src;
+        main.alt = images[i].alt;
+        gallery.querySelectorAll('[data-thumb]').forEach((t) =>
+          t.setAttribute('aria-pressed', String(Number((t as HTMLElement).dataset.thumb) === i)),
+        );
+      }
+      function syncLb() {
+        lbImg.src = images[i].src;
+        lbImg.alt = images[i].alt;
+        lbCount.textContent = `${i + 1} / ${images.length}`;
+        const many = images.length > 1;
+        prev.classList.toggle('hidden', !many);
+        next.classList.toggle('hidden', !many);
+      }
+      function openLb() {
+        syncLb();
+        lb.classList.remove('hidden');
+        lb.classList.add('flex');
+        document.body.style.overflow = 'hidden';
+      }
+      function closeLb() {
+        lb.classList.add('hidden');
+        lb.classList.remove('flex');
+        document.body.style.overflow = '';
+      }
+
+      gallery.querySelector('[data-gallery-open]')!.addEventListener('click', openLb);
+      gallery.querySelectorAll<HTMLElement>('[data-thumb]').forEach((t) =>
+        t.addEventListener('click', () => setMain(Number(t.dataset.thumb))),
+      );
+      lb.querySelectorAll('[data-lb-close]').forEach((el) => el.addEventListener('click', closeLb));
+      prev.addEventListener('click', () => { setMain(i - 1); syncLb(); });
+      next.addEventListener('click', () => { setMain(i + 1); syncLb(); });
+      document.addEventListener('keydown', (e) => {
+        if (lb.classList.contains('hidden')) return;
+        if (e.key === 'Escape') closeLb();
+        if (e.key === 'ArrowLeft') { setMain(i - 1); syncLb(); }
+        if (e.key === 'ArrowRight') { setMain(i + 1); syncLb(); }
+      });
+    }
+  </script>
+</Layout>

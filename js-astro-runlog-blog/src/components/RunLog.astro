@@ -1,0 +1,95 @@
+---
+import { terminal } from '../config';
+const { filename, stream, status, steps, footer } = terminal;
+---
+
+<div class="runlog relative bg-canvas text-[13px] leading-none" aria-label="Thinking and decision loop console">
+  <div class="flex items-center gap-3 px-4 h-11 border-b border-ink">
+    <span class="text-ink font-semibold font-mono">{filename}</span>
+    {stream && <span class="text-smoke hidden sm:inline text-[12px]">stream: {stream}</span>}
+    <span class="ml-auto pill border border-rule text-steel" data-status>
+      <span class="size-1.5 rounded-full bg-ok" aria-hidden="true"></span>
+      <span data-status-text>{status}</span>
+    </span>
+  </div>
+
+  <ol class="py-2">
+    {steps.map((s, i) => (
+      <li class="step grid grid-cols-[2.5ch_1fr_auto_2ch] sm:grid-cols-[2.5ch_5.5ch_1fr_auto_2ch] items-center gap-3 px-4 h-9" data-ms={s.ms}>
+        <span class="text-smoke">{String(i + 1).padStart(2, '0')}</span>
+        <span class="text-smoke hidden sm:block uppercase text-[11px] font-mono">{s.kind}</span>
+        <span class="text-ink truncate text-[13px]">{s.call}</span>
+        <span class="text-smoke text-[12px] hidden sm:inline tabular-nums" data-time>{(s.ms / 1000).toFixed(2)}s</span>
+        <span class="text-ok text-right font-bold" data-mark aria-hidden="true">✓</span>
+      </li>
+    ))}
+  </ol>
+
+  {footer && footer.length > 0 && (
+    <div class:list={['grid border-t border-ink text-[12px]', footer.length === 2 ? 'grid-cols-2' : footer.length === 3 ? 'grid-cols-3' : 'grid-cols-1 sm:grid-cols-3']}>
+      {footer.map((item, i) => (
+        <p class:list={['px-4 py-3', i < footer.length - 1 ? 'border-r border-rule' : '']}>
+          <span class="label block mb-1.5">{item.label}</span>
+          <span class="text-ink font-semibold">{item.value}</span>
+        </p>
+      ))}
+    </div>
+  )}
+</div>
+
+<style>
+  .step { transition: opacity 200ms ease-out; }
+  .runlog.playing .step.pending { opacity: 0; }
+  .runlog.playing .step.active { background: var(--tint); }
+  .spin { display: inline-block; animation: spin 0.8s steps(8) infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  document.querySelectorAll<HTMLElement>('.runlog').forEach((root) => {
+    if (reduce) return;
+    const rows = [...root.querySelectorAll<HTMLElement>('.step')];
+    const statusText = root.querySelector('[data-status-text]')!;
+    let run = 0;
+
+    const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+
+    async function play(id: number) {
+      root.classList.add('playing');
+      rows.forEach((r) => {
+        r.classList.add('pending');
+        r.classList.remove('active');
+        r.querySelector('[data-mark]')!.textContent = '';
+      });
+      statusText.textContent = 'processing';
+
+      for (const [i, row] of rows.entries()) {
+        const ms = Number(row.dataset.ms);
+        const time = row.querySelector('[data-time]');
+        const mark = row.querySelector('[data-mark]')!;
+        row.classList.remove('pending');
+        row.classList.add('active');
+        mark.innerHTML = '<span class="spin text-smoke">/</span>';
+
+        const start = performance.now();
+        const tick = window.setInterval(() => {
+          if (time) time.textContent = `${((performance.now() - start) / 1000).toFixed(2)}s`;
+        }, 50);
+
+        await wait(ms);
+        window.clearInterval(tick);
+        if (id !== run) return;
+        if (time) time.textContent = `${(ms / 1000).toFixed(2)}s`;
+        mark.textContent = '✓';
+        row.classList.remove('active');
+      }
+      statusText.textContent = 'compounding';
+      root.classList.remove('playing');
+    }
+
+    play(++run);
+    root.addEventListener('click', () => play(++run));
+  });
+</script>

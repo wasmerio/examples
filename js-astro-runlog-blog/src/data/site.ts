@@ -1,0 +1,1 @@
+export { site } from '../config';

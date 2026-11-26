@@ -1,0 +1,35 @@
+# ==============================================================================
+# Caddyfile Example for Astro Runlog Blog
+# VPS 部署路径参考: /etc/caddy/Caddyfile
+# ==============================================================================
+
+# 替换为你自己的域名 (例如: your-domain.com)
+your-domain.com {
+	encode gzip zstd
+	root * /var/www/blog
+
+	# 1. 构建哈希产物（CSS、JS、字体）：永久不可变缓存 1 年
+	@immutable path /_astro/*
+	header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+	# 2. 静态图片与多媒体：长效缓存 30 天，后台静默刷新
+	@assets path /og.png /favicon.svg /images/*
+	header @assets Cache-Control "public, max-age=2592000, stale-while-revalidate=86400"
+
+	# 3. HTML 页面与爬虫/AI 索引文件：协商缓存，确保每次发版秒级更新
+	@html path *.html / /rss.xml /llms.txt /sitemap*.xml
+	header @html Cache-Control "public, no-cache, must-revalidate"
+
+	# 静态资源与页面路由：匹配文件与目录
+	try_files {path} {path}/
+	file_server
+
+	# 真实 404 错误响应：保留 404 HTTP 状态码并展示 404.html 页面，杜绝软 404
+	handle_errors {
+		@404 expression {http.error.status_code} == 404
+		handle @404 {
+			rewrite * /404.html
+			file_server
+		}
+	}
+}

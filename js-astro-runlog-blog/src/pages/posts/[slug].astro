@@ -1,0 +1,224 @@
+---
+import { getCollection, render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Section from '../../components/Section.astro';
+import MediaWindow from '../../components/MediaWindow.astro';
+import Cover from '../../components/Cover.astro';
+import { site } from '../../data/site';
+import { getCategoryMeta } from '../../data/categories';
+import { basePath, withBase } from '../../config';
+import { t, formatDate } from '../../i18n';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('posts');
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post, posts } }));
+}
+
+const { post, posts } = Astro.props;
+const { Content, headings } = await render(post);
+const toc = headings.filter((h) => h.depth === 2);
+const related = posts.filter((p) => p.id !== post.id).sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf()).slice(0, 3);
+const initials = (post.data.author || 'AC').split(' ').map((w) => w[0]).join('').slice(0, 2);
+const url = new URL(Astro.url.pathname, Astro.site ?? site.url).href;
+const categoryMeta = getCategoryMeta(post.data.category);
+const postImage = post.data.cover
+  ? new URL(withBase(post.data.cover), Astro.site ?? site.url).href
+  : new URL(`${basePath}/og.png`, Astro.site ?? site.url).href;
+const keywordsString = post.data.keywords || (post.data.tags?.length > 0 ? post.data.tags.join(', ') : undefined);
+
+const ld = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: post.data.title,
+  description: post.data.excerpt,
+  image: [postImage],
+  datePublished: post.data.date.toISOString(),
+  dateModified: post.data.date.toISOString(),
+  author: {
+    '@type': 'Person',
+    name: post.data.author,
+    url: Astro.site?.href ?? site.url,
+  },
+  publisher: {
+    '@type': 'Organization',
+    name: site.name,
+    url: Astro.site?.href ?? site.url,
+    logo: {
+      '@type': 'ImageObject',
+      url: new URL(`${basePath}/favicon.svg`, Astro.site ?? site.url).href,
+    },
+  },
+  keywords: keywordsString,
+  articleSection: categoryMeta.label,
+  inLanguage: site.locale || 'zh-CN',
+  mainEntityOfPage: url,
+};
+
+const breadcrumbLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    {
+      '@type': 'ListItem',
+      position: 1,
+      name: site.name,
+      item: Astro.site?.href ?? site.url,
+    },
+    {
+      '@type': 'ListItem',
+      position: 2,
+      name: t.postsPageTitle || 'Posts',
+      item: new URL(`${basePath}/posts`, Astro.site ?? site.url).href,
+    },
+    {
+      '@type': 'ListItem',
+      position: 3,
+      name: post.data.title,
+      item: url,
+    },
+  ],
+};
+---
+
+<Base
+  title={post.data.title}
+  description={post.data.excerpt}
+  keywords={keywordsString}
+  type="article"
+  image={post.data.cover ? withBase(post.data.cover) : withBase('/og.png')}
+  publishedTime={post.data.date.toISOString()}
+  author={post.data.author}
+  section={categoryMeta.label}
+>
+  <script slot="head" type="application/ld+json" set:html={JSON.stringify(ld)} />
+  <script slot="head" type="application/ld+json" set:html={JSON.stringify(breadcrumbLd)} />
+  <Section top={false} inner="px-6 pt-[72px] pb-10 max-md:px-5 max-md:pt-8 max-md:pb-6" label="Post header">
+    <p class="flex items-center gap-2 text-[12px] text-smoke">
+      <a href={`${basePath}/posts`} class="hover:text-ink">Posts</a> / 
+      <span class="pill bg-ink text-canvas tracking-[0.06em] !text-[11px]">{categoryMeta.label}</span>
+    </p>
+    <h1 class="mt-6 text-[clamp(32px,4.6vw,56px)] leading-[1.08] font-bold tracking-[-0.045em] max-w-[28ch]">{post.data.title}</h1>
+    <p class="mt-5 text-[17px] max-md:text-[15px] leading-[1.65] text-steel max-w-[62ch]">{post.data.excerpt}</p>
+    <div class="mt-7 pt-[18px] border-t border-rule flex flex-wrap items-center gap-x-6 gap-y-3">
+      <span class="flex items-center gap-3"><span class="flex size-9 items-center justify-center rounded-full bg-ink text-canvas text-[11px] font-bold" aria-hidden="true">{initials}</span><span class="text-[13px]"><span class="block font-bold text-ink">{post.data.author}</span></span></span>
+      <span class="text-[13px] text-smoke">{formatDate(post.data.date)} · {t.readingTime(post.data.readingTime)}</span>
+      <span class="ml-auto flex flex-wrap gap-2 max-md:ml-0">
+        <button type="button" class="border border-rule px-2.5 py-1.5 text-[12px] text-steel hover:text-ink cursor-pointer" data-copy-link={url} data-copied-text={t.copied}>{t.copyLink}</button>
+        <button type="button" class="border border-rule px-2.5 py-1.5 text-[12px] text-steel hover:text-ink cursor-pointer" data-copy-quote={`[${post.data.title}](${url})`} data-copied-text={t.copied}>{t.copyQuote}</button>
+        <a class="border border-rule px-2.5 py-1.5 text-[12px] text-steel hover:text-ink" href={`${basePath}/rss.xml`} target="_blank" rel="noopener" title={t.rssFeed}>RSS</a>
+        <a class="border border-rule px-2.5 py-1.5 text-[12px] text-steel hover:text-ink" href={`https://x.com/intent/post?url=${encodeURIComponent(url)}`} target="_blank" rel="noopener">X</a>
+        <a class="border border-rule px-2.5 py-1.5 text-[12px] text-steel hover:text-ink" href={`https://service.weibo.com/share/share.php?title=${encodeURIComponent(post.data.title)}&url=${encodeURIComponent(url)}`} target="_blank" rel="noopener">微博</a>
+      </span>
+    </div>
+  </Section>
+
+  <Section top={false} inner="px-6 pb-14 max-md:px-5 max-md:pb-6" label="Cover">
+    <MediaWindow title={`entry / ${post.id}`}>
+      {post.data.cover ? <img src={withBase(post.data.cover)} alt={post.data.title} class="aspect-[16/9] w-full object-cover" fetchpriority="high" decoding="async" /> : <Cover kind={0} label={`post / ${categoryMeta.slug}`} class="!aspect-[12/5] max-md:!aspect-[16/10]" />}
+    </MediaWindow>
+  </Section>
+
+  <Section top={false} inner="px-6 pb-24 max-md:px-5 max-md:pb-12" label="Article">
+    <div class="grid grid-cols-[200px_minmax(0,680px)_220px] max-xl:grid-cols-[minmax(0,680px)_220px] max-lg:grid-cols-1 gap-14 max-lg:gap-6 justify-between">
+      <aside class="max-xl:hidden space-y-[18px] pt-1.5 text-[13px]">
+        {[
+          [t.metaAuthor, post.data.author],
+          [t.metaCategory, categoryMeta.label],
+          [t.metaDate, formatDate(post.data.date)],
+          [t.metaReadingTime, `${post.data.readingTime} ${t.minShort}`],
+        ].map(([k, v]) => (
+          <div><p class="label">{k}</p><p class="mt-1 text-ink">{v}</p></div>
+        ))}
+      </aside>
+
+      <div class="prose-runlog min-w-0"><Content /></div>
+
+      {toc.length > 0 && (
+        <aside class="max-lg:order-first lg:sticky lg:top-20 h-fit">
+          <details class="lg:hidden border border-rule bg-tint">
+            <summary class="flex px-4 py-3 text-[12px] font-bold text-ink cursor-pointer">{t.tocTitle}<span class="ml-auto">+</span></summary>
+            <ul class="px-4 pb-3 space-y-2 text-[13px]">{toc.map((h) => <li><a href={`#${h.slug}`} class="text-steel hover:text-ink">{h.text}</a></li>)}</ul>
+          </details>
+          <div class="max-lg:hidden">
+            <p class="label">{t.tocTitle}</p>
+            <ul class="mt-3 space-y-2.5 text-[13px]">{toc.map((h) => <li><a href={`#${h.slug}`} class="text-steel hover:text-ink">{h.text}</a></li>)}</ul>
+          </div>
+        </aside>
+      )}
+    </div>
+  </Section>
+
+  <Section label={t.relatedReading}>
+    <div class="flex items-center gap-5 border border-ink p-6 max-w-[760px] max-md:p-4">
+      <span class="flex size-14 max-md:size-10 shrink-0 items-center justify-center rounded-full bg-ink text-canvas text-[14px] font-bold" aria-hidden="true">{initials}</span>
+      <p>
+        <span class="block text-[16px] font-bold text-ink">{post.data.author}</span>
+        <span class="block mt-1 text-[13px] leading-[1.6] text-steel">{site.description}</span>
+      </p>
+    </div>
+    {related.length > 0 && (
+      <div class="mt-12">
+        <p class="label">{t.relatedReading}</p>
+        <ul class="mt-4 border-t border-rule">
+          {related.map((p) => (
+            <li>
+              <a href={`${basePath}/posts/${p.id}`} class="group grid grid-cols-[130px_1fr_auto_auto] max-md:grid-cols-[1fr_auto] gap-6 items-center py-[18px] border-b border-rule">
+                <span class="text-[13px] text-smoke max-md:hidden">{formatDate(p.data.date)}</span>
+                <span class="text-[15px] font-bold text-ink group-hover:underline underline-offset-4">{p.data.title}</span>
+                <span class="text-[12px] text-smoke max-md:hidden">{p.data.readingTime} {t.minShort}</span>
+                <span class="text-steel group-hover:text-ink" aria-hidden="true">-&gt;</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+  </Section>
+</Base>
+
+<script>
+  function setupCopyButton(selector: string, getData: (el: HTMLButtonElement) => string | undefined) {
+    document.querySelectorAll<HTMLButtonElement>(selector).forEach((b) =>
+      b.addEventListener('click', async () => {
+        const text = getData(b);
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+          const orig = b.textContent;
+          b.textContent = b.dataset.copiedText || '已复制!';
+          setTimeout(() => (b.textContent = orig), 1500);
+        } catch {}
+      })
+    );
+  }
+  setupCopyButton('[data-copy-link]', (b) => b.dataset.copyLink);
+  setupCopyButton('[data-copy-quote]', (b) => b.dataset.copyQuote);
+
+  // 为文章正文内图片添加原生延迟加载与异步解码
+  document.querySelectorAll<HTMLImageElement>('.prose-runlog img').forEach((img) => {
+    img.loading = 'lazy';
+    img.decoding = 'async';
+  });
+
+  // 为文章内的所有代码块挂载悬浮复制按钮
+  document.querySelectorAll<HTMLPreElement>('.prose-runlog pre').forEach((pre) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'code-copy-btn';
+    btn.textContent = 'copy';
+    btn.setAttribute('aria-label', 'Copy code to clipboard');
+    btn.addEventListener('click', async () => {
+      const code = pre.querySelector('code')?.innerText || pre.innerText;
+      try {
+        await navigator.clipboard.writeText(code);
+        btn.textContent = 'copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = 'copy';
+          btn.classList.remove('copied');
+        }, 1500);
+      } catch {}
+    });
+    pre.appendChild(btn);
+  });
+</script>

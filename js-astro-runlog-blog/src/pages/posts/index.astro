@@ -1,0 +1,171 @@
+---
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Section from '../../components/Section.astro';
+import MediaWindow from '../../components/MediaWindow.astro';
+import Cover from '../../components/Cover.astro';
+import { configuredCategories, getCategoryMeta } from '../../data/categories';
+import { basePath, withBase, site } from '../../config';
+import { t, formatDate } from '../../i18n';
+
+const posts = (await getCollection('posts')).sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+const featured = posts.find((p) => p.data.featured) ?? posts[0];
+const rest = posts.filter((p) => p !== featured);
+const grid = rest.slice(0, 3);
+const list = rest.slice(3);
+
+// 动态汇总分类：配置文件优先，自动补充文章中出现的新分类
+const actualCategories = [...new Set(posts.map((p) => (p.data.category || 'general').toLowerCase()))];
+const allCategories = [
+  { slug: 'all', label: t.allCategories, en: 'All' },
+  ...configuredCategories.filter((c) => actualCategories.includes(c.slug.toLowerCase())),
+  ...actualCategories
+    .filter((slug) => !configuredCategories.some((c) => c.slug.toLowerCase() === slug))
+    .map((slug) => getCategoryMeta(slug)),
+];
+
+const initials = (n: string) => (n || 'AC').split(' ').map((w) => w[0]).join('').slice(0, 2);
+
+const breadcrumbLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BreadcrumbList',
+  itemListElement: [
+    {
+      '@type': 'ListItem',
+      position: 1,
+      name: site.name,
+      item: Astro.site?.href ?? site.url,
+    },
+    {
+      '@type': 'ListItem',
+      position: 2,
+      name: t.postsPageTitle || 'Posts',
+      item: new URL(Astro.url.pathname, Astro.site ?? site.url).href,
+    },
+  ],
+};
+---
+
+<Base title={t.postsPageTitle} description={t.postsLede}>
+  <script slot="head" type="application/ld+json" set:html={JSON.stringify(breadcrumbLd)} />
+  <Section top={false} inner="px-6 pt-20 pb-10 max-md:px-5 max-md:pt-10 max-md:pb-6 overflow-hidden" label="Posts">
+    <div class="grid-bg" style="--gx:85%;--gy:30%" aria-hidden="true"></div>
+    <div class="relative flex flex-wrap items-end justify-between gap-8">
+      <div>
+        <p class="label"><b>[00]</b> posts & thoughts</p>
+        <h1 class="mt-5 text-[clamp(40px,5.6vw,64px)] leading-[1.02] font-bold tracking-[-0.045em]">{t.postsHeading}</h1>
+        <p class="mt-5 max-w-[48ch] text-[16px] leading-[1.6] text-steel max-md:text-[14px]">{t.postsLede}</p>
+      </div>
+      <div class="flex items-center gap-2.5 w-full sm:w-auto">
+        <label class="flex items-center gap-2.5 flex-1 sm:w-[320px] border border-ink bg-canvas px-3.5 py-3 text-[13px]">
+          <span class="font-bold text-ink" aria-hidden="true">/</span>
+          <input type="search" placeholder={t.searchPlaceholder} class="flex-1 bg-transparent text-ink placeholder:text-smoke outline-none" data-post-search aria-label={t.searchLabel} />
+        </label>
+        <a href={`${basePath}/rss.xml`} target="_blank" rel="noopener" class="shrink-0 flex items-center gap-1.5 border border-rule hover:border-ink bg-canvas px-3.5 py-3 text-[13px] text-steel hover:text-ink transition-colors" title="RSS 2.0 订阅源">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-cta"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>
+          <span>RSS</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- 动态分类过滤器 (完全配置化) -->
+    <div class="relative mt-8 flex gap-2 overflow-x-auto max-md:-mx-5 max-md:px-5" role="group" aria-label={t.categoryFilter}>
+      {allCategories.map((c, i) => (
+        <button
+          type="button"
+          data-cat={c.slug}
+          aria-pressed={i === 0 ? 'true' : 'false'}
+          class="pill shrink-0 border border-rule !px-3.5 !py-1.5 text-steel transition-colors cursor-pointer"
+        >
+          {c.label}
+        </button>
+      ))}
+    </div>
+  </Section>
+
+  {featured && (
+    <Section top={false} inner="px-6 pt-6 pb-16 max-md:px-5 max-md:pb-8" label="Featured post">
+      <a href={`${basePath}/posts/${featured.id}`} class="group grid lg:grid-cols-[700px_1fr] gap-12 max-lg:gap-5 items-center" data-post={featured.data.category} data-title={featured.data.title.toLowerCase()}>
+        <MediaWindow title="fig. 01 / featured">
+          {featured.data.cover ? <img src={withBase(featured.data.cover)} alt={featured.data.title} class="aspect-[16/9] w-full object-cover" /> : <Cover kind={0} label="fig. 01" />}
+        </MediaWindow>
+        <div>
+          <p class="flex items-center gap-2.5">
+            <span class="pill bg-ink text-canvas uppercase tracking-[0.06em] !text-[11px]">{getCategoryMeta(featured.data.category).label}</span>
+            <span class="text-[12px] font-bold text-cta">精选置顶</span>
+          </p>
+          <h2 class="mt-4 text-[36px] max-md:text-[24px] leading-[1.1] font-bold tracking-[-0.035em] group-hover:underline underline-offset-[6px] decoration-2">{featured.data.title}</h2>
+          <p class="mt-4 text-[15px] leading-[1.6] text-steel max-w-[48ch] max-md:hidden">{featured.data.excerpt}</p>
+          <p class="mt-5 flex items-center gap-3">
+            <span class="flex size-9 items-center justify-center rounded-full bg-ink text-canvas text-[11px] font-bold" aria-hidden="true">{initials(featured.data.author)}</span>
+            <span class="text-[13px]"><span class="block font-bold text-ink">{featured.data.author}</span><span class="text-smoke">{formatDate(featured.data.date)} · {t.readingTime(featured.data.readingTime)}</span></span>
+          </p>
+        </div>
+      </a>
+    </Section>
+  )}
+
+  <Section top={false} inner="px-6 pb-20 max-md:px-5 max-md:pb-10" label="Latest posts">
+    <ul class="grid lg:grid-cols-3 border border-rule max-lg:border-x-0 max-lg:border-t-0">
+      {grid.map((p, i) => (
+        <li class:list={['max-lg:border-t max-lg:border-rule', i > 0 && 'lg:border-l lg:border-rule']} data-post={p.data.category} data-title={p.data.title.toLowerCase()}>
+          <a href={`${basePath}/posts/${p.id}`} class="group flex lg:flex-col gap-4 p-5 max-lg:px-0 max-lg:py-4">
+            <span class="max-lg:w-[110px] max-lg:shrink-0">{p.data.cover ? <img src={withBase(p.data.cover)} alt={p.data.title} class="aspect-[16/9] w-full object-cover" /> : <Cover kind={i + 1} label={`fig. 0${i + 2}`} />}</span>
+            <span>
+              <span class="pill border border-rule text-steel tracking-[0.06em] !text-[10px]">{getCategoryMeta(p.data.category).label}</span>
+              <span class="block mt-3 text-[19px] max-lg:text-[14px] font-bold tracking-[-0.015em] leading-[1.25] text-ink group-hover:underline underline-offset-4">{p.data.title}</span>
+              <span class="block mt-2 text-[12px] text-smoke">{formatDate(p.data.date)} · {p.data.readingTime} {t.minShort}</span>
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+
+    {list.length > 0 && (
+      <ul class="mt-10 border-t border-rule" data-archive-list>
+        {list.map((p) => (
+          <li data-post={p.data.category} data-title={p.data.title.toLowerCase()}>
+            <a href={`${basePath}/posts/${p.id}`} class="group grid grid-cols-[140px_130px_1fr_auto_auto] max-md:grid-cols-[1fr_auto] gap-x-6 gap-y-1 items-center py-[18px] border-b border-rule">
+              <span class="text-[13px] text-smoke max-md:hidden">{formatDate(p.data.date)}</span>
+              <span class="max-md:hidden"><span class="pill border border-rule text-steel tracking-[0.06em] !text-[10px]">{getCategoryMeta(p.data.category).label}</span></span>
+              <span class="text-[16px] max-md:text-[14px] font-bold text-ink group-hover:underline underline-offset-4 truncate">{p.data.title}</span>
+              <span class="text-[13px] text-smoke max-md:hidden text-right tabular-nums">{p.data.readingTime} {t.minShort}</span>
+              <span class="text-steel group-hover:text-ink max-md:hidden" aria-hidden="true">-&gt;</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
+  </Section>
+</Base>
+
+<style>
+  [data-cat][aria-pressed='true'] { background: var(--ink); color: var(--canvas); border-color: var(--ink); font-weight: 700; }
+</style>
+
+<script>
+  let cat = 'all', q = '';
+  const buttons = document.querySelectorAll<HTMLButtonElement>('[data-cat]');
+  const search = document.querySelector<HTMLInputElement>('[data-post-search]');
+  const items = document.querySelectorAll<HTMLElement>('[data-post]');
+
+  function update() {
+    items.forEach((el) => {
+      const matchCat = cat === 'all' || el.dataset.post?.toLowerCase() === cat.toLowerCase();
+      const matchQ = !q || (el.dataset.title?.includes(q) ?? false);
+      el.style.display = matchCat && matchQ ? '' : 'none';
+    });
+  }
+
+  buttons.forEach((b) => b.addEventListener('click', () => {
+    buttons.forEach((x) => x.setAttribute('aria-pressed', 'false'));
+    b.setAttribute('aria-pressed', 'true');
+    cat = b.dataset.cat ?? 'all';
+    update();
+  }));
+
+  search?.addEventListener('input', () => {
+    q = search.value.trim().toLowerCase();
+    update();
+  });
+</script>

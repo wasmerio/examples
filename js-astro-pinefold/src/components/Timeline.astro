@@ -1,0 +1,111 @@
+---
+import { buildElbowPath, layoutTimelinePoints, wrapText } from "../lib/timelinePath";
+import type { TimelineEntry } from "../config";
+
+const { items } = Astro.props as { items: TimelineEntry[] };
+
+// Canvas size and label spacing. highY/lowY set the two bands the curve
+// alternates between; nodeGap/lineHeight/dateGap control label spacing
+// around each node. Tune these if your titles run longer or shorter than
+// the ~24-character wrap width below.
+const viewW = 760;
+const viewH = 300;
+const highY = 120;
+const lowY = 180;
+const nodeGap = 20;
+const lineHeight = 14;
+const dateGap = 14;
+
+const points = layoutTimelinePoints(items.length, viewW, 90, highY, lowY);
+const pathD = buildElbowPath(points, 16);
+
+// SVG text has no automatic word-wrap, so each label's line breaks and
+// exact y-position are computed here rather than left to the browser.
+const labels = points.map((p, i) => {
+  const isHigh = p.y < (highY + lowY) / 2;
+  const lines = wrapText(items[i].title, 24);
+
+  const titleLineYs = isHigh
+    ? lines.map((_, li) => p.y - nodeGap - (lines.length - 1 - li) * lineHeight)
+    : lines.map((_, li) => p.y + nodeGap + (li + 1) * lineHeight);
+
+  const dateY = isHigh
+    ? titleLineYs[0] - dateGap
+    : titleLineYs[titleLineYs.length - 1] + dateGap;
+
+  return { x: p.x, lines, titleLineYs, dateY, date: items[i].date };
+});
+---
+
+<div class="timeline">
+  <svg class="timeline__svg" viewBox={`0 0 ${viewW} ${viewH}`}>
+    <path d={pathD} fill="none" stroke="var(--rule-strong)" stroke-width="5.5" />
+    {points.map((p) => (
+      <circle cx={p.x} cy={p.y} r="8" fill="var(--bg)" stroke="var(--accent)" stroke-width="2.5" />
+    ))}
+    {labels.map((label) => (
+      <g>
+        <text x={label.x} y={label.dateY} text-anchor="middle" font-family="var(--font-mono)" font-size="10" fill="var(--ink-faint)">
+          {label.date}
+        </text>
+        {label.lines.map((line, li) => (
+          <text x={label.x} y={label.titleLineYs[li]} text-anchor="middle" font-family="var(--font-sans)" font-size="12" font-weight="600" fill="var(--ink)">
+            {line}
+          </text>
+        ))}
+      </g>
+    ))}
+  </svg>
+
+  <ol class="timeline__list">
+    {items.map((item) => (
+      <li>
+        <span class="timeline__list-date">{item.date}</span>
+        <span class="timeline__list-title">{item.title}</span>
+      </li>
+    ))}
+  </ol>
+</div>
+
+<style>
+  .timeline__svg {
+    width: 100%;
+    max-width: 760px;
+    height: auto;
+    display: block;
+    margin-inline: auto;
+  }
+
+  .timeline__list {
+    display: none;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .timeline__list li {
+    display: flex;
+    gap: 0.75rem;
+    align-items: baseline;
+    padding-block: 0.6rem;
+    border-top: 1px solid var(--rule);
+  }
+  .timeline__list li:first-child { border-top: none; }
+  .timeline__list-date {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--ink-faint);
+    width: 3.5rem;
+    flex-shrink: 0;
+  }
+  .timeline__list-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+  }
+
+  /* Below 640px there's no room for labels beside the SVG route, so the
+     plain vertical list takes over instead of squeezing the diagram. */
+  @media (max-width: 640px) {
+    .timeline__svg { display: none; }
+    .timeline__list { display: block; }
+  }
+</style>

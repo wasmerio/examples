@@ -1,0 +1,87 @@
+---
+import { Image } from 'astro:assets';
+import katexCss from 'katex/dist/katex.min.css?url';
+import BaseLayout from './BaseLayout.astro';
+import TagList from '../components/blog/TagList.astro';
+import { blog, site } from '../config';
+import { useT } from '../i18n/t';
+import { formatDate, type Post } from '../utils/posts';
+
+const t = useT(Astro.currentLocale);
+
+interface Props {
+  post: Post;
+  /** Set by the math plugin (src/utils/math.ts) when the post has `$…$` or `$$…$$` */
+  math?: boolean;
+}
+const { post, math } = Astro.props;
+const { title, description, pubDate, updatedDate, heroImage, heroAlt, tags } = post.data;
+const url = new URL(Astro.url.pathname, Astro.site).href;
+const abs = (path: string) => new URL(path, Astro.site).href;
+const image = heroImage ?? site.defaultOgImage;
+
+const jsonLd = [
+  {
+    '@type': 'BlogPosting',
+    headline: title,
+    description,
+    datePublished: pubDate.toISOString(),
+    dateModified: (updatedDate ?? pubDate).toISOString(),
+    author: { '@type': 'Person', name: site.author },
+    image: abs(image.src),
+    mainEntityOfPage: url,
+    inLanguage: site.locale,
+    keywords: tags.join(', ') || undefined,
+  },
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { name: t.home, item: abs('/') },
+      { name: t.blog, item: abs('/blog/') },
+      { name: title, item: url },
+    ].map((crumb, i) => ({ '@type': 'ListItem', position: i + 1, ...crumb })),
+  },
+];
+---
+
+<BaseLayout title={title} description={description} image={image} type="article" jsonLd={jsonLd}>
+  {math && <link slot="head" rel="stylesheet" href={katexCss} />}
+  <article class="mx-auto max-w-prose px-4 py-12 sm:py-16">
+    <header>
+      <p class="text-muted font-sans text-sm">
+        <time datetime={pubDate.toISOString()}>{formatDate(pubDate, Astro.currentLocale)}</time>
+        {updatedDate && (
+          <>
+            {' · '}
+            {t.updated}{' '}
+            <time datetime={updatedDate.toISOString()}>
+              {formatDate(updatedDate, Astro.currentLocale)}
+            </time>
+          </>
+        )}
+      </p>
+      <h1 class="mt-3 text-4xl font-light tracking-tight sm:text-5xl">{title}</h1>
+      <p class="text-muted mt-4 text-xl">{description}</p>
+    </header>
+    {heroImage && (
+      <Image
+        src={heroImage}
+        alt={heroAlt ?? ''}
+        widths={[720, 1440]}
+        sizes="(min-width: 720px) 720px, 100vw"
+        loading="eager"
+        fetchpriority="high"
+        class="mt-10 w-full rounded"
+      />
+    )}
+    <div class:list={['prose mt-12', blog.dropCap && 'drop-cap']}>
+      <slot />
+    </div>
+    <footer class="border-border mt-16 space-y-6 border-t pt-8">
+      <TagList tags={tags} />
+      <p class="font-sans text-sm">
+        <a href="/blog/">← {t.backToBlog}</a>
+      </p>
+    </footer>
+  </article>
+</BaseLayout>

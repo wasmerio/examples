@@ -1,0 +1,110 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHero from '../../components/PageHero.astro';
+import PostCard from '../../components/PostCard.astro';
+import FinalCTA from '../../components/FinalCTA.astro';
+import Icon from '../../components/icons/Icon.astro';
+import { sections } from '../../data/home';
+import { getPosts, readingTime, formatDate } from '../../utils/blog';
+import { absoluteUrl, url } from '../../utils/url';
+
+const posts = await getPosts();
+const featured = posts.find((p) => p.data.featured) ?? posts[0];
+const rest = posts.filter((p) => p !== featured);
+const categories = [...new Set(rest.map((p) => p.data.category))].sort();
+
+const title = 'Insights';
+const description =
+  'Field notes on building, evaluating and operating AI agents in production — from the ST AI Agency run log.';
+
+const schema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: absoluteUrl('/', Astro.site) },
+      { '@type': 'ListItem', position: 2, name: title, item: absoluteUrl('/blog', Astro.site) },
+    ],
+  },
+];
+---
+
+<BaseLayout title={title} description={description} schema={schema}>
+  <PageHero
+    kicker={sections.insights.kicker}
+    title={sections.insights.title}
+    lead="Field notes on building, evaluating and supervising AI agents — written by the engineers who carry the pager."
+    breadcrumbs={[{ label: 'Home', href: '/' }, { label: title, href: '/blog' }]}
+  />
+
+  <section class="sec on-cream" aria-label="Articles">
+    <div class="wrap">
+      {featured && (
+        <article class="feat rv">
+          <div class="feat__i">
+            <img src={url(featured.data.image)} alt={featured.data.imageAlt} width="1200" height="750" decoding="async" fetchpriority="high" />
+          </div>
+          <div>
+            <span class="feat__badge">Latest note</span>
+            <div class="post__m">
+              <em>{featured.data.category}</em>
+              <time datetime={featured.data.pubDate.toISOString()}>{formatDate(featured.data.pubDate)}</time>
+              <span>{readingTime(featured)} min read</span>
+            </div>
+            <h2 class="d3"><a href={url(`/blog/${featured.id}`)}>{featured.data.title}</a></h2>
+            <p class="lead">{featured.data.description}</p>
+            <span class="arrow arrow--heat" aria-hidden="true"><span>Read the note</span><Icon name="arrow-right" /></span>
+          </div>
+        </article>
+      )}
+
+      {rest.length > 0 && (
+        <>
+          <div class="bloghead">
+            <h2 id="all-posts">All notes</h2>
+            <div class="chips" role="group" aria-label="Filter by category" data-filter hidden>
+              <button class="chip" type="button" aria-pressed="true" data-cat="">All</button>
+              {categories.map((c) => <button class="chip" type="button" aria-pressed="false" data-cat={c}>{c}</button>)}
+            </div>
+          </div>
+          <div class="posts posts--grid" data-posts>
+            {rest.map((post, i) => <PostCard post={post} level="h3" showDate delay={(i % 3) * 80} />)}
+          </div>
+          <p class="sr-only" role="status" aria-live="polite" data-filter-status></p>
+        </>
+      )}
+
+      {posts.length === 0 && <p class="blog-empty">No posts yet. Add Markdown files to src/content/blog.</p>}
+    </div>
+  </section>
+
+  <FinalCTA />
+</BaseLayout>
+
+<script>
+  // Progressive enhancement: the category filter only appears when JavaScript runs.
+  const group = document.querySelector<HTMLElement>('[data-filter]');
+  const grid = document.querySelector<HTMLElement>('[data-posts]');
+  const status = document.querySelector<HTMLElement>('[data-filter-status]');
+  if (group && grid) {
+    group.hidden = false;
+    const chips = Array.from(group.querySelectorAll<HTMLButtonElement>('.chip'));
+    const cards = Array.from(grid.querySelectorAll<HTMLElement>('.post'));
+    chips.forEach((chip) =>
+      chip.addEventListener('click', () => {
+        const cat = chip.dataset.cat ?? '';
+        chips.forEach((c) => c.setAttribute('aria-pressed', String(c === chip)));
+        let shown = 0;
+        cards.forEach((card) => {
+          const match = !cat || card.dataset.category === cat;
+          card.hidden = !match;
+          if (match) {
+            shown++;
+            card.classList.add('in');
+          }
+        });
+        if (status) status.textContent = `${shown} ${shown === 1 ? 'note' : 'notes'} shown${cat ? ` in ${cat}` : ''}.`;
+      }),
+    );
+  }
+</script>

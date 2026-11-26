@@ -1,0 +1,146 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import PostCard from '../components/PostCard.astro';
+import FinalCTA from '../components/FinalCTA.astro';
+import Icon from '../components/icons/Icon.astro';
+import { siteConfig } from '../config/site';
+import { type BlogPost, formatDate, readingTime } from '../utils/blog';
+import { absoluteUrl, url } from '../utils/url';
+
+interface Props {
+  post: BlogPost;
+  prev?: BlogPost;
+  next?: BlogPost;
+  related: BlogPost[];
+}
+
+const { post, prev, next, related } = Astro.props;
+const { title, description, pubDate, updatedDate, category, author, authorRole, image, imageAlt, tags } = post.data;
+const minutes = readingTime(post);
+const postUrl = absoluteUrl(`/blog/${post.id}`, Astro.site);
+
+const schema = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'BlogPosting',
+    headline: title,
+    description,
+    image: absoluteUrl(image, Astro.site),
+    datePublished: pubDate.toISOString(),
+    dateModified: (updatedDate ?? pubDate).toISOString(),
+    author: { '@type': 'Person', name: author },
+    publisher: { '@id': `${absoluteUrl('/', Astro.site)}#organization` },
+    mainEntityOfPage: { '@type': 'WebPage', '@id': postUrl },
+    articleSection: category,
+    keywords: tags.join(', '),
+    timeRequired: `PT${minutes}M`,
+    inLanguage: siteConfig.lang,
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: absoluteUrl('/', Astro.site) },
+      { '@type': 'ListItem', position: 2, name: 'Insights', item: absoluteUrl('/blog', Astro.site) },
+      { '@type': 'ListItem', position: 3, name: title, item: postUrl },
+    ],
+  },
+];
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  image={image}
+  imageAlt={imageAlt}
+  type="article"
+  publishedTime={pubDate.toISOString()}
+  modifiedTime={updatedDate?.toISOString()}
+  author={author}
+  tags={tags}
+  schema={schema}
+>
+  <article>
+    <PageHero
+      title={title}
+      size="d2"
+      lead={description}
+      kicker={category}
+      breadcrumbs={[
+        { label: 'Home', href: '/' },
+        { label: 'Insights', href: '/blog' },
+        { label: title, href: `/blog/${post.id}` },
+      ]}
+    >
+      <dl class="pmeta rv" style="--d:180ms">
+        <div><dt>Written by</dt><dd>{author}</dd></div>
+        <div><dt>Published</dt><dd><time datetime={pubDate.toISOString()}>{formatDate(pubDate)}</time></dd></div>
+        {updatedDate && <div><dt>Updated</dt><dd><time datetime={updatedDate.toISOString()}>{formatDate(updatedDate)}</time></dd></div>}
+        <div><dt>Reading time</dt><dd>{minutes} min</dd></div>
+      </dl>
+    </PageHero>
+
+    <div class="art on-cream">
+      <div class="wrap">
+        <figure class="art__fig">
+          <img src={url(image)} alt={imageAlt} width="1200" height="750" fetchpriority="high" decoding="async" />
+        </figure>
+
+        <div class="art__body">
+          <div class="prose">
+            <slot />
+          </div>
+
+          <footer class="art__foot">
+            <div class="byline">
+              <b>{author}</b>
+              {authorRole && <span>{authorRole}, {siteConfig.name}</span>}
+            </div>
+            {tags.length > 0 && (
+              <ul class="tags">
+                {tags.map((tag) => <li>{tag}</li>)}
+              </ul>
+            )}
+          </footer>
+        </div>
+
+        {(prev || next) && (
+          <nav class="pn" aria-label="More articles">
+            {prev && (
+              <a href={url(`/blog/${prev.id}`)} rel="prev">
+                <span class="xs"><Icon name="arrow-left" /> Previous</span>
+                <span class="d5">{prev.data.title}</span>
+              </a>
+            )}
+            {next && (
+              <a href={url(`/blog/${next.id}`)} rel="next" class="pn__next">
+                <span class="xs">Next <Icon name="arrow-right" /></span>
+                <span class="d5">{next.data.title}</span>
+              </a>
+            )}
+          </nav>
+        )}
+      </div>
+    </div>
+  </article>
+
+  {related.length > 0 && (
+    <section class="sec on-white" aria-labelledby="related-title">
+      <div class="wrap">
+        <div class="shead">
+          <div>
+            <span class="kicker kicker--heat rv">Keep reading</span>
+            <h2 class="d2 rv" style="--d:60ms" id="related-title">Related notes</h2>
+          </div>
+          <p class="lead muted shead__r rv" style="--d:120ms">More from the run log on {category.toLowerCase()} and the work around it.</p>
+        </div>
+        <div class="posts">
+          {related.map((p, i) => <PostCard post={p} delay={i * 80} />)}
+        </div>
+      </div>
+    </section>
+  )}
+
+  <FinalCTA />
+</BaseLayout>

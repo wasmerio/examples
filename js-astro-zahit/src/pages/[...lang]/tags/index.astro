@@ -1,0 +1,119 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+import { ui, defaultLang } from '../../../i18n/ui';
+import { useTranslations } from '../../../i18n/utils';
+import type { CollectionEntry } from 'astro:content';
+import { getRelativeLocaleUrl } from 'astro:i18n';
+
+export function getStaticPaths() {
+  return Object.keys(ui).map((lang) => {
+    return { params: { lang: lang === defaultLang ? undefined : lang } };
+  });
+}
+
+const { lang } = Astro.params;
+const currentLang = lang || defaultLang;
+const t = useTranslations(currentLang as keyof typeof ui);
+
+const pageTitle = `Zahit | ${t('tags.title')}`;
+const pageDescription = t('tags.description');
+
+const posts: CollectionEntry<'blog'>[] = await getCollection('blog', (post: CollectionEntry<'blog'>) => {
+  return post.id.startsWith(`${currentLang}/`);
+});
+
+// Count posts per tag
+const tagCounts = posts.reduce<Record<string, number>>((acc, post) => {
+  const tags = post.data.tags || [];
+  tags.forEach((tag: string) => {
+    acc[tag] = (acc[tag] || 0) + 1;
+  });
+  return acc;
+}, {});
+
+const sortedTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+---
+
+<BaseLayout title={pageTitle} description={pageDescription}>
+	<section class="tags-header">
+		<h1>{t('tags.title')}</h1>
+		<p>{t('tags.description')}</p>
+	</section>
+
+	<section class="tags-container">
+		{sortedTags.length > 0 ? (
+			<div class="tags-grid">
+				{sortedTags.map(([tag, count]) => (
+					<a href={getRelativeLocaleUrl(currentLang, `tags/${tag}`)} class="tag-card">
+						<span class="tag-name">#{tag}</span>
+						<span class="tag-count">
+							{count} {t('tags.postsCount')}
+						</span>
+					</a>
+				))}
+			</div>
+		) : (
+			<p class="no-tags">No tags found.</p>
+		)}
+	</section>
+</BaseLayout>
+
+
+<style>
+	.tags-header {
+		margin-bottom: 3rem;
+	}
+
+	.tags-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+		gap: 1rem;
+		margin-top: 1rem;
+	}
+
+	@media (min-width: 640px) {
+		.tags-grid {
+			gap: 1.5rem;
+		}
+	}
+
+	.tag-card {
+		display: flex;
+		flex-direction: column;
+		padding: 1.25rem 1.5rem;
+		background: rgba(1, 14, 84, 0.2);
+		border: 1px solid rgba(79, 165, 216, 0.1);
+		border-radius: 8px;
+		text-decoration: none;
+		transition: all var(--transition-speed) ease;
+	}
+
+	.tag-card:hover {
+		background: rgba(1, 14, 84, 0.5);
+		border-color: var(--light);
+		transform: translateY(-2px);
+	}
+
+	.tag-name {
+		font-size: 1.2rem;
+		font-weight: 600;
+		color: var(--light);
+		margin-bottom: 0.25rem;
+		transition: color var(--transition-speed) ease;
+	}
+
+	.tag-card:hover .tag-name {
+		color: #ffffff;
+	}
+
+	.tag-count {
+		font-size: 0.85rem;
+		color: rgba(218, 234, 255, 0.5);
+	}
+
+	.no-tags {
+		color: rgba(218, 234, 255, 0.5);
+		font-style: italic;
+	}
+</style>

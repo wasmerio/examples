@@ -1,0 +1,254 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Profile from '../../components/Profile.astro';
+import { getCollection } from 'astro:content';
+import { ui, defaultLang } from '../../i18n/ui';
+import { useTranslations } from '../../i18n/utils';
+import type { CollectionEntry } from 'astro:content';
+import { getRelativeLocaleUrl } from 'astro:i18n';
+
+export function getStaticPaths() {
+  return Object.keys(ui).map((lang) => {
+    return { params: { lang: lang === defaultLang ? undefined : lang } };
+  });
+}
+
+const { lang } = Astro.params;
+const currentLang = lang || defaultLang;
+const t = useTranslations(currentLang as keyof typeof ui);
+
+const pageTitle = `Zahit | ${t('home.title')}`;
+const pageDescription = t('home.subtitle');
+
+const posts: CollectionEntry<'blog'>[] = await getCollection('blog', (post: CollectionEntry<'blog'>) => {
+  return post.id.startsWith(`${currentLang}/`);
+});
+posts.sort((a: CollectionEntry<'blog'>, b: CollectionEntry<'blog'>) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const archiveLabel = currentLang === 'tr' ? 'Tüm yazılar →' : 'All posts →';
+---
+
+<BaseLayout title={pageTitle} description={pageDescription}>
+	<div class="home-layout">
+		<aside class="sidebar">
+			<Profile />
+		</aside>
+		
+		<div class="content-area">
+			<section class="recent-posts">
+				<h2>{t('nav.archive')}</h2>
+				<div class="posts-container">
+					<ul>
+						{
+							posts.map((post) => {
+								const slugWithoutLang = post.id.replace(`${currentLang}/`, '');
+								const isExternal = Boolean(post.data.external_url);
+								const href = post.data.external_url || getRelativeLocaleUrl(currentLang, `blog/${slugWithoutLang}`);
+								return (
+									<li>
+										<a
+											href={href}
+											target={isExternal ? '_blank' : undefined}
+											rel={isExternal ? 'noopener noreferrer' : undefined}
+										>
+											<span class="title">
+												{post.data.title}
+												{isExternal && <span class="external-icon" aria-hidden="true">↗</span>}
+											</span>
+											<span class="meta-info">
+												{post.data.external_source && (
+													<span class="external-badge">{post.data.external_source}</span>
+												)}
+												<span class="date">
+													{post.data.pubDate.toLocaleDateString(currentLang, {
+														year: 'numeric',
+														month: 'long',
+														day: 'numeric',
+													})}
+												</span>
+											</span>
+										</a>
+									</li>
+								);
+							})
+						}
+					</ul>
+					<div class="fade-more">
+						<a href={getRelativeLocaleUrl(currentLang, 'archive')} class="more-link">{archiveLabel}</a>
+					</div>
+				</div>
+			</section>
+		</div>
+	</div>
+</BaseLayout>
+
+
+<style>
+	.home-layout {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 2rem;
+		align-items: start;
+	}
+
+	.sidebar {
+		align-self: start;
+	}
+
+	@media (min-width: 860px) {
+		.home-layout {
+			grid-template-columns: 1fr 3fr;
+			gap: 4rem;
+		}
+		.sidebar {
+			position: sticky;
+			top: 2rem;
+		}
+	}
+
+	.recent-posts h2 {
+		font-size: 1.25rem;
+		border-bottom: 1px solid rgba(218, 234, 255, 0.1);
+		padding-bottom: 0.5rem;
+		margin-top: 0;
+		margin-bottom: 1.5rem;
+	}
+
+	/* Height-capped container */
+	.posts-container {
+		position: relative;
+		max-height: 380px;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+	}
+
+	@media (min-width: 640px) {
+		.posts-container {
+			max-height: 520px;
+		}
+	}
+
+	ul {
+		list-style-type: none;
+		padding: 0;
+		padding-right: 4px; /* Space for the 4px hover transform */
+		flex: 1;
+		min-height: 0;
+	}
+
+	li {
+		margin-bottom: 0.75rem;
+	}
+
+	li a {
+		display: flex;
+		flex-direction: column;
+		text-decoration: none;
+		padding: 0.75rem 0.9rem;
+		border-radius: 8px;
+		border: 1px solid transparent;
+		transition: all var(--transition-speed) ease;
+	}
+
+	li a:hover {
+		background: rgba(1, 14, 84, 0.5);
+		border-color: rgba(79, 165, 216, 0.15);
+		transform: translateX(4px);
+	}
+
+	li a:hover .title {
+		color: var(--text-color);
+	}
+
+	.title {
+		font-size: clamp(1rem, 2.5vw, 1.15rem);
+		font-weight: 600;
+		color: var(--light);
+		transition: color var(--transition-speed) ease;
+		margin-bottom: 0.3rem;
+	}
+
+	.date {
+		font-size: 0.82rem;
+		color: rgba(218, 234, 255, 0.45);
+	}
+
+	.meta-info {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.external-icon {
+		display: inline-block;
+		margin-left: 0.25rem;
+		font-size: 0.85em;
+		color: var(--light);
+		transition: transform var(--transition-speed) ease;
+	}
+
+	li a:hover .external-icon {
+		transform: translate(2px, -2px);
+		color: var(--text-color);
+	}
+
+	.external-badge {
+		font-size: 0.72rem;
+		font-weight: 500;
+		color: var(--light);
+		background: rgba(79, 165, 216, 0.1);
+		border: 1px solid rgba(79, 165, 216, 0.2);
+		padding: 0.1rem 0.45rem;
+		border-radius: 4px;
+		letter-spacing: 0.02em;
+		white-space: nowrap;
+	}
+
+	.fade-more {
+		position: absolute;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 90px;
+		background: linear-gradient(
+			to bottom,
+			transparent 0%,
+			var(--bg-color) 65%
+		);
+		display: flex;
+		align-items: flex-end;
+		justify-content: center; /* mobile: center */
+		pointer-events: none;
+	}
+
+	.more-link {
+		font-size: 0.9rem;
+		color: rgba(218, 234, 255, 0.55);
+		text-decoration: none;
+		transition: color var(--transition-speed) ease;
+		padding: 0.25rem 0;
+		pointer-events: auto;
+	}
+
+	.more-link:hover {
+		color: var(--light);
+	}
+
+	@media (min-width: 860px) {
+		.fade-more {
+			justify-content: flex-start; /* desktop: left */
+		}
+	}
+
+	@media (min-width: 640px) {
+		li a {
+			flex-direction: row;
+			justify-content: space-between;
+			align-items: center;
+		}
+		.title {
+			margin-bottom: 0;
+		}
+	}
+</style>

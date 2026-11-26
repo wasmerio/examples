@@ -1,0 +1,163 @@
+---
+import { getLangFromUrl, useTranslations, getRouteFromUrl } from '../i18n/utils';
+import { languages } from '../i18n/ui';
+import { getCollection } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import { SITE_CONFIG } from '../config';
+import { getRelativeLocaleUrl } from 'astro:i18n';
+
+const lang = getLangFromUrl(Astro.url);
+const t = useTranslations(lang);
+const route = getRouteFromUrl(Astro.url);
+
+// Fetch all posts to handle translation mapping
+const allPosts: CollectionEntry<'blog'>[] = await getCollection('blog');
+const isPost = route?.startsWith('blog/');
+let currentTranslationKey: string | undefined = undefined;
+
+if (isPost && route) {
+	const currentSlug = route.replace('blog/', '').replace(/\/$/, '');
+	const currentPost = allPosts.find(p => p.id === `${lang}/${currentSlug}`);
+	if (currentPost) {
+		currentTranslationKey = currentPost.data.translationKey;
+	}
+}
+---
+<header class="site-header">
+	<nav>
+		<div class="logo">
+			<a href={getRelativeLocaleUrl(lang, '')}>{SITE_CONFIG.title}</a>
+		</div>
+		<div class="links">
+			<a href={getRelativeLocaleUrl(lang, '')}>{t('nav.home')}</a>
+			<a href={getRelativeLocaleUrl(lang, 'archive')}>{t('nav.archive')}</a>
+			<a href={getRelativeLocaleUrl(lang, 'tags')}>{t('nav.tags')}</a>
+			<a href={getRelativeLocaleUrl(lang, 'about')}>{t('nav.about')}</a>
+		</div>
+		<div class="lang-switcher">
+			<ul>
+				{Object.entries(languages).map(([abbr, label]) => {
+					let targetRoute = route || '';
+					
+					if (targetRoute.startsWith('blog/') && lang !== abbr) {
+						let matchedPost;
+						if (currentTranslationKey) {
+							matchedPost = allPosts.find(p => p.id.startsWith(`${abbr}/`) && p.data.translationKey === currentTranslationKey);
+						}
+						
+						if (matchedPost) {
+							const targetSlug = matchedPost.id.replace(`${abbr}/`, '');
+							targetRoute = `blog/${targetSlug}/`;
+						} else {
+							targetRoute = 'archive/';
+						}
+					}
+					
+					return (
+					<li>
+						<a href={getRelativeLocaleUrl(abbr, targetRoute)} class={lang === abbr ? 'active' : ''}>
+							{abbr.toUpperCase()}
+						</a>
+					</li>
+					);
+				})}
+			</ul>
+		</div>
+	</nav>
+</header>
+
+
+<style>
+	.site-header {
+		width: var(--site-width);
+		padding: 1.5rem 0;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	nav {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		align-items: center;
+		gap: 0.75rem;
+	}
+
+	.logo a {
+		font-size: 1.5rem;
+		font-weight: 700;
+		color: #ffffff;
+		letter-spacing: -0.02em;
+	}
+	
+	.logo a:hover {
+		color: var(--accent);
+	}
+
+	.links {
+		display: flex;
+		gap: 1.5rem;
+		/* On mobile this wraps below logo/lang row */
+		order: 3;
+		width: 100%;
+		justify-content: center;
+	}
+
+	.links a {
+		font-size: 0.95rem;
+		font-weight: 500;
+		color: var(--light);
+	}
+
+	.links a:hover {
+		color: #ffffff;
+	}
+
+	.lang-switcher {
+		/* Stays right side with logo on mobile */
+		margin-left: auto;
+	}
+
+	.lang-switcher ul {
+		display: flex;
+		gap: 0.5rem;
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.lang-switcher a {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: rgba(218, 234, 255, 0.5);
+		padding: 0.2rem 0.4rem;
+		border-radius: 4px;
+	}
+
+	.lang-switcher a:hover {
+		color: #ffffff;
+		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.lang-switcher a.active {
+		color: var(--bg-color);
+		background: var(--light);
+	}
+
+	/* Desktop: restore three-column flex, no wrapping */
+	@media (min-width: 640px) {
+		nav {
+			flex-wrap: nowrap;
+		}
+
+		.links {
+			order: unset;
+			width: auto;
+			justify-content: flex-start;
+		}
+
+		.lang-switcher {
+			margin-left: 0;
+		}
+	}
+</style>

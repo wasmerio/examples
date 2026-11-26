@@ -1,0 +1,275 @@
+---
+interface Props {
+	type?: 'bar' | 'line' | 'pie' | 'doughnut' | 'radar' | 'polarArea';
+	data: Record<string, any>;
+	options?: Record<string, any>;
+	height?: number | string;
+	caption?: string;
+}
+
+const {
+	type = 'bar',
+	data,
+	options = {},
+	height = 340,
+	caption,
+} = Astro.props;
+
+const chartConfig = JSON.stringify({ type, data, options });
+const heightStyle = typeof height === 'number' ? `${height}px` : height;
+---
+
+<figure class="zahit-chart-figure">
+	<div class="zahit-chart-container" style={`--chart-height: ${heightStyle};`}>
+		<canvas class="zahit-chart-canvas" data-chart-config={chartConfig}></canvas>
+	</div>
+	{caption && <figcaption class="zahit-chart-caption">{caption}</figcaption>}
+</figure>
+
+<style>
+	.zahit-chart-figure {
+		margin: 2.25rem 0;
+		width: 100%;
+	}
+
+	.zahit-chart-container {
+		position: relative;
+		width: 100%;
+		height: var(--chart-height, 340px);
+		background-color: rgba(1, 14, 84, 0.28);
+		border: 1px solid rgba(218, 234, 255, 0.1);
+		border-radius: 8px;
+		padding: 1.25rem 1.5rem;
+		box-sizing: border-box;
+	}
+
+	.zahit-chart-canvas {
+		width: 100% !important;
+		height: 100% !important;
+		display: block;
+	}
+
+	.zahit-chart-caption {
+		margin-top: 0.65rem;
+		font-size: 0.85rem;
+		color: rgba(218, 234, 255, 0.55);
+		text-align: center;
+		font-style: italic;
+	}
+
+	@media (max-width: 640px) {
+		.zahit-chart-container {
+			padding: 0.85rem 0.75rem;
+			height: calc(var(--chart-height, 340px) * 0.9);
+		}
+	}
+</style>
+
+<script>
+	const ZAHIT_PALETTE = [
+		'#4fa5d8', // Zahit Light (Ice Blue)
+		'#f97316', // Warm Orange Accent
+		'#38bdf8', // Sky Cyan
+		'#ef4444', // Coral Red
+		'#0855b1', // Zahit Deep Accent
+		'#a855f7', // Purple
+		'#10b981', // Emerald
+	];
+
+	const TEXT_COLOR = 'rgba(218, 234, 255, 0.78)';
+	const MUTED_TEXT_COLOR = 'rgba(218, 234, 255, 0.6)';
+	const GRID_COLOR = 'rgba(218, 234, 255, 0.06)';
+	const BORDER_COLOR = 'rgba(218, 234, 255, 0.12)';
+	const FONT_FAMILY = '"Source Sans 3", sans-serif';
+
+	function isObject(item: any): item is Record<string, any> {
+		return Boolean(item && typeof item === 'object' && !Array.isArray(item));
+	}
+
+	function deepMerge(target: Record<string, any>, source: Record<string, any>): Record<string, any> {
+		const output = { ...target };
+		if (isObject(target) && isObject(source)) {
+			Object.keys(source).forEach((key) => {
+				if (isObject(source[key])) {
+					if (!(key in target)) {
+						Object.assign(output, { [key]: source[key] });
+					} else {
+						output[key] = deepMerge(target[key], source[key]);
+					}
+				} else {
+					Object.assign(output, { [key]: source[key] });
+				}
+			});
+		}
+		return output;
+	}
+
+	async function renderChart(canvas: HTMLCanvasElement) {
+		if (canvas.dataset.rendered === 'true') return;
+		canvas.dataset.rendered = 'true';
+
+		const rawConfig = canvas.dataset.chartConfig;
+		if (!rawConfig) return;
+
+		const parsed = JSON.parse(rawConfig);
+		const { Chart } = await import('chart.js/auto');
+
+		const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const isMobile = window.innerWidth < 640;
+
+		// Apply default palette colors if not explicitly provided
+		const datasets = (parsed.data?.datasets || []).map((ds: Record<string, any>, idx: number) => {
+			const fallbackColor = ZAHIT_PALETTE[idx % ZAHIT_PALETTE.length];
+			const updated = { ...ds };
+
+			if (parsed.type === 'line') {
+				if (!updated.borderColor) updated.borderColor = fallbackColor;
+				if (!updated.backgroundColor) updated.backgroundColor = fallbackColor;
+				if (updated.borderWidth === undefined) updated.borderWidth = 2.5;
+			} else if (parsed.type === 'bar') {
+				if (!updated.backgroundColor) updated.backgroundColor = fallbackColor;
+				if (updated.borderRadius === undefined) updated.borderRadius = 4;
+			}
+			return updated;
+		});
+
+		const baseOptions: Record<string, any> = {
+			responsive: true,
+			maintainAspectRatio: false,
+			animation: prefersReducedMotion
+				? false
+				: {
+						duration: 600,
+						easing: 'easeOutQuart',
+					},
+			interaction: {
+				mode: 'index',
+				intersect: false,
+			},
+			plugins: {
+				legend: {
+					labels: {
+						color: TEXT_COLOR,
+						font: {
+							family: FONT_FAMILY,
+							size: 13,
+							weight: '600',
+						},
+						usePointStyle: true,
+						boxWidth: 8,
+						padding: 16,
+					},
+				},
+				tooltip: {
+					backgroundColor: 'rgba(0, 2, 43, 0.95)',
+					titleColor: '#ffffff',
+					bodyColor: '#daeaff',
+					borderColor: 'rgba(79, 165, 216, 0.35)',
+					borderWidth: 1,
+					padding: 10,
+					cornerRadius: 6,
+					titleFont: {
+						family: FONT_FAMILY,
+						size: 13,
+						weight: '600',
+					},
+					bodyFont: {
+						family: FONT_FAMILY,
+						size: 13,
+					},
+				},
+			},
+		};
+
+		const mergedOptions = deepMerge(baseOptions, parsed.options || {});
+
+		// Adjust right-positioned legend on narrow mobile screens for readability
+		if (isMobile && mergedOptions.plugins?.legend?.position === 'right') {
+			mergedOptions.plugins.legend.position = 'bottom';
+		}
+
+		// Apply Zahit styling and prefix/suffix formatters to all scales
+		const defaultScaleStyle = {
+			grid: {
+				color: GRID_COLOR,
+			},
+			border: {
+				color: BORDER_COLOR,
+			},
+			ticks: {
+				color: MUTED_TEXT_COLOR,
+				font: {
+					family: FONT_FAMILY,
+					size: 12,
+				},
+			},
+			title: {
+				color: TEXT_COLOR,
+				font: {
+					family: FONT_FAMILY,
+					size: 12,
+					weight: '600',
+				},
+			},
+		};
+
+		if (parsed.type === 'bar' || parsed.type === 'line') {
+			const userScales = mergedOptions.scales || { x: {}, y: {} };
+			const processedScales: Record<string, any> = {};
+
+			for (const [scaleKey, scaleVal] of Object.entries(userScales)) {
+				const mergedScale = deepMerge(defaultScaleStyle, (scaleVal as Record<string, any>) || {});
+				const prefix = mergedScale.ticks?.prefix ?? '';
+				const suffix = mergedScale.ticks?.suffix ?? '';
+
+				if (prefix || suffix) {
+					mergedScale.ticks.callback = function (value: string | number) {
+						return `${prefix}${value}${suffix}`;
+					};
+				}
+
+				processedScales[scaleKey] = mergedScale;
+			}
+
+			mergedOptions.scales = processedScales;
+		}
+
+		new Chart(canvas, {
+			type: parsed.type,
+			data: {
+				...parsed.data,
+				datasets,
+			},
+			options: mergedOptions,
+		});
+	}
+
+	function initCharts() {
+		const canvases = document.querySelectorAll<HTMLCanvasElement>(
+			'canvas.zahit-chart-canvas:not([data-rendered="true"])'
+		);
+		if (!canvases.length) return;
+
+		if ('IntersectionObserver' in window) {
+			const observer = new IntersectionObserver(
+				(entries, obs) => {
+					entries.forEach((entry) => {
+						if (entry.isIntersecting) {
+							const canvas = entry.target as HTMLCanvasElement;
+							obs.unobserve(canvas);
+							renderChart(canvas);
+						}
+					});
+				},
+				{ rootMargin: '200px 0px' }
+			);
+
+			canvases.forEach((canvas) => observer.observe(canvas));
+		} else {
+			canvases.forEach((canvas) => renderChart(canvas));
+		}
+	}
+
+	initCharts();
+	document.addEventListener('astro:page-load', initCharts);
+</script>

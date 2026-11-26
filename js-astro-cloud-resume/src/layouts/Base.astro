@@ -1,0 +1,153 @@
+---
+// Also imports the active brand's font (see astro.config.mjs).
+import { brand, demoLinks } from 'virtual:cloud-resume/build';
+import '../styles/global.css';
+import { brandInfo, brands } from '../brands';
+import config from '../config';
+import { lang, t } from '../i18n';
+import { resume } from '../lib/resume';
+import { assetUrl } from '../lib/format';
+import ThemeToggle from '../components/ThemeToggle.astro';
+import Icon from '../components/Icon.astro';
+
+interface Props {
+  title: string;
+  description?: string | undefined;
+  /** Structured data (JSON-LD) for this page. */
+  jsonLd?: Record<string, unknown> | undefined;
+  noindex?: boolean;
+}
+
+const { title, description, jsonLd, noindex = false } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url).href;
+const ogImage = config.ogImage ? new URL(assetUrl(config.ogImage, base), Astro.site ?? Astro.url).href : undefined;
+const pdfHref = config.pdf ? assetUrl(config.pdf, base) : undefined;
+const info = brandInfo[brand];
+
+// Public demo only (DEMO_LINKS=true): links to the same resume in the other styles.
+// The demo publishes `aws` at the base path and the others one level below it.
+const demoRoot = brand === 'aws' ? base : base.replace(/[^/]+\/?$/, '');
+const styleLinks = demoLinks
+  ? brands.map((id) => ({
+      id,
+      label: brandInfo[id].label,
+      href: `${demoRoot.replace(/\/?$/, '/')}${id === 'aws' ? '' : `${id}/`}`,
+    }))
+  : [];
+
+// Runs before first paint to avoid a flash of the wrong theme.
+const themeBoot = `(function(){var c=${JSON.stringify(config.defaultTheme)};try{c=localStorage.getItem('aws-resume-theme')||c}catch(e){}var r=document.documentElement;r.setAttribute('data-theme-choice',c);if(c==='light'||c==='dark')r.setAttribute('data-theme',c);else r.removeAttribute('data-theme')})();`;
+---
+
+<!doctype html>
+<html
+  lang={lang}
+  data-brand={brand === 'aws' ? undefined : brand}
+  data-theme={config.defaultTheme === 'system' ? undefined : config.defaultTheme}
+>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    {description && <meta name="description" content={description} />}
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="canonical" href={canonical} />
+    <meta name="color-scheme" content="light dark" />
+    {
+      info.themeColor.light === info.themeColor.dark ? (
+        <meta name="theme-color" content={info.themeColor.light} />
+      ) : (
+        <>
+          <meta name="theme-color" content={info.themeColor.light} media="(prefers-color-scheme: light)" />
+          <meta name="theme-color" content={info.themeColor.dark} media="(prefers-color-scheme: dark)" />
+        </>
+      )
+    }
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href={assetUrl(info.favicon, base)} />
+
+    <meta property="og:type" content="profile" />
+    <meta property="og:title" content={title} />
+    {description && <meta property="og:description" content={description} />}
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={lang === 'fr' ? 'fr_FR' : 'en_US'} />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+    <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+
+    <script is:inline set:html={themeBoot} />
+    {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+    {config.analytics && <script is:inline defer src={config.analytics.src} {...config.analytics.attributes} />}
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{t.skipToContent}</a>
+    <header class="topbar">
+      <div class="topbar__inner">
+        <a class="topbar__brand" href={base}>
+          <span class="topbar__logo" aria-hidden="true"><Icon name="cloud" size={18} /></span>
+          <span class="topbar__name">{resume.basics.name}</span>
+          <span class="topbar__sep" aria-hidden="true">/</span>
+          <span class="topbar__page">{resume.basics.title}</span>
+        </a>
+        <div class="topbar__actions">
+          {
+            pdfHref && (
+              <a class="btn btn--primary" href={pdfHref} download>
+                <Icon name="download" size={16} />
+                <span>{t.downloadPdf}</span>
+              </a>
+            )
+          }
+          {
+            config.printButton && (
+              <button type="button" class="btn btn--ghost js-print" hidden>
+                <Icon name="printer" size={16} />
+                <span>{t.print}</span>
+              </button>
+            )
+          }
+          <ThemeToggle />
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="page" tabindex="-1">
+      <slot />
+    </main>
+
+    <footer class="footer">
+      <p>
+        © {new Date().getFullYear()} {resume.basics.name} · <a href="https://github.com/kallioli/cloud-resume">{t.footer}</a>
+      </p>
+      {
+        styleLinks.length > 0 && (
+          <nav class="style-switcher" aria-label={t.otherStyles}>
+            <span>{t.otherStyles}:</span>
+            <ul>
+              {styleLinks.map((link) => (
+                <li>
+                  <a href={link.href} aria-current={link.id === brand ? 'page' : undefined}>
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )
+      }
+    </footer>
+
+    {
+      config.printButton && (
+        <script is:inline>
+          document.querySelectorAll('.js-print').forEach(function (b) {
+            b.hidden = false;
+            b.addEventListener('click', function () {
+              window.print();
+            });
+          });
+        </script>
+      )
+    }
+  </body>
+</html>

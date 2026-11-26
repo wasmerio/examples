@@ -1,0 +1,112 @@
+---
+// Analytics loader. Each tracker is independently gated on its own env var
+// so a site can run GTM + GA4 + Meta + TikTok side-by-side or any subset.
+//
+// Cloudflare Pages → Project → Settings → Environment variables:
+//   PUBLIC_GTM_CONTAINER_ID    GTM-XXXXXXX         — your GTM container (optional)
+//
+//   PUBLIC_GA_MEASUREMENT_ID   G-XXXXXXXXXX        — per site (one stream / site)
+//   PUBLIC_META_PIXEL_ID       16-digit ID         — per site
+//   PUBLIC_TIKTOK_PIXEL_ID     CXXXXXXXXXXXXX      — per site
+//
+// Optional first-party analytics (cookieless, layered on top of the above):
+//   PUBLIC_ANALYTICS_PROVIDER=plausible|umami     (or unset → off)
+//   PUBLIC_ANALYTICS_DOMAIN=your-domain.com
+//   PUBLIC_UMAMI_WEBSITE_ID=xxxxxxxx
+//   PUBLIC_UMAMI_SRC=https://cloud.umami.is/script.js
+//
+// Earlier this component gated GA4 behind PUBLIC_ANALYTICS_PROVIDER==='ga4'
+// and never rendered GTM or TikTok at all — so even though the env vars
+// were configured on Cloudflare Pages, the corresponding tags silently
+// never fired. Each tracker now reads its own variable directly.
+
+const provider = import.meta.env.PUBLIC_ANALYTICS_PROVIDER ?? '';
+const domain   = import.meta.env.PUBLIC_ANALYTICS_DOMAIN ?? '';
+const umamiId  = import.meta.env.PUBLIC_UMAMI_WEBSITE_ID ?? '';
+const umamiSrc = import.meta.env.PUBLIC_UMAMI_SRC ?? 'https://cloud.umami.is/script.js';
+
+const gtmId         = import.meta.env.PUBLIC_GTM_CONTAINER_ID ?? '';
+// GA4 measurement ID. Read from PUBLIC_GA_MEASUREMENT_ID; unset = GA disabled.
+const gaId          = import.meta.env.PUBLIC_GA_MEASUREMENT_ID ?? '';
+const metaPixelId   = import.meta.env.PUBLIC_META_PIXEL_ID ?? '';
+const tiktokPixelId = import.meta.env.PUBLIC_TIKTOK_PIXEL_ID ?? '';
+---
+
+{/* ── Google Tag Manager (head bootstrap) ───────────────────────────────
+    One container per site; the GTM workspace decides
+    which downstream tags fire on which subdomain. The body-side <noscript>
+    iframe lives in Base.astro right after the opening <body> tag. */}
+{gtmId && (
+  <script is:inline define:vars={{ gtmId }}>
+    (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer', gtmId);
+  </script>
+)}
+
+{/* ── GA4 — site-specific stream, fires whenever its measurement ID is set,
+    independent of GTM (lets you keep GTM dormant while still flowing GA4). */}
+{gaId && (
+  <>
+    <script async src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`} is:inline></script>
+    <script is:inline define:vars={{ gaId }}>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){ dataLayer.push(arguments); }
+      gtag('js', new Date());
+      gtag('config', gaId, { send_page_view: true });
+    </script>
+  </>
+)}
+
+{/* ── Meta Pixel — site-specific ─────────────────────────────────────── */}
+{metaPixelId && (
+  <>
+    <script is:inline define:vars={{ metaPixelId }}>
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window, document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init', metaPixelId);
+      fbq('track', 'PageView');
+    </script>
+    <noscript>
+      <img height="1" width="1" style="display:none"
+           src={`https://www.facebook.com/tr?id=${metaPixelId}&ev=PageView&noscript=1`} />
+    </noscript>
+  </>
+)}
+
+{/* ── TikTok Pixel — site-specific ──────────────────────────────────── */}
+{tiktokPixelId && (
+  <script is:inline define:vars={{ tiktokPixelId }}>
+    !function (w, d, t) {
+      w.TiktokAnalyticsObject=t;var ttq=w[t]=w[t]||[];
+      ttq.methods=["page","track","identify","instances","debug","on","off","once","ready","alias","group","enableCookie","disableCookie","holdConsent","revokeConsent","grantConsent"];
+      ttq.setAndDefer=function(t,e){t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}};
+      for(var i=0;i<ttq.methods.length;i++)ttq.setAndDefer(ttq,ttq.methods[i]);
+      ttq.instance=function(t){for(var e=ttq._i[t]||[],n=0;n<ttq.methods.length;n++)ttq.setAndDefer(e,ttq.methods[n]);return e};
+      ttq.load=function(e,n){var r="https://analytics.tiktok.com/i18n/pixel/events.js",o=n&&n.partner;
+        ttq._i=ttq._i||{};ttq._i[e]=[];ttq._i[e]._u=r;ttq._t=ttq._t||{};ttq._t[e]=+new Date;ttq._o=ttq._o||{};ttq._o[e]=n||{};
+        n=document.createElement("script");n.type="text/javascript";n.async=!0;n.src=r+"?sdkid="+e+"&lib="+t;
+        e=document.getElementsByTagName("script")[0];e.parentNode.insertBefore(n,e);
+      };
+      ttq.load(tiktokPixelId);
+      ttq.page();
+    }(window, document, 'ttq');
+  </script>
+)}
+
+{/* ── First-party analytics (cookieless, optional) ────────────────────── */}
+{provider === 'plausible' && domain && (
+  <script defer data-domain={domain} src="https://plausible.io/js/script.outbound-links.js" is:inline></script>
+)}
+
+{provider === 'umami' && umamiId && (
+  <script defer data-website-id={umamiId} src={umamiSrc} is:inline></script>
+)}

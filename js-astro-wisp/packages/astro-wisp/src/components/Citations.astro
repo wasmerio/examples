@@ -1,0 +1,177 @@
+---
+/**
+ * 引用（GFM 脚注）的客户端增强。页面没有 `a[data-footnote-ref]` 时什么都不做。
+ * - 点击文内标记 / 回链：平滑滚动（减少动态效果时直接跳）到目标，目标短暂标记约 2 秒（data-wisp-flash），
+ *   焦点移到目标，地址栏写入锚点（可以后退）。
+ * - 悬停/聚焦预览：构建期在 `rehype-citations` 生成 `<div popover="hint" role="tooltip">` 与 `interestfor` + CSS 锚点定位，
+ *   无需手动坐标测量或指针定时器。
+ * - 无 JS：普通锚点跳转与原生 hint 预览照常工作，`:target` 样式标记目标（prose.css）。
+ */
+---
+
+<script>
+  const refs = document.querySelectorAll<HTMLAnchorElement>('a[data-footnote-ref]');
+  if (refs.length) {
+    const root = document.documentElement;
+    root.dataset.wispCite = '';
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+    const byHash = (a: HTMLAnchorElement) => {
+      const id = decodeURIComponent(a.hash.slice(1));
+      return id ? document.getElementById(id) : null;
+    };
+
+    const hideOpenHints = () => {
+      for (const open of document.querySelectorAll<HTMLElement>('.wisp-cite-pop:popover-open')) {
+        open.hidePopover?.();
+      }
+    };
+
+    // ---- 跳转 + 临时标记 ----
+    const timers = new WeakMap<Element, number>();
+    const flash = (el: Element, scrolling = false) => {
+      clearTimeout(timers.get(el));
+      el.setAttribute('data-wisp-flash', '');
+      const start = () =>
+        timers.set(
+          el,
+          window.setTimeout(() => el.removeAttribute('data-wisp-flash'), 2000),
+        );
+      if (!scrolling) return start();
+      let done = false;
+      const once = () => {
+        if (done) return;
+        done = true;
+        removeEventListener('scrollend', once);
+        start();
+      };
+      addEventListener('scrollend', once);
+      window.setTimeout(once, 2500);
+    };
+    const go = (a: HTMLAnchorElement, e: MouseEvent) => {
+      const target = byHash(a);
+      if (!target) return;
+      e.preventDefault();
+      hideOpenHints();
+      const back = a.hasAttribute('data-footnote-backref');
+      // 从正文某处引用跳下时，把该条注释唯一的回链动态指回刚点击的这处引用（一键原路返回）
+      if (!back && a.id) {
+        const backref = target.querySelector<HTMLAnchorElement>('a[data-footnote-backref]');
+        if (backref) backref.setAttribute('href', `#${encodeURIComponent(a.id)}`);
+      }
+      history.pushState(null, '', a.hash);
+      target.scrollIntoView({
+        behavior: reduce.matches ? 'auto' : 'smooth',
+        block: back ? 'center' : 'start',
+      });
+      // 注释条目本身不可聚焦：临时给 tabindex，读屏与键盘从这里继续
+      if (!back && !target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+      (target as HTMLElement).focus({ preventScroll: true });
+      flash(back ? (target.closest('sup') ?? target) : target, !reduce.matches);
+    };
+    document.addEventListener('click', (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey)
+        return;
+      const a = (e.target as Element | null)?.closest<HTMLAnchorElement>(
+        'a[data-footnote-ref], a[data-footnote-backref]',
+      );
+      if (a) go(a, e);
+    });
+    // 直接打开带注释锚点的地址：同样标记一下
+    const initial =
+      location.hash && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (initial && initial.closest('section[data-footnotes]')) flash(initial);
+  }
+</script>
+
+<style is:global>
+  @layer components {
+    a[data-footnote-ref][interestfor] {
+      interest-delay: 0.15s 0.1s;
+    }
+    /* 引用预览：纸白底、1px 发丝线、4px 圆角，无阴影；CSS 锚点定位贴合触发源并自动翻转 */
+    .wisp-cite-pop[popover] {
+      position: fixed;
+      inset: auto;
+      position-area: block-end span-inline-end;
+      position-try-fallbacks:
+        flip-block,
+        flip-inline,
+        flip-block flip-inline;
+      z-index: 60;
+      box-sizing: border-box;
+      width: max-content;
+      max-width: min(22rem, calc(100vw - 1rem));
+      max-height: min(18rem, calc(100dvh - var(--wisp-header-h, 3.5rem) - 1.5rem));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      margin: 0;
+      margin-block: 0.375rem;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--wisp-border);
+      border-radius: 4px;
+      background: var(--wisp-bg);
+      color: var(--wisp-fg);
+      box-shadow: none;
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+      text-align: start;
+      opacity: 0;
+      transition:
+        opacity 140ms var(--wisp-ease),
+        display 140ms allow-discrete,
+        overlay 140ms allow-discrete;
+    }
+    .wisp-cite-pop[popover]:popover-open {
+      opacity: 1;
+    }
+    @starting-style {
+      .wisp-cite-pop[popover]:popover-open {
+        opacity: 0;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wisp-cite-pop[popover] {
+        transition-duration: 80ms;
+      }
+    }
+    @media (forced-colors: active) {
+      .wisp-cite-pop[popover] {
+        background: Canvas;
+        color: CanvasText;
+        border-color: CanvasText;
+      }
+    }
+    .wisp-cite-pop p {
+      margin: 0;
+    }
+    .wisp-cite-pop p + p {
+      margin-top: 0.375rem;
+    }
+    .wisp-cite-pop a {
+      color: var(--wisp-accent);
+      text-decoration-line: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.2em;
+    }
+    .wisp-cite-pop code {
+      padding: 0.0625em 0.25em;
+      border-radius: 3px;
+      background: var(--wisp-code-bg);
+      font-size: 0.875em;
+    }
+    .wisp-cite-pop :is(em, i):lang(zh) {
+      font-style: normal;
+      -webkit-text-emphasis: dot;
+      text-emphasis: dot;
+      -webkit-text-emphasis-position: under right;
+      text-emphasis-position: under right;
+    }
+    .wisp-cite-pop :is(em, i):lang(zh) :lang(en),
+    .wisp-cite-pop :is(em, i):lang(en) {
+      font-style: italic;
+      -webkit-text-emphasis: none;
+      text-emphasis: none;
+    }
+  }
+</style>

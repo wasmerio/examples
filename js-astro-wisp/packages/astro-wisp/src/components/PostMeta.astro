@@ -1,0 +1,128 @@
+---
+/**
+ * 文章元信息行：发布日期 · 更新日期 · 阅读时长 · 分类（· 标签，可选）。
+ * 用于文章页标题区和文章卡片。
+ */
+import config from 'virtual:wisp/config';
+import { formatDate, toISODate } from '../utils/date';
+import { sitePath } from '../utils/paths';
+import { slugify } from '../utils/taxonomy';
+
+export interface Props {
+  pubDate: Date;
+  updatedDate?: Date;
+  /** 阅读时长（分钟），来自 remarkPluginFrontmatter.readingTime */
+  readingTime?: number;
+  /** 分类名；有值时渲染为 /categories/<slug>/ 链接 */
+  category?: string;
+  /** 标签；有值时以 `#标签` 形式追加在行尾（文章卡片使用） */
+  tags?: string[];
+  /** 日期格式语言，默认站点语言 */
+  lang?: string;
+  /** 额外 class */
+  class?: string;
+}
+
+const {
+  pubDate,
+  updatedDate,
+  readingTime,
+  category,
+  tags = [],
+  lang = config.site.lang,
+  class: className,
+} = Astro.props;
+const zh = /^zh\b/i.test(lang);
+const showUpdated = updatedDate && toISODate(updatedDate) !== toISODate(pubDate);
+const slugMap = config.taxonomy.slugMap;
+---
+
+<div class:list={['wisp-meta', className]}>
+  <span class="wisp-meta-item">
+    <time datetime={toISODate(pubDate)}>{formatDate(pubDate, lang)}</time>
+  </span>
+  {showUpdated && (
+    <span>
+      {zh ? '更新于 ' : 'Updated '}
+      <time datetime={toISODate(updatedDate!)}>{formatDate(updatedDate!, lang)}</time>
+    </span>
+  )}
+  {readingTime != null && (
+    <span class="wisp-meta-item">{zh ? `${readingTime} 分钟` : `${readingTime} min read`}</span>
+  )}
+  {category && (
+    <span class="wisp-meta-item">
+      <a href={sitePath(import.meta.env.BASE_URL, `/categories/${slugify(category, slugMap)}/`)}>
+        {category}
+      </a>
+    </span>
+  )}
+  {tags.length > 0 && (
+    <span class="wisp-meta-tags">
+      {tags.map((t) => (
+        <a href={sitePath(import.meta.env.BASE_URL, `/tags/${slugify(t, slugMap)}/`)}>#{t}</a>
+      ))}
+    </span>
+  )}
+</div>
+
+<style>
+  /* 主题样式在 components 层：Tailwind 工具类与站点 customCss 总能覆盖 */
+  @layer components {
+    .wisp-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      column-gap: 0;
+      row-gap: 0.25em;
+      color: var(--wisp-muted);
+      font-size: 0.8125rem;
+      line-height: 1.6;
+      font-variant-numeric: tabular-nums;
+    }
+    .wisp-meta > * + *::before {
+      content: '·';
+      margin-inline: 0.55em;
+      color: var(--wisp-subtle);
+    }
+    .wisp-meta-item {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.35em;
+    }
+    .wisp-meta a {
+      color: var(--wisp-muted);
+      transition: color 150ms;
+    }
+    .wisp-meta a:hover {
+      color: var(--wisp-accent);
+    }
+    /* 标签总是独占一行，避免换行后行首出现孤立的分隔点 */
+    .wisp-meta > .wisp-meta-tags {
+      flex-basis: 100%;
+    }
+    .wisp-meta > .wisp-meta-tags::before {
+      content: none;
+    }
+    .wisp-meta-tags {
+      display: flex;
+      flex-wrap: wrap;
+      column-gap: 0.75em;
+    }
+    /* 触屏及窄屏：元信息链接补齐 ≥44px 触控区，标签链接命中高度 ≥32px、行距 ≥8px */
+    @media (pointer: coarse), (max-width: 47.99rem) {
+      .wisp-meta-item a {
+        padding-block: 0.8125rem;
+        margin-block: -0.8125rem;
+      }
+      .wisp-meta-tags {
+        row-gap: 0.5rem;
+      }
+      .wisp-meta-tags a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 2rem;
+      }
+    }
+  }
+</style>

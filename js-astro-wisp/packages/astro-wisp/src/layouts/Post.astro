@@ -1,0 +1,404 @@
+---
+/**
+ * 文章布局：标题区（h1 + PostMeta + 标签）、目录（宽屏右侧 sticky / 窄屏文首折叠）、prose 正文、上一篇/下一篇。
+ * hasMath 为真时才引入 KaTeX 样式（独立 CSS 文件，通过 <link> 按需加载）。
+ */
+import type { MarkdownHeading } from 'astro';
+import type { PostEntry } from '../utils/posts';
+import config from 'virtual:wisp/config';
+import Base from 'virtual:wisp/components/Base';
+import PostMeta from 'virtual:wisp/components/PostMeta';
+import TagList from 'virtual:wisp/components/TagList';
+import Toc from 'virtual:wisp/components/Toc';
+import ReadingProgress from 'virtual:wisp/components/ReadingProgress';
+import BackToTop from 'virtual:wisp/components/BackToTop';
+import PrevNext from 'virtual:wisp/components/PrevNext';
+import SeriesNav from 'virtual:wisp/components/SeriesNav';
+import type { PrevNextItem } from '../components/PrevNext.astro';
+import type { SeriesItem } from '../components/SeriesNav.astro';
+import katexCssUrl from '../styles/katex.css?url';
+// 公式里最常用的 KaTeX 字体（正文 Main、变量斜体 Math、AMS、Size1）：hasMath 时预加载，
+// 换上字体时公式宽度变化引起的重排（CLS）更早发生、通常赶在首次绘制前。与 katex.css 里 url() 是同一个产物。
+import katexMainUrl from 'katex/dist/fonts/KaTeX_Main-Regular.woff2?url';
+import katexMathUrl from 'katex/dist/fonts/KaTeX_Math-Italic.woff2?url';
+import katexAmsUrl from 'katex/dist/fonts/KaTeX_AMS-Regular.woff2?url';
+import katexSize1Url from 'katex/dist/fonts/KaTeX_Size1-Regular.woff2?url';
+import diagramCssUrl from '../styles/diagram-figure.css?url';
+import { Font } from 'astro:assets';
+import { sitePath } from '../utils/paths';
+import { segmentTitleWords } from '../utils/title';
+
+export interface Props {
+  post: PostEntry;
+  /** render() 返回的全部 headings；布局内部取 depth 2–3 */
+  headings?: MarkdownHeading[];
+  /** remarkPluginFrontmatter.readingTime */
+  readingTime?: number;
+  /** remarkPluginFrontmatter.hasMath */
+  hasMath?: boolean;
+  /** remarkPluginFrontmatter.hasDiagram / hasHandDiagram（remark-diagram 写入） */
+  hasDiagram?: boolean;
+  hasHandDiagram?: boolean;
+  prev?: PrevNextItem;
+  next?: PrevNextItem;
+  series?: SeriesItem[];
+}
+
+const {
+  post,
+  headings = [],
+  readingTime,
+  hasMath = false,
+  hasDiagram = false,
+  hasHandDiagram = false,
+  prev,
+  next,
+  series = [],
+} = Astro.props;
+const { title, description, pubDate, updatedDate, tags, category, lang, toc, cover } = post.data;
+// 排除 GFM 脚注区的隐藏标题（id=footnote-label）
+const tocHeadings = headings.filter(
+  (h) => h.depth >= 2 && h.depth <= 3 && h.slug !== 'footnote-label',
+);
+const zh = /^zh\b/i.test(lang ?? config.site.lang);
+const tocTitle = zh ? '目录' : 'Contents';
+const seriesTitle = zh ? '系列文章' : 'Series';
+const showToc = config.features.toc && toc !== false && tocHeadings.length >= 2;
+const showSeries = series.length > 0;
+// 文章头部的系列眉题：「系列名 · 第 n/N 篇」，链接到系列第一篇（总览篇）
+const seriesIndex = series.findIndex((item) => item.id === post.id);
+const seriesName = showSeries ? series[0]!.title.split(/[：:]/)[0]!.trim() : '';
+const seriesHref = showSeries ? sitePath(import.meta.env.BASE_URL, `/posts/${series[0]!.id}/`) : '';
+// 进度是篇数计数（总览篇也算一篇），不是章节号，所以不补零
+const seriesPos =
+  seriesIndex >= 0
+    ? zh
+      ? `${seriesIndex + 1} / ${series.length} 篇`
+      : `${seriesIndex + 1} of ${series.length}`
+    : '';
+// 章节号：标题以编号开头（如「05 MLA 的两个技巧」）时拆出来，单独排成章节号
+const numbered = /^(\d{1,3})[\s　]+(.+)$/.exec(title);
+const chapterNo = numbered?.[1];
+const titleText = numbered ? numbered[2]! : title;
+// 中文标题：构建期按词切分，词与词之间放 <wbr>（跳过中文避头尾标点），配合 word-break: normal + overflow-wrap: anywhere，
+// 让长标题优先在词边界换行（不会出现孤立标点或生硬拆词）。
+const { html: titleHtml, segmented } = segmentTitleWords(titleText, lang ?? config.site.lang);
+const running = showSeries
+  ? { label: seriesName, href: seriesHref, position: seriesPos, title: titleText }
+  : category
+    ? { label: category, title }
+    : undefined;
+// 目录收起状态：首帧前写入 html[data-toc]（同时是“JS 可用”的标记，无 JS 时目录完整展开）
+const tocInit = `try{document.documentElement.dataset.toc=localStorage.getItem('wisp-toc-collapsed')==='1'?'collapsed':'open'}catch(e){document.documentElement.dataset.toc='open'}`;
+// 宽屏系列栏：默认收起，只留一行「系列名 7 / 10」；同样在首帧前写入 html[data-series]，无 JS 时篇目表完整显示
+const seriesInit = `try{document.documentElement.dataset.series=localStorage.getItem('wisp-series-open')==='1'?'open':'collapsed'}catch(e){document.documentElement.dataset.series='collapsed'}`;
+---
+
+<Base
+  title={title}
+  description={description}
+  lang={lang}
+  type="article"
+  image={cover?.src}
+  publishedTime={pubDate}
+  modifiedTime={updatedDate}
+  tags={tags}
+  running={running}
+>
+  <Fragment slot="head">
+    {showToc && <script is:inline set:html={tocInit} />}
+    {showSeries && <script is:inline set:html={seriesInit} />}
+    {hasMath && config.features.math && <link rel="stylesheet" href={katexCssUrl} />}
+    {hasMath &&
+      config.features.math &&
+      [katexMainUrl, katexMathUrl, katexAmsUrl, katexSize1Url].map((href) => (
+        <link rel="preload" as="font" type="font/woff2" href={href} crossorigin />
+      ))}
+    {(hasDiagram || hasHandDiagram) && <link rel="stylesheet" href={diagramCssUrl} />}
+    {hasHandDiagram && config.hasExcalifont && (
+      <Font cssVariable="--font-wisp-hand" preload={[{ subset: 'latin' }]} />
+    )}
+  </Fragment>
+
+  <ReadingProgress />
+
+  {/*
+    DOM 顺序 = 键盘顺序：系列（栏或文首 details）→ 目录栏 → 正文；各自的位置由网格决定。
+    目录放在正文之前：它是进入正文的导航（窄屏的折叠目录同样在正文之前），收起时只占一个 Tab；
+    「跳到正文」仍直达 <main>。两个侧栏是普通 div，地标名只在里面的 <nav> 上（不重复命名）。
+  */}
+  <div class:list={['wisp-post', { 'wisp-has-toc': showToc, 'wisp-has-series': showSeries }]}>
+    {showSeries && (
+      <div class="wisp-post-series-inline">
+        <SeriesNav
+          items={series}
+          currentId={post.id}
+          variant="inline"
+          title={seriesName || seriesTitle}
+          lang={lang}
+        />
+      </div>
+    )}
+
+    {showSeries && (
+      <div class="wisp-post-series-aside">
+        <div class="wisp-post-series-aside-inner">
+          <SeriesNav
+            items={series}
+            currentId={post.id}
+            title={seriesName || seriesTitle}
+            lang={lang}
+          />
+        </div>
+      </div>
+    )}
+
+    {showToc && (
+      <div class="wisp-post-aside">
+        <div class="wisp-post-aside-inner">
+          <Toc headings={tocHeadings} variant="aside" title={tocTitle} lang={lang} />
+        </div>
+      </div>
+    )}
+
+    <article class="wisp-post-article">
+      <header class="wisp-post-header">
+        <h1>
+          {chapterNo && <span class="wisp-chapter-no">{chapterNo}</span>}
+          <span
+            class:list={['wisp-chapter-title', { 'wisp-chapter-title-words': segmented }]}
+            set:html={titleHtml}
+          />
+        </h1>
+        <PostMeta
+          pubDate={pubDate}
+          updatedDate={updatedDate}
+          readingTime={readingTime}
+          category={category}
+          lang={lang}
+        />
+        {tags.length > 0 && <TagList tags={tags} class="wisp-post-tags" />}
+      </header>
+
+      {showToc && (
+        <div class="wisp-post-toc-inline">
+          <Toc headings={tocHeadings} variant="inline" title={tocTitle} lang={lang} />
+        </div>
+      )}
+
+      <div class="prose wisp-post-body">
+        <slot />
+      </div>
+
+      <footer>
+        <PrevNext prev={prev} next={next} lang={lang} />
+      </footer>
+    </article>
+  </div>
+
+  <BackToTop />
+</Base>
+
+<style>
+  /* 主题样式在 components 层：Tailwind 工具类与站点 customCss 总能覆盖 */
+  @layer components {
+    /* 窄屏：单栏，正文栏宽居中；系列与目录折叠在正文前 */
+    .wisp-post {
+      width: 100%;
+      max-width: calc(var(--wisp-measure) + 2 * var(--wisp-pad));
+      margin-inline: auto;
+      padding-inline: var(--wisp-pad);
+      padding-top: 2.5rem;
+    }
+    @media (min-width: 48rem) {
+      .wisp-post {
+        padding-top: 3.5rem;
+      }
+    }
+    .wisp-post-article {
+      min-width: 0;
+    }
+
+    /* 章首：章节号 + 标题 + 元信息，下方一条发丝线收住，像手册的章首页 */
+    .wisp-post-header {
+      margin-bottom: 2.5rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--wisp-border);
+    }
+    .wisp-post-header h1 {
+      margin: 0 0 1.25rem;
+      font-size: clamp(1.75rem, 1.25rem + 1.8vw, 2.25rem);
+      font-weight: 700;
+      line-height: 1.3;
+      letter-spacing: 0;
+    }
+    /* 章节号：大号细体强调色数字，独占一行；与目录、系列栏里的编号同源 */
+    .wisp-chapter-no {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: var(--wisp-accent);
+      font-size: 1.5em;
+      font-weight: 300;
+      line-height: 1;
+      font-variant-numeric: tabular-nums lining-nums;
+    }
+    .wisp-chapter-title {
+      display: block;
+    }
+    /* 依赖 <wbr> 词/子词断点自然折行；超长不可分字串在行尾由 overflow-wrap: anywhere 兜底 */
+    .wisp-chapter-title-words {
+      word-break: normal;
+      overflow-wrap: anywhere;
+    }
+    .wisp-post-header :global(.wisp-post-tags) {
+      margin-top: 0.625rem;
+      font-size: 0.8125rem;
+    }
+
+    .wisp-post-aside,
+    .wisp-post-series-aside {
+      display: none;
+    }
+
+    /*
+     * 侧栏共用：吸顶、限高。标题行固定在栏顶，只有下面的篇目（[data-rail-scroll]）独立滚动，
+     * 所以标题行永远贴着外框边线、两栏标题同一基线。
+     * 侧栏隐藏滚动条轨道（不与文字争抢窄栏宽度、不形成双竖线夹心），滚轮 / 触控板 / 键盘正常滚动；
+     * 上下渐隐遮罩由 global.css 的 scroll(self block) 纯 CSS 驱动。
+     */
+    .wisp-post-aside-inner,
+    .wisp-post-series-aside-inner {
+      position: sticky;
+      top: calc(var(--wisp-header-h) + 2rem);
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100dvh - var(--wisp-header-h) - 3rem);
+      max-width: var(--wisp-side);
+    }
+    .wisp-post-aside-inner > :global(nav),
+    .wisp-post-series-aside-inner > :global(nav) {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    /*
+     * 篇目滚动层：四周留缓冲内边距再用负外边距抵消——滚动容器会裁剪溢出，
+     * 这样链接的焦点环（2px + 2px 偏移）及系列栏当前篇左外侧悬挂的 2px 短竖标（-0.5rem）完整可见，
+     * 同时文字边线与栏顶标题严丝合缝对齐。
+     */
+    .wisp-post-aside-inner :global([data-rail-scroll]),
+    .wisp-post-series-aside-inner :global([data-rail-scroll]) {
+      --wisp-vfade-top-size: 2rem;
+      --wisp-vfade-bottom-size: 3rem;
+      flex: 0 1 auto;
+      min-height: 0;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: none;
+      margin-inline: -0.375rem;
+      padding: 0.375rem 0.375rem 2rem;
+    }
+    .wisp-post-series-aside-inner :global([data-rail-scroll]) {
+      margin-inline-start: -0.75rem;
+      padding-inline-start: 0.75rem;
+    }
+
+    /* 目录贴外框右缘，系列贴外框左缘：两侧栏的外边线与页头对齐 */
+    .wisp-post-aside-inner {
+      margin-inline-start: auto;
+    }
+
+    /* ≥ 60rem 且有目录：正文 + 右侧目录两栏，左边线与页头品牌对齐，右边线与页头右缘对齐 */
+    @media (min-width: 60rem) {
+      .wisp-post.wisp-has-toc {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(12rem, var(--wisp-side));
+        column-gap: var(--wisp-gutter);
+        max-width: calc(var(--wisp-shell) + 2 * var(--wisp-pad));
+      }
+      .wisp-post.wisp-has-toc .wisp-post-article {
+        grid-column: 1;
+        grid-row: 1;
+        max-width: var(--wisp-measure);
+      }
+      .wisp-post.wisp-has-toc .wisp-post-aside {
+        display: block;
+        grid-column: 2;
+        grid-row: 1;
+      }
+      .wisp-post.wisp-has-toc .wisp-post-toc-inline {
+        display: none;
+      }
+    }
+    /*
+     * 60–80rem 两栏时，文首的系列 <details> 占正文列第一行、正文排第二行，目录跨两行吸顶。
+     * 不显式放置的话它会被自动排到网格第二行，也就是整篇文章的最后。
+     */
+    @media (min-width: 60rem) and (max-width: 79.99rem) {
+      .wisp-post.wisp-has-toc.wisp-has-series .wisp-post-series-inline {
+        grid-column: 1;
+        grid-row: 1;
+        max-width: var(--wisp-measure);
+      }
+      .wisp-post.wisp-has-toc.wisp-has-series .wisp-post-article {
+        grid-row: 2;
+      }
+      .wisp-post.wisp-has-toc.wisp-has-series .wisp-post-aside {
+        grid-row: 1 / span 2;
+      }
+    }
+
+    /* ≥ 80rem：三栏。系列 | 正文 | 目录，两侧栏等宽，正文居中在页头正下方 */
+    @media (min-width: 80rem) {
+      .wisp-post.wisp-has-toc,
+      .wisp-post.wisp-has-series {
+        display: grid;
+        grid-template-columns: minmax(12rem, 1fr) minmax(0, var(--wisp-measure)) minmax(12rem, 1fr);
+        column-gap: var(--wisp-gutter);
+        max-width: calc(var(--wisp-shell) + 2 * var(--wisp-pad));
+      }
+      .wisp-post.wisp-has-toc .wisp-post-article,
+      .wisp-post.wisp-has-series .wisp-post-article {
+        grid-column: 2;
+        grid-row: 1;
+        max-width: none;
+      }
+      .wisp-post.wisp-has-toc .wisp-post-aside {
+        grid-column: 3;
+      }
+      .wisp-post-series-aside {
+        display: block;
+        grid-column: 1;
+        grid-row: 1;
+      }
+      .wisp-post-series-inline {
+        display: none;
+      }
+    }
+  }
+</style>
+
+<script>
+  // 侧栏篇目滚动层：打开文章时把系列栏滚到当前篇
+  const boxes = [
+    ...document.querySelectorAll<HTMLElement>('.wisp-post-series-aside-inner [data-rail-scroll]'),
+  ];
+  const reveal = (box: HTMLElement) => {
+    const cur = box.querySelector<HTMLElement>('.wisp-series a[aria-current="page"]');
+    if (!cur || !cur.offsetParent || !box.clientHeight) return;
+    const c = box.getBoundingClientRect();
+    const r = cur.getBoundingClientRect();
+    // 当前篇放在栏高约 1/3 处：上面留几篇已读的，下面多看几篇要读的
+    box.scrollTop += r.top - c.top - (box.clientHeight - r.height) / 3;
+  };
+  for (const box of boxes) {
+    reveal(box);
+    let shown = box.clientHeight > 0;
+    new ResizeObserver(() => {
+      const now = box.clientHeight > 0;
+      if (!shown && now) reveal(box);
+      shown = now;
+    }).observe(box);
+  }
+</script>

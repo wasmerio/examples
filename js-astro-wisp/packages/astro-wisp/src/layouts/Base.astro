@@ -1,0 +1,391 @@
+---
+/**
+ * 全站基础布局：主题初始化脚本（先于样式执行）、字体、meta/OG/canonical/RSS、lang、
+ * SkipLink、Header、<main id="main">、Footer。
+ * main 不限制宽度，页面自行使用 `.wisp-container` 或自己的网格。
+ */
+// 第一个引入：声明 cascade layer 顺序
+import '../styles/layers.css';
+// 思源黑体只在 CJK 页面按配置加载；Inter / JetBrains Mono 由 Astro Fonts API 提供（见 src/fonts.ts）
+import notoCssUrl from 'virtual:wisp/cjk-font-url';
+import 'virtual:wisp/theme-css';
+import '../styles/global.css';
+// 站点的 customCss：不分层、最后引入，可以覆盖主题样式和令牌
+import 'virtual:wisp/user-css';
+import { Font } from 'astro:assets';
+import config from 'virtual:wisp/config';
+import SkipLink from 'virtual:wisp/components/SkipLink';
+import Header from 'virtual:wisp/components/Header';
+import Footer from 'virtual:wisp/components/Footer';
+import CopyButton from 'virtual:wisp/components/CopyButton';
+import Lightbox from 'virtual:wisp/components/Lightbox';
+import Citations from 'virtual:wisp/components/Citations';
+import { sitePath } from '../utils/paths';
+
+export interface Props {
+  /** 页面标题；不传时只显示站点名。会自动拼成 “标题 · 站点名” */
+  title?: string;
+  /** meta description，默认站点描述 */
+  description?: string;
+  /** <html lang>，默认 config.site.lang */
+  lang?: string;
+  /** canonical URL（绝对或站内路径），默认当前 URL */
+  canonical?: string;
+  /** OG 图片（绝对或站内路径） */
+  image?: string;
+  /** og:type，默认 website；文章页为 article */
+  type?: 'website' | 'article';
+  /** 文章发布时间 / 更新时间（type=article 时输出 article:*） */
+  publishedTime?: Date;
+  modifiedTime?: Date;
+  /** 文章标签（输出 article:tag） */
+  tags?: string[];
+  /** 不希望被索引（如 404、草稿预览） */
+  noindex?: boolean;
+  /** 页眉的书眉（running head）：文章页传入系列名、章节位置与标题 */
+  running?: { label: string; href?: string; position?: string; title?: string };
+}
+
+const {
+  title,
+  description = config.site.description,
+  lang = config.site.lang,
+  image,
+  type = 'website',
+  publishedTime,
+  modifiedTime,
+  tags = [],
+  noindex = false,
+  running,
+} = Astro.props;
+
+const site = Astro.site ?? new URL(config.siteUrl);
+const base = import.meta.env.BASE_URL;
+const canonicalPath = Astro.props.canonical ?? Astro.url.pathname;
+const canonical = new URL(sitePath(base, canonicalPath), site).href;
+const fullTitle =
+  title && title !== config.site.title ? `${title} · ${config.site.title}` : config.site.title;
+const imageUrl = image ? new URL(sitePath(base, image), site).href : undefined;
+const ogLocale = lang.replace('-', '_');
+const needsCjkFont = /^(zh|ja|ko)\b/i.test(lang);
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="text-scale" content="scale" />
+    <script is:inline>
+      (() => {
+        try {
+          const s = localStorage.getItem('color-scheme');
+          if (s === 'light' || s === 'dark') {
+            document.head.querySelector('meta[name="color-scheme"]')?.setAttribute('content', s);
+          }
+        } catch {}
+        document.documentElement.dataset.wispJs = '';
+      })();
+    </script>
+    <script
+      is:inline
+      type="speculationrules"
+      set:html={JSON.stringify({
+        prefetch: [
+          {
+            where: {
+              and: [
+                { href_matches: '/*' },
+                { not: { selector_matches: '[download], [target="_blank"], [rel~="external"]' } },
+              ],
+            },
+            eagerness: 'conservative',
+          },
+        ],
+      })}
+    />
+    <script is:inline>
+      // 代码块自动换行的读者偏好（CopyButton 写入）：首帧前生效，避免先滚动后换行的跳动
+      try {
+        const w = localStorage.getItem('wisp-code-wrap');
+        if (w === 'on' || w === 'off') document.documentElement.dataset.wispCodeWrap = w;
+      } catch {}
+    </script>
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    {config.site.author && <meta name="author" content={config.site.author} />}
+    {noindex && <meta name="robots" content="noindex" />}
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" type="image/svg+xml" href={sitePath(base, '/favicon.svg')} />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={config.site.title}
+      href={new URL(sitePath(base, '/rss.xml'), site.origin).href}
+    />
+    <link rel="sitemap" href={sitePath(base, '/sitemap-index.xml')} />
+    <Font
+      cssVariable="--font-wisp-sans"
+      preload={[{ subset: 'latin', weight: 400, style: 'normal' }]}
+    />
+    <Font
+      cssVariable="--font-wisp-mono"
+      preload={[{ subset: 'latin', weight: 400, style: 'normal' }]}
+    />
+    <meta name="generator" content={Astro.generator} />
+    {needsCjkFont && notoCssUrl && <link rel="stylesheet" href={notoCssUrl} />}
+
+    <meta property="og:site_name" content={config.site.title} />
+    <meta property="og:title" content={title ?? config.site.title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content={type} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={ogLocale} />
+    {imageUrl && <meta property="og:image" content={imageUrl} />}
+    {imageUrl && <meta property="og:image:alt" content={description} />}
+    {type === 'article' && publishedTime && (
+      <meta property="article:published_time" content={publishedTime.toISOString()} />
+    )}
+    {type === 'article' && modifiedTime && (
+      <meta property="article:modified_time" content={modifiedTime.toISOString()} />
+    )}
+    {type === 'article' && tags.map((t) => <meta property="article:tag" content={t} />)}
+    <meta name="twitter:card" content={imageUrl ? 'summary_large_image' : 'summary'} />
+    <slot name="head" />
+  </head>
+  <body>
+    <SkipLink />
+    <Header running={running} />
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <Footer />
+    <Lightbox />
+    <CopyButton />
+    <Citations />
+    <script is:inline>
+      /*
+       * 横向滚动容器的溢出标记：data-wisp-overflow="start|end|both" 用于拖拽平移与可访问性焦点管理（tabindex / role="region"）；
+       * 边缘渐隐与纵向滚动渐隐全部由 global.css 内的 scroll(self inline/block) 纯 CSS 驱动。
+       * 代码块另记 data-wisp-wide（不换行时会溢出）——「自动换行」按钮只在这些块上出现。
+       * 站点自己的横向滚动容器加 data-wisp-scroll 属性即可加入。
+       */
+      (() => {
+        const zh = document.documentElement.lang.startsWith('zh');
+        const SEL =
+          '.wisp-pre, .prose pre:not(.wisp-pre), .wisp-table, .prose > table, .katex-display, .wisp-explainer__scroll, .wisp-pele-body, .wisp-diagram-body, [data-wisp-scroll]';
+        const side = (el) => {
+          const max = el.scrollWidth - el.clientWidth;
+          if (max <= 1) return '';
+          const x = Math.abs(el.scrollLeft);
+          return x <= 1 ? 'end' : x >= max - 1 ? 'start' : 'both';
+        };
+        const applyAttr = (el, name, v) => {
+          if ((el.getAttribute(name) || '') === v) return;
+          if (v) el.setAttribute(name, v);
+          else el.removeAttribute(name);
+        };
+        const mark = (el) => {
+          const v = side(el);
+          applyAttr(el, 'data-wisp-overflow', v);
+          return v;
+        };
+        const label = (el, overflow) => {
+          // 键盘：只有溢出的容器是 Tab 停靠点。主题写的 tabindex 带 data-wisp-tab（无 JS 回落），
+          // 没有 tabindex 的容器也归脚本管；站点自己写的 tabindex（没有 data-wisp-tab）保持不动
+          if ('wispTab' in el.dataset || !el.hasAttribute('tabindex')) {
+            el.dataset.wispTab = '';
+            if (overflow) el.tabIndex = 0;
+            else if (document.activeElement !== el) el.removeAttribute('tabindex');
+          }
+          // 名称：原始名称只记一次（data-wisp-label），每次都从它重新拼，所以反复 resize / 滚动不会叠加后缀
+          if (!('wispLabel' in el.dataset))
+            el.dataset.wispLabel = el.getAttribute('aria-label') || '';
+          const own = el.dataset.wispLabel;
+          if (!overflow) {
+            if (own) el.setAttribute('aria-label', own);
+            else el.removeAttribute('aria-label');
+            if ('wispRole' in el.dataset) {
+              el.removeAttribute('role');
+              delete el.dataset.wispRole;
+            }
+            return;
+          }
+          const base =
+            own ||
+            (el.classList.contains('wisp-pre') || el.tagName === 'PRE'
+              ? zh
+                ? '代码'
+                : 'Code'
+              : el.classList.contains('wisp-table') || el.tagName === 'TABLE'
+                ? zh
+                  ? '表格'
+                  : 'Table'
+                : el.classList.contains('katex-display')
+                  ? zh
+                    ? '公式'
+                    : 'Formula'
+                  : el.classList.contains('wisp-pele-body') ||
+                      el.classList.contains('wisp-diagram-body')
+                    ? zh
+                      ? '图表'
+                      : 'Diagram'
+                    : el.classList.contains('wisp-explainer__scroll')
+                      ? zh
+                        ? '交互图示'
+                        : 'Interactive diagram'
+                      : zh
+                        ? '内容'
+                        : 'Content');
+          if (!el.hasAttribute('role')) {
+            el.setAttribute('role', 'region');
+            el.dataset.wispRole = '';
+          }
+          el.setAttribute(
+            'aria-label',
+            zh ? `${base}，可横向滚动` : `${base}, horizontally scrollable`,
+          );
+        };
+        const update = () => {
+          // 代码块：先在“不换行”状态下统一测量一次（批量写 → 批量读 → 批量写，只触发一次布局）
+          const boxes = [...document.querySelectorAll('.wisp-code')];
+          boxes.forEach((b) => b.setAttribute('data-wisp-measure', ''));
+          const wide = boxes.map((b) => {
+            const pre = b.querySelector('.wisp-pre');
+            return !!pre && pre.scrollWidth > pre.clientWidth + 1;
+          });
+          boxes.forEach((b, i) => {
+            b.removeAttribute('data-wisp-measure');
+            b.toggleAttribute('data-wisp-wide', wide[i]);
+          });
+          // 批量读 → 批量写，避免交替读写触发布局抖动
+          const scrollEls = [...document.querySelectorAll(SEL)];
+          const scrollSides = scrollEls.map((el) => side(el));
+          scrollEls.forEach((el, i) => {
+            applyAttr(el, 'data-wisp-overflow', scrollSides[i]);
+            label(el, scrollSides[i] !== '');
+          });
+        };
+        let queued = false;
+        const schedule = () => {
+          if (queued) return;
+          queued = true;
+          requestAnimationFrame(() => {
+            queued = false;
+            update();
+          });
+        };
+        update();
+        addEventListener('resize', schedule, { passive: true });
+        document.addEventListener('wisp:overflow', schedule);
+        document.addEventListener('toggle', schedule, true);
+        if (window.ResizeObserver) new ResizeObserver(schedule).observe(document.body);
+        // 公式、思源黑体等字体换上后宽度会变，而 body 尺寸未必变
+        document.fonts?.ready.then(schedule);
+        // 滚动事件不冒泡：在捕获阶段统一接住，每个容器每帧最多更新一次
+        const pending = new Set();
+        document.addEventListener(
+          'scroll',
+          (e) => {
+            const el = e.target;
+            if (!(el instanceof Element) || !el.matches(SEL)) return;
+            if (pending.has(el)) return;
+            pending.add(el);
+            requestAnimationFrame(() => {
+              pending.delete(el);
+              mark(el);
+            });
+          },
+          { capture: true, passive: true },
+        );
+        // 超宽非代码容器（表格、宽 Mermaid、块级公式、讲解舞台）：支持鼠标按住拖拽平移（1D/2D 自适应，不影响选词与代码框选）
+        const DRAG_SEL =
+          '.wisp-table[data-wisp-overflow], .prose > table[data-wisp-overflow], .wisp-pele-body[data-wisp-overflow], .wisp-diagram-body[data-wisp-overflow], .katex-display[data-wisp-overflow], .wisp-explainer__scroll[data-wisp-overflow], [data-wisp-scroll][data-wisp-overflow]';
+        document.addEventListener('pointerdown', (e) => {
+          if (
+            e.pointerType !== 'mouse' ||
+            e.button !== 0 ||
+            e.altKey ||
+            e.ctrlKey ||
+            e.metaKey ||
+            e.shiftKey
+          )
+            return;
+          const target = e.target;
+          if (!(target instanceof Element)) return;
+          if (target.closest('a, button, input, select, textarea, summary, label, code, kbd, samp'))
+            return;
+          if ((getSelection()?.toString().length ?? 0) > 0) return;
+          const box = target.closest(DRAG_SEL);
+          if (!(box instanceof HTMLElement)) return;
+          const canX = box.scrollWidth > box.clientWidth + 1;
+          const canY = box.scrollHeight > box.clientHeight + 1;
+          if (!canX && !canY) return;
+          const startX = e.clientX;
+          const startY = e.clientY;
+          const startLeft = box.scrollLeft;
+          const startTop = box.scrollTop;
+          const pid = e.pointerId;
+          let active = false;
+          const onMove = (ev) => {
+            if (ev.pointerId !== pid) return;
+            const dx = ev.clientX - startX;
+            const dy = ev.clientY - startY;
+            if (!active) {
+              const started = canY
+                ? Math.hypot(dx, dy) >= 6
+                : Math.abs(dx) >= 6 && Math.abs(dx) > Math.abs(dy);
+              if (!started) return;
+              active = true;
+              box.setAttribute('data-wisp-dragging', '');
+              try {
+                box.setPointerCapture(pid);
+              } catch {}
+              getSelection()?.removeAllRanges();
+            }
+            ev.preventDefault();
+            if (canX) box.scrollLeft = startLeft - dx;
+            if (canY) box.scrollTop = startTop - dy;
+          };
+          const onEnd = (ev) => {
+            if (ev && ev.type !== 'blur' && ev.pointerId !== pid) return;
+            removeEventListener('pointermove', onMove);
+            removeEventListener('pointerup', onEnd);
+            removeEventListener('pointercancel', onEnd);
+            removeEventListener('blur', onEnd);
+            if (!active) return;
+            active = false;
+            box.removeAttribute('data-wisp-dragging');
+            try {
+              if (box.hasPointerCapture(pid)) box.releasePointerCapture(pid);
+            } catch {}
+            if (ev?.type === 'pointerup') {
+              // 刚完成拖拽平移时吞掉紧随其后的合成 click，避免松手误触发图表灯箱
+              const swallow = (ce) => {
+                ce.stopPropagation();
+                ce.preventDefault();
+              };
+              addEventListener('click', swallow, { capture: true, once: true });
+              setTimeout(() => removeEventListener('click', swallow, true), 0);
+            }
+          };
+          addEventListener('pointermove', onMove, { passive: false });
+          addEventListener('pointerup', onEnd);
+          addEventListener('pointercancel', onEnd);
+          addEventListener('blur', onEnd);
+        });
+      })();
+    </script>
+  </body>
+</html>
+
+<style>
+  /* 主题样式在 components 层：Tailwind 工具类与站点 customCss 总能覆盖 */
+  @layer components {
+    main {
+      display: block;
+      outline: none;
+    }
+  }
+</style>

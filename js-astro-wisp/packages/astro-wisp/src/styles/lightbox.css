@@ -1,0 +1,406 @@
+/* Progressive-enhancement lightbox. The source media keeps its existing layout rules. */
+
+.wisp-lightbox {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: var(--wisp-bg);
+  color: var(--wisp-fg);
+  opacity: 0;
+  transition:
+    opacity 160ms var(--wisp-ease),
+    display 160ms allow-discrete,
+    overlay 160ms allow-discrete;
+}
+
+.wisp-lightbox[open] {
+  display: block;
+  opacity: 1;
+}
+
+.wisp-lightbox::backdrop {
+  background: var(--wisp-bg);
+  overflow: hidden;
+  overscroll-behavior: contain;
+  opacity: 0;
+  transition:
+    opacity 160ms var(--wisp-ease),
+    display 160ms allow-discrete,
+    overlay 160ms allow-discrete;
+}
+
+.wisp-lightbox[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  .wisp-lightbox[open],
+  .wisp-lightbox[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .wisp-lightbox-stage {
+    transform: scale(0.97);
+    transition: transform 160ms var(--wisp-ease);
+  }
+  .wisp-lightbox[open] .wisp-lightbox-stage {
+    transform: scale(1);
+  }
+  @starting-style {
+    .wisp-lightbox[open] .wisp-lightbox-stage {
+      transform: scale(0.97);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wisp-lightbox,
+  .wisp-lightbox::backdrop {
+    transition-duration: 80ms;
+  }
+}
+
+.wisp-lightbox-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  touch-action: none;
+  cursor: default;
+}
+
+.wisp-lightbox-stage[data-pannable] .wisp-lightbox-media {
+  cursor: grab;
+}
+
+.wisp-lightbox-stage[data-dragging],
+.wisp-lightbox-stage[data-dragging] .wisp-lightbox-media,
+.wisp-lightbox-stage[data-dragging] .wisp-lightbox-media * {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.wisp-lightbox-media {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform-origin: center center;
+  line-height: 0;
+}
+
+.wisp-lightbox-media[data-animating] {
+  transition: transform 160ms var(--wisp-ease);
+}
+
+.wisp-lightbox-media > img,
+.wisp-lightbox-media > svg {
+  display: block;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/*
+ * 关闭按钮：与其他图标按钮同一规格——最小 44×44、4px 圆角、hover 只改颜色。
+ * 固定在视口右上角（对话框在顶层，fixed 相对视口），平移放大图时也始终够得着。
+ */
+.wisp-lightbox-close {
+  position: fixed;
+  z-index: 3;
+  inset-block-start: max(0.375rem, env(safe-area-inset-top));
+  inset-inline-end: max(0.375rem, env(safe-area-inset-right));
+  display: grid;
+  place-items: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0.25rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--wisp-muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 150ms;
+}
+
+.wisp-lightbox-close:hover {
+  color: var(--wisp-fg);
+}
+
+.wisp-lightbox-close:focus-visible {
+  border-radius: 2px;
+}
+
+/*
+ * 底部题注与缩放控制条：默认隐藏，鼠标移动、键盘聚焦控制条或缩放/平移偏离初始视图时淡入。
+ * 与 .wisp-fig-actions 同源：纸白实底 + 1px 发丝线 + 4px 圆角 + 竖线分隔，无阴影无毛玻璃。
+ */
+.wisp-lightbox-chrome {
+  position: fixed;
+  z-index: 2;
+  inset-block-end: max(1rem, env(safe-area-inset-bottom));
+  inset-inline: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 150ms var(--wisp-ease);
+}
+
+.wisp-lightbox[data-chrome='visible'] .wisp-lightbox-chrome,
+.wisp-lightbox-chrome:has(:focus-visible) {
+  opacity: 1;
+}
+
+.wisp-lightbox-caption {
+  max-width: min(42rem, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.25rem 0.625rem;
+  border-radius: 4px;
+  background: var(--wisp-bg);
+  color: var(--wisp-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: pretty;
+  transition: opacity 150ms var(--wisp-ease);
+}
+
+.wisp-lightbox-caption code {
+  padding: 0.0625em 0.25em;
+  border-radius: 3px;
+  background: var(--wisp-code-bg);
+  font-size: 0.875em;
+}
+
+.wisp-lightbox[data-zoomed] .wisp-lightbox-caption {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wisp-lightbox-controls {
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+  border: 1px solid var(--wisp-border);
+  border-radius: 4px;
+  background: var(--wisp-bg);
+  color: var(--wisp-muted);
+  font-size: 0.8125rem;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.wisp-lightbox[data-chrome='visible'] .wisp-lightbox-controls,
+.wisp-lightbox-chrome:has(:focus-visible) .wisp-lightbox-controls {
+  pointer-events: auto;
+}
+
+.wisp-lightbox-controls > * + *::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  width: 1px;
+  height: 1rem;
+  transform: translateY(-50%);
+  background: var(--wisp-border);
+  pointer-events: none;
+}
+
+.wisp-lightbox-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--wisp-muted);
+  cursor: pointer;
+  transition:
+    color 150ms,
+    background-color 150ms;
+}
+
+.wisp-lightbox-btn:not([aria-disabled='true']):hover {
+  color: var(--wisp-fg);
+  background: var(--wisp-surface);
+}
+
+.wisp-lightbox-btn[aria-disabled='true'] {
+  color: var(--wisp-subtle);
+  cursor: default;
+}
+
+.wisp-lightbox-btn:focus-visible {
+  outline: 2px solid var(--wisp-accent);
+  outline-offset: -2px;
+  border-radius: 2px;
+}
+
+.wisp-lightbox-pct {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.75rem;
+  padding-inline: 0.375rem;
+  color: var(--wisp-muted);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+@media (pointer: coarse), (max-width: 40rem) {
+  .wisp-lightbox-btn {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
+.wisp-diagram-body,
+.wisp-pele-body,
+.wisp-image {
+  position: relative;
+}
+
+.wisp-lightbox-trigger {
+  position: absolute;
+  inset-block-end: 0.25rem;
+  inset-inline-end: 0.25rem;
+  z-index: 2;
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--wisp-muted);
+  cursor: zoom-in;
+  transition:
+    opacity 150ms,
+    color 150ms;
+}
+
+.wisp-image > .wisp-lightbox-trigger {
+  inset-block-end: auto;
+  inset-block-start: 0.25rem;
+}
+
+.wisp-lightbox-trigger::before {
+  content: '';
+  position: absolute;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--wisp-border);
+  border-radius: 4px;
+  background: var(--wisp-bg);
+  pointer-events: none;
+  transition: border-color 150ms;
+}
+
+.wisp-lightbox-trigger > svg {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.wisp-lightbox-trigger:hover {
+  color: var(--wisp-accent);
+}
+
+.wisp-lightbox-trigger:hover::before {
+  border-color: var(--wisp-muted);
+}
+
+.wisp-lightbox-trigger:focus-visible {
+  outline: 2px solid var(--wisp-accent);
+  outline-offset: -4px;
+  border-radius: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .wisp-lightbox-trigger {
+    opacity: 0;
+  }
+
+  :is(.wisp-diagram, .wisp-pele, .wisp-image, .wisp-figure):is(:hover, :focus-within)
+    .wisp-lightbox-trigger,
+  .wisp-lightbox-trigger:hover,
+  .wisp-lightbox-trigger:focus-visible {
+    opacity: 1;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .wisp-lightbox-trigger {
+    opacity: 1;
+  }
+}
+
+@media (forced-colors: active) {
+  .wisp-lightbox {
+    border: 1px solid CanvasText;
+  }
+  .wisp-lightbox-controls,
+  .wisp-lightbox-caption {
+    background: Canvas;
+    color: CanvasText;
+    border: 1px solid CanvasText;
+  }
+  .wisp-lightbox-btn {
+    color: ButtonText;
+    forced-color-adjust: auto;
+  }
+  .wisp-lightbox-btn[aria-disabled='true'] {
+    color: GrayText;
+  }
+  .wisp-lightbox-trigger {
+    color: ButtonText;
+    forced-color-adjust: auto;
+  }
+  .wisp-lightbox-trigger::before {
+    background: ButtonFace;
+    border-color: ButtonText;
+  }
+}
+
+@media print {
+  .wisp-lightbox-trigger {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wisp-lightbox-stage,
+  .wisp-lightbox-media,
+  .wisp-lightbox-chrome,
+  .wisp-lightbox-caption,
+  .wisp-lightbox-btn,
+  .wisp-lightbox-close,
+  .wisp-lightbox-trigger,
+  .wisp-lightbox-trigger::before {
+    transition: none;
+  }
+}

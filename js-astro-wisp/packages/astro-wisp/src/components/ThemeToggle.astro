@@ -1,0 +1,140 @@
+---
+/**
+ * 双态主题切换按钮：直接切换当前明暗（`<meta name="color-scheme">`）。
+ * 切回与系统一致时删除 `localStorage('color-scheme')` 覆盖并恢复 `light dark`，跟随系统变化；
+ * 图标由 CSS `:has(> head > meta[name="color-scheme"])` + `@media (prefers-color-scheme: dark)` 驱动，首屏零跳变。
+ * 本组件无 props。
+ */
+import Icon from 'virtual:wisp/components/Icon';
+import config from 'virtual:wisp/config';
+
+export type Props = Record<string, never>;
+const zh = /^zh\b/i.test(config.site.lang);
+---
+
+<button
+  type="button"
+  class="wisp-theme-toggle"
+  data-wisp-theme-toggle
+  aria-pressed="false"
+  aria-label={zh ? '深色模式' : 'Dark mode'}
+>
+  <Icon name="sun" size={18} class="i-light" />
+  <Icon name="moon" size={18} class="i-dark" />
+</button>
+
+<style>
+  /* 主题样式在 components 层：Tailwind 工具类与站点 customCss 总能覆盖 */
+  @layer components {
+    .wisp-theme-toggle {
+      display: inline-grid;
+      place-items: center;
+      min-width: 2.75rem;
+      min-height: 2.75rem;
+      padding: 0.25rem;
+      margin-inline-end: -0.5rem;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--wisp-muted);
+      cursor: pointer;
+      transition: color 150ms;
+    }
+    .wisp-theme-toggle:hover {
+      color: var(--wisp-fg);
+    }
+    /* 焦点环按规范 2px 圆角（组件自身的 4px 会盖过全局焦点环的圆角） */
+    .wisp-theme-toggle:focus-visible {
+      border-radius: 2px;
+    }
+    .wisp-theme-toggle :global(svg) {
+      transition: transform 160ms var(--wisp-ease);
+    }
+    .wisp-theme-toggle :global(.i-dark) {
+      display: none;
+    }
+    .wisp-theme-toggle :global(.i-light) {
+      display: block;
+    }
+    @media (prefers-color-scheme: dark) {
+      :global(:root:not(:has(> head > meta[name='color-scheme'][content='light'])))
+        .wisp-theme-toggle
+        :global(.i-dark) {
+        display: block;
+      }
+      :global(:root:not(:has(> head > meta[name='color-scheme'][content='light'])))
+        .wisp-theme-toggle
+        :global(.i-light) {
+        display: none;
+      }
+    }
+    :global(:root:has(> head > meta[name='color-scheme'][content='dark']))
+      .wisp-theme-toggle
+      :global(.i-dark) {
+      display: block;
+    }
+    :global(:root:has(> head > meta[name='color-scheme'][content='dark']))
+      .wisp-theme-toggle
+      :global(.i-light) {
+      display: none;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .wisp-theme-toggle:active :global(svg) {
+        transform: scale(0.9);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wisp-theme-toggle :global(svg) {
+        transition: none;
+      }
+    }
+    @media (forced-colors: active) {
+      .wisp-theme-toggle {
+        color: ButtonText;
+        forced-color-adjust: auto;
+      }
+    }
+  }
+</style>
+
+<script>
+  const STORAGE_KEY = 'color-scheme';
+  const mq = matchMedia('(prefers-color-scheme: dark)');
+  const meta = document.head.querySelector('meta[name="color-scheme"]');
+  const systemTheme = () => (mq.matches ? 'dark' : 'light');
+  const currentTheme = () => {
+    const content = meta?.getAttribute('content');
+    return content === 'light' || content === 'dark' ? content : systemTheme();
+  };
+  const sync = (content: 'light' | 'dark' | 'light dark') => {
+    meta?.setAttribute('content', content);
+    const dark = (content === 'light dark' ? systemTheme() : content) === 'dark';
+    for (const btn of document.querySelectorAll('[data-wisp-theme-toggle]')) {
+      btn.setAttribute('aria-pressed', String(dark));
+    }
+  };
+
+  const initial = meta?.getAttribute('content');
+  sync(initial === 'light' || initial === 'dark' ? initial : 'light dark');
+
+  document.addEventListener('click', (e) => {
+    if (!(e.target as Element).closest?.('[data-wisp-theme-toggle]')) return;
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    const matchesSystem = next === systemTheme();
+    try {
+      if (matchesSystem) localStorage.removeItem(STORAGE_KEY);
+      else localStorage.setItem(STORAGE_KEY, next);
+    } catch {}
+    sync(matchesSystem ? 'light dark' : next);
+  });
+
+  mq.addEventListener('change', () => {
+    if (meta?.getAttribute('content') === 'light dark') sync('light dark');
+  });
+
+  addEventListener('storage', (e) => {
+    if (e.key !== null && e.key !== STORAGE_KEY) return;
+    const val = e.newValue === 'light' || e.newValue === 'dark' ? e.newValue : 'light dark';
+    sync(val);
+  });
+</script>

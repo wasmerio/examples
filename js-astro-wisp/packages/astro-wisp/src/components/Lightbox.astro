@@ -1,0 +1,955 @@
+---
+/**
+ * Progressive-enhancement lightbox for article images and inline SVG.
+ *
+ * The dialog is present in the HTML, but remains hidden until the browser's
+ * native dialog API is available. The script enhances rendered media with a
+ * full-viewport zoom/pan inspector while leaving original DOM intact without JS.
+ */
+import Icon from 'virtual:wisp/components/Icon';
+---
+
+<dialog
+  id="wisp-lightbox"
+  class="wisp-lightbox"
+  closedby="any"
+  aria-labelledby="wisp-lightbox-title"
+>
+  <div class="wisp-lightbox-stage" data-lightbox-stage>
+    <div class="wisp-lightbox-media" data-lightbox-media></div>
+  </div>
+  <button
+    class="wisp-lightbox-close"
+    type="button"
+    command="close"
+    commandfor="wisp-lightbox"
+    autofocus
+    data-lightbox-close
+    aria-label="关闭"
+  >
+    <Icon name="x" size={20} />
+  </button>
+  <div class="wisp-lightbox-chrome" data-lightbox-chrome>
+    <p class="wisp-lightbox-caption" data-lightbox-caption hidden></p>
+    <div class="wisp-lightbox-controls" role="toolbar" aria-label="缩放控制" data-lightbox-controls>
+      <button
+        class="wisp-lightbox-btn"
+        type="button"
+        data-lightbox-zoom-out
+        aria-label="缩小"
+        title="缩小 (-)"
+      >
+        <Icon name="minus" size={16} />
+      </button>
+      <span class="wisp-lightbox-pct" data-lightbox-pct>
+        100%
+      </span>
+      <button
+        class="wisp-lightbox-btn"
+        type="button"
+        data-lightbox-zoom-in
+        aria-label="放大"
+        title="放大 (+)"
+      >
+        <Icon name="plus" size={16} />
+      </button>
+      <button
+        class="wisp-lightbox-btn"
+        type="button"
+        data-lightbox-reset
+        aria-label="重置视图"
+        title="重置视图 (0)"
+      >
+        <Icon name="rotate-ccw" size={15} />
+      </button>
+    </div>
+  </div>
+  <h2 class="wisp-sr-only" id="wisp-lightbox-title" data-lightbox-title></h2>
+  <p
+    class="wisp-sr-only"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+    data-lightbox-status
+  ></p>
+</dialog>
+<template id="wisp-lightbox-expand-ic">
+  <Icon name="maximize-2" size={14} />
+</template>
+
+<script>
+  import {
+    canPan,
+    clampPan,
+    classifyWheel,
+    computeLightboxMetrics,
+    doubleClickTargetScale,
+    formatZoomPercent,
+    isViewModified,
+    zoomAtPoint,
+    type LightboxMetrics,
+    type MediaKind,
+    type ViewState,
+  } from './lightbox-view';
+
+  (() => {
+    if (typeof HTMLDialogElement === 'undefined') return;
+    const dialogEl = document.querySelector('.wisp-lightbox');
+    if (!(dialogEl instanceof HTMLDialogElement) || typeof dialogEl.showModal !== 'function')
+      return;
+
+    const stageEl = dialogEl.querySelector('[data-lightbox-stage]');
+    const mediaSlotEl = dialogEl.querySelector('[data-lightbox-media]');
+    const titleEl = dialogEl.querySelector('[data-lightbox-title]');
+    const closeBtn = dialogEl.querySelector('[data-lightbox-close]');
+    const chromeEl = dialogEl.querySelector('[data-lightbox-chrome]');
+    const captionEl = dialogEl.querySelector('[data-lightbox-caption]');
+    const controlsEl = dialogEl.querySelector('[data-lightbox-controls]');
+    const zoomOutBtn = dialogEl.querySelector('[data-lightbox-zoom-out]');
+    const zoomInBtn = dialogEl.querySelector('[data-lightbox-zoom-in]');
+    const resetBtn = dialogEl.querySelector('[data-lightbox-reset]');
+    const pctEl = dialogEl.querySelector('[data-lightbox-pct]');
+    const statusEl = dialogEl.querySelector('[data-lightbox-status]');
+    const expandTpl = document.getElementById('wisp-lightbox-expand-ic');
+
+    if (
+      !(stageEl instanceof HTMLElement) ||
+      !(mediaSlotEl instanceof HTMLElement) ||
+      !(titleEl instanceof HTMLElement) ||
+      !(closeBtn instanceof HTMLButtonElement) ||
+      !(chromeEl instanceof HTMLElement) ||
+      !(captionEl instanceof HTMLElement) ||
+      !(controlsEl instanceof HTMLElement) ||
+      !(zoomOutBtn instanceof HTMLButtonElement) ||
+      !(zoomInBtn instanceof HTMLButtonElement) ||
+      !(resetBtn instanceof HTMLButtonElement) ||
+      !(pctEl instanceof HTMLElement) ||
+      !(statusEl instanceof HTMLElement)
+    )
+      return;
+
+    const dialog = dialogEl;
+    const stage = stageEl;
+    const mediaSlot = mediaSlotEl;
+    const title = titleEl;
+    const close = closeBtn;
+    const caption = captionEl;
+    const controls = controlsEl;
+    const zoomOut = zoomOutBtn;
+    const zoomIn = zoomInBtn;
+    const reset = resetBtn;
+    const pct = pctEl;
+    const status = statusEl;
+
+    const isChinese = /^zh(?:-|$)/i.test(document.documentElement.lang);
+    const labels = {
+      image: isChinese ? '图片' : 'Image',
+      chart: isChinese ? '图表' : 'Chart',
+      open: isChinese ? '放大查看：' : 'Open image: ',
+      close: isChinese ? '关闭' : 'Close',
+      toolbar: isChinese ? '缩放控制' : 'Zoom controls',
+      zoomOut: isChinese ? '缩小' : 'Zoom out',
+      zoomOutTitle: isChinese ? '缩小 (-)' : 'Zoom out (-)',
+      zoomIn: isChinese ? '放大' : 'Zoom in',
+      zoomInTitle: isChinese ? '放大 (+)' : 'Zoom in (+)',
+      reset: isChinese ? '重置视图' : 'Reset view',
+      resetTitle: isChinese ? '重置视图 (0)' : 'Reset view (0)',
+      zoomPrefix: isChinese ? '缩放比例 ' : 'Zoom ',
+    };
+
+    close.setAttribute('aria-label', labels.close);
+    controls.setAttribute('aria-label', labels.toolbar);
+    zoomOut.setAttribute('aria-label', labels.zoomOut);
+    zoomOut.setAttribute('title', labels.zoomOutTitle);
+    zoomIn.setAttribute('aria-label', labels.zoomIn);
+    zoomIn.setAttribute('title', labels.zoomInTitle);
+    reset.setAttribute('aria-label', labels.reset);
+    reset.setAttribute('title', labels.resetTitle);
+
+    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+    const coarsePointer = matchMedia('(hover: none), (pointer: coarse)');
+
+    let activeTrigger: HTMLElement | null = null;
+    let activeMedia: HTMLElement | SVGElement | null = null;
+    let metrics: LightboxMetrics | null = null;
+    let state: ViewState = { scale: 1, tx: 0, ty: 0 };
+    let committedScale = 1;
+    let idSequence = 0;
+
+    let pointerActive = false;
+    let hoveringChrome = false;
+    let lastMouseX: number | null = null;
+    let lastMouseY: number | null = null;
+    let chromeTimer = 0;
+    let commitTimer = 0;
+    let animTimer = 0;
+    let announceTimer = 0;
+    let suppressTimer = 0;
+    let suppressNextClick = false;
+
+    const pointers = new Map<number, { x: number; y: number }>();
+    let panOrigin: {
+      x: number;
+      y: number;
+      tx: number;
+      ty: number;
+      moved: boolean;
+      onMedia: boolean;
+    } | null = null;
+    let pinchOrigin: {
+      dist: number;
+      midX: number;
+      midY: number;
+      scale: number;
+      tx: number;
+      ty: number;
+    } | null = null;
+    let lastTap: { time: number; x: number; y: number } | null = null;
+
+    function readableLabel(source: Element): string {
+      if (source instanceof HTMLImageElement) return source.alt.trim() || labels.image;
+      const aria = source.getAttribute('aria-label')?.trim();
+      if (aria) return aria;
+      const svgTitle = source.querySelector(':scope > title')?.textContent?.trim();
+      if (svgTitle) return svgTitle;
+      const parentLabel = source.closest('[aria-label]')?.getAttribute('aria-label')?.trim();
+      return parentLabel || (source.closest('.wisp-diagram') ? labels.chart : labels.image);
+    }
+
+    function remapSvgIds(svg: SVGElement): SVGElement {
+      const elements = [svg, ...svg.querySelectorAll('*')];
+      const ids = new Map<string, string>();
+      for (const element of elements) {
+        if (!element.id) continue;
+        idSequence += 1;
+        ids.set(element.id, `${element.id}-lightbox-${idSequence}`);
+      }
+      if (!ids.size) return svg;
+      for (const element of elements) {
+        for (const attribute of [...element.attributes]) {
+          if (attribute.name === 'id') {
+            attribute.value = ids.get(attribute.value) || attribute.value;
+            continue;
+          }
+          let value = attribute.value;
+          for (const [oldId, newId] of ids) {
+            value = value.replaceAll(`url(#${oldId})`, `url(#${newId})`);
+            value = value.replaceAll(`#${oldId}`, `#${newId}`);
+            if (attribute.name === 'aria-labelledby' || attribute.name === 'aria-describedby') {
+              value = value
+                .split(/\s+/)
+                .map((part) => ids.get(part) || part)
+                .join(' ');
+            }
+          }
+          attribute.value = value;
+        }
+      }
+      return svg;
+    }
+
+    function parsePxAttr(el: Element, attr: string): number {
+      const raw = (el.getAttribute(attr) || '').trim();
+      if (!raw) return 0;
+      const stripped = raw.replace(/px$/i, '');
+      if (/[a-z%]/i.test(stripped)) return 0;
+      const n = Number.parseFloat(stripped);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+
+    function measureNaturalSize(source: HTMLElement | SVGElement): {
+      nw: number;
+      nh: number;
+      kind: MediaKind;
+    } {
+      if (source instanceof HTMLImageElement) {
+        const rect = source.getBoundingClientRect();
+        const nw = source.naturalWidth || parsePxAttr(source, 'width') || rect.width || 1;
+        const nh = source.naturalHeight || parsePxAttr(source, 'height') || rect.height || 1;
+        return { nw, nh, kind: 'img' };
+      }
+      const vb = source instanceof SVGSVGElement ? source.viewBox?.baseVal : null;
+      if (vb && vb.width > 0 && vb.height > 0) {
+        return { nw: vb.width, nh: vb.height, kind: 'svg' };
+      }
+      const rect = source.getBoundingClientRect();
+      const nw = parsePxAttr(source, 'width') || rect.width || 1;
+      const nh = parsePxAttr(source, 'height') || rect.height || 1;
+      return { nw, nh, kind: 'svg' };
+    }
+
+    function cloneForDialog(
+      source: HTMLElement | SVGElement,
+      nw: number,
+      nh: number,
+    ): HTMLElement | SVGElement {
+      const clone = source.cloneNode(true) as HTMLElement | SVGElement;
+      clone.removeAttribute('data-wisp-lightbox-trigger');
+      clone.removeAttribute('tabindex');
+      clone.removeAttribute('aria-haspopup');
+      clone.style.removeProperty('cursor');
+      clone.style.maxWidth = 'none';
+      clone.style.maxHeight = 'none';
+      clone.style.minWidth = '0';
+      clone.style.minHeight = '0';
+      clone.setAttribute('aria-hidden', 'false');
+      if (clone instanceof SVGElement) {
+        if (!clone.getAttribute('viewBox') && nw > 0 && nh > 0) {
+          clone.setAttribute('viewBox', `0 0 ${nw} ${nh}`);
+        }
+        clone.removeAttribute('width');
+        clone.removeAttribute('height');
+        clone.setAttribute('role', 'img');
+        clone.setAttribute('aria-label', readableLabel(source));
+        remapSvgIds(clone);
+      }
+      if (clone instanceof HTMLImageElement) {
+        clone.removeAttribute('aria-label');
+        clone.loading = 'eager';
+        clone.draggable = false;
+      }
+      return clone;
+    }
+
+    function extractCaption(source: Element) {
+      const figcaption = source.closest('figure')?.querySelector(':scope > figcaption');
+      if (!figcaption || !figcaption.textContent?.trim()) {
+        caption.replaceChildren();
+        caption.hidden = true;
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      for (const child of figcaption.childNodes) {
+        const node = child.cloneNode(true);
+        if (node instanceof Element) {
+          node.removeAttribute('id');
+          for (const el of node.querySelectorAll('[id]')) el.removeAttribute('id');
+        }
+        frag.append(node);
+      }
+      caption.replaceChildren(frag);
+      caption.hidden = false;
+    }
+
+    function stageSize(): { vw: number; vh: number; left: number; top: number } {
+      const rect = dialog.getBoundingClientRect();
+      return {
+        vw:
+          stage.clientWidth ||
+          dialog.clientWidth ||
+          document.documentElement.clientWidth ||
+          innerWidth,
+        vh: stage.clientHeight || dialog.clientHeight || innerHeight,
+        left: rect.left,
+        top: rect.top,
+      };
+    }
+
+    function syncChrome() {
+      const modified = metrics ? isViewModified(state, metrics) : false;
+      if (modified || pointerActive || hoveringChrome) {
+        dialog.dataset.chrome = 'visible';
+      } else {
+        delete dialog.dataset.chrome;
+      }
+    }
+
+    function pokeChrome(ms = 2000) {
+      pointerActive = true;
+      clearTimeout(chromeTimer);
+      syncChrome();
+      chromeTimer = window.setTimeout(() => {
+        pointerActive = false;
+        syncChrome();
+      }, ms);
+    }
+
+    function cancelAnimation() {
+      clearTimeout(animTimer);
+      animTimer = 0;
+      delete mediaSlot.dataset.animating;
+    }
+
+    function commitSvgSize() {
+      if (!(activeMedia instanceof SVGElement) || !metrics) return;
+      if (mediaSlot.hasAttribute('data-animating')) return;
+      if (Math.abs(committedScale - state.scale) <= 0.001) return;
+      committedScale = state.scale;
+      activeMedia.style.width = `${metrics.nw * committedScale}px`;
+      activeMedia.style.height = `${metrics.nh * committedScale}px`;
+      mediaSlot.style.transform = `translate(calc(-50% + ${state.tx}px), calc(-50% + ${state.ty}px))`;
+    }
+
+    function scheduleCommit() {
+      clearTimeout(commitTimer);
+      if (!(activeMedia instanceof SVGElement)) return;
+      commitTimer = window.setTimeout(() => commitSvgSize(), 120);
+    }
+
+    function announceScale() {
+      clearTimeout(announceTimer);
+      announceTimer = window.setTimeout(() => {
+        status.textContent = `${labels.zoomPrefix}${formatZoomPercent(state.scale)}`;
+      }, 250);
+    }
+
+    function renderTransform() {
+      if (!activeMedia) return;
+      const isSvg = activeMedia instanceof SVGElement;
+      const relScale = isSvg ? state.scale / committedScale : state.scale;
+      const scalePart = Math.abs(relScale - 1) > 0.0005 ? ` scale(${relScale})` : '';
+      mediaSlot.style.transform = `translate(calc(-50% + ${state.tx}px), calc(-50% + ${state.ty}px))${scalePart}`;
+    }
+
+    function syncUi() {
+      if (!metrics) return;
+      pct.textContent = formatZoomPercent(state.scale);
+      zoomOut.setAttribute('aria-disabled', String(state.scale <= metrics.minScale + 0.001));
+      zoomIn.setAttribute('aria-disabled', String(state.scale >= metrics.maxScale - 0.001));
+      reset.setAttribute('aria-disabled', String(!isViewModified(state, metrics)));
+
+      if (canPan(state.scale, metrics)) {
+        stage.dataset.pannable = '';
+      } else {
+        delete stage.dataset.pannable;
+      }
+
+      if (state.scale > metrics.initialScale * 1.05) {
+        dialog.dataset.zoomed = '';
+      } else {
+        delete dialog.dataset.zoomed;
+      }
+
+      syncChrome();
+    }
+
+    function applyTransform(animate = false, deferSvgCommit = false) {
+      if (!metrics || !activeMedia) return;
+      const isSvg = activeMedia instanceof SVGElement;
+
+      cancelAnimation();
+      if (animate && !reduceMotion.matches) {
+        mediaSlot.dataset.animating = '';
+        animTimer = window.setTimeout(() => {
+          cancelAnimation();
+          commitSvgSize();
+        }, 200);
+      }
+
+      renderTransform();
+      syncUi();
+
+      if (isSvg && (!animate || reduceMotion.matches)) {
+        if (deferSvgCommit) scheduleCommit();
+        else commitSvgSize();
+      }
+    }
+
+    function setZoomAt(nextScale: number, anchorX: number, anchorY: number, animate: boolean) {
+      if (!metrics) return;
+      state = zoomAtPoint(state, nextScale, anchorX, anchorY, metrics);
+      applyTransform(animate);
+      announceScale();
+    }
+
+    function setZoomAtCenter(nextScale: number, animate: boolean) {
+      const { vw, vh } = stageSize();
+      setZoomAt(nextScale, vw / 2, vh / 2, animate);
+    }
+
+    function stepZoom(factor: number) {
+      if (!metrics) return;
+      setZoomAtCenter(state.scale * factor, true);
+    }
+
+    function resetView(animate = true) {
+      if (!metrics) return;
+      state = { scale: metrics.initialScale, tx: 0, ty: 0 };
+      applyTransform(animate);
+      announceScale();
+    }
+
+    function panBy(dx: number, dy: number) {
+      if (!metrics || !canPan(state.scale, metrics)) return;
+      const clamped = clampPan(state.tx + dx, state.ty + dy, state.scale, metrics);
+      state = { scale: state.scale, tx: clamped.tx, ty: clamped.ty };
+      applyTransform(false);
+    }
+
+    function open(source: HTMLElement | SVGElement, trigger: HTMLElement | null = null) {
+      if (dialog.open) dialog.close();
+      activeTrigger = trigger;
+      clearTimeout(chromeTimer);
+      clearTimeout(commitTimer);
+      clearTimeout(animTimer);
+      clearTimeout(announceTimer);
+      clearTimeout(suppressTimer);
+      pointers.clear();
+      panOrigin = null;
+      pinchOrigin = null;
+      lastTap = null;
+      suppressNextClick = false;
+      pointerActive = false;
+      hoveringChrome = false;
+      lastMouseX = null;
+      lastMouseY = null;
+      delete dialog.dataset.chrome;
+      delete dialog.dataset.zoomed;
+      delete stage.dataset.dragging;
+      delete stage.dataset.pannable;
+      delete mediaSlot.dataset.animating;
+
+      const label = readableLabel(source);
+      title.textContent = label;
+      status.textContent = '';
+
+      const { nw, nh, kind } = measureNaturalSize(source);
+      const clone = cloneForDialog(source, nw, nh);
+      activeMedia = clone;
+      extractCaption(source);
+
+      mediaSlot.replaceChildren(clone);
+      dialog.showModal();
+
+      const { vw, vh } = stageSize();
+      metrics = computeLightboxMetrics(vw, vh, nw, nh, kind);
+      state = { scale: metrics.initialScale, tx: 0, ty: 0 };
+
+      if (clone instanceof SVGElement) {
+        committedScale = state.scale;
+        clone.style.width = `${metrics.nw * committedScale}px`;
+        clone.style.height = `${metrics.nh * committedScale}px`;
+      } else {
+        committedScale = 1;
+        clone.style.width = `${metrics.nw}px`;
+        clone.style.height = `${metrics.nh}px`;
+        if (clone instanceof HTMLImageElement && (!clone.complete || clone.naturalWidth === 0)) {
+          clone.addEventListener(
+            'load',
+            () => {
+              if (!dialog.open || activeMedia !== clone || !clone.naturalWidth) return;
+              const s = stageSize();
+              metrics = computeLightboxMetrics(
+                s.vw,
+                s.vh,
+                clone.naturalWidth,
+                clone.naturalHeight,
+                'img',
+              );
+              clone.style.width = `${metrics.nw}px`;
+              clone.style.height = `${metrics.nh}px`;
+              state = { scale: metrics.initialScale, tx: 0, ty: 0 };
+              applyTransform(false);
+            },
+            { once: true },
+          );
+        }
+      }
+
+      applyTransform(false);
+      if (coarsePointer.matches) pokeChrome(2500);
+      close.focus({ preventScroll: true });
+    }
+
+    function enhance(source: HTMLElement | SVGElement) {
+      if (source.dataset.wispLightboxBound) return;
+      source.dataset.wispLightboxBound = '1';
+      source.style.cursor = 'zoom-in';
+
+      const host = source.closest(
+        '.wisp-diagram-body, .wisp-pele-body, figure.wisp-image, figure.wisp-figure',
+      );
+      let trigger: HTMLElement | null = null;
+      if (host) {
+        if (host.getAttribute('role') === 'img') host.setAttribute('role', 'group');
+        const existing = host.querySelector(':scope > [data-wisp-lightbox-trigger]');
+        if (existing instanceof HTMLElement) {
+          trigger = existing;
+        } else {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'wisp-lightbox-trigger';
+          btn.setAttribute('data-wisp-lightbox-trigger', '');
+          btn.setAttribute('aria-haspopup', 'dialog');
+          btn.setAttribute('aria-label', `${labels.open}${readableLabel(source)}`);
+          const expandIcon =
+            expandTpl instanceof HTMLTemplateElement
+              ? expandTpl.content.firstElementChild?.cloneNode(true)
+              : null;
+          if (expandIcon) btn.append(expandIcon);
+          btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            open(source, btn);
+          });
+          host.append(btn);
+          trigger = btn;
+        }
+      }
+      source.addEventListener('click', () => open(source, trigger));
+    }
+
+    for (const source of document.querySelectorAll('.prose img, .prose svg')) {
+      if (!(source instanceof HTMLElement || source instanceof SVGElement)) continue;
+      // 交互讲解组件（React islands）内的 SVG 是可操作舞台，增强成放大触发器
+      // 会弹出静态克隆、并与客户端水合打架（role 不一致），必须排除。
+      if (
+        source.closest(
+          '.wisp-explainer, .wisp-explainer__scroll, a, button, dialog, pre, .wisp-fig-actions',
+        )
+      )
+        continue;
+      if (source instanceof SVGElement) {
+        if (source.matches('.wisp-icon') || source.parentElement?.closest('svg')) continue;
+        if (!source.closest('figure, .wisp-pele-body, .wisp-diagram-body')) continue;
+      }
+      enhance(source);
+    }
+
+    mediaSlot.addEventListener('transitionend', (e) => {
+      if (e.target !== mediaSlot || e.propertyName !== 'transform') return;
+      if (!mediaSlot.hasAttribute('data-animating')) return;
+      cancelAnimation();
+      commitSvgSize();
+    });
+
+    dialog.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'mouse') return;
+      if (lastMouseX === e.clientX && lastMouseY === e.clientY) return;
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      pokeChrome(2000);
+    });
+
+    controls.addEventListener('pointerenter', () => {
+      hoveringChrome = true;
+      syncChrome();
+    });
+    controls.addEventListener('pointerleave', () => {
+      hoveringChrome = false;
+      syncChrome();
+    });
+
+    zoomOut.addEventListener('click', () => {
+      if (zoomOut.getAttribute('aria-disabled') === 'true') return;
+      stepZoom(1 / 1.25);
+    });
+    zoomIn.addEventListener('click', () => {
+      if (zoomIn.getAttribute('aria-disabled') === 'true') return;
+      stepZoom(1.25);
+    });
+    reset.addEventListener('click', () => {
+      if (reset.getAttribute('aria-disabled') === 'true') return;
+      resetView(true);
+    });
+
+    dialog.addEventListener(
+      'wheel',
+      (e) => {
+        if (!dialog.open || !metrics) return;
+        e.preventDefault();
+        const s = stageSize();
+        const action = classifyWheel({
+          deltaX: e.deltaX,
+          deltaY: e.deltaY,
+          deltaMode: e.deltaMode,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          vh: s.vh,
+          pannable: canPan(state.scale, metrics),
+        });
+        cancelAnimation();
+        if (action.type === 'pan') {
+          const clamped = clampPan(
+            state.tx + action.dx,
+            state.ty + action.dy,
+            state.scale,
+            metrics,
+          );
+          state = { scale: state.scale, tx: clamped.tx, ty: clamped.ty };
+          applyTransform(false);
+        } else {
+          const anchorX = e.clientX - s.left;
+          const anchorY = e.clientY - s.top;
+          state = zoomAtPoint(state, state.scale * action.factor, anchorX, anchorY, metrics);
+          applyTransform(false, true);
+          announceScale();
+        }
+      },
+      { passive: false },
+    );
+
+    stage.addEventListener('pointerdown', (e) => {
+      if (!dialog.open || !metrics) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      cancelAnimation();
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (pointers.size === 1) {
+        const onMedia = e.target instanceof Node && mediaSlot.contains(e.target);
+        panOrigin = {
+          x: e.clientX,
+          y: e.clientY,
+          tx: state.tx,
+          ty: state.ty,
+          moved: false,
+          onMedia,
+        };
+        pinchOrigin = null;
+      } else if (pointers.size === 2) {
+        const [p1, p2] = [...pointers.values()];
+        const s = stageSize();
+        pinchOrigin = {
+          dist: Math.hypot(p2!.x - p1!.x, p2!.y - p1!.y) || 1,
+          midX: (p1!.x + p2!.x) / 2 - s.left,
+          midY: (p1!.y + p2!.y) / 2 - s.top,
+          scale: state.scale,
+          tx: state.tx,
+          ty: state.ty,
+        };
+        panOrigin = null;
+        suppressNextClick = true;
+      }
+    });
+
+    stage.addEventListener('pointermove', (e) => {
+      if (!dialog.open || !metrics || !pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (pointers.size >= 2 && pinchOrigin) {
+        const [p1, p2] = [...pointers.values()];
+        const s = stageSize();
+        const dist = Math.hypot(p2!.x - p1!.x, p2!.y - p1!.y) || 1;
+        const midX = (p1!.x + p2!.x) / 2 - s.left;
+        const midY = (p1!.y + p2!.y) / 2 - s.top;
+
+        const nextScale = Math.min(
+          metrics.maxScale,
+          Math.max(metrics.minScale, pinchOrigin.scale * (dist / pinchOrigin.dist)),
+        );
+        const cx = metrics.vw / 2;
+        const cy = metrics.vh / 2;
+        const ratio = nextScale / pinchOrigin.scale;
+        const rawTx = midX - cx - ratio * (pinchOrigin.midX - cx - pinchOrigin.tx);
+        const rawTy = midY - cy - ratio * (pinchOrigin.midY - cy - pinchOrigin.ty);
+        const clamped = clampPan(rawTx, rawTy, nextScale, metrics);
+        state = { scale: nextScale, tx: clamped.tx, ty: clamped.ty };
+        stage.dataset.dragging = '';
+        applyTransform(false, true);
+        return;
+      }
+
+      if (pointers.size === 1 && panOrigin) {
+        const dx = e.clientX - panOrigin.x;
+        const dy = e.clientY - panOrigin.y;
+        if (!panOrigin.moved) {
+          if (Math.hypot(dx, dy) < 5) return;
+          panOrigin.moved = true;
+          suppressNextClick = true;
+          if (canPan(state.scale, metrics)) {
+            stage.dataset.dragging = '';
+            try {
+              stage.setPointerCapture(e.pointerId);
+            } catch {}
+          }
+        }
+        if (canPan(state.scale, metrics)) {
+          const clamped = clampPan(panOrigin.tx + dx, panOrigin.ty + dy, state.scale, metrics);
+          state = { scale: state.scale, tx: clamped.tx, ty: clamped.ty };
+          applyTransform(false);
+        }
+      }
+    });
+
+    function handlePointerEnd(e: PointerEvent) {
+      const wasPinching = pinchOrigin !== null;
+      const endedPan = panOrigin;
+      pointers.delete(e.pointerId);
+      try {
+        if (stage.hasPointerCapture(e.pointerId)) stage.releasePointerCapture(e.pointerId);
+      } catch {}
+
+      if (pointers.size === 1 && wasPinching) {
+        const [rem] = pointers.values();
+        pinchOrigin = null;
+        panOrigin = {
+          x: rem!.x,
+          y: rem!.y,
+          tx: state.tx,
+          ty: state.ty,
+          moved: true,
+          onMedia: true,
+        };
+        return;
+      }
+
+      if (pointers.size === 0) {
+        delete stage.dataset.dragging;
+        pinchOrigin = null;
+        panOrigin = null;
+        if (e.type === 'pointercancel') {
+          suppressNextClick = false;
+          return;
+        }
+        if (endedPan?.moved || endedPan?.onMedia || wasPinching) {
+          suppressNextClick = true;
+          clearTimeout(suppressTimer);
+          suppressTimer = window.setTimeout(() => {
+            suppressNextClick = false;
+          }, 50);
+        }
+        if (
+          e.type === 'pointerup' &&
+          e.pointerType !== 'mouse' &&
+          endedPan &&
+          !endedPan.moved &&
+          !wasPinching &&
+          endedPan.onMedia &&
+          metrics
+        ) {
+          const now = performance.now();
+          if (
+            lastTap &&
+            now - lastTap.time < 300 &&
+            Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30
+          ) {
+            lastTap = null;
+            const s = stageSize();
+            const target = doubleClickTargetScale(state, metrics);
+            if (target === null) resetView(true);
+            else setZoomAt(target, e.clientX - s.left, e.clientY - s.top, true);
+          } else {
+            lastTap = { time: now, x: e.clientX, y: e.clientY };
+            pokeChrome(2500);
+          }
+        }
+      }
+    }
+
+    stage.addEventListener('pointerup', handlePointerEnd);
+    stage.addEventListener('pointercancel', handlePointerEnd);
+
+    stage.addEventListener('click', (e) => {
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return;
+      }
+      if (e.target instanceof Node && mediaSlot.contains(e.target)) return;
+      dialog.close();
+    });
+
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+
+    stage.addEventListener('dblclick', (e) => {
+      if (!dialog.open || !metrics) return;
+      if (!(e.target instanceof Node) || !mediaSlot.contains(e.target)) return;
+      const target = doubleClickTargetScale(state, metrics);
+      if (target === null) {
+        resetView(true);
+      } else {
+        const s = stageSize();
+        setZoomAt(target, e.clientX - s.left, e.clientY - s.top, true);
+      }
+    });
+
+    dialog.addEventListener('keydown', (e) => {
+      if (!dialog.open || !metrics || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey)
+        return;
+      switch (e.key) {
+        case '+':
+        case '=':
+          e.preventDefault();
+          stepZoom(1.25);
+          break;
+        case '-':
+        case '_':
+          e.preventDefault();
+          stepZoom(1 / 1.25);
+          break;
+        case '0':
+          e.preventDefault();
+          resetView(true);
+          break;
+        case '1':
+          e.preventDefault();
+          setZoomAtCenter(1, true);
+          break;
+        case 'ArrowLeft':
+          if (canPan(state.scale, metrics)) {
+            e.preventDefault();
+            panBy(64, 0);
+          }
+          break;
+        case 'ArrowRight':
+          if (canPan(state.scale, metrics)) {
+            e.preventDefault();
+            panBy(-64, 0);
+          }
+          break;
+        case 'ArrowUp':
+          if (canPan(state.scale, metrics)) {
+            e.preventDefault();
+            panBy(0, 64);
+          }
+          break;
+        case 'ArrowDown':
+          if (canPan(state.scale, metrics)) {
+            e.preventDefault();
+            panBy(0, -64);
+          }
+          break;
+      }
+    });
+
+    addEventListener('resize', () => {
+      if (!dialog.open || !metrics) return;
+      const s = stageSize();
+      const wasModified = isViewModified(state, metrics);
+      const next = computeLightboxMetrics(s.vw, s.vh, metrics.nw, metrics.nh, metrics.kind);
+      metrics = next;
+      if (!wasModified) {
+        state = { scale: next.initialScale, tx: 0, ty: 0 };
+      } else {
+        const clampedScale = Math.min(next.maxScale, Math.max(next.minScale, state.scale));
+        const clamped = clampPan(state.tx, state.ty, clampedScale, next);
+        state = { scale: clampedScale, tx: clamped.tx, ty: clamped.ty };
+      }
+      applyTransform(false);
+    });
+
+    dialog.addEventListener('close', async () => {
+      clearTimeout(chromeTimer);
+      clearTimeout(commitTimer);
+      clearTimeout(animTimer);
+      clearTimeout(announceTimer);
+      clearTimeout(suppressTimer);
+      pointers.clear();
+      panOrigin = null;
+      pinchOrigin = null;
+      lastTap = null;
+      suppressNextClick = false;
+      pointerActive = false;
+      hoveringChrome = false;
+      delete dialog.dataset.chrome;
+      delete dialog.dataset.zoomed;
+      delete stage.dataset.dragging;
+      delete stage.dataset.pannable;
+      delete mediaSlot.dataset.animating;
+
+      const trigger = activeTrigger;
+      activeTrigger = null;
+      if (trigger?.isConnected) trigger.focus();
+
+      await Promise.allSettled(dialog.getAnimations().map((a) => a.finished));
+      if (!dialog.open) {
+        mediaSlot.replaceChildren();
+        caption.replaceChildren();
+        caption.hidden = true;
+        status.textContent = '';
+        activeMedia = null;
+        metrics = null;
+      }
+    });
+  })();
+</script>

@@ -1,0 +1,155 @@
+---
+title: '矩阵乘法的原理与分块优化'
+description: '从定义出发理解矩阵乘法，比较朴素三重循环、分块（tiling）和 CUDA 共享内存版本的差异，并列出几种算法的复杂度。'
+pubDate: 2026-05-07
+tags: [线性代数, GPU]
+category: 算法
+---
+
+import MatMul from './MatMul.tsx';
+
+矩阵乘法是深度学习和科学计算里最常见的运算。一个 Transformer 的大部分时间都花在矩阵乘法上，GPU 的设计目标也很大程度上是为它服务的。理解它的计算方式，才能理解为什么同样是 $O(n^3)$，有的实现快几十倍。
+
+## 定义
+
+设 $A$ 是 $m \times k$ 的矩阵，$B$ 是 $k \times n$ 的矩阵，那么乘积 $C = AB$ 是 $m \times n$ 的矩阵，其中每个元素为
+
+$$
+C_{ij} = \sum_{p=1}^{k} A_{ip} B_{pj}
+$$
+
+也就是说，$C$ 的第 $i$ 行第 $j$ 列等于 $A$ 的第 $i$ 行与 $B$ 的第 $j$ 列的点积。要求 $A$ 的列数等于 $B$ 的行数。
+
+一个小例子：
+
+$$
+\begin{bmatrix} 1 & 2 \\ 3 & 4 \end{bmatrix}
+\begin{bmatrix} 5 & 6 \\ 7 & 8 \end{bmatrix}
+=
+\begin{bmatrix} 19 & 22 \\ 43 & 50 \end{bmatrix}
+$$
+
+左上角的 19 来自 $1 \times 5 + 2 \times 7$。
+
+下面的交互组件可以逐步看到这个过程，每一步高亮一次乘加：
+
+<MatMul
+  client:visible
+  title="图 1：$C = AB$ 的逐元素计算"
+  a={[
+    [1, 2],
+    [3, 4],
+  ]}
+  b={[
+    [5, 6],
+    [7, 8],
+  ]}
+/>
+
+## 朴素实现
+
+最直接的写法是三重循环。下面是 C 语言版本，矩阵按行主序存储在一维数组中：
+
+```c
+#include <stddef.h>
+
+/* C[m x n] = A[m x k] * B[k x n]，均为行主序，且 C 已清零 */
+void matmul_naive(const float *A, const float *B, float *C,
+                  size_t m, size_t k, size_t n) {
+    for (size_t i = 0; i < m; i++) {
+        for (size_t j = 0; j < n; j++) {
+            float acc = 0.0f;
+            for (size_t p = 0; p < k; p++) {
+                acc += A[i * k + p] * B[p * n + j];
+            }
+            C[i * n + j] = acc;
+        }
+    }
+}
+```
+
+这段代码的计算量是 $mnk$ 次乘加。问题在于访存：内层循环中 `B[p * n + j]` 沿着列方向跳跃，每次访问都可能落在不同的缓存行上。当矩阵比缓存大时，CPU 大部分时间都在等内存。
+
+## 分块优化
+
+分块的思路是把大矩阵切成小块，让每个小块都能放进缓存里反复使用。数学上的结果不变，只是循环的顺序变了：
+
+```c
+#define BLOCK 64
+
+void matmul_blocked(const float *A, const float *B, float *C,
+                    size_t m, size_t k, size_t n) {
+    for (size_t ii = 0; ii < m; ii += BLOCK) {
+        for (size_t pp = 0; pp < k; pp += BLOCK) {
+            for (size_t jj = 0; jj < n; jj += BLOCK) {
+                size_t i_end = ii + BLOCK < m ? ii + BLOCK : m;
+                size_t p_end = pp + BLOCK < k ? pp + BLOCK : k;
+                size_t j_end = jj + BLOCK < n ? jj + BLOCK : n;
+                for (size_t i = ii; i < i_end; i++) {
+                    for (size_t p = pp; p < p_end; p++) {
+                        float a = A[i * k + p];
+                        for (size_t j = jj; j < j_end; j++) {
+                            C[i * n + j] += a * B[p * n + j];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+这里的关键是把 `A[i*k+p]` 提到内层循环外面，并让最内层循环按行连续访问 `B` 和 `C`。块大小通常选择使三个小块的总大小接近 L1 或 L2 缓存容量的值。
+
+## GPU 上的版本
+
+GPU 上的思路类似，但层级更多：全局显存慢，共享内存（shared memory）快，寄存器最快。每个线程块把 `A` 和 `B` 的一个小块搬到共享内存里，然后块内所有线程一起计算。
+
+```cpp
+#define TILE 16
+
+__global__ void matmul_tiled(const float *A, const float *B, float *C,
+                             int m, int k, int n) {
+    __shared__ float As[TILE][TILE];
+    __shared__ float Bs[TILE][TILE];
+
+    int row = blockIdx.y * TILE + threadIdx.y;
+    int col = blockIdx.x * TILE + threadIdx.x;
+    float acc = 0.0f;
+
+    for (int t = 0; t < (k + TILE - 1) / TILE; t++) {
+        int a_col = t * TILE + threadIdx.x;
+        int b_row = t * TILE + threadIdx.y;
+        As[threadIdx.y][threadIdx.x] = (row < m && a_col < k) ? A[row * k + a_col] : 0.0f;
+        Bs[threadIdx.y][threadIdx.x] = (b_row < k && col < n) ? B[b_row * n + col] : 0.0f;
+        __syncthreads();
+
+        for (int p = 0; p < TILE; p++) {
+            acc += As[threadIdx.y][p] * Bs[p][threadIdx.x];
+        }
+        __syncthreads();
+    }
+
+    if (row < m && col < n) {
+        C[row * n + col] = acc;
+    }
+}
+```
+
+每个全局内存元素只被加载一次到共享内存，然后被块内 `TILE` 个线程复用。`__syncthreads()` 保证加载完成之后才开始计算，计算完成之后才覆盖共享内存。
+
+## 复杂度对比
+
+| 算法                             | 时间复杂度                            | 访存特点                     | 说明                                       |
+| -------------------------------- | ------------------------------------- | ---------------------------- | ------------------------------------------ |
+| 朴素三重循环                     | $O(n^3)$                              | 列方向访问，缓存不友好       | 最容易理解，适合作为基准                   |
+| 分块（tiling）                   | $O(n^3)$                              | 块内数据复用，缓存友好       | 常数因子小很多，是高性能库的基础           |
+| Strassen                         | $O(n^{\log_2 7}) \approx O(n^{2.81})$ | 递归拆分，额外的加减法开销   | 理论上更快，但实践中只在很大的矩阵上有优势 |
+| Coppersmith–Winograd 系列        | 约 $O(n^{2.37})$                      | 结构复杂                     | 理论结果，常数很大，几乎不用于实际计算     |
+| 工业 BLAS（如 cuBLAS、OpenBLAS） | 仍是 $O(n^3)$ 量级                    | 分块加向量化，并针对硬件调优 | 实际中几乎总是调用它们，而不是自己写       |
+
+需要注意的是，表中的复杂度只描述运算次数的增长趋势。真正决定速度的通常是访存模式、向量化和并行度。很多时候，把一个 $O(n^3)$ 的实现改成分块版本，收益比换一个渐近更优的算法还要大。
+
+## 小结
+
+矩阵乘法的数学定义很简单，但高性能实现的关键在于数据的搬运。分块的本质是让数据在更快的存储层级里被多次复用。这个原则在 CPU 缓存、GPU 共享内存，甚至分布式训练的通信中都一样适用。

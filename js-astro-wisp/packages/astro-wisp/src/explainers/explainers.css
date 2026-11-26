@@ -1,0 +1,537 @@
+/* 交互式讲解：Explainer 外壳、顶部语义标签栏、舞台、说明区、原生 dialog 全屏。只使用 --wisp-* 令牌。
+ * 由 Explainer.tsx 引入：只有用到讲解组件的页面才会加载。属于正文内容样式，与 .prose 同在 utilities 层。 */
+@layer theme, base, components, utilities;
+
+@layer utilities {
+  .wisp-explainer {
+    --wisp-explainer-thumb: 12px;
+    --wisp-explainer-btn: 2.125rem;
+    --wisp-cell-heat: 0.44;
+    margin-block: var(--wisp-block-gap, 1.75em);
+    margin-inline: 0;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+    background: var(--wisp-bg);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(:has(> head > meta[name='color-scheme'][content='light'])) .wisp-explainer {
+      --wisp-cell-heat: 0.24;
+    }
+  }
+  :root:has(> head > meta[name='color-scheme'][content='dark']) .wisp-explainer {
+    --wisp-cell-heat: 0.24;
+  }
+
+  .wisp-explainer:focus-visible,
+  .wisp-explainer__dialog button:focus-visible,
+  .wisp-explainer button:focus-visible {
+    outline: 2px solid var(--wisp-accent);
+    outline-offset: 2px;
+  }
+
+  .wisp-explainer__inner {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-radius: 3px;
+    background: var(--wisp-bg);
+  }
+
+  /* 顶部标题栏：左边图号 + 标题，右边步数与轻操作按钮（无底部视频控制栏） */
+  .prose .wisp-explainer__header,
+  .wisp-explainer__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
+    margin: 0;
+    padding: 0.5rem 0.75rem 0.5rem 1rem;
+    border-bottom: 1px solid var(--wisp-border);
+    color: var(--wisp-fg);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    text-align: start;
+  }
+  .wisp-explainer__title {
+    min-width: 0;
+    flex: 1 1 12rem;
+  }
+  .wisp-explainer__title-text {
+    display: block;
+    min-width: 0;
+    font-weight: 600;
+  }
+  .wisp-explainer__title-text[data-numbered] {
+    color: var(--wisp-muted);
+    font-weight: 400;
+  }
+  .wisp-explainer__title .wisp-fig-no {
+    color: var(--wisp-fg);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .wisp-explainer__toolbar {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 0.125rem;
+    margin-inline-start: auto;
+  }
+  .wisp-explainer__count {
+    margin-inline-end: 0.375rem;
+    color: var(--wisp-muted);
+    font-size: 0.8125rem;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .wisp-explainer__reserve {
+    display: inline-grid;
+    white-space: nowrap;
+  }
+  .wisp-explainer__reserve::before {
+    content: attr(data-reserve);
+    visibility: hidden;
+  }
+  .wisp-explainer__reserve::before,
+  .wisp-explainer__reserve > span {
+    grid-area: 1 / 1;
+  }
+  .wisp-explainer__count .wisp-explainer__reserve > span {
+    justify-self: end;
+  }
+
+  .wisp-explainer__btn {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--wisp-explainer-btn);
+    height: var(--wisp-explainer-btn);
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--wisp-muted);
+    font: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition:
+      background-color 150ms,
+      color 150ms;
+  }
+  .wisp-explainer__btn .wisp-icon {
+    width: 1rem;
+    height: 1rem;
+  }
+  .wisp-explainer__btn:hover:not(:disabled, [aria-disabled='true']) {
+    background: var(--wisp-surface);
+    color: var(--wisp-fg);
+  }
+  .wisp-explainer__btn:disabled,
+  .wisp-explainer__btn[aria-disabled='true'] {
+    opacity: 0.35;
+    color: var(--wisp-muted);
+    cursor: not-allowed;
+  }
+  .wisp-explainer__demo[data-active] {
+    background: var(--wisp-accent);
+    color: var(--wisp-accent-fg);
+  }
+  .wisp-explainer__demo[data-active]:hover:not(:disabled, [aria-disabled='true']) {
+    background: color-mix(in srgb, var(--wisp-accent) 88%, var(--wisp-fg));
+    color: var(--wisp-accent-fg);
+  }
+
+  /* 顶部语义阶段标签栏（≤ 8 步）：单行均分，下缘 2px accent 滑条由 Motion layoutId 驱动 */
+  .wisp-explainer__tabs {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    border-bottom: 1px solid var(--wisp-border);
+    background: var(--wisp-surface);
+  }
+  .wisp-explainer__tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    min-width: 0;
+    min-height: 2.375rem;
+    padding: 0.375rem 0.5rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--wisp-muted);
+    font: inherit;
+    font-size: 0.8125rem;
+    line-height: 1.3;
+    cursor: pointer;
+    transition:
+      background-color 150ms,
+      color 150ms;
+  }
+  .wisp-explainer__tab + .wisp-explainer__tab::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: 0;
+    top: 22%;
+    bottom: 22%;
+    width: 1px;
+    background: var(--wisp-border);
+    pointer-events: none;
+  }
+  .wisp-explainer__tab:hover {
+    background: color-mix(in srgb, var(--wisp-surface-2) 60%, transparent);
+    color: var(--wisp-fg);
+  }
+  .wisp-explainer__tab[aria-selected='true'] {
+    background: var(--wisp-bg);
+    color: var(--wisp-fg);
+    font-weight: 600;
+  }
+  .wisp-explainer__tab-num {
+    flex: none;
+    color: var(--wisp-subtle);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .wisp-explainer__tab[aria-selected='true'] .wisp-explainer__tab-num {
+    color: var(--wisp-accent);
+  }
+  .wisp-explainer__tab-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .wisp-explainer__tab-indicator {
+    position: absolute;
+    inset-inline: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--wisp-accent);
+    pointer-events: none;
+  }
+
+  /* 超过 8 步时的紧凑发丝线进度条，紧贴标题栏下缘 */
+  .wisp-explainer__track {
+    position: relative;
+    height: 2px;
+    background: color-mix(in srgb, var(--wisp-fg) 42%, var(--wisp-bg));
+  }
+  .wisp-explainer__rail {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .wisp-explainer__fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 2px;
+    width: calc(
+      var(--wisp-explainer-thumb) / 2 + var(--wisp-progress) * (100% - var(--wisp-explainer-thumb))
+    );
+    background: var(--wisp-accent);
+  }
+  .wisp-explainer__track[data-at-start]:not(:hover):not(:focus-within) .wisp-explainer__fill {
+    opacity: 0;
+  }
+  .wisp-explainer__tick {
+    position: absolute;
+    top: -3px;
+    left: calc(
+      var(--wisp-explainer-thumb) / 2 + var(--wisp-at) * (100% - var(--wisp-explainer-thumb))
+    );
+    width: 1px;
+    height: 7px;
+    margin-left: -0.5px;
+    background: var(--wisp-subtle);
+  }
+  .wisp-explainer__tick[data-done] {
+    background: var(--wisp-accent);
+  }
+  .wisp-explainer__range {
+    position: absolute;
+    z-index: 1;
+    inset-inline: 0;
+    top: -11px;
+    width: 100%;
+    height: 24px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+    touch-action: pan-y;
+    appearance: none;
+  }
+  .wisp-explainer__range:focus-visible {
+    outline: 2px solid var(--wisp-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  .wisp-explainer__range::-webkit-slider-runnable-track {
+    height: 24px;
+    background: transparent;
+    border: 0;
+  }
+  .wisp-explainer__range::-moz-range-track {
+    height: 24px;
+    background: transparent;
+    border: 0;
+  }
+  .wisp-explainer__range::-moz-range-progress {
+    background: transparent;
+  }
+  .wisp-explainer__range::-webkit-slider-thumb {
+    box-sizing: border-box;
+    width: var(--wisp-explainer-thumb);
+    height: var(--wisp-explainer-thumb);
+    margin-top: calc((24px - var(--wisp-explainer-thumb)) / 2);
+    border: 2px solid var(--wisp-bg);
+    border-radius: 3px;
+    background: var(--wisp-accent);
+    opacity: 0;
+    appearance: none;
+  }
+  .wisp-explainer__range::-moz-range-thumb {
+    box-sizing: border-box;
+    width: var(--wisp-explainer-thumb);
+    height: var(--wisp-explainer-thumb);
+    border: 2px solid var(--wisp-bg);
+    border-radius: 3px;
+    background: var(--wisp-accent);
+    opacity: 0;
+  }
+  .wisp-explainer__range:hover::-webkit-slider-thumb,
+  .wisp-explainer__range:focus-visible::-webkit-slider-thumb {
+    opacity: 1;
+  }
+  .wisp-explainer__range:hover::-moz-range-thumb,
+  .wisp-explainer__range:focus-visible::-moz-range-thumb {
+    opacity: 1;
+  }
+  .wisp-explainer__range:focus-visible::-webkit-slider-thumb {
+    outline: 2px solid var(--wisp-accent);
+    outline-offset: 1px;
+  }
+  .wisp-explainer__range:focus-visible::-moz-range-thumb {
+    outline: 2px solid var(--wisp-accent);
+    outline-offset: 1px;
+  }
+
+  /* 舞台与 SVG 原语 */
+  .wisp-explainer__stage {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: var(--wisp-explainer-stage-min-h, auto);
+    padding: 1.25rem 1rem;
+    background: var(--wisp-bg);
+  }
+  .wisp-explainer__stage > * {
+    min-width: 0;
+  }
+  .wisp-explainer__scroll {
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+  .wisp-explainer__scroll[data-wisp-overflow] {
+    padding-bottom: 0.375rem;
+  }
+  .wisp-explainer__svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-inline: auto;
+  }
+  .wisp-explainer__cell-text {
+    font-family: var(--wisp-font-mono);
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  .wisp-explainer__label {
+    font-family: var(--wisp-font-sans);
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .wisp-explainer__tex-label {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    font-family: var(--wisp-font-sans);
+    font-size: 14px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .wisp-explainer__tex-label .katex {
+    font-size: 1.1em;
+  }
+
+  /* 说明区：全部步骤说明叠在同一格，高度锁定为最长一步 */
+  .wisp-explainer__captions {
+    display: grid;
+    padding: 0.875rem 1rem;
+    border-top: 1px solid var(--wisp-border);
+    border-radius: 0 0 3px 3px;
+    background: var(--wisp-surface);
+    color: var(--wisp-fg);
+    font-size: 0.9375rem;
+    line-height: 1.65;
+    text-align: start;
+    overflow-wrap: break-word;
+  }
+  .wisp-explainer__captions > *,
+  .wisp-explainer__ghosts > * {
+    grid-area: 1 / 1;
+    min-width: 0;
+  }
+  .wisp-explainer__ghosts {
+    display: grid;
+    visibility: hidden;
+  }
+
+  /* 全屏原生 <dialog> */
+  .wisp-explainer__placeholder {
+    min-height: 14rem;
+    background: var(--wisp-surface);
+    border-radius: 3px;
+  }
+  .wisp-explainer__dialog {
+    box-sizing: border-box;
+    width: min(94vw, 1120px);
+    max-width: min(94vw, 1120px);
+    height: min(84dvh, 720px);
+    max-height: 92dvh;
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--wisp-border);
+    border-radius: 4px;
+    background: var(--wisp-bg);
+    color: var(--wisp-fg);
+    overflow: hidden;
+    overscroll-behavior: contain;
+  }
+  .wisp-explainer__dialog::backdrop {
+    background: color-mix(in srgb, var(--wisp-fg) 42%, transparent);
+  }
+  .wisp-explainer__dialog .wisp-explainer__inner {
+    height: 100%;
+    max-height: 92dvh;
+    border-radius: 3px;
+  }
+  .wisp-explainer__inner[data-expanded] .wisp-explainer__header {
+    padding: 0.625rem 1.25rem;
+  }
+  .wisp-explainer__inner[data-expanded] .wisp-explainer__stage {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1.5rem 2rem;
+  }
+  .wisp-explainer__inner[data-expanded] .wisp-explainer__svg {
+    max-width: min(100%, 960px);
+  }
+  .wisp-explainer__inner[data-expanded] .wisp-explainer__captions {
+    padding: 1rem 1.5rem;
+  }
+
+  @media (forced-colors: active) {
+    .wisp-explainer,
+    .wisp-explainer__dialog {
+      border-color: CanvasText;
+    }
+    .wisp-explainer__tab-indicator,
+    .wisp-explainer__fill,
+    .wisp-explainer__tick[data-done] {
+      background: Highlight;
+      forced-color-adjust: none;
+    }
+    .wisp-explainer__btn,
+    .wisp-explainer__tab {
+      color: ButtonText;
+      forced-color-adjust: auto;
+    }
+    .wisp-explainer__btn:disabled,
+    .wisp-explainer__btn[aria-disabled='true'] {
+      opacity: 1;
+      color: GrayText;
+    }
+    .wisp-explainer__demo[data-active] {
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
+
+  @media (pointer: coarse) {
+    .wisp-explainer {
+      --wisp-explainer-btn: 2.75rem;
+    }
+    .wisp-explainer__tab {
+      min-height: 2.75rem;
+    }
+  }
+  @media (hover: none), (pointer: coarse), (any-pointer: coarse) {
+    .wisp-explainer__track[data-at-start]:not(:hover):not(:focus-within) .wisp-explainer__fill {
+      opacity: 1;
+    }
+    .wisp-explainer__range {
+      top: -18px;
+      height: 36px;
+    }
+    .wisp-explainer__range::-webkit-slider-runnable-track {
+      height: 36px;
+    }
+    .wisp-explainer__range::-moz-range-track {
+      height: 36px;
+    }
+    .wisp-explainer__range::-webkit-slider-thumb {
+      margin-top: calc((36px - var(--wisp-explainer-thumb)) / 2);
+      opacity: 1;
+    }
+    .wisp-explainer__range::-moz-range-thumb {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wisp-explainer__btn,
+    .wisp-explainer__tab {
+      transition: none;
+    }
+  }
+  @media (max-width: 40rem) {
+    .wisp-explainer__stage {
+      min-height: auto;
+      padding: 1rem 0.75rem;
+    }
+    .wisp-explainer__dialog,
+    .wisp-explainer__dialog .wisp-explainer__inner {
+      height: auto;
+    }
+    .wisp-explainer__header,
+    .prose .wisp-explainer__header {
+      padding: 0.5rem 0.75rem;
+    }
+    .wisp-explainer__tabs[data-labeled] {
+      grid-auto-flow: row;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .wisp-explainer__tabs[data-labeled] .wisp-explainer__tab {
+      border-bottom: 1px solid var(--wisp-border);
+      padding-inline: 0.375rem;
+    }
+    .wisp-explainer__tabs[data-labeled] .wisp-explainer__tab::before {
+      display: none;
+    }
+    .wisp-explainer__captions {
+      padding: 0.75rem;
+      font-size: 0.875rem;
+    }
+  }
+}

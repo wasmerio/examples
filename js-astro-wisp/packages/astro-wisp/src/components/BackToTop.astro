@@ -1,0 +1,123 @@
+---
+/**
+ * 返回顶部：置于文章结尾（`<main>` 末尾），利用 `position: sticky` 贴紧右下角并在页脚前自动停驻；
+ * 显示与否由 `@container scroll-state(scrollable: top)`（根 `html`）纯 CSS 驱动，零滚动监听。
+ * 点击平滑滚动到顶部（reduced-motion 下直接跳转），并在按钮因滚动隐藏时保留焦点至主标题或 `main`。
+ */
+import Icon from 'virtual:wisp/components/Icon';
+import config from 'virtual:wisp/config';
+
+export interface Props {
+  label?: string;
+}
+const { label = /^zh\b/i.test(config.site.lang) ? '返回顶部' : 'Back to top' } = Astro.props;
+---
+
+<button type="button" class="wisp-top" aria-label={label} data-back-to-top>
+  <Icon name="arrow-up" size="1.125rem" />
+</button>
+
+<style>
+  /* 主题样式在 components 层：Tailwind 工具类与站点 customCss 总能覆盖 */
+  @layer components {
+    .wisp-top {
+      position: sticky;
+      z-index: 40;
+      inset-block-end: max(1rem, env(safe-area-inset-bottom));
+      display: grid;
+      place-items: center;
+      min-width: 2.75rem;
+      min-height: 2.75rem;
+      padding: 0.25rem;
+      margin-block-start: -2.75rem;
+      margin-inline-start: auto;
+      /* 宽屏贴外框内容右缘（与页头主题按钮、目录栏同一条线），窄屏贴页面边距 */
+      margin-inline-end: max(
+        var(--wisp-pad),
+        (100% - var(--wisp-shell)) / 2,
+        env(safe-area-inset-right)
+      );
+      border: 1px solid var(--wisp-border);
+      border-radius: 4px;
+      background: var(--wisp-bg);
+      color: var(--wisp-muted);
+      cursor: pointer;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition:
+        opacity 150ms,
+        visibility 150ms,
+        color 150ms,
+        translate 160ms var(--wisp-ease);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .wisp-top {
+        translate: 0 0.5rem;
+      }
+    }
+    @container scroll-state(scrollable: top) {
+      .wisp-top {
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
+        translate: 0 0;
+      }
+      @media (max-width: 59.99rem) {
+        .wisp-top {
+          opacity: 0.85;
+        }
+        .wisp-top:hover,
+        .wisp-top:focus-visible {
+          opacity: 1;
+        }
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wisp-top {
+        transition:
+          opacity 120ms,
+          visibility 120ms,
+          color 150ms;
+      }
+    }
+    .wisp-top:hover {
+      color: var(--wisp-accent);
+    }
+    @media (forced-colors: active) {
+      .wisp-top {
+        background: ButtonFace;
+        color: ButtonText;
+        border-color: ButtonText;
+        forced-color-adjust: auto;
+      }
+    }
+    @media print {
+      .wisp-top {
+        display: none;
+      }
+    }
+  }
+</style>
+
+<script>
+  const btn = document.querySelector<HTMLButtonElement>('[data-back-to-top]');
+  if (btn) {
+    const focusTop = () => {
+      const t =
+        document.querySelector<HTMLElement>('main h1, h1') ?? document.getElementById('main');
+      if (t) {
+        t.tabIndex = -1;
+        t.focus({ preventScroll: true });
+      }
+    };
+    btn.addEventListener('click', () => {
+      const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      scrollTo({ top: 0, behavior: still ? 'auto' : 'smooth' });
+      focusTop();
+    });
+    btn.addEventListener('focusout', (e) => {
+      if (!e.relatedTarget && scrollY <= 1) focusTop();
+    });
+  }
+</script>

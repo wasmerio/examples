@@ -1,0 +1,84 @@
+---
+import type { GetStaticPaths } from 'astro';
+import { render } from 'astro:content';
+import {
+  filterAndSortSeries,
+  getPosts,
+  seriesNeighbors,
+  type PostEntry,
+  type SeriesItem,
+} from '../../utils/posts';
+import Post from 'virtual:wisp/components/Post';
+
+export const getStaticPaths = (async () => {
+  const posts = await getPosts();
+  return posts.map((post, i) => {
+    const series = post.data.series ? filterAndSortSeries(posts, post.data.series.id) : [];
+    const neighbors = post.data.series
+      ? seriesNeighbors(series, post.id)
+      : {
+          // getPosts() 按发布日期降序：更早的一篇在后面
+          prev: posts[i + 1] && { id: posts[i + 1].id, title: posts[i + 1].data.title },
+          next: posts[i - 1] && { id: posts[i - 1].id, title: posts[i - 1].data.title },
+        };
+    return {
+      params: { id: post.id },
+      props: {
+        post,
+        prev: neighbors.prev,
+        next: neighbors.next,
+        series,
+      },
+    };
+  });
+}) satisfies GetStaticPaths;
+
+interface Props {
+  post: PostEntry;
+  prev?: { id: string; title: string };
+  next?: { id: string; title: string };
+  series: SeriesItem[];
+}
+
+const { post, prev, next, series } = Astro.props;
+const { Content, headings, remarkPluginFrontmatter } = await render(post);
+// render() 的 headings[].text 取自 rehype-katex 渲染后的 hast，行内公式会被搅乱（如 $w$ → "www"）。
+// 用 remark-heading-text 在渲染前收集的原始文本覆盖，供 Toc 构建时自行用 KaTeX 渲染；
+// 优先按 depth 顺序匹配 tocHeadingEntries，避免 MDX 中的 JSX 标题错位后续标题。
+const tocEntries = remarkPluginFrontmatter.tocHeadingEntries as
+  Array<{ depth: number; text: string; slug?: string }> | undefined;
+const tocTexts = remarkPluginFrontmatter.tocHeadingTexts as string[] | undefined;
+let headingsFixed = headings;
+if (tocEntries?.length) {
+  let cursor = 0;
+  headingsFixed = headings.map((h) => {
+    const bySlug = tocEntries.find((e, idx) => idx >= cursor && e.slug && e.slug === h.slug);
+    if (bySlug) {
+      cursor = tocEntries.indexOf(bySlug, cursor) + 1;
+      return { ...h, text: bySlug.text };
+    }
+    const byDepth = tocEntries.findIndex((e, idx) => idx >= cursor && e.depth === h.depth);
+    if (byDepth !== -1) {
+      cursor = byDepth + 1;
+      return { ...h, text: tocEntries[byDepth]!.text };
+    }
+    return h;
+  });
+} else if (tocTexts) {
+  headingsFixed = headings.map((h, i) => ({ ...h, text: tocTexts[i] ?? h.text }));
+}
+---
+
+<Post
+  post={post}
+  headings={headingsFixed}
+  readingTime={remarkPluginFrontmatter.readingTime}
+  hasMath={Boolean(remarkPluginFrontmatter.hasMath)}
+  hasDiagram={Boolean(remarkPluginFrontmatter.hasDiagram)}
+  hasHandDiagram={Boolean(remarkPluginFrontmatter.hasHandDiagram)}
+  prev={prev}
+  next={next}
+  series={series}
+>
+  <Content />
+</Post>

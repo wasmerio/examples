@@ -1,0 +1,60 @@
+---
+/**
+ * 图表组件（MDX 写法，diagrams.md §5.2）。与 remark-diagram 共用 renderDiagram()，输出完全一致。
+ *
+ * ```mdx
+ * import Diagram from 'astro-wisp/components/Diagram.astro';
+ * <Diagram src="./diagrams/transformer-block.drawio" page="encoder" alt="…" caption="…" wide download={false} />
+ * ```
+ *
+ * 相对路径：在 MDX 中由 remark-diagram 注入引用方文件路径（__wispFrom）和页面内序号（__wispSeq），
+ * 与图片写法共用序号，保证同页 id 唯一。在 .astro 页面中使用时，src 写项目根相对路径（`/src/content/...` 或 `@/content/...`）。
+ * 样式：MDX 中由布局根据 hasDiagram / hasHandDiagram 按需加载 diagram-figure.css；在其他页面使用时需自行引入。
+ */
+import config from 'virtual:wisp/config';
+import { renderDiagram } from '../lib/render-diagram';
+
+export interface Props {
+  /** 源文件路径（.excalidraw / .drawio），可带 #page= */
+  src: string;
+  /** draw.io 页面：页名或从 1 起的序号 */
+  page?: string | number;
+  /** 写入 SVG 的 <title>（无障碍名称） */
+  alt?: string;
+  /** 图注 */
+  caption?: string;
+  /** 突破正文宽度 */
+  wide?: boolean;
+  /** false 时不显示下载链接 */
+  download?: boolean;
+  /** 显式指定 id 后缀（同页多次使用且不在 MDX 中时） */
+  id?: string;
+  /** 由 remark-diagram 注入，勿手写 */
+  __wispFrom?: string;
+  __wispSeq?: string | number;
+}
+
+const { src, page, alt, caption, wide, download, id, __wispFrom, __wispSeq } = Astro.props;
+
+// 不在 MDX 中（没有注入序号）时，用请求内计数器
+let seq: string | number | undefined = id ?? __wispSeq;
+if (seq === undefined) {
+  const locals = Astro.locals as Record<string, unknown>;
+  const n = ((locals.__wispDiagramSeq as number | undefined) ?? 0) + 1;
+  locals.__wispDiagramSeq = n;
+  seq = `a${n}`;
+}
+
+const r = renderDiagram(
+  { src, from: __wispFrom, page, alt, caption, wide, download, seq },
+  {
+    dev: import.meta.env.DEV,
+    downloads: config.features.diagramDownload,
+    siteUrl: config.siteUrl,
+    root: config.root,
+    base: import.meta.env.BASE_URL,
+  },
+);
+---
+
+<Fragment set:html={r.html} />

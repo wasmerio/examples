@@ -1,0 +1,374 @@
+---
+/**
+ * 顶栏：高 56px，吸顶，实色底 + 发丝线。左侧站点名，右侧导航与主题切换。
+ * 文章页传入 running（书眉）：站点名之后跟「系列 · 05/23」，正文标题滚出视口后再接上章节标题。
+ * 系列文章在 ≥80rem 时，「7 / 10 篇」是一个按钮：展开 / 收起左侧系列栏（与栏顶的标题行同一个开关，
+ * 逻辑在 SeriesNav 的脚本里）。窄屏或无 JS 时它是普通文字。
+ */
+import config from 'virtual:wisp/config';
+import ThemeToggle from 'virtual:wisp/components/ThemeToggle';
+import { sitePath } from '../utils/paths';
+
+export interface Props {
+  /** 当前路径，用于给导航项加 aria-current；默认取 Astro.url.pathname */
+  currentPath?: string;
+  /** 书眉：系列名（或分类）、位置、章节标题 */
+  running?: { label: string; href?: string; position?: string; title?: string };
+}
+
+const { currentPath = Astro.url.pathname, running } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const routePath = currentPath.startsWith(base)
+  ? `/${currentPath.slice(base.length).replace(/^\/+/, '')}`
+  : currentPath;
+const norm = (p: string) => (p.endsWith('/') ? p : `${p}/`);
+const isCurrent = (href: string) =>
+  href !== '/' && norm(decodeURI(routePath)).startsWith(norm(href));
+const zh = /^zh\b/i.test(config.site.lang);
+// 有链接（系列总览篇）又有位置时是系列文章：位置可以切换左侧系列栏
+const seriesToggle = Boolean(running?.href && running.position);
+// 可访问名称以可见文字开头（label-in-name），展开状态由 aria-expanded 表达
+const posLabel = zh ? `${running?.position}（系列篇目）` : `${running?.position} (series contents)`;
+---
+
+<header class="wisp-header">
+  <div class="wisp-shell wisp-header-inner">
+    <a
+      href={sitePath(base, '/')}
+      class="wisp-brand"
+      aria-current={routePath === '/' ? 'page' : undefined}
+    >
+      <span class="wisp-brand-mark" aria-hidden="true"></span>
+      <span class="wisp-brand-name">{config.site.title}</span>
+    </a>
+    {running && (
+      <p class="wisp-running" data-wisp-running>
+        <span class="wisp-running-sep" aria-hidden="true">
+          /
+        </span>
+        {running.href ? (
+          <a href={running.href} class="wisp-running-label">
+            {running.label}
+          </a>
+        ) : (
+          <span class="wisp-running-label">{running.label}</span>
+        )}
+        {running.position && (
+          <span class="wisp-running-dot" aria-hidden="true">
+            ·
+          </span>
+        )}
+        {running.position && <span class="wisp-running-pos">{running.position}</span>}
+        {seriesToggle && (
+          <button
+            type="button"
+            class="wisp-running-pos wisp-running-toggle"
+            aria-expanded="false"
+            aria-controls="wisp-series-list"
+            aria-label={posLabel}
+            title={zh ? '展开系列篇目' : 'Show series contents'}
+            data-series-toggle
+            data-label-open={zh ? '收起系列篇目' : 'Hide series contents'}
+            data-label-closed={zh ? '展开系列篇目' : 'Show series contents'}
+          >
+            {running.position}
+          </button>
+        )}
+        {running.title && (
+          <span class="wisp-running-dot wisp-running-title-dot" aria-hidden="true">
+            ·
+          </span>
+        )}
+        {running.title && (
+          <span class="wisp-running-title" aria-hidden="true">
+            {running.title}
+          </span>
+        )}
+      </p>
+    )}
+    <nav aria-label={zh ? '主导航' : 'Main'} class="wisp-nav">
+      <ul>
+        {config.nav.map((item) => (
+          <li>
+            <a
+              href={sitePath(base, item.href)}
+              aria-current={isCurrent(item.href) ? 'page' : undefined}
+            >
+              <span class="wisp-draw">{item.label}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+      <ThemeToggle />
+    </nav>
+  </div>
+</header>
+
+{running?.title && <script is:inline>
+  // 页眉先于 <main> 解析，等文档解析完再找正文标题
+  addEventListener('DOMContentLoaded', () => {
+    const head = document.querySelector('[data-wisp-running]');
+    const h1 = document.querySelector('main h1');
+    if (!head || !h1 || !('IntersectionObserver' in window)) return;
+    new IntersectionObserver(
+      ([e]) => {
+        head.toggleAttribute('data-past-title', !e.isIntersecting && e.boundingClientRect.top < 0);
+      },
+      { rootMargin: '-56px 0px 0px 0px' },
+    ).observe(h1);
+  });
+</script>}
+
+<style>
+  /* 主题样式在 components 层：Tailwind 工具类与站点 customCss 总能覆盖 */
+  @layer components {
+    /* 吸顶顶栏：半透明底 + 背景模糊，滚动时正文从下方淡淡透出；不支持时回落为实色 */
+    /* 实色底 + 一条发丝线：手册的书眉，不做毛玻璃 */
+    .wisp-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background-color: var(--wisp-bg);
+      border-bottom: 1px solid var(--wisp-border);
+    }
+    /*
+     * 品牌名（1rem）、书眉和导航（0.875rem）按基线对齐，整行在 56px 里垂直居中。
+     * 用 grid 而不是 flex：单行 flex 不能同时做基线对齐和 align-content 居中。
+     */
+    .wisp-header-inner {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: baseline;
+      align-content: center;
+      min-height: var(--wisp-header-h);
+      padding-block: 0.25rem;
+    }
+    .wisp-header-inner > .wisp-brand {
+      grid-column: 1;
+    }
+    .wisp-header-inner > .wisp-running {
+      grid-column: 2;
+      margin-inline-start: 1rem;
+    }
+    .wisp-header-inner > .wisp-nav {
+      grid-column: 3;
+      margin-inline-start: 1rem;
+    }
+
+    /* 书眉：站点名 / 系列 · 05/23 · 章节标题（标题滚出视口后淡入） */
+    .wisp-running {
+      display: none;
+      align-items: baseline;
+      gap: 0.625rem;
+      min-width: 0;
+      margin: 0;
+      color: var(--wisp-muted);
+      font-size: 0.875rem;
+      line-height: 1.4;
+      white-space: nowrap;
+    }
+    @media (min-width: 60rem) {
+      .wisp-running {
+        display: flex;
+      }
+    }
+    /* 「/」和「·」是排版标点，subtle 色、不可读出 */
+    .wisp-running-sep,
+    .wisp-running-dot {
+      color: var(--wisp-subtle);
+    }
+    .wisp-running-label {
+      color: var(--wisp-fg);
+      font-weight: 500;
+      transition: color 150ms;
+    }
+    a.wisp-running-label:hover {
+      color: var(--wisp-accent);
+    }
+    .wisp-running-pos {
+      color: var(--wisp-accent);
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+    }
+    /*
+     * 系列位置的按钮形态：外观与文字形态完全一样（teal、表格数字、500），hover 加 1px 下划线。
+     * 只在 ≥80rem 且 JS 可用（html[data-series]）时替换文字形态。
+     */
+    .wisp-running-toggle {
+      display: none;
+      padding: 0.5rem 0;
+      margin-block: -0.5rem;
+      border: 0;
+      border-radius: 3px;
+      background: none;
+      font: inherit;
+      font-weight: 500;
+      line-height: inherit;
+      cursor: pointer;
+      text-decoration-line: none;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.25em;
+    }
+    .wisp-running-toggle:hover,
+    .wisp-running-toggle[aria-expanded='true'] {
+      text-decoration-line: underline;
+    }
+    .wisp-running-toggle:focus-visible {
+      outline: 2px solid var(--wisp-accent);
+      outline-offset: 2px;
+    }
+    @media (min-width: 80rem) {
+      :global(html[data-series]) .wisp-running-toggle {
+        display: inline;
+      }
+      :global(html[data-series]) .wisp-running-pos:not(.wisp-running-toggle) {
+        display: none;
+      }
+    }
+    .wisp-running-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      opacity: 0;
+      transition: opacity 200ms var(--wisp-ease);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .wisp-running-title {
+        transform: translateY(0.25rem);
+        transition:
+          opacity 200ms var(--wisp-ease),
+          transform 200ms var(--wisp-ease);
+      }
+    }
+    /* 章节标题前的「·」随标题一起淡入：标题出现之前，书眉以「7 / 23 篇」收尾 */
+    .wisp-running-title-dot {
+      opacity: 0;
+      transition: opacity 200ms var(--wisp-ease);
+    }
+    .wisp-running[data-past-title] .wisp-running-title,
+    .wisp-running[data-past-title] .wisp-running-title-dot {
+      opacity: 1;
+      transform: none;
+    }
+    /*
+     * 品牌：标记居中，名字参与基线对齐（让整个链接的基线就是名字的基线）。
+     * 触控高度用上下 padding 补足，不用 min-height：内容盒只有一行高，名字才不会被顶到盒子上沿。
+     */
+    .wisp-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.625rem;
+      min-width: 0;
+      padding-block: 0.5rem;
+      color: var(--wisp-fg);
+      font-weight: 650;
+      font-size: 1rem;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+    }
+    /* 品牌标记：两块错位的方块，强调色 + 前景色，不依赖图片 */
+    .wisp-brand-mark {
+      position: relative;
+      flex: none;
+      width: 1.125rem;
+      height: 1.125rem;
+      border-radius: 3px;
+      background: var(--wisp-accent);
+      transition: transform 220ms var(--wisp-ease);
+    }
+    .wisp-brand-mark::after {
+      content: '';
+      position: absolute;
+      right: -3px;
+      bottom: -3px;
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 2px;
+      background: var(--wisp-fg);
+      outline: 2px solid var(--wisp-bg);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .wisp-brand:hover .wisp-brand-mark {
+        transform: rotate(-8deg);
+      }
+    }
+    .wisp-brand-name {
+      align-self: baseline;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .wisp-nav {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 0.25rem;
+    }
+    .wisp-nav ul {
+      --wisp-fade-size: 1rem;
+      display: flex;
+      min-width: 0;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      gap: 0.25rem;
+      margin: -0.25rem;
+      padding: 0.25rem;
+      list-style: none;
+      scrollbar-width: none;
+    }
+    .wisp-nav a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2.75rem;
+      padding-inline: 0.75rem;
+      color: var(--wisp-muted);
+      font-size: 0.875rem;
+      transition: color 150ms;
+      white-space: nowrap;
+    }
+    .wisp-nav a:hover {
+      color: var(--wisp-fg);
+    }
+    .wisp-nav a:hover .wisp-draw::after {
+      transform: scaleX(1);
+    }
+    /* 当前页：前景色 + 常显的强调色下划线（与侧栏当前项同一种强调色） */
+    .wisp-nav a[aria-current='page'] {
+      color: var(--wisp-fg);
+    }
+    .wisp-nav a[aria-current='page'] .wisp-draw::after {
+      background: var(--wisp-accent);
+      transform: scaleX(1);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .wisp-nav a:hover .wisp-draw::after,
+      .wisp-nav a[aria-current='page'] .wisp-draw::after {
+        opacity: 1;
+      }
+    }
+    @media (max-width: 23.99rem) {
+      .wisp-header-inner > .wisp-nav {
+        margin-inline-start: 0.5rem;
+      }
+      .wisp-nav a {
+        padding-inline: 0.5rem;
+      }
+    }
+    @media (max-width: 22.5rem) {
+      .wisp-brand {
+        gap: 0.375rem;
+        font-size: 0.9375rem;
+      }
+      .wisp-header-inner > .wisp-nav {
+        margin-inline-start: 0.375rem;
+        gap: 0.125rem;
+      }
+      .wisp-nav ul {
+        gap: 0.125rem;
+      }
+      .wisp-nav a {
+        padding-inline: 0.375rem;
+      }
+    }
+  }
+</style>

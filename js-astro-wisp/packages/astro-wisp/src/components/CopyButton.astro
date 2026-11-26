@@ -1,0 +1,195 @@
+---
+/**
+ * 代码块的客户端按钮：自动换行（只在横向溢出的块上显示）、复制、长代码折叠。
+ * 换行是读者偏好：html[data-wisp-code-wrap="on|off"] + localStorage `wisp-code-wrap`，对整页代码块生效；
+ * 首帧前的初值由 Base 布局 <head> 里的内联脚本写入。
+ */
+import wisp from 'virtual:wisp/config';
+import { iconSvg } from '../lib/icons';
+
+const copy = wisp.features.codeCopy;
+const fold = wisp.features.codeFold.enabled;
+const ic = (n: string) => `<span data-i="${n}">${iconSvg(n)}</span>`;
+const icons = [
+  'wrap-text',
+  ...(copy ? ['copy', 'check', 'x'] : []),
+  ...(fold ? ['chevron-down', 'chevron-up'] : []),
+]
+  .map(ic)
+  .join('');
+---
+
+<>
+  <template id="wisp-ic" set:html={icons} />
+  <script is:inline>
+    (() => {
+      const T = document.getElementById('wisp-ic');
+      const I = (n) => T.content.querySelector('[data-i="' + n + '"]')?.innerHTML;
+      const root = document.documentElement;
+      const zh = root.lang.startsWith('zh');
+      const copyTimers = new WeakMap();
+      const repeatState = new WeakMap();
+      // 当前是否换行：读者选择优先，否则看站点默认（.wisp-code--wrap）
+      const wrapped = (box) =>
+        root.dataset.wispCodeWrap
+          ? root.dataset.wispCodeWrap === 'on'
+          : box.classList.contains('wisp-code--wrap');
+      const syncWrap = () =>
+        document
+          .querySelectorAll('.wisp-wrap')
+          .forEach((b) => b.setAttribute('aria-pressed', String(wrapped(b.parentElement))));
+      const boxes = [...document.querySelectorAll('.wisp-code')];
+      const total = boxes.length;
+      const announce = (s, text) => {
+        const flip = !repeatState.get(s);
+        repeatState.set(s, flip);
+        s.textContent = flip ? text : `${text}\u00A0`;
+      };
+      const runCopy = async (b, pre, s, pill) => {
+        const isZh = document.documentElement.lang.startsWith('zh');
+        const c = pre.querySelector('code').cloneNode(true);
+        c.querySelectorAll('[style*="user-select"]').forEach((e) => e.remove());
+        const text = c.textContent ?? '';
+        let copied = false;
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            copied = true;
+          }
+        } catch {}
+        clearTimeout(copyTimers.get(b));
+        if (!copied) {
+          delete b.dataset.done;
+          b.dataset.failed = '';
+          b.innerHTML = I('x');
+          const msg = isZh ? '复制失败' : 'Copy failed';
+          pill.textContent = msg;
+          pill.hidden = false;
+          announce(s, msg);
+          copyTimers.set(
+            b,
+            window.setTimeout(() => {
+              b.innerHTML = I('copy');
+              delete b.dataset.failed;
+              pill.hidden = true;
+              pill.textContent = '';
+              s.textContent = '';
+            }, 3000),
+          );
+          return;
+        }
+        delete b.dataset.failed;
+        pill.hidden = true;
+        pill.textContent = '';
+        b.innerHTML = I('check');
+        b.dataset.done = '';
+        announce(s, isZh ? '已复制' : 'Copied');
+        copyTimers.set(
+          b,
+          window.setTimeout(() => {
+            b.innerHTML = I('copy');
+            delete b.dataset.done;
+            s.textContent = '';
+          }, 2000),
+        );
+      };
+
+      boxes.forEach((box, k) => {
+        const pre = box.querySelector('pre');
+        const el = (t, c) => Object.assign(document.createElement(t), { className: c });
+        pre.id ||= 'wisp-c' + k;
+        box.id ||= 'wisp-code-' + k;
+        const langName = box.dataset.language || 'code';
+        const suffix = total > 1 ? (zh ? `（第 ${k + 1} 段）` : ` (${k + 1})`) : '';
+
+        const w = el('button', 'wisp-wrap');
+        w.type = 'button';
+        w.innerHTML = I('wrap-text');
+        w.setAttribute(
+          'aria-label',
+          zh ? `切换 ${langName} 自动换行${suffix}` : `Toggle ${langName} word wrap${suffix}`,
+        );
+        w.setAttribute('aria-controls', pre.id);
+        w.onclick = () => {
+          const next = !wrapped(box);
+          // 换行会改变上方代码块的高度：保持被点的按钮停在原处
+          const top = w.getBoundingClientRect().top;
+          root.dataset.wispCodeWrap = next ? 'on' : 'off';
+          try {
+            localStorage.setItem('wisp-code-wrap', root.dataset.wispCodeWrap);
+          } catch {}
+          syncWrap();
+          document.dispatchEvent(new Event('wisp:overflow'));
+          scrollBy(0, w.getBoundingClientRect().top - top);
+        };
+        box.append(w);
+        if (I('copy')) {
+          const b = el('button', 'wisp-copy');
+          const pill = el('span', 'wisp-copy-status');
+          const s = el('span', 'wisp-sr-only');
+          b.type = 'button';
+          b.innerHTML = I('copy');
+          b.setAttribute('command', '--copy');
+          b.setAttribute('commandfor', box.id);
+          b.setAttribute(
+            'aria-label',
+            zh ? `复制 ${langName} 代码${suffix}` : `Copy ${langName} code${suffix}`,
+          );
+          pill.hidden = true;
+          pill.setAttribute('aria-hidden', 'true');
+          s.setAttribute('role', 'status');
+          s.setAttribute('aria-live', 'polite');
+          box.addEventListener('command', (e) => {
+            if (e.command === '--copy') runCopy(b, pre, s, pill);
+          });
+          box.append(b, pill, s);
+        }
+        const n = +box.dataset.fold;
+        if (n && I('chevron-down')) {
+          const f = el('button', 'wisp-fold');
+          const set = (open) => {
+            box.toggleAttribute('data-folded', !open);
+            box.toggleAttribute('data-wisp-open', open);
+            f.setAttribute('aria-expanded', open);
+            const zh = document.documentElement.lang.startsWith('zh');
+            f.innerHTML =
+              I(open ? 'chevron-up' : 'chevron-down') +
+              '<span>' +
+              (open
+                ? zh
+                  ? '收起'
+                  : 'Collapse'
+                : zh
+                  ? '展开全部 ' + box.dataset.lines + ' 行'
+                  : 'Show all ' + box.dataset.lines + ' lines') +
+              '</span>';
+          };
+          f.type = 'button';
+          f.setAttribute('aria-controls', pre.id);
+          box.style.setProperty('--fold', n);
+          set(false);
+          f.onclick = () => {
+            const open = box.hasAttribute('data-folded');
+            set(open);
+            if (open) return;
+            // 收起：在长代码底部点「收起」后，代码块顶端多半已在视口上方——把它拉回页眉下方
+            // （scrollIntoView 遵守 html 的 scroll-padding-top），读者回到这段代码的开头；焦点留在按钮上
+            const pad =
+              parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+            const top = box.getBoundingClientRect().top;
+            const r = f.getBoundingClientRect();
+            if (top < pad || r.bottom > innerHeight)
+              box.scrollIntoView({
+                block: 'start',
+                behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
+                  ? 'instant'
+                  : 'smooth',
+              });
+          };
+          box.append(f);
+        }
+      });
+      syncWrap();
+    })();
+  </script>
+</>

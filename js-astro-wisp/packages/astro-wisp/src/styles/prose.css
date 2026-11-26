@@ -1,0 +1,883 @@
+/*
+ * 正文排版（design-system.md §2.2 / §2.3）。
+ * 建立在 @tailwindcss/typography 的 `.prose` 之上：先把它的配色变量全部映射到令牌，
+ * 再按 Wisp 规范覆盖尺寸与间距（本文件的选择器特异性高于插件的 :where()）。
+ * 代码块主体样式归 code.css（T10），这里只负责 prose 与 pre 之间的间距。
+ */
+
+/*
+ * 块级节奏：代码、表格、公式、图、要点块、讲解组件与前后段落之间是同一个距离。
+ * 注册成 <length> 后，1.75em 在 .prose 上按正文字号算成像素再继承下去——
+ * 表格（0.9375em）、代码块等字号不同的元素拿到的仍是同一个值。
+ */
+@property --wisp-block-gap {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 28px;
+}
+
+.prose {
+  --wisp-block-gap: 1.75em;
+  --tw-prose-body: var(--wisp-fg);
+  --tw-prose-headings: var(--wisp-fg);
+  --tw-prose-lead: var(--wisp-muted);
+  --tw-prose-links: var(--wisp-accent);
+  --tw-prose-bold: var(--wisp-fg);
+  --tw-prose-counters: var(--wisp-muted);
+  --tw-prose-bullets: var(--wisp-subtle);
+  --tw-prose-hr: var(--wisp-border);
+  --tw-prose-quotes: var(--wisp-muted);
+  --tw-prose-quote-borders: var(--wisp-border);
+  --tw-prose-captions: var(--wisp-muted);
+  --tw-prose-kbd: var(--wisp-fg);
+  --tw-prose-kbd-shadows: var(--wisp-border);
+  --tw-prose-code: var(--wisp-fg);
+  --tw-prose-pre-code: var(--wisp-fg);
+  --tw-prose-pre-bg: var(--wisp-code-bg);
+  --tw-prose-th-borders: var(--wisp-border);
+  --tw-prose-td-borders: var(--wisp-border);
+
+  max-width: var(--wisp-measure, 42rem);
+  font-size: inherit;
+  line-height: 1.8;
+  letter-spacing: 0;
+  color: var(--wisp-fg);
+}
+
+/* ---------- 段落 ---------- */
+.prose p {
+  margin-block: 1em;
+  text-indent: 0;
+}
+.prose > :first-child {
+  margin-top: 0;
+}
+.prose > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- 标题：层级靠字号、字重和留白 ---------- */
+.prose :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--wisp-fg);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  /* 锚点跳转的让位由 html 的 scroll-padding-top（header-h + 1.5rem）统一负责，这里不再叠加 */
+}
+.prose h1 {
+  font-size: 2rem;
+  margin: 1.5em 0 0.8em;
+}
+/* h2 是章节：只靠字号、字重和上方留白分开，不画分隔线 */
+.prose h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 2.5em 0 0.75em;
+}
+.prose > h2:first-child {
+  margin-top: 0;
+}
+.prose h3 {
+  font-size: 1.1875rem;
+  margin: 2em 0 0.5em;
+}
+
+/*
+ * 文章正文的章节编号：h2 为 1、2、3…，h3 为 1.1、1.2…，与目录中的编号一致（Toc.astro 同一算法）。
+ * 只数正文直接子元素，脚注区的标题不计入。
+ *
+ * 编号是标题第一行里的一个 inline-block（::before），宽度 W、左外边距 -W：它和标题文字在同一个行框里
+ * 按基线对齐（字号再小也与标题第一行同基线，不靠偏移量微调），自身不占前进宽度。
+ * - ≥ 80rem：W = 栏间距，编号右对齐到正文左边线外 0.75rem 处，h2、h3 的标题文字都从正文左边线开始。
+ * - < 80rem：标题加同样宽的左内边距，编号落在这一列里，标题换行后续行悬挂对齐标题起点（与编号目录同一语法）。
+ *   列宽按编号的位数：1 位 h2、「1.1」形式的 h3；有 10 个以上 h2（或 h3）时各加一位。
+ * 编号字号是标题的 0.8 倍，所以列宽用编号自身的 ch 计算，标题内边距同一个值乘 0.8 换算到标题的 ch。
+ */
+.wisp-post-body {
+  --wisp-hn-gap: 0.75rem;
+  --wisp-h2n-digits: 1;
+  --wisp-h3n-digits: 2.6;
+  counter-reset: wisp-h2;
+}
+.wisp-post-body:has(> h2:nth-of-type(10)) {
+  --wisp-h2n-digits: 2;
+  --wisp-h3n-digits: 3.7;
+}
+.wisp-post-body:has(> h3:nth-of-type(10)) {
+  --wisp-h3n-digits: 3.7;
+}
+.wisp-post-body:has(> h2:nth-of-type(10)):has(> h3:nth-of-type(10)) {
+  --wisp-h3n-digits: 4.8;
+}
+.wisp-post-body > h2 {
+  --wisp-hn-digits: var(--wisp-h2n-digits);
+  counter-increment: wisp-h2;
+  counter-reset: wisp-h3;
+}
+.wisp-post-body > h2 ~ h3 {
+  --wisp-hn-digits: var(--wisp-h3n-digits);
+  counter-increment: wisp-h3;
+}
+.wisp-post-body > :is(h2, h2 ~ h3) {
+  padding-inline-start: calc(var(--wisp-hn-digits) * 0.8ch + var(--wisp-hn-gap));
+}
+.wisp-post-body > :is(h2, h2 ~ h3)::before {
+  --wisp-hn-w: calc(var(--wisp-hn-digits) * 1ch + var(--wisp-hn-gap));
+  display: inline-block;
+  width: var(--wisp-hn-w);
+  margin-inline-start: calc(-1 * var(--wisp-hn-w));
+  font-size: 0.8em;
+  font-weight: 400;
+  line-height: 1;
+  text-align: start;
+  text-indent: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums lining-nums;
+  color: var(--wisp-accent);
+}
+.wisp-post-body > h2::before {
+  content: counter(wisp-h2);
+}
+.wisp-post-body > h2 ~ h3::before {
+  content: counter(wisp-h2) '.' counter(wisp-h3);
+  color: var(--wisp-muted);
+}
+@media (min-width: 80rem) {
+  .wisp-post-body > :is(h2, h2 ~ h3) {
+    padding-inline-start: 0;
+  }
+  .wisp-post-body > :is(h2, h2 ~ h3)::before {
+    --wisp-hn-w: var(--wisp-gutter, 4rem);
+    padding-inline-end: 0.75rem;
+    text-align: end;
+  }
+}
+.prose :is(h4, h5, h6) {
+  font-size: 1rem;
+  margin: 1.75em 0 0.4em;
+  color: var(--wisp-muted);
+}
+/* 连续标题之间不叠加大留白 */
+.prose :is(h2, h3, h4) + :is(h3, h4, h5) {
+  margin-top: 0.8em;
+}
+.prose :is(h1, h2, h3, h4, h5, h6) a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: inherit;
+}
+.prose :is(h1, h2, h3, h4, h5, h6) code {
+  font-size: 0.875em;
+}
+
+/* ---------- 强调 ---------- */
+.prose :is(strong, b) {
+  color: inherit;
+  font-weight: 600;
+}
+/* 中文没有真斜体：着重号 */
+.prose em:lang(zh),
+.prose i:lang(zh) {
+  font-style: normal;
+  -webkit-text-emphasis: dot;
+  text-emphasis: dot;
+  -webkit-text-emphasis-position: under right;
+  text-emphasis-position: under right;
+}
+/* 中文段落里的纯西文强调（例如英文论文名、*emphasis*）：rehype-a11y 自动补 lang="en"，保留真斜体 */
+.prose :is(em, i):lang(zh) :lang(en),
+.prose :is(em, i):lang(en) {
+  font-style: italic;
+  -webkit-text-emphasis: none;
+  text-emphasis: none;
+}
+
+/* ---------- 链接 ---------- */
+.prose a {
+  color: var(--wisp-accent);
+  font-weight: inherit;
+  text-decoration-line: underline;
+  text-underline-offset: 0.25em;
+  text-decoration-thickness: 1px;
+  text-decoration-color: currentColor;
+}
+.prose a:hover {
+  text-decoration-thickness: 2px;
+}
+.prose a[data-cjk-start] {
+  margin-inline-start: 0.16em;
+}
+.prose a[data-cjk-end] {
+  margin-inline-end: 0.16em;
+}
+
+/* ---------- 列表 ---------- */
+.prose :is(ul, ol) {
+  margin-block: 1em;
+  padding-inline-start: 1.5em;
+}
+/* 有序列表留出两位数序号的位置，「10.」不越过正文左边线 */
+.prose ol {
+  padding-inline-start: 2em;
+}
+.prose li {
+  margin-block: 0.35em;
+  padding-inline-start: 0.25em;
+}
+.prose li > :is(ul, ol) {
+  margin-block: 0.35em;
+}
+.prose li > p {
+  margin-block: 0.5em;
+}
+.prose ul > li::marker {
+  color: var(--wisp-subtle);
+}
+.prose ol > li::marker {
+  color: var(--wisp-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 任务列表（GFM） */
+.prose ul.contains-task-list {
+  list-style: none;
+  padding-inline-start: 0.25em;
+}
+.prose li.task-list-item {
+  padding-inline-start: 0;
+}
+.prose li.task-list-item::marker {
+  content: none;
+}
+.prose li.task-list-item > input[type='checkbox'] {
+  /* 自绘复选框：UA 的 disabled 样式对比度过低 */
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-block;
+  inline-size: 0.9em;
+  block-size: 0.9em;
+  margin: 0 0.6em 0 0;
+  vertical-align: -0.08em;
+  border: 1.5px solid var(--wisp-muted);
+  border-radius: 3px;
+  background-color: transparent;
+  opacity: 1;
+}
+.prose li.task-list-item > input[type='checkbox']:checked {
+  border-color: var(--wisp-accent);
+  background-color: var(--wisp-accent);
+  /* 勾是 Lucide check 的路径，从 teal 方块里挖空（mask 只用透明度，颜色仍来自令牌），露出页面底色 */
+  --wisp-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  -webkit-mask:
+    var(--wisp-check) center / 80% no-repeat,
+    linear-gradient(black, black);
+  -webkit-mask-composite: xor;
+  mask:
+    var(--wisp-check) center / 80% no-repeat exclude,
+    linear-gradient(black, black);
+}
+.prose li.task-list-item .contains-task-list {
+  padding-inline-start: 1.6em;
+}
+
+/* ---------- 引用块：手册里的「要点」——浅底 + 1px 发丝线、小圆角，不用彩色竖条、不用斜体 ----------
+ * 暗色里 surface 与页面底色只差一点，单靠底色看不出是一个块；发丝线（与代码清单同一种描边）在两种主题里都把它收住。 */
+.prose blockquote {
+  margin: var(--wisp-block-gap) 0;
+  padding: 0.125em 1.25em;
+  border: 1px solid var(--wisp-border);
+  border-radius: 4px;
+  background-color: var(--wisp-surface);
+  color: var(--wisp-fg);
+  font-style: normal;
+  font-weight: inherit;
+  quotes: none;
+}
+.prose blockquote p::before,
+.prose blockquote p::after {
+  content: none;
+}
+.prose blockquote p {
+  margin-block: 0.875em;
+}
+
+/* ---------- 折叠块（<details>）：对齐要点块（surface + 1px 发丝线 + 4px 圆角）与 ≥44px 触控 ---------- */
+.prose details {
+  margin-block: var(--wisp-block-gap, 1.75em);
+  padding-inline: 1rem;
+  border: 1px solid var(--wisp-border);
+  border-radius: 4px;
+  background-color: var(--wisp-surface);
+  color: var(--wisp-fg);
+}
+.prose details[open] {
+  padding-bottom: 0.875rem;
+}
+.prose details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding-block: 0.5rem;
+  cursor: pointer;
+  color: var(--wisp-fg);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.5;
+  list-style: none;
+  user-select: none;
+  transition: color 150ms;
+}
+.prose details > summary::-webkit-details-marker {
+  display: none;
+}
+.prose details > summary::after {
+  content: '';
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  background-color: var(--wisp-muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  transition: background-color 150ms;
+}
+.prose details::details-content {
+  interpolate-size: allow-keywords;
+  overflow: clip;
+  contain: layout;
+}
+.prose details:not([open])::details-content {
+  block-size: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .prose details > summary::after {
+    transition:
+      transform 180ms var(--wisp-ease),
+      background-color 150ms;
+  }
+  .prose details::details-content {
+    transition:
+      block-size 200ms var(--wisp-ease),
+      content-visibility 200ms allow-discrete;
+  }
+  .prose details[open]::details-content {
+    @starting-style {
+      block-size: 0;
+    }
+  }
+}
+.prose details > summary:hover {
+  color: var(--wisp-accent);
+}
+.prose details > summary:hover::after {
+  background-color: var(--wisp-accent);
+}
+.prose details[open] > summary {
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--wisp-border);
+}
+.prose details[open] > summary::after {
+  transform: rotate(180deg);
+}
+.prose details > :nth-child(2) {
+  margin-top: 0;
+}
+.prose details > :last-child {
+  margin-bottom: 0;
+}
+.prose details :not(pre) > code {
+  background-color: var(--wisp-bg);
+}
+
+/* ---------- 分隔线 ---------- */
+.prose hr {
+  margin: 3em auto;
+  border: 0;
+  border-top: 1px solid var(--wisp-border);
+  width: 100%;
+}
+
+/* ---------- 行内代码 ---------- */
+.prose :not(pre) > code {
+  font-family: var(--wisp-font-mono);
+  font-size: 0.875em;
+  font-weight: 400;
+  padding: 0.125em 0.3em;
+  border-radius: 3px;
+  background-color: var(--wisp-surface);
+  color: var(--wisp-fg);
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.prose :is(h1, h2, h3, h4, h5, h6) :not(pre) > code {
+  overflow-wrap: break-word;
+}
+.prose code::before,
+.prose code::after {
+  content: none;
+}
+.prose a > code {
+  color: inherit;
+}
+.prose kbd {
+  font-family: var(--wisp-font-mono);
+  font-size: 0.8125em;
+  padding: 0.1em 0.4em;
+  border: 1px solid var(--wisp-border);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  background-color: var(--wisp-surface);
+  color: var(--wisp-fg);
+  box-shadow: none;
+}
+
+/* ---------- 代码块：只管与正文的间距（主体样式见 code.css） ---------- */
+.prose pre {
+  margin-block: var(--wisp-block-gap);
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+.prose :is(figure, div) > pre {
+  margin-block: 0;
+}
+
+/* ---------- 表格：外层横向滚动 ---------- */
+.prose table {
+  /* 没有包裹元素时，表格自身成为滚动容器；现代浏览器会保留表格语义 */
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  margin-top: var(--wisp-block-gap);
+  padding-bottom: 0.4375rem;
+  margin-bottom: calc(var(--wisp-block-gap) - 0.4375rem);
+  /* 用 separate + 0 间距替代 collapse：让吸左固定的首列（sticky + z-index:1）自带完整表头线与行分隔线，不被底色遮盖 */
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.9375em;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+.prose .wisp-table {
+  container-type: inline-size scroll-state;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  /* 底部留出呼吸间距，让悬停显现的极细横向滑块与三线表底边隔开，同时总下外边距仍等于 --wisp-block-gap */
+  margin-top: var(--wisp-block-gap);
+  padding-bottom: 0.4375rem;
+  margin-bottom: calc(var(--wisp-block-gap) - 0.4375rem);
+}
+.prose .wisp-table > table {
+  display: table;
+  width: 100%;
+  margin-block: 0;
+  padding-bottom: 0;
+}
+/* 三线表（booktabs）：顶线、表头线、底线全部画在单元格上，确保吸左固定的首列（z-index:1）不会因亚像素取整遮住顶底墨线 */
+.prose table > :first-child > tr:first-child > :is(th, td) {
+  border-top: 1px solid var(--wisp-fg);
+}
+.prose table > :last-child > tr:last-child > :is(th, td) {
+  border-bottom: 1px solid var(--wisp-fg);
+}
+.prose thead :is(th, td) {
+  border-bottom: 1px solid color-mix(in srgb, var(--wisp-fg) 45%, var(--wisp-border));
+}
+/*
+ * 单元格里的行内代码只在空格处换行，不在记号中间断开（拆开的 file.py:234- / 358 比换行更难读）：
+ * rehype-a11y 把其中每个不含空格的记号包成 .wisp-tok（nowrap），记号之间的空格可以换行。
+ * 单个记号比列还宽时，整表横向滚动。
+ */
+.prose td code {
+  white-space: pre-wrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+.prose td code .wisp-tok {
+  white-space: nowrap;
+}
+.prose th {
+  color: var(--wisp-muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: start;
+  vertical-align: bottom;
+  text-wrap: balance;
+  white-space: nowrap;
+}
+.prose :is(th, td) {
+  padding: 0.6em 1.25em 0.6em 0;
+  /* 不在单词中间断开（继承的 overflow-wrap:anywhere 会把 TypeScript 拆开）；放不下时整表横向滚动 */
+  overflow-wrap: normal;
+  word-break: normal;
+  min-width: 2.5em;
+}
+/* 多列数据表（≥6 列）收紧列间右内边距，避免大量短数字列撑出不必要的滚动 */
+.prose tr:has(> :nth-child(6)) > :is(th, td):not(:last-child) {
+  padding-inline-end: 0.875em;
+}
+/* 长描述列（rehype-a11y 标记）：保底阅读宽度，不再被短数字列挤压成三四字宽的细条 */
+.prose td[data-wisp-prose] {
+  min-width: 11.5em;
+}
+.prose :is(th, td):last-child {
+  padding-inline-end: 0;
+}
+/* 超宽溢出表格：首列吸左固定，向右滚看指标时行名不丢失（纯 CSS scroll-state） */
+@container scroll-state(scrollable: inline-start) {
+  .prose .wisp-table :is(th, td):first-child:not([colspan]) {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    background-color: var(--wisp-bg);
+  }
+  .prose .wisp-table :is(th, td):first-child:not([colspan])::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    inset-inline-end: 0;
+    width: 1px;
+    background-color: var(--wisp-border);
+    pointer-events: none;
+  }
+}
+@container scroll-state(scrollable: inline-end) {
+  .prose .wisp-table :is(th, td):first-child:not([colspan]) {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    background-color: var(--wisp-bg);
+  }
+}
+@container scroll-state(scrollable: inline-start) {
+  .prose .wisp-table :is(th, td):nth-child(2) {
+    padding-inline-start: 0.75em;
+  }
+}
+@container scroll-state(scrollable: inline-end) {
+  .prose .wisp-table :is(th, td):nth-child(2) {
+    padding-inline-start: 0.75em;
+  }
+}
+@container (max-width: 36rem) {
+  .prose .wisp-table :is(th, td):not(:last-child) {
+    padding-inline-end: 0.875em;
+  }
+  .prose .wisp-table > table {
+    width: max-content;
+    min-width: 100%;
+    max-width: none;
+  }
+  .prose .wisp-table :is(th, td):first-child:not([colspan]) {
+    min-width: min(5.5rem, 28cqi);
+    max-width: min(7rem, 30cqi);
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+  .prose .wisp-table :is(th, td):not(:first-child):not([colspan]) {
+    max-width: min(14rem, calc(100cqi - 3.25rem - min(7rem, 30cqi)));
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+  .prose .wisp-table td[data-wisp-prose]:not(:first-child) {
+    min-width: min(12rem, calc(100cqi - 3.25rem - min(7rem, 30cqi)));
+  }
+  .prose .wisp-table td code {
+    word-break: normal;
+    overflow-wrap: anywhere;
+  }
+  .prose .wisp-table td code .wisp-tok {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+@media (max-width: 40rem) {
+  .prose :is(th, td):not(:last-child) {
+    padding-inline-end: 0.875em;
+  }
+  .prose blockquote {
+    padding-inline: 1rem;
+  }
+}
+.prose tbody tr + tr > :is(th, td) {
+  border-top: 1px solid var(--wisp-border);
+}
+.prose td {
+  vertical-align: top;
+}
+/* 首列是行标题时（常见于对照表）加粗一档 */
+.prose tbody td:first-child:has(> strong:only-child),
+.prose tbody th {
+  color: var(--wisp-fg);
+}
+
+/* ---------- 图片与图注 ---------- */
+.prose img {
+  display: block;
+  max-width: 100%;
+  max-inline-size: 100%;
+  height: auto;
+  margin-block: var(--wisp-block-gap);
+  margin-inline: auto;
+  border-radius: 4px;
+}
+.prose figure {
+  margin-block: var(--wisp-block-gap);
+  margin-inline: 0;
+}
+.prose figure:not(.wisp-wide) {
+  max-width: 100%;
+  max-inline-size: 100%;
+}
+.prose figure img {
+  margin-block: 0;
+}
+/* Markdown 的独立图片通常包在 p 中：让段落负责节奏，避免 p 与 img 双重留白 */
+.prose p:has(> img:only-child) {
+  margin-block: var(--wisp-block-gap);
+}
+.prose p:has(> img:only-child) > img {
+  margin-block: 0;
+}
+/* figcaption 的样式在 figure.css（所有 figure 共用一套题注语法） */
+
+/* ---------- 引用（GFM 脚注）----------
+ * 作者语法 `正文[^key]` + `[^key]: 出处`；rehype-citations 补上 .wisp-cite / .wisp-notes / 回链图标，
+ * Citations 组件负责平滑跳转、到达后的临时标记（data-wisp-flash）和悬停预览。
+ *
+ * 文内标记：真上标、teal、表格数字、带方括号——[1] 是 GB/T 7714 顺序编码制的写法，
+ * 也不会和公式的上标（x²）混淆；相邻的引用合并成 [1, 2]。sup 行高为 0，有无引用的行行距完全一致；
+ * 链接是行内元素，用上下内边距把点击区撑到约 24px（行内元素的上下内边距不影响行高）；
+ * 括号前的 U+2060 让标记和前一个字粘在一起，不会单独落到下一行行首。
+ */
+.prose sup {
+  line-height: 0;
+}
+.prose sup.wisp-cite {
+  font-size: 0.75em;
+}
+.prose sup a[data-footnote-ref],
+.prose a[data-footnote-ref] {
+  padding: 0.5em 0.45em;
+  margin-inline: -0.35em;
+  color: var(--wisp-accent);
+  font-weight: 500;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.prose sup a[data-footnote-ref]:hover {
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+.prose sup a[data-footnote-ref]::before {
+  /* U+2060 WORD JOINER：标记不会被挤到下一行行首（alt 置空避免读屏朗读括号） */
+  content: '\2060[' / '';
+}
+.prose sup a[data-footnote-ref]::after {
+  content: ']' / '';
+}
+/* 紧挨着的引用 [1][2] → [1, 2]（rehype-citations 标记）：前一个右括号换成逗号，后一个不画左括号 */
+.prose sup.wisp-cite--joined > a[data-footnote-ref] {
+  margin-inline-end: 0;
+  padding-inline-end: 0.2em;
+}
+.prose sup.wisp-cite--joined > a[data-footnote-ref]::after {
+  content: ',' / '';
+}
+.prose sup.wisp-cite--cont > a[data-footnote-ref] {
+  margin-inline-start: 0;
+  padding-inline-start: 0.2em;
+}
+.prose sup.wisp-cite--cont > a[data-footnote-ref]::before {
+  content: '\2060' / '';
+}
+/* 从注释返回正文时，被返回的那个标记短暂加下划线 */
+.prose sup[data-wisp-flash] > a[data-footnote-ref] {
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+/* 跳转目标让开吸顶页眉：由 html 的 scroll-padding-top（header-h + 1.5rem，global.css）统一负责，这里不再叠加 scroll-margin。 */
+/* 文末列表：发丝线把它和正文分开（章末的 1px 墨线由下方的上一篇/下一篇负责收口，不重复画） */
+.prose section[data-footnotes] {
+  margin-top: 3.5em;
+  padding-top: 1.25em;
+  border-top: 1px solid var(--wisp-border);
+  color: var(--wisp-muted);
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+.prose section[data-footnotes] > h2 {
+  margin: 0 0 0.875rem;
+  padding: 0;
+  color: var(--wisp-fg);
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+.prose section[data-footnotes] > h2::before {
+  content: none;
+}
+/* 与文内上标 [1] 呼应的顺序编码：去掉悬空左竖轨，[n] 与标题左对齐，正文悬挂缩进 */
+.prose section[data-footnotes] ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: wisp-note;
+}
+.prose section[data-footnotes] li {
+  display: grid;
+  grid-template-columns: 1.75rem minmax(0, 1fr);
+  align-items: baseline;
+  margin: 0;
+  padding: 0;
+  counter-increment: wisp-note;
+  overflow-wrap: break-word;
+  transition: color 600ms var(--wisp-ease);
+}
+.prose section[data-footnotes] ol:has(li:nth-child(10)) > li {
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+}
+.prose section[data-footnotes] li + li {
+  margin-top: 0.6875rem;
+}
+.prose section[data-footnotes] li::before {
+  content: '[' counter(wisp-note) ']';
+  grid-column: 1;
+  color: var(--wisp-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums lining-nums;
+  transition: color 600ms var(--wisp-ease);
+}
+.prose section[data-footnotes] li > * {
+  grid-column: 2;
+}
+.prose section[data-footnotes] li p {
+  margin: 0;
+}
+.prose section[data-footnotes] li p + p {
+  margin-top: 0.375rem;
+}
+.prose section[data-footnotes] :not(pre) > code {
+  color: inherit;
+  font-size: 0.85em;
+  padding: 0.075em 0.25em;
+  background-color: var(--wisp-code-bg);
+}
+.prose section[data-footnotes] a:not([data-footnote-backref]) {
+  color: var(--wisp-muted);
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+.prose section[data-footnotes] a:not([data-footnote-backref]):hover {
+  color: var(--wisp-accent);
+  text-decoration-color: currentColor;
+}
+/* 到达的那一条：[n] 编号变 teal、正文变墨色；约 2 秒后淡回。
+ * 有 JS 时由 Citations 组件写 data-wisp-flash；无 JS 时用 :target（html[data-wisp-cite] 表示 JS 已接管）。 */
+.prose section[data-footnotes] li[data-wisp-flash],
+html:not([data-wisp-cite]) .prose section[data-footnotes] li:target {
+  color: var(--wisp-fg);
+  transition: none;
+}
+.prose section[data-footnotes] li[data-wisp-flash]::before,
+html:not([data-wisp-cite]) .prose section[data-footnotes] li:target::before {
+  color: var(--wisp-accent);
+  font-weight: 600;
+  transition: none;
+}
+.prose section[data-footnotes] li:focus {
+  outline: none;
+}
+.prose section[data-footnotes] li:focus-visible {
+  outline: 2px solid var(--wisp-accent);
+  outline-offset: 2px;
+}
+/* 回链：每条末尾仅一枚安静的 Lucide arrow-up（多处引用时由 Citations 动态指回来源处） */
+.prose a[data-footnote-backref] {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: 0.25rem;
+  padding: 0.125rem;
+  border-radius: 3px;
+  color: var(--wisp-subtle);
+  vertical-align: -0.15em;
+  line-height: 1;
+  text-decoration: none;
+  transition: color 150ms;
+}
+.prose a[data-footnote-backref]:hover,
+.prose a[data-footnote-backref]:focus-visible {
+  color: var(--wisp-accent);
+}
+.prose a[data-footnote-backref] .wisp-icon {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  vertical-align: 0;
+}
+@media (pointer: coarse), (max-width: 47.99rem) {
+  .prose section[data-footnotes] li + li {
+    margin-top: 0.875rem;
+  }
+  .prose a[data-footnote-backref] {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    justify-content: center;
+    margin-block: -0.625rem;
+    margin-inline: -0.375rem;
+    vertical-align: middle;
+  }
+}
+
+/* ---------- 定义列表 / 其他 ---------- */
+.prose dl {
+  margin-block: 1em;
+}
+.prose dt {
+  font-weight: 600;
+  margin-top: 1em;
+}
+.prose dd {
+  margin-inline-start: 1.5em;
+}
+.prose mark {
+  background-color: var(--wisp-selection);
+  color: inherit;
+  padding-inline: 0.15em;
+  border-radius: 3px;
+}
+.prose abbr[title] {
+  text-decoration-style: dotted;
+}
+.prose small {
+  font-size: 0.875em;
+  color: var(--wisp-muted);
+}
+
+/* ---------- KaTeX 块级公式：溢出时横向滚动（更多细节见 katex.css） ---------- */
+.prose .katex-display {
+  margin-block: var(--wisp-block-gap);
+  padding-block: 0.375em 0.5em;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+
+/* ---------- 交互组件/图表等宽内容的竖向节奏 ---------- */
+.prose > .wisp-wide,
+.prose > .wisp-figure {
+  margin-block: var(--wisp-block-gap);
+}

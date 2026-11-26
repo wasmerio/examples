@@ -1,0 +1,79 @@
+---
+import type { GetStaticPaths, Page } from 'astro';
+import Base from 'virtual:wisp/components/Base';
+import PostCard from 'virtual:wisp/components/PostCard';
+import Pagination from 'virtual:wisp/components/Pagination';
+import { getPosts, homePagedPosts, type PostEntry } from '../../utils/posts';
+import { getReadingTimes } from '../../utils/reading';
+import config from 'virtual:wisp/config';
+
+export const getStaticPaths = (async ({ paginate }) => {
+  // 有系列时首页是总目录、没有分页列表，homePagedPosts 返回空 → 不生成任何 /page/n/。
+  // 没有系列时排除首页精选区的文章，避免第 2 页重复出现。
+  // Astro 内置分页；第 1 页就是首页（/，带精选区），这里只生成第 2 页起。
+  return paginate(homePagedPosts(await getPosts(), config.home.featuredCount), {
+    pageSize: config.home.pageSize,
+  }).slice(1);
+}) satisfies GetStaticPaths;
+
+interface Props {
+  page: Page<PostEntry>;
+}
+const { page } = Astro.props;
+const posts = page.data;
+const current = page.currentPage;
+const times = await getReadingTimes(posts);
+const zh = /^zh\b/i.test(config.site.lang);
+---
+
+<Base title={zh ? `第 ${current} 页` : `Page ${current}`}>
+  <div class="wisp-container list-page">
+    <h1 class="list-title">{zh ? '最新文章' : 'Latest posts'}</h1>
+    <ul class="list">
+      {posts.map((post, i) => (
+        <li>
+          <PostCard post={post} readingTime={times[i]} headingLevel={2} showTags={false} />
+        </li>
+      ))}
+    </ul>
+    <Pagination current={current} total={page.lastPage} />
+  </div>
+</Base>
+
+<style>
+  /* 主题样式在 components 层：Tailwind 工具类与站点 customCss 总能覆盖 */
+  @layer components {
+    .list-page {
+      padding-top: 2.25rem;
+    }
+    @media (min-width: 48rem) {
+      .list-page {
+        padding-top: 3.5rem;
+      }
+    }
+    /* 与 Page 布局的页头同一规格 */
+    .list-title {
+      margin: 0 0 2.75rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--wisp-border);
+      font-size: clamp(1.75rem, 1.25rem + 1.8vw, 2.25rem);
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .list {
+      display: flex;
+      flex-direction: column;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .list > li {
+      padding-block: 1.5rem;
+      border-top: 1px solid var(--wisp-border);
+    }
+    .list > li:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+  }
+</style>

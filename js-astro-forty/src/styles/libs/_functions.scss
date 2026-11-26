@@ -1,0 +1,149 @@
+///
+/// Utility getter functions
+/// ------------------------
+/// These functions provide safe, consistent access to the theme’s
+/// configuration maps defined in `_vars.scss`.
+///
+/// They are intentionally thin wrappers around `map.get()`
+/// so all theme values are:
+///   • centralized
+///   • type-safe
+///   • easy to refactor
+///
+/// IMPORTANT:
+/// Vars are imported with a namespace (`v.`) to avoid Sass `@use`
+/// module duplication issues.
+///
+@use 'sass:math';
+@use 'sass:map' as map;
+@use 'sass:string';
+@use 'sass:meta';
+@use "sass:color";
+@use "../libs/vars" as v;
+
+/// Retrieve a duration value from the `$duration` map.
+///
+/// @group settings
+/// @param {String...} $keys - One or more keys (e.g. `transition`, `menu`)
+/// @return {Number} Duration value (e.g. `0.2s`)
+///
+/// @example scss
+///   transition: opacity _duration(transition) ease;
+///
+@function duration($keys...) {
+  @return map.get(v.$duration, $keys...);
+}
+
+/// Retrieve a font value from the `$font` map.
+///
+/// @group typography
+/// @param {String...} $keys - Font keys (e.g. `family`, `weight-bold`)
+/// @return {Mixed} Font value (string, number, or list)
+///
+/// @example scss
+///   font-family: _font(family);
+///   font-weight: _font(weight-bold);
+///
+@function font($keys...) {
+  @return map.get(v.$font, $keys...);
+}
+
+/// Retrieve a miscellaneous configuration value.
+///
+/// @group settings
+/// @param {String...} $keys - Misc keys (e.g. `z-index-base`)
+/// @return {Mixed} Value from `$misc` map
+///
+/// @example scss
+///   z-index: _misc(z-index-base);
+///
+@function misc($keys...) {
+  @return map.get(v.$misc, $keys...);
+}
+
+/// Retrieve a color from the `$palette` map.
+///
+/// This is the primary way colors should be accessed throughout
+/// the theme. Returned values are **real Sass color types**, so
+/// they are safe to use with `sass:color` functions.
+///
+/// @group colors
+/// @param {String...} $keys - Palette keys (e.g. `bg`, `highlight`)
+/// @return {Color} Sass color value
+///
+/// @example scss
+///   color: _palette(fg);
+///   background-color: _palette(bg);
+///   color: color.scale(_palette(highlight), $lightness: -10%);
+///
+@function palette($key) {
+  @return map.get(v.$palette, $key);
+}
+
+/// Retrieve a size value from the `$size` map.
+///
+/// Commonly used for spacing, dimensions, and layout constants.
+///
+/// @group layout
+/// @param {String...} $keys - Size keys (e.g. `element-margin`)
+/// @return {Number} Size value (e.g. `2em`, `4px`)
+///
+/// @example scss
+///   margin-bottom: _size(element-margin);
+///
+@function size($keys...) {
+  @return map.get(v.$size, $keys...);
+}
+
+///
+/// Helper: SVG URL Encoder
+/// @param {String} $svg - Raw SVG code
+/// @return {String} - Data URI
+///
+@function svg-url($svg) {
+    $encoded: '';
+    $slice: 2000;
+    $index: 0;
+    // math.ceil replaces ceil()
+    $loops: math.ceil(math.div(string.length($svg), $slice)); 
+
+    @for $i from 1 through $loops {
+        // string.slice replaces str-slice()
+        $chunk: string.slice($svg, $index, $index + $slice - 1); 
+        
+        $chunk: str-replace($chunk, '"', "'");
+        $chunk: str-replace($chunk, '%', '%25');
+        $chunk: str-replace($chunk, '#', '%23');
+        $chunk: str-replace($chunk, '{', '%7B');
+        $chunk: str-replace($chunk, '}', '%7D');
+        $chunk: str-replace($chunk, '<', '%3C');
+        $chunk: str-replace($chunk, '>', '%3E');
+
+        $encoded: #{$encoded}#{$chunk};
+        $index: $index + $slice;
+    }
+
+    @return url("data:image/svg+xml;charset=utf8,#{$encoded}");
+}
+
+///
+/// Helper: String Replace
+///
+@function str-replace($string, $search, $replace: '') {
+    // string.index replaces str-index()
+    $index: string.index($string, $search); 
+    
+    @if $index {
+        @return string.slice($string, 1, $index - 1) + $replace + str-replace(string.slice($string, $index + string.length($search)), $search, $replace);
+    }
+    @return $string;
+}
+
+@function line-height($group, $default: 1) {
+    // This looks for a 'line-height' map in your vars, 
+    // otherwise returns the default value provided.
+    @if meta.function-exists('val') {
+        @return val(line-height, $group);
+    }
+    @return $default;
+}

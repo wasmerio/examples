@@ -1,0 +1,214 @@
+---
+/**
+ * Contact form posting to Formgong (https://formgong.com).
+ *
+ * Without JavaScript it is a plain HTML POST: Formgong stores the message, notifies you and
+ * redirects the visitor to /thanks/. With JavaScript it is sent with fetch and the visitor stays
+ * on the page. The success state is shown ONLY when the server answers { success: true }.
+ */
+import { SITE } from "../config";
+import { reviewPageUrl } from "../lib/review-page";
+
+interface Props {
+  /** Prefix for the field ids, so the form can appear twice on one page. */
+  id?: string;
+}
+const { id = "contact" } = Astro.props;
+
+const PLACEHOLDER_KEY = "fk_your_access_key";
+const accessKey = import.meta.env.PUBLIC_FORMGONG_ACCESS_KEY || SITE.formgong.accessKey;
+const endpoint = import.meta.env.PUBLIC_FORMGONG_ENDPOINT || SITE.formgong.endpoint;
+const redirect = new URL("/thanks/", Astro.site ?? Astro.url).href;
+const reviewPage = await reviewPageUrl(accessKey, endpoint, Astro.site);
+const showKeyNotice = import.meta.env.DEV && accessKey === PLACEHOLDER_KEY;
+const f = (name: string) => `${id}-${name}`;
+---
+
+<div class="contact-card" data-contact data-email={SITE.email}>
+  {
+    showKeyNotice && (
+      <p class="key-notice">
+        <strong>Dev notice:</strong> add your Formgong access key as <code>PUBLIC_FORMGONG_ACCESS_KEY</code> in <code>.env</code> (see the README). This note is not shown in production builds.
+      </p>
+    )
+  }
+  <form action={endpoint} method="POST" class="contact-form" data-contact-form>
+    <input type="hidden" name="access_key" value={accessKey} />
+    <input type="hidden" name="_lang" value="en" />
+    <input type="hidden" name="_redirect" value={redirect} />
+    <input type="hidden" name="_subject" value={SITE.formgong.subject} />
+    <!-- Spam honeypot: never fill it, never remove it. -->
+    <div aria-hidden="true" class="honeypot">
+      <input type="text" name="botcheck" tabindex="-1" autocomplete="off" />
+    </div>
+
+    <label class="field"><span class="sr-only">Full name</span><input id={f("name")} name="name" type="text" placeholder="Full Name" autocomplete="name" required maxlength="120" /></label>
+    <label class="field"><span class="sr-only">Email</span><input id={f("email")} name="email" type="email" placeholder="Email" autocomplete="email" required maxlength="160" /></label>
+    <label class="field"><span class="sr-only">Phone</span><input id={f("phone")} name="phone" type="tel" placeholder="Phone (optional)" autocomplete="tel" maxlength="40" /></label>
+    <label class="field">
+      <span class="sr-only">I am</span>
+      <select id={f("topic")} name="topic">
+        <option value="Buying">I'm thinking of buying</option>
+        <option value="Selling">I'm thinking of selling</option>
+        <option value="Buying and selling">Both: selling and buying</option>
+        <option value="Just a question">Just a question</option>
+      </select>
+    </label>
+    <label class="field"><span class="sr-only">Message</span><textarea id={f("message")} name="message" rows="3" placeholder="Which island, when, and anything I should know" required maxlength="4000"></textarea></label>
+
+    <p class="form-error" data-form-error hidden></p>
+    <button type="submit" class="btn btn-solid submit" data-submit><span data-submit-label>Submit</span></button>
+    <p class="fine">
+      Dana uses your details only to answer you. No newsletters unless you ask.
+      {SITE.formgong.credit && <> Form by <a href={reviewPage}>Formgong</a>.</>}
+    </p>
+  </form>
+
+  <div class="form-success" data-form-success hidden>
+    <h3 class="h-card" tabindex="-1" data-success-heading>Thank you, your message is in.</h3>
+    <p>Dana replies the same day, usually within a few hours. If it can't wait, call <a href={`tel:${SITE.phone.tel}`}>{SITE.phone.display}</a>.</p>
+    <button type="button" class="btn btn-solid" data-form-reset>Send another</button>
+  </div>
+  <p class="sr-only" role="status" data-form-live></p>
+</div>
+
+<script>
+  type ServerReply = { success?: unknown; message?: unknown } | null;
+
+  for (const card of document.querySelectorAll<HTMLElement>("[data-contact]")) {
+    const form = card.querySelector<HTMLFormElement>("form[data-contact-form]");
+    const success = card.querySelector<HTMLElement>("[data-form-success]");
+    const errorBox = card.querySelector<HTMLElement>("[data-form-error]");
+    const button = card.querySelector<HTMLButtonElement>("[data-submit]");
+    const label = card.querySelector<HTMLElement>("[data-submit-label]");
+    const live = card.querySelector<HTMLElement>("[data-form-live]");
+    if (!form || !success || !errorBox || !button || !label || !live) continue;
+
+    const idleLabel = label.textContent ?? "";
+    const email = card.dataset.email ?? "";
+    const setSending = (sending: boolean) => {
+      button.disabled = sending;
+      form.setAttribute("aria-busy", String(sending));
+      label.textContent = sending ? "Sending…" : idleLabel;
+    };
+    const showError = (message: string) => {
+      errorBox.textContent = message;
+      errorBox.hidden = false;
+      live.textContent = message;
+    };
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorBox.hidden = true;
+      setSending(true);
+      let reply: ServerReply = null;
+      try {
+        const response = await fetch(form.action, { method: "POST", headers: { Accept: "application/json" }, body: new FormData(form) });
+        reply = await response.json().catch(() => null);
+      } catch {
+        setSending(false);
+        showError(`We couldn't reach the server. Check your connection and try again, or email ${email}.`);
+        return;
+      }
+      setSending(false);
+      // The only path to the success state: the server explicitly confirmed it.
+      if (reply?.success === true) {
+        form.reset();
+        form.hidden = true;
+        success.hidden = false;
+        live.textContent = "Message received.";
+        success.querySelector<HTMLElement>("[data-success-heading]")?.focus({ preventScroll: true });
+        return;
+      }
+      const message = typeof reply?.message === "string" && reply.message.trim() ? reply.message : "";
+      showError(message || `Your message was not sent. Please try again, or email ${email}.`);
+    });
+
+    card.querySelector("[data-form-reset]")?.addEventListener("click", () => {
+      success.hidden = true;
+      form.hidden = false;
+      live.textContent = "";
+      form.querySelector<HTMLElement>("input[name=name]")?.focus();
+    });
+  }
+</script>
+
+<style>
+  .contact-form {
+    display: grid;
+    gap: 22px;
+  }
+  .honeypot {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    padding: 10px 0;
+    border: 0;
+    border-bottom: 1px solid currentColor;
+    border-radius: 0;
+    background: transparent;
+    font: 400 14px/24px var(--sans);
+    color: inherit;
+    appearance: none;
+  }
+  .field textarea {
+    resize: vertical;
+  }
+  .field ::placeholder {
+    color: inherit;
+    opacity: 0.65;
+  }
+  .field :focus-visible {
+    outline: none;
+    border-bottom-width: 2px;
+  }
+  .submit {
+    justify-self: start;
+    min-width: 128px;
+  }
+  .fine {
+    font-size: 12px;
+    line-height: 20px;
+    opacity: 0.7;
+  }
+  .fine a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .form-error {
+    padding: 10px 14px;
+    border-left: 2px solid #b42318;
+    background: #fdecea;
+    color: #8a1c12;
+  }
+  .form-error[hidden],
+  .form-success[hidden],
+  form[hidden] {
+    display: none;
+  }
+  .form-success {
+    display: grid;
+    gap: 16px;
+    justify-items: start;
+  }
+  .form-success h3:focus {
+    outline: none;
+  }
+  .key-notice {
+    margin-bottom: 20px;
+    padding: 12px;
+    border: 1px dashed currentColor;
+    font-size: 13px;
+  }
+  button:disabled {
+    cursor: progress;
+    opacity: 0.8;
+  }
+</style>

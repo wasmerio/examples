@@ -1,0 +1,1 @@
+Public-sector program leader with 25+ years building parks, civic infrastructure, and community programs for a mid-sized municipality. Strong at zero-to-one initiatives, moving projects through permitting and budget review, and leading teams of planners, rangers, and volunteers.

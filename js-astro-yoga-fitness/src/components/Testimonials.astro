@@ -1,0 +1,95 @@
+---
+import SectionHeading from './SectionHeading.astro';
+import Icon from './Icon.astro';
+import { testimonials } from '../data/testimonials';
+import { storiesSection } from '../data/home';
+import { url } from '../utils/url';
+
+const stories = testimonials.map((t) => ({ ...t, image: { ...t.image, src: url(t.image.src) } }));
+const first = stories[0];
+const total = String(stories.length).padStart(2, '0');
+---
+
+{first && (
+  <section class="section" id="stories" aria-labelledby="stories-title" data-stories={JSON.stringify(stories)}>
+    <div class="container">
+      <SectionHeading id="stories-title" title={storiesSection.title} intro={storiesSection.intro} />
+      <div class="story">
+        <div class="story__media">
+          <img data-story-img src={first.image.src} alt={first.image.alt} width="640" height="672" loading="lazy" decoding="async" />
+        </div>
+        <div>
+          <blockquote class="story__quote" data-story-quote><p>{first.quote}</p></blockquote>
+          <div class="story__foot">
+            <div>
+              <p class="story__name" data-story-name>{first.name}</p>
+              <p class="story__role" data-story-role>{first.role}</p>
+            </div>
+            {stories.length > 1 && (
+              <div class="slider-nav">
+                <button class="prev" type="button" aria-label="Previous story"><Icon name="arrow-left" size={16} /></button>
+                <span class="slider-count" aria-hidden="true"><span data-story-index>01</span><small>/{total}</small></span>
+                <button class="next" type="button" aria-label="Next story"><Icon name="arrow-right" size={16} /></button>
+              </div>
+            )}
+          </div>
+          <p class="sr-only" aria-live="polite" data-story-status></p>
+        </div>
+      </div>
+    </div>
+  </section>
+)}
+
+<script>
+  interface Story {
+    quote: string;
+    name: string;
+    role: string;
+    image: { src: string; alt: string };
+  }
+
+  document.querySelectorAll<HTMLElement>('[data-stories]').forEach((root) => {
+    const stories: Story[] = JSON.parse(root.dataset.stories ?? '[]');
+    if (stories.length < 2) return;
+
+    const $ = <T extends HTMLElement>(sel: string) => root.querySelector<T>(sel);
+    const img = $<HTMLImageElement>('[data-story-img]');
+    const quote = $('[data-story-quote]');
+    const name = $('[data-story-name]');
+    const role = $('[data-story-role]');
+    const index = $('[data-story-index]');
+    const status = $('[data-story-status]');
+    const fading = [img, quote].filter((el): el is HTMLElement => el !== null);
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let current = 0;
+
+    const render = () => {
+      const story = stories[current];
+      if (img) {
+        img.src = story.image.src;
+        img.alt = story.image.alt;
+      }
+      if (quote) quote.innerHTML = '';
+      const p = document.createElement('p');
+      p.textContent = story.quote;
+      quote?.append(p);
+      if (name) name.textContent = story.name;
+      if (role) role.textContent = story.role;
+      if (index) index.textContent = String(current + 1).padStart(2, '0');
+      if (status) status.textContent = `Story ${current + 1} of ${stories.length}: ${story.name}`;
+    };
+
+    const show = (next: number) => {
+      current = (next + stories.length) % stories.length;
+      if (reduceMotion.matches) return render();
+      fading.forEach((el) => el.classList.add('is-fading'));
+      window.setTimeout(() => {
+        render();
+        fading.forEach((el) => el.classList.remove('is-fading'));
+      }, 300);
+    };
+
+    $('.slider-nav .next')?.addEventListener('click', () => show(current + 1));
+    $('.slider-nav .prev')?.addEventListener('click', () => show(current - 1));
+  });
+</script>

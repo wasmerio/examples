@@ -1,0 +1,58 @@
+import type { YogaClass } from '../types';
+
+export const classes: YogaClass[] = [
+  {
+    title: 'Vinyasa Flow',
+    description: 'Breath-linked sequences that build heat, strength and rhythm.',
+    image: { src: '/images/class-vinyasa.webp', alt: 'Students holding downward-facing dog on mats in a bright studio' },
+    level: 'All levels',
+    duration: '60 min',
+    intensity: 'Moderate',
+    href: '/#schedule',
+  },
+  {
+    title: 'Hatha Foundations',
+    description: 'Held postures and clear cues to learn alignment from the ground up.',
+    image: { src: '/images/class-hatha.webp', alt: 'Woman reaching into an extended side-angle pose on a blue mat in a studio' },
+    level: 'Beginner',
+    duration: '75 min',
+    intensity: 'Gentle',
+    href: '/#schedule',
+  },
+  {
+    title: 'Yin & Restore',
+    description: 'Long, supported holds that release deep tissue and settle the nervous system.',
+    image: { src: '/images/class-yin.webp', alt: 'Person folding forward over their legs in a seated stretch on a mat' },
+    level: 'All levels',
+    duration: '60 min',
+    intensity: 'Gentle',
+    href: '/#schedule',
+  },
+  {
+    title: 'Prenatal Care',
+    description: 'Safe, trimester-aware movement to ease aches and prepare for birth.',
+    image: { src: '/images/class-prenatal.webp', alt: 'Pregnant woman sitting cross-legged in tall golden grass' },
+    level: 'Prenatal',
+    duration: '50 min',
+    intensity: 'Gentle',
+    href: '/#schedule',
+  },
+  {
+    title: 'Breathwork Lab',
+    description: 'Guided pranayama and short meditations you can take into any busy day.',
+    image: { src: '/images/class-breathwork.webp', alt: 'Group meditating on colorful blankets on a beach at dusk' },
+    level: 'All levels',
+    duration: '45 min',
+    intensity: 'Calm',
+    href: '/#schedule',
+  },
+  {
+    title: 'Power & Balance',
+    description: 'Strong standing work, arm balances and inversions with plenty of support.',
+    image: { src: '/images/class-power.webp', alt: 'Woman balancing in boat pose on a seaside deck at sunrise' },
+    level: 'Intermediate',
+    duration: '60 min',
+    intensity: 'Strong',
+    href: '/#schedule',
+  },
+];

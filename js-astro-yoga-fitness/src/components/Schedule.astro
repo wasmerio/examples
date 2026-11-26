@@ -1,0 +1,115 @@
+---
+import SectionHeading from './SectionHeading.astro';
+import { schedule } from '../data/schedule';
+import { scheduleSection } from '../data/home';
+import { site } from '../config/site';
+import { url } from '../utils/url';
+
+// Without JavaScript every day is listed; the script turns the list into tabs.
+const initial = 0;
+---
+
+<section class="section" id="schedule" aria-labelledby="schedule-title" data-schedule>
+  <div class="container">
+    <SectionHeading id="schedule-title" title={scheduleSection.title} intro={scheduleSection.intro}>
+      <div class="days" role="tablist" aria-label="Choose a day" hidden>
+        {schedule.map((day, i) => (
+          <button
+            type="button"
+            role="tab"
+            id={`day-tab-${i}`}
+            aria-selected={i === initial ? 'true' : 'false'}
+            aria-controls={`day-panel-${i}`}
+            tabindex={i === initial ? 0 : -1}
+          >
+            <span aria-hidden="true">{day.short}</span><span class="sr-only">{day.name}</span>
+          </button>
+        ))}
+      </div>
+    </SectionHeading>
+    <div class="schedule__wrap">
+      {schedule.map((day, i) => (
+        <div class="schedule__panel" id={`day-panel-${i}`} data-day={i}>
+          <h3 class="schedule__day">{day.name}</h3>
+          <table class="schedule__table">
+            <caption class="sr-only">{day.name} class timetable</caption>
+            <thead class="sr-only">
+              <tr>
+                <th scope="col">Time</th>
+                <th scope="col">Class</th>
+                <th scope="col">Coach</th>
+                <th scope="col">Duration</th>
+                <th scope="col">Booking</th>
+              </tr>
+            </thead>
+            <tbody>
+              {day.classes.map((entry) => (
+                <tr>
+                  <td><div class="schedule__time">{entry.time}<small>{entry.period}</small></div></td>
+                  <td>
+                    <div class="schedule__class">{entry.className}</div>
+                    {entry.level && <span class="schedule__level">{entry.level}</span>}
+                  </td>
+                  <td class="schedule__coach">{entry.instructor}</td>
+                  <td class="schedule__coach">{entry.duration}</td>
+                  <td>
+                    <a class="btn btn--line" href={url(entry.bookingUrl ?? site.bookingUrl)}>
+                      {scheduleSection.reserveLabel}<span class="sr-only"> {entry.className}, {day.name} {entry.time} {entry.period}</span>
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+    <p class="schedule__note">{scheduleSection.note}</p>
+  </div>
+</section>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-schedule]').forEach((root) => {
+    const tablist = root.querySelector<HTMLElement>('[role="tablist"]');
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const panels = [...root.querySelectorAll<HTMLElement>('.schedule__panel')];
+    if (!tablist || !tabs.length) return;
+
+    // Enhance: reveal the day picker and turn each day into a tab panel.
+    tablist.hidden = false;
+    panels.forEach((panel, i) => {
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', tabs[i].id);
+      panel.tabIndex = 0;
+    });
+
+    const select = (index: number, moveFocus = false) => {
+      tabs.forEach((tab, i) => {
+        const on = i === index;
+        tab.setAttribute('aria-selected', String(on));
+        tab.tabIndex = on ? 0 : -1;
+        panels[i].hidden = !on;
+      });
+      if (moveFocus) tabs[index].focus();
+    };
+
+    tabs.forEach((tab, i) => {
+      tab.addEventListener('click', () => select(i));
+      tab.addEventListener('keydown', (event) => {
+        const keys: Record<string, number> = {
+          ArrowRight: (i + 1) % tabs.length,
+          ArrowLeft: (i - 1 + tabs.length) % tabs.length,
+          Home: 0,
+          End: tabs.length - 1,
+        };
+        if (event.key in keys) {
+          event.preventDefault();
+          select(keys[event.key], true);
+        }
+      });
+    });
+
+    const initial = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
+    select(Math.max(initial, 0));
+  });
+</script>

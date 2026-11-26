@@ -1,0 +1,83 @@
+---
+import { render } from 'astro:content';
+import katexCss from 'katex/dist/katex.min.css?url';
+import Base from '../../layouts/Base.astro';
+import { getNotes, isoDate, notePath, type Note } from '../../lib/notes';
+import { monoline, site, ui } from '../../config';
+
+export const getStaticPaths = async () => {
+  const notes = await getNotes();
+  // Newest first, so the older note is the next one in the list.
+  return notes.map((note, i) => ({
+    params: { slug: note.id },
+    props: { note, older: notes[i + 1], newer: notes[i - 1] },
+  }));
+};
+
+interface Props {
+  note: Note;
+  older?: Note;
+  newer?: Note;
+}
+const { note, older, newer } = Astro.props;
+const { title, date, updated, tags } = note.data;
+const { Content, remarkPluginFrontmatter } = await render(note);
+---
+
+<Base
+  title={title}
+  description={note.summary}
+  type="article"
+  jsonLd={[
+    {
+      '@type': 'BlogPosting',
+      headline: title,
+      datePublished: date.toISOString(),
+      ...(updated && { dateModified: updated.toISOString() }),
+      author: { '@type': 'Person', name: site.author },
+    },
+  ]}
+>
+  {remarkPluginFrontmatter.hasMath && <link slot="head" rel="stylesheet" href={katexCss} />}
+  <article class="max-w-wide mx-auto px-4 pt-10">
+    <div class="note-column">
+      <p class="mono text-muted text-xs">
+        <a href="/notes" class="hover:text-foreground no-underline">
+          {ui.notes}
+        </a>{' '}
+        / <time datetime={isoDate(date)}>{isoDate(date)}</time>
+        {tags.length > 0 && ` / ${tags.map((t) => `#${t}`).join(' ')}`}
+      </p>
+      <h1 class="mono mt-3 text-2xl leading-snug font-medium">{title}</h1>
+      <p class="mono text-muted mt-2 text-xs">
+        {ui.meta.minutes(note.minutes)} · {ui.meta.words(note.words)}
+        {updated && ` · ${ui.meta.updated(isoDate(updated))}`}
+      </p>
+      <div class:list={['note-body mt-8', !monoline.gutter && 'no-gutter']}>
+        <Content />
+      </div>
+      {(older || newer) && (
+        <nav aria-label={ui.olderNewer} class="mono border-border mt-12 border-t pt-4 text-sm">
+          <ul class="space-y-2">
+            {older && (
+              <li>
+                <span class="text-muted">{ui.older} </span>
+                <a href={notePath(older)} class="no-underline hover:underline">
+                  {older.data.title}
+                </a>
+              </li>
+            )}
+            {newer && (
+              <li>
+                <span class="text-muted">{ui.newer} </span>
+                <a href={notePath(newer)} class="no-underline hover:underline">
+                  {newer.data.title}
+                </a>
+              </li>
+            )}
+          </ul>
+        </nav>
+      )}
+    </div>
+  </article>
+</Base>

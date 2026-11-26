@@ -1,0 +1,1 @@
+<span style="display: block; text-align: center; font-size: 10rem;">o/</span>

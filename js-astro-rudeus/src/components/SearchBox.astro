@@ -1,0 +1,222 @@
+---
+import { Icon } from 'astro-icon/components'
+---
+
+<span class="r-search r-not-mob" data-open="false">
+    <!-- <Icon name="mdi:search" width={24} height={24} class="r-search-btn" /> -->
+    <span class="r-btn r-search-btn" id="header-search-btn-pc">
+        <Icon name="mdi:search" width={24} height={24} />
+    </span>
+    <input class="r-search-input" type="text" placeholder="搜索...">
+</span>
+<span class="r-search-mobile r-not-pc" data-open="false">
+    <span class="r-btn" id="header-search-btn-mob">
+        <Icon name="mdi:search" width={24} height={24} />
+    </span>
+    <div class="r-search-mobile-panel">
+        <input class="r-search-mobile-input" type="text" placeholder="搜索...">
+    </div>
+</span>
+
+<style lang="less">
+    @layout-search-spacing: 6px;
+    @layout-search-width: 200px;
+
+    @import url('@/styles/variableConst.less');
+
+    // 初始搜索框
+    .r-search {
+        display: flex;
+        align-items: center;
+        padding: 4px 8px;
+        position: relative;
+        transition: all @anim-duration ease;
+        .r-search-input {
+            width: 0;
+            opacity: 0;
+            border: 0;
+            background: transparent;
+            outline: none;
+            transition: all @anim-duration ease;
+        }
+    }
+    // 展开的搜索框
+    .r-search[data-open='true'] {
+        background-color: #eee;
+        border-radius: 8px;
+        .r-search-input {
+            width: @layout-search-width;
+            opacity: 1;
+            padding: @layout-search-spacing;
+        }
+    }
+
+    // 移动端下拉搜索
+    .r-search-mobile {
+        display: inline-flex;
+        align-items: center;
+
+        .r-search-mobile-btn {
+            padding: 4px;
+            // display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .r-search-mobile-panel {
+            position: absolute;
+            left: var(--layout-container-margin);
+            right: var(--layout-container-margin);
+            top: calc(100% + 8px);
+            background: rgba(255, 255, 255, .95);
+            border: 1px solid #eee;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .08);
+            padding: 8px 10px;
+            opacity: 0;
+            transform: translateY(-6px);
+            pointer-events: none;
+            transition: all @anim-duration ease;
+            z-index: 3;
+        }
+
+        .r-search-mobile-input {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            outline: none;
+            font-size: 14px;
+            padding: 6px 4px;
+        }
+    }
+
+    .r-search-mobile[data-open='true'] {
+        .r-search-mobile-panel {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+    }
+</style>
+
+<script>
+    import { siteConfig } from '@/config'
+
+    let searchWrap: HTMLElement | null = null
+    let searchBtn: HTMLElement | null = null
+    let searchInput: HTMLInputElement | null = null
+    let mobileSearchWrap: HTMLElement | null = null
+    let mobileSearchBtn: HTMLElement | null = null
+    let mobileSearchInput: HTMLInputElement | null = null
+
+    const setOpen = (open: boolean) => {
+        if (!searchWrap) return
+        searchWrap.setAttribute('data-open', open ? 'true' : 'false')
+        if (open && searchInput) searchInput.focus()
+        if (!open && searchInput) searchInput.blur()
+    }
+
+    const setMobileSearchOpen = (open: boolean) => {
+        if (!mobileSearchWrap) return
+        mobileSearchWrap.setAttribute('data-open', open ? 'true' : 'false')
+        if (open && mobileSearchInput) mobileSearchInput.focus()
+        if (!open && mobileSearchInput) mobileSearchInput.blur()
+    }
+
+    const emitSearch = (query: string) => {
+        window.dispatchEvent(new CustomEvent('r-search', { detail: { query } }))
+    }
+
+    const syncQueryFromUrl = () => {
+        const params = new URLSearchParams(window.location.search)
+        const query = params.get('q') || ''
+        if (searchInput) searchInput.value = query
+        if (mobileSearchInput) mobileSearchInput.value = query
+        if (query) setOpen(true)
+    }
+
+    const onBtnClick = (event: Event) => {
+        event.stopPropagation()
+        const isOpen = searchWrap?.getAttribute('data-open') == 'true'
+        setOpen(!isOpen)
+        setMobileSearchOpen(false)
+    }
+
+    const onMobileSearchBtnClick = (event: Event) => {
+        event.stopPropagation()
+        const isOpen = mobileSearchWrap?.getAttribute('data-open') == 'true'
+        setMobileSearchOpen(!isOpen)
+        setOpen(false)
+    }
+
+    const onInput = (event: Event) => {
+        const target = event.target as HTMLInputElement | null
+        const query = target?.value?.trim() ?? ''
+        emitSearch(query)
+
+        if (window.location.pathname.startsWith('/search')) {
+            const url = new URL(window.location.href)
+            if (query) {
+                url.searchParams.set('q', query)
+            } else {
+                url.searchParams.delete('q')
+            }
+            window.history.replaceState({}, '', url.toString())
+        }
+    }
+
+    const onKeydown = (event: KeyboardEvent) => {
+        if (event.key !== 'Enter') return
+        const query = (event.target as HTMLInputElement | null)?.value?.trim() ?? ''
+        if (!query) return
+        if (!window.location.pathname.startsWith('/search')) {
+            window.location.href = `/search${siteConfig.isWithExt ? '.html' : ''}?q=${encodeURIComponent(query)}`
+        }
+    }
+
+    const initSearchBox = () => {
+        searchWrap = document.querySelector('.r-search')
+        searchBtn = document.getElementById('header-search-btn-pc')
+        searchInput = document.querySelector('.r-search-input')
+        mobileSearchWrap = document.querySelector('.r-search-mobile')
+        mobileSearchBtn = document.getElementById('header-search-btn-mob')
+        mobileSearchInput = document.querySelector('.r-search-mobile-input')
+
+        if (searchBtn && !searchBtn.dataset.bound) {
+            searchBtn.addEventListener('click', onBtnClick)
+            searchBtn.dataset.bound = 'true'
+        }
+
+        if (searchInput && !searchInput.dataset.bound) {
+            searchInput.addEventListener('input', onInput)
+            searchInput.addEventListener('keydown', onKeydown)
+            searchInput.dataset.bound = 'true'
+        }
+
+        if (mobileSearchBtn && !mobileSearchBtn.dataset.bound) {
+            mobileSearchBtn.addEventListener('click', onMobileSearchBtnClick)
+            mobileSearchBtn.dataset.bound = 'true'
+        }
+
+        if (mobileSearchInput && !mobileSearchInput.dataset.bound) {
+            mobileSearchInput.addEventListener('input', onInput)
+            mobileSearchInput.addEventListener('keydown', onKeydown)
+            mobileSearchInput.dataset.bound = 'true'
+        }
+
+        syncQueryFromUrl()
+    }
+
+    if (!(window as any).__rSearchDocBound) {
+        document.addEventListener('click', (event) => {
+            const target = event.target as Node
+            if (searchWrap && !searchWrap.contains(target)) setOpen(false)
+            if (mobileSearchWrap && !mobileSearchWrap.contains(target)) setMobileSearchOpen(false)
+        })
+        ;(window as any).__rSearchDocBound = true
+    }
+
+    document.addEventListener('astro:page-load', initSearchBox)
+    document.addEventListener('astro:after-swap', initSearchBox)
+</script>

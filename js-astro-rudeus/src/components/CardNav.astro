@@ -1,0 +1,275 @@
+---
+const title = '本页内容'
+---
+
+<div class="r-page-nav r-not-mob" aria-label={title}>
+    <div class="r-title">{title}</div>
+    <div class="r-nav" aria-label={title}></div>
+</div>
+
+<script>
+    // 标题生成锚点的安全 ID
+    const slugify = (value: string) =>
+        value
+            .toLowerCase()
+            .trim()
+            .replace(/\s+/g, '-')
+            .replace(/[^\w\u4e00-\u9fa5-]/g, '')
+            .replace(/-+/g, '-')
+
+    // 确保同页锚点唯一
+    const ensureUniqueId = (baseId: string, used: Set<string>) => {
+        let id = baseId || 'section'
+        let index = 1
+        while (used.has(id)) {
+            id = `${baseId || 'section'}-${index}`
+            index += 1
+        }
+        used.add(id)
+        return id
+    }
+
+    // 生成目录结构并绑定锚点
+    let disposePageNav: (() => void) | null = null
+    const buildPageNav = () => {
+        disposePageNav?.()
+        disposePageNav = null
+
+        const container = document.querySelector('.r-page-nav')
+        if (!container) return
+
+        // 优先在正文区中查找标题
+        const contentRoot =
+            document.querySelector('.r-prose') || document.querySelector('.r-content')
+        if (!contentRoot) return
+
+        const list = container.querySelector('.r-nav')
+        if (!list) return
+
+        // 重建列表，避免重复
+        list.innerHTML = ''
+        container.classList.remove('r-empty')
+
+        // 逐条生成目录项并记录层级关系
+        const usedIds = new Set<string>()
+        type NavItem = {
+            id: string
+            level: number
+            depth: number
+            parentId: string | null
+            element: HTMLAnchorElement
+            heading: HTMLElement
+        }
+        const items: NavItem[] = []
+        const levelStack: Record<number, string | null> = {
+            1: null,
+            2: null,
+            3: null,
+            4: null,
+            5: null,
+            6: null,
+        }
+
+        const getHeadingText = (heading: HTMLElement) => {
+            const clone = heading.cloneNode(true) as HTMLElement
+            clone.querySelectorAll('.r-heading-anchor').forEach((anchor) => anchor.remove())
+            return clone.textContent?.trim() || ''
+        }
+
+        contentRoot.querySelectorAll('h1, h2, h3').forEach((headingElement) => {
+            const heading = headingElement as HTMLElement
+            const text = getHeadingText(heading)
+            if (!text) return
+
+            const baseId = heading.id || slugify(text)
+            heading.id = ensureUniqueId(baseId, usedIds)
+            const level = Number(heading.tagName.slice(1))
+            let parentId: string | null = null
+            for (let upperLevel = level - 1; upperLevel >= 1; upperLevel -= 1) {
+                if (levelStack[upperLevel]) {
+                    parentId = levelStack[upperLevel]
+                    break
+                }
+            }
+
+            levelStack[level] = heading.id
+            for (let depth = level + 1; depth <= 6; depth += 1) {
+                levelStack[depth] = null
+            }
+
+            const parentDepth = parentId
+                ? items.find((item) => item.id === parentId)?.depth || 0
+                : 0
+            const navDepth = parentDepth + 1
+
+            const link = document.createElement('a')
+            link.href = `#${heading.id}`
+            link.textContent = text
+            link.className = 'r-item'
+            link.style.setProperty('--toc-depth', String(navDepth))
+            link.style.setProperty('--toc-item-height', `${Math.ceil(2 * heading.getBoundingClientRect().height) || 60}px`)
+            list.appendChild(link)
+            items.push({ id: heading.id, level, depth: navDepth, parentId, element: link, heading })
+        })
+
+        if (items.length === 0) {
+            container.classList.add('r-empty')
+            return
+        }
+
+        const itemMap = new Map(items.map((item) => [item.id, item]))
+
+        const getActivePath = (activeId: string) => {
+            const path = new Set<string>()
+            let current = itemMap.get(activeId)
+
+            while (current) {
+                path.add(current.id)
+                current = current.parentId ? itemMap.get(current.parentId) : undefined
+            }
+
+            return path
+        }
+
+        const setActive = (activeId: string) => {
+            const activePath = getActivePath(activeId)
+            const rootId = items[0]?.id
+
+            items.forEach(({ id, parentId, element }) => {
+                const isVisible = id === rootId || (parentId ? activePath.has(parentId) : true)
+                element.classList.toggle('is-hidden', !isVisible)
+                element.classList.toggle('active', id === activeId)
+            })
+        }
+
+        const activeOffset = 80
+        let headingTops = items.map(
+            ({ heading }) => heading.getBoundingClientRect().top + window.scrollY
+        )
+
+        // 获取当前所在位置，侧栏加高亮
+        const getActiveId = () => {
+            const scrollTop = document.documentElement.scrollTop || document.body.scrollTop
+            const viewportTop = scrollTop + activeOffset
+            const scrollHeight = document.documentElement.scrollHeight
+            const windowBottom = scrollTop + window.innerHeight
+
+            if (windowBottom >= scrollHeight - 2) return items[items.length - 1].id
+
+            let activeIndex = 0
+            for (let i = 0; i < headingTops.length; i += 1) {
+                if (headingTops[i] <= viewportTop) activeIndex = i
+                else break
+            }
+            return items[activeIndex]?.id || items[0].id
+        }
+
+        let ticking = false
+        const refresh = () => {
+            headingTops = items.map(
+                ({ heading }) => heading.getBoundingClientRect().top + window.scrollY
+            )
+            const activeId = getActiveId()
+            if (activeId) setActive(activeId)
+        }
+
+        const onScroll = () => {
+            if (ticking) return
+            ticking = true
+            window.requestAnimationFrame(() => {
+                ticking = false
+                refresh()
+            })
+        }
+
+        refresh()
+        document.addEventListener('scroll', onScroll, { passive: true })
+        window.addEventListener('resize', refresh)
+
+        disposePageNav = () => {
+            document.removeEventListener('scroll', onScroll)
+            window.removeEventListener('resize', refresh)
+        }
+    }
+
+    // 首次加载时初始化
+    const initPageNav = () => buildPageNav()
+
+    // DOM 就绪后初始化
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initPageNav)
+    } else {
+        initPageNav()
+    }
+
+    // 站内切换后刷新目录
+    document.addEventListener('astro:page-load', initPageNav)
+    document.addEventListener('astro:after-swap', initPageNav)
+</script>
+
+<style lang="less">
+    @import url('@/styles/variableConst.less');
+
+    .r-page-nav {
+        background-color: #fff;
+        border-radius: @layout-content-border-radius;
+        padding: (@layout-content-padding / 1.4) 12px;
+        font-size: 14px;
+
+        &.r-empty {
+            display: none;
+        }
+
+        .r-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0 0 10px 10px;
+        }
+
+        .r-nav {
+            max-height: 60vh;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            line-height: 1.6;
+        }
+    }
+</style>
+
+<style lang="less" is:global>
+@import url('@/styles/variableConst.less');
+    .r-page-nav .r-item {
+        display: block;
+        position: relative;
+        font-size: 15px;
+        text-decoration: none;
+        padding: 6px 6px 6px calc(12px + (var(--toc-depth, 1) - 1) * 10px);
+        max-height: calc(var(--toc-item-height, 34px) + 12px);
+        overflow: hidden;
+        opacity: 1;
+        border-radius: @layout-border-radius;
+        transition:
+            max-height (@anim-duration + 0.1s) ease,
+            padding (@anim-duration + 0.1s) ease,
+            opacity (@anim-duration + 0.05s) ease,
+            background-color (@anim-duration + 0.1s) ease,
+            color (@anim-duration + 0.1s) ease;
+
+        &:hover {
+            background-color: @color-bg;
+            color: @color-theme-dark;
+        }
+
+        &.active {
+            color: @color-theme-dark;
+            font-weight: 600;
+        }
+        &.is-hidden {
+            max-height: 0;
+            opacity: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            pointer-events: none;
+        }
+    }
+</style>

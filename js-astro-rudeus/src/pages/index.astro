@@ -1,0 +1,87 @@
+---
+import { render } from 'astro:content'
+import { analyzeReading } from '@/utils/readingStat'
+import { genDescription } from '@/utils/genDescription'
+import {
+    getHomePageItems,
+    getHomePageNavItems,
+    getHomeTotalPages
+} from '@/utils/homePagination'
+import { getHomeFeed } from '@/utils/homeFeed'
+
+import MainLayout from '@/layouts/MainLayout.astro'
+import CardArticle from '@/components/CardArticle.astro'
+import CardZone from '@/components/CardZone.astro'
+import HomePageNav from '@/components/HomePageNav.astro'
+
+import { siteConfig } from '@/config'
+
+const homeFeed = await getHomeFeed()
+const totalPages = getHomeTotalPages(homeFeed.length)
+const pageItems = getHomePageItems(homeFeed, 1)
+const pageCards = await Promise.all(
+    pageItems.map(async (item) => {
+        if (item.type === 'post') {
+            const stats = analyzeReading(item.entry.body)
+            const description = item.entry.data.description?.trim() ?? genDescription(item.entry.body)
+            return {
+                type: 'post' as const,
+                entry: item.entry,
+                stats,
+                description,
+            }
+        }
+
+        const { Content } = await render(item.entry)
+        return {
+            type: 'zone' as const,
+            entry: item.entry,
+            Content,
+        }
+    })
+)
+const navItems = getHomePageNavItems(1, totalPages)
+---
+
+<MainLayout title={'首页 - ' + siteConfig.title} description={siteConfig.description}>
+    <div class="r-content r-index-content">
+        {
+            pageCards.map((card) => {
+                if (card.type === 'post') {
+                    return (
+                        <CardArticle
+                            title={card.entry.data.title}
+                            description={card.description}
+                            pubDate={card.entry.data.pubDate}
+                            url={`/posts/${card.entry.id + (siteConfig.isWithExt ? '.html' : '')}`}
+                            category={card.entry.data.category}
+                            tags={card.entry.data.tags}
+                            readingTime={card.stats.minutes}
+                            readingChars={card.stats.estimatedChars}
+                            image={card.entry.data.image}
+                            data-index
+                        />
+                    )
+                }
+
+                return (
+                    <CardZone
+                        title={card.entry.data.title}
+                        pubDate={card.entry.data.pubDate}
+                        url={`/zone/${card.entry.id + (siteConfig.isWithExt ? '.html' : '')}`}
+                        Content={card.Content}
+                        data-index
+                    />
+                )
+            })
+        }
+
+        <HomePageNav items={navItems} />
+    </div>
+</MainLayout>
+
+<style>
+    .r-content {
+        padding: 0;
+    }
+</style>

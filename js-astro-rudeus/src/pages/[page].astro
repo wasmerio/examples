@@ -1,0 +1,223 @@
+---
+import { render } from 'astro:content'
+import { Icon } from 'astro-icon/components'
+
+import MainLayout from '@/layouts/MainLayout.astro'
+import Comment from '@/components/Comment.astro'
+import FriendsList from '@/components/FriendsList.astro'
+import CardArticle from '@/components/CardArticle.astro'
+import CardZone from '@/components/CardZone.astro'
+import HomePageNav from '@/components/HomePageNav.astro'
+
+import { analyzeReading } from '@/utils/readingStat'
+import { genDescription } from '@/utils/genDescription'
+import {
+    getHomeIndexPages,
+    getHomePageItems,
+    getHomePageNavItems,
+    getHomeTotalPages
+} from '@/utils/homePagination'
+import { getHomeFeed, type HomeFeedItem } from '@/utils/homeFeed'
+
+import { siteConfig } from '@/config'
+
+// 处理一般页面
+export async function getStaticPaths() {
+    const homeFeed = await getHomeFeed()
+    const pageModules = import.meta.glob('../content/*.md')
+    const explicitPages = import.meta.glob('./*.astro')
+
+    const excluded = new Set(
+        Object.keys(explicitPages)
+            .map(p => p.split('/').pop())
+            .filter(Boolean)
+            .map(name => name!.replace(/\.astro$/, ''))
+            .filter(name => name !== '[page]')
+    )
+
+    const pages = Object.keys(pageModules)
+        .map(p => p.split('/').pop())
+        .filter(Boolean)
+        .map((name) => name!.replace(/\.md$/, ''))
+        .filter((page) => !excluded.has(page))
+
+    const indexPages = getHomeIndexPages(homeFeed.length)
+
+    return [
+        ...pages.filter(item => !indexPages.includes(item)).map((item) => ({ params: { page: item } })),
+        ...indexPages.map(item => ({ params: { page: item } }))
+    ]
+}
+
+const { page } = Astro.params
+const pageModules = import.meta.glob('../content/*.md')
+const rawModules = import.meta.glob('../content/*.md', { query: '?raw', import: 'default' })
+
+const key = `../content/${page}.md`
+const importMd = pageModules[key]
+const importRaw = rawModules[key]
+
+let Content: any = null
+let frontmatter: any = {}
+let raw = ''
+
+const formatDate = (date: Date) => {
+    const value = new Date(date)
+    const year = value.getFullYear()
+    const month = String(value.getMonth() + 1).padStart(2, '0')
+    const day = String(value.getDate()).padStart(2, '0')
+    return year + '-' + month + '-' + day
+}
+
+// 处理首页的分页
+const currentPage = Number(page)
+const isIndexPage = Number.isInteger(currentPage) && currentPage >= 2
+
+let listPosts: HomeFeedItem[] = []
+let totalPages = 1
+if (isIndexPage) {
+    listPosts = await getHomeFeed()
+    totalPages = getHomeTotalPages(listPosts.length)
+    if (currentPage > totalPages) {
+        return new Response('Not found', { status: 404 })
+    }
+}
+
+if (!isIndexPage && (!importMd || !importRaw)) {
+    return new Response('Not found', { status: 404 })
+}
+
+
+if (!isIndexPage) {
+    const [md, rawContent] = await Promise.all([importMd!(), importRaw!()])
+    Content = (md as any).default
+    frontmatter = (md as any).frontmatter ?? {}
+    raw = rawContent as string
+}
+
+if (!isIndexPage && !frontmatter.title) {
+    throw new Error(
+        `页面 ${page}.md 必须在 frontmatter 中提供 title`
+    )
+}
+
+const description = isIndexPage ? '首页 - ' + siteConfig.title : frontmatter.description || ''
+const stats = isIndexPage ? null : analyzeReading(raw)
+const pageType = isIndexPage ? '' : (frontmatter.type ?? frontmatter.layout ?? '').toString()
+const image = isIndexPage ? '' : frontmatter.image ?? ''
+const pubDate = isIndexPage ? null : frontmatter.pubDate
+const pageTitle = isIndexPage
+    ? `首页 - ${siteConfig.title} - 第 ${currentPage} 页`
+    : `${frontmatter.title} - ${siteConfig.title}`
+
+const pagePosts = isIndexPage ? getHomePageItems(listPosts, currentPage) : []
+const pageCards = isIndexPage
+    ? await Promise.all(
+        pagePosts.map(async (item) => {
+            if (item.type === 'post') {
+                const postStats = analyzeReading(item.entry.body)
+                const postDescription = item.entry.data.description?.trim() ?? genDescription(item.entry.body)
+                return {
+                    type: 'post' as const,
+                    entry: item.entry,
+                    stats: postStats,
+                    description: postDescription,
+                }
+            }
+
+            const { Content: ZoneContent } = await render(item.entry)
+            return {
+                type: 'zone' as const,
+                entry: item.entry,
+                Content: ZoneContent,
+            }
+        })
+    )
+    : []
+const navItems = isIndexPage ? getHomePageNavItems(currentPage, totalPages) : []
+
+
+---
+
+<MainLayout title={pageTitle} description={description} sideNavEnabled={isIndexPage}>
+    {
+        isIndexPage ? (
+            <div class="r-content r-index-content">
+                {
+                    pageCards.map((card) => {
+                        if (card.type === 'post') {
+                            return (
+                                <CardArticle
+                                    title={card.entry.data.title}
+                                    description={card.description}
+                                    pubDate={card.entry.data.pubDate}
+                                    url={`/posts/${card.entry.id + (siteConfig.isWithExt ? '.html' : '')}`}
+                                    category={card.entry.data.category}
+                                    tags={card.entry.data.tags}
+                                    readingTime={card.stats.minutes}
+                                    readingChars={card.stats.estimatedChars}
+                                    image={card.entry.data.image}
+                                    data-index
+                                />
+                            )
+                        }
+
+                        return (
+                            <CardZone
+                                title={card.entry.data.title}
+                                pubDate={card.entry.data.pubDate}
+                                url={`/zone/${card.entry.id + (siteConfig.isWithExt ? '.html' : '')}`}
+                                Content={card.Content}
+                                data-index
+                            />
+                        )
+                    })
+                }
+
+                <HomePageNav items={navItems} />
+            </div>
+        ) : (
+            <div class="r-content">
+        <div class="r-header">
+            {image && <img class="r-cover" src={image} alt={frontmatter.title} />}
+            <div class="r-header-wrapper">
+                <div class="r-title">{frontmatter.title}</div>
+                { description && <div class="r-description">{description}</div> }
+                <div class="r-info">
+                    { pubDate && (
+                        <span class="r-item">
+                            <Icon name="mdi:calendar-blank-outline" width={20} height={20} />
+                            {formatDate(pubDate)}
+                        </span>
+                    )
+                    }
+                    <span class="r-item">
+                        <Icon name="mdi:clock-time-four-outline" width={20} height={20} />
+                        {stats!.minutes} 分钟
+                    </span>
+                    <span class="r-item">
+                        <Icon name="mdi:pencil-outline" width={20} height={20} />
+                        {stats!.estimatedChars} 字
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        {pageType == 'friends' ? <FriendsList /> : ''}
+
+        <div class="r-prose">
+            <Content />
+        </div>
+    </div>
+
+        )
+    }
+
+    {!isIndexPage && <Comment />}
+</MainLayout>
+
+<style>
+    .r-content.r-index-content {
+        padding: 0;
+    }
+</style>

@@ -1,0 +1,253 @@
+---
+import { getCollection, render } from 'astro:content'
+import { Icon } from 'astro-icon/components'
+
+import MainLayout from '@/layouts/MainLayout.astro'
+import Comment from '@/components/Comment.astro'
+import { analyzeReading } from '@/utils/readingStat'
+import { genDescription } from '@/utils/genDescription'
+
+import { siteConfig } from '@/config'
+
+export async function getStaticPaths() {
+    const posts = await getCollection('posts')
+    return posts.map((post) => ({
+        params: { slug: post.id },
+        props: { post },
+    }))
+}
+
+const { post } = Astro.props
+const { Content } = await render(post)
+
+// 处理导航
+const ordered = (await getCollection('posts')).sort(
+    (a, b) => a.data.pubDate.valueOf() - b.data.pubDate.valueOf()
+)
+const index = ordered.findIndex((p) => p.id === post.id)
+const prev = index > 0 ? ordered[index - 1] : null
+const next = index >= 0 && index < ordered.length - 1 ? ordered[index + 1] : null
+
+// 处理页头数据
+const { title, pubDate, category, tags, image } = post.data
+const rawDescription = post.data.description?.trim()
+const description = rawDescription ?? genDescription(post.body)
+const stats = analyzeReading(post.body)
+const url = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : Astro.url.href
+
+const formatDate = (date: Date) => {
+    const value = new Date(date)
+    const year = value.getFullYear()
+    const month = String(value.getMonth() + 1).padStart(2, '0')
+    const day = String(value.getDate()).padStart(2, '0')
+    return year + '-' + month + '-' + day
+}
+---
+
+<MainLayout title={`${title} - ${siteConfig.title}`} description={description} sideNavEnabled={true}>
+    <div class="r-content">
+        <!-- 内容页头 -->
+        <div class="r-header">
+            <!-- 封面 -->
+            {image && <img class="r-cover" src={image} alt={title} />}
+
+            <!-- 页头内容 -->
+            <div class="r-header-wrapper">
+                <div class="r-title">{title}</div>
+                {rawDescription && <div class="r-description">{description}</div>}
+                <div class="r-info">
+                    <span class="r-item">
+                        <!-- 发布日期 -->
+                        <Icon name="mdi:calendar-blank-outline" width={20} height={20} />
+                        {formatDate(pubDate)}
+                    </span>
+                    <span class="r-item">
+                        <!-- 阅读时间 -->
+                        <Icon name="mdi:clock-time-four-outline" width={20} height={20} />
+                        {stats.minutes} 分钟
+                    </span>
+                    <span class="r-item">
+                        <!-- 字数统计 -->
+                        <Icon name="mdi:pencil-outline" width={20} height={20} />
+                        {stats.estimatedChars} 字
+                    </span>
+                    <span class="r-not-mob r-item">
+                        <!-- 分类 PC -->
+                        <Icon name="mdi:archive-outline" width={20} height={20} />
+                        {category ? (
+                            <a class="r-category" href={`/posts${siteConfig.isWithExt ? '.html' : ''}?category=${encodeURIComponent(category)}`}>{category}</a>
+                        ) : '未分类'}
+                    </span>
+                </div>
+
+                <div class="r-tag-wrapper">
+                    <!-- 分类 移动端 -->
+                    <span class="r-not-pc r-item">
+                        <Icon name="mdi:archive-outline" width={20} height={20} />
+                        {category ? (
+                            <a class="r-category" href={`/posts${siteConfig.isWithExt ? '.html' : ''}?category=${encodeURIComponent(category)}`}>{category}</a>
+                        ) : '未分类'}
+                    </span>
+                    <!-- 标签 -->
+                    {tags && tags.length > 0 && (
+                        <span class="r-tags">
+                            {tags.map((i: string) => (
+                                <a class="r-tag" href={`/posts${siteConfig.isWithExt ? '.html' : ''}?tag=${encodeURIComponent(i)}`}>#{i}</a>
+                            ))}
+                        </span>
+                    )}
+                </div>
+            </div>
+        </div>
+
+        <!-- 内容正文 -->
+        <div class="r-prose">
+            <Content />
+
+            <!-- 协议声明 -->
+            { siteConfig.license.enabled && (
+                <div class="r-license">
+                    <div class="r-title"><b>{title}</b></div>
+                    <p class="r-url">
+                        <a href={url}>{url}</a>
+                    </p>
+                    <p>
+                        {(siteConfig.license.prompt ?? '').split('[license]')[0]}
+                        <a class="r-url" href={siteConfig.license.url} target="_blank">{siteConfig.license.name}</a>
+                        {(siteConfig.license.prompt ?? '').split('[license]')[1] || ''}
+                    </p>
+                </div>
+            )}
+        </div>
+
+        
+    </div>
+
+    <div class="r-nav">
+        {
+            prev && (
+                <a class="r-nav-item prev" href={`/posts/${prev.id + (siteConfig.isWithExt ? '.html' : '')}`}>
+                    <Icon name="mdi:arrow-left" width={28} height={28} class="r-icon" />
+                    <div>
+                        <div class="label r-not-mob">上一篇</div>
+                        <div class="text">{prev.data.title}</div>
+                    </div>
+                </a>
+            )
+        }
+        {
+            next && (
+                <a class="r-nav-item next" href={`/posts/${next.id + (siteConfig.isWithExt ? '.html' : '')}`}>
+                    <div>
+                        <div class="label r-not-mob">下一篇</div>
+                        <div class="text">{next.data.title}</div>
+                    </div>
+                    <Icon name="mdi:arrow-right" width={28} height={28} class="r-icon" />
+                </a>
+            )
+        }
+    </div>
+
+    <Comment />
+</MainLayout>
+
+<style lang="less">
+    @import url('@/styles/variableConst.less');
+
+    // 注：由于 header 相关内容和普通页面通用，单独放在 resetCustom
+
+    .r-tag-wrapper {
+        display: flex;
+        margin-top: var(--content-tag-margin);
+
+        .r-category {
+            font-size: var(--content-info-font);
+        }
+
+        .r-tags {
+            display: flex;
+            gap: 6px
+        }
+
+        .r-tag {
+            display: inline-flex;
+            background-color: @color-theme-light;
+            color: @color-theme-dark;
+            padding: 3px 9px;
+            border-radius: 4px;
+            font-size: var(--content-tag-font);
+            text-decoration: none;
+            transition: all @anim-duration ease;
+
+            &:active {
+                background-color: @color-card-active;
+                transform: scale(.9);
+            }
+        }
+    }
+
+    .r-nav {
+        margin-top: @layout-content-spacing;
+        display: flex;
+        flex-direction: var(--content-nav-flex);
+        gap: 12px;
+
+        .r-nav-item {
+            display: flex;
+            flex: 1;
+            gap: 6px;
+            line-height: 2;
+            padding: 16px;
+            border-radius: @layout-content-border-radius;
+            background: #fff;
+            transition: all @anim-duration ease;
+            min-width: 0;
+
+            .label {
+                font-size: 14px;
+            }
+            .text {
+                font-weight: 600;
+            }
+        }
+        .r-nav-item.next {
+            text-align: right;
+            justify-content: flex-end;
+        }
+        .r-nav-item:hover {
+            background-color: lighten(@color-theme-light, 4%);
+            color: @color-theme-dark;
+        }
+
+        .r-icon {
+            color: @color-theme-dark;
+        }
+    }
+
+    .r-license {
+        padding: 18px 24px;
+        border-radius: @layout-border-radius;
+        background-color: lighten(@color-bg, 2.5%);
+        font-size: calc(var(--content-font) - 1px);
+        .r-title {
+            font-size: var(--content-font)
+        }
+        .r-url {
+            margin-bottom: 12px;
+        }
+        p {
+            margin: 0;
+            line-height: 1.6;
+        }
+        
+    }
+
+    // 适应移动端，将分类搬到标签处一起，开单独的一行
+    @media screen and (max-width: @layout-mobile-breakpoint) {
+        .r-tag-wrapper {
+            width: 100%;
+            align-items: center;
+            justify-content: space-between;
+        }
+    }
+</style>

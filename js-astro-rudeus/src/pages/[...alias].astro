@@ -1,0 +1,50 @@
+---
+import { getCollection } from 'astro:content'
+
+import { siteConfig } from '@/config'
+import { getPostAliasPaths, getPostCanonicalPath } from '@/utils/postAlias'
+
+export async function getStaticPaths() {
+    const posts = await getCollection('posts')
+    const postIds = new Set(posts.map((post) => post.id))
+    const seen = new Set<string>()
+    const paths: Array<{ params: { alias: string }; props: { target: string } }> = []
+
+    for (const post of posts) {
+        const target = getPostCanonicalPath(post.id, siteConfig.isWithExt)
+
+        for (const alias of getPostAliasPaths(post)) {
+            if (alias === 'index' || postIds.has(alias) || seen.has(alias)) {
+                continue
+            }
+
+            seen.add(alias)
+            paths.push({
+                params: { alias },
+                props: { target },
+            })
+        }
+    }
+
+    return paths
+}
+
+const { target } = Astro.props
+
+if (!target) {
+    return new Response('Not found', { status: 404 })
+}
+---
+
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta http-equiv="refresh" content={`0;url=${target}`} />
+        <link rel="canonical" href={target} />
+        <title>重定向到新页面... - {siteConfig.title}</title>
+    </head>
+    <body>
+        <p>正在重定向到新页面。如果没有自动跳转，请点击<a href={target}>这里</a>。</p>
+    </body>
+</html>

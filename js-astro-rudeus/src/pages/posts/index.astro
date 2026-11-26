@@ -1,0 +1,188 @@
+---
+import { getCollection } from 'astro:content'
+import MainLayout from '@/layouts/MainLayout.astro'
+
+import { siteConfig } from '@/config'
+
+// 读取博客集合，按时间倒序
+const posts = (await getCollection('posts')).sort(
+    (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
+)
+
+// 按年份分组
+const groups = posts.reduce(
+    (acc: Record<string, typeof posts>, post) => {
+        const year = new Date(post.data.pubDate).getFullYear().toString()
+        acc[year] ||= [] as any
+        acc[year].push(post)
+        return acc
+    },
+    {} as Record<string, typeof posts>
+)
+
+const years = Object.keys(groups).sort((a, b) => Number(b) - Number(a))
+
+// 格式化
+const formatDate = (date: Date | string) => {
+    const d = new Date(date)
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${mm}-${dd}`
+}
+---
+
+<MainLayout title={'归档 - ' + siteConfig.title} description="浏览所有博客文章">
+    <div class="r-content">
+        <div class="r-header">
+            <div class="r-header-wrapper">
+                <div class="r-title">归档</div>
+                <div class="r-subtitle">共 <span id="post-count">{posts.length}</span> 篇文章</div>
+            </div>
+        </div>
+
+        <div class="r-timeline">
+            {
+                years.map(year => (
+                    <div class="r-year" id={`y-${year}`}>
+                        <h2 class="r-catalog">{year}</h2>
+                        <div class="r-list">
+                            {groups[year].map(post => (
+                                <div class="r-item" data-tags={post.data.tags.join(',')} data-category={post.data.category || ''}>
+                                    <div class="r-date">
+                                        {formatDate(post.data.pubDate)}
+                                    </div>
+                                    <a class="r-article" href={`/posts/${post.id + (siteConfig.isWithExt ? '.html' : '')}`}>
+                                        <span>{post.data.title}</span>
+                                        <span class="r-grow r-not-mob"></span>
+                                        <span class="r-tags r-not-mob">
+                                            {post.data.tags.map(tag => (
+                                                <span>#{tag}</span>
+                                            ))}
+                                        </span>
+                                    </a>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ))
+            }
+        </div>
+        <div class="r-empty r-hidden" id="post-empty">
+            当前筛选条件下暂无文章
+        </div>
+    </div>
+</MainLayout>
+
+<style lang="less">
+    @import url('@/styles/variableConst.less');
+
+    .r-timeline {
+        margin-bottom: 24px;
+        display: flex;
+        flex-direction: column;
+
+        .r-catalog {
+            color: @color-theme;
+            margin: 12px 0;
+        }
+
+        .r-list {
+            list-style: none;
+            position: relative;
+            margin: 0;
+            padding: 0;
+            min-height: 12px;
+
+            .r-item {
+                position: relative;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 10px 16px;
+                margin: 6px 0;
+                border-radius: @layout-content-border-radius;
+                transition: all @anim-duration ease;
+                &:hover {
+                    background-color: @color-theme-light;
+                    * {
+                        color: @color-theme-dark;
+                    }
+                }
+                &:active {
+                    background-color: @color-card-active;
+                    transform: scale(.99);
+                }
+            }
+
+            .r-date {
+                width: 56px;
+                font-size: var(--content-font);
+                color: @color-secondary;
+            }
+
+            .r-article {
+                flex: 1;
+                padding-left: 24px;
+                font-size: calc(var(--content-font) + 1px);
+                color: @color-text;
+                text-decoration: none;
+                transition: color @anim-duration ease;
+            }
+
+            .r-article:hover {
+                color: @color-theme;
+            }
+        }
+    }
+
+    .r-empty {
+        color: @color-secondary;
+        text-align: center;
+        padding: 16px 0 24px;
+    }
+
+    .r-hidden {
+        display: none !important;
+    }
+
+    // 时间轴
+    .r-list::before {
+        content: '';
+        position: absolute;
+        z-index: 1;
+        top: 0;
+        bottom: 0;
+        left: calc(56px + 18px); // 56px 日期宽度 + 18px 间距
+        width: 2px;
+        background: @color-border;
+    }
+
+    // 时间点
+    .r-item::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: calc(56px + 18px);
+        width: 10px;
+        height: 10px;
+        background: @color-theme;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+    }
+
+    // 文章
+    .r-article {
+        display: flex;
+        align-items: center;
+
+        .r-tags {
+            display: flex;
+            gap: .75em;
+
+            span {
+                font-size: var(--content-tag-font);
+                color: @color-secondary;
+            }
+        }
+    }
+</style>

@@ -1,0 +1,96 @@
+---
+const className = 'r-loading-bar'
+const animationDuration = 300
+const threshold = false
+---
+
+<div class={className} aria-hidden="true"></div>
+
+<style lang="less">
+    @import url('@/styles/variableConst.less');
+
+    .r-loading-bar {
+        pointer-events: none;
+        background-color: @color-theme;
+        position: fixed;
+        z-index: 1031;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 2px;
+        transition:
+            transform 300ms ease-out,
+            opacity 150ms 150ms ease-in;
+        transform: translate3d(0, 0, 0) scaleX(var(--progress, 0));
+        transform-origin: 0 0;
+        opacity: var(--opacity, 0);
+    }
+
+    [dir='rtl'] .r-loading-bar {
+        transform-origin: 100% 0;
+    }
+</style>
+
+<script is:inline define:vars={{ className, animationDuration, threshold }}>
+    ;(() => {
+        let progress = 0.33
+        let opacity = 0
+        let trickleInterval
+        let thresholdTimeout
+        let active = false
+
+        const findBar = () => document.querySelector(`.${className}`)
+        const setProgress = (value) => {
+            progress = value
+            const bar = findBar()
+            if (bar) bar.style.setProperty('--progress', String(value))
+        }
+        const setOpacity = (value) => {
+            opacity = value
+            const bar = findBar()
+            if (bar) bar.style.setProperty('--opacity', String(value))
+        }
+        const applyState = () => {
+            const bar = findBar()
+            if (!bar) return
+            bar.style.setProperty('--progress', String(progress))
+            bar.style.setProperty('--opacity', String(opacity))
+        }
+
+        const onBeforePreparation = () => {
+            if (thresholdTimeout) window.clearTimeout(thresholdTimeout)
+            thresholdTimeout = window.setTimeout(() => {
+                thresholdTimeout = undefined
+                active = true
+                setOpacity(1)
+                if (!trickleInterval) {
+                    trickleInterval = window.setInterval(() => {
+                        const next = Math.min(progress + Math.random() * 0.03, 0.95)
+                        setProgress(next)
+                    }, animationDuration)
+                }
+            }, threshold)
+        }
+
+        const onBeforeSwap = () => {
+            if (thresholdTimeout) {
+                window.clearTimeout(thresholdTimeout)
+                thresholdTimeout = undefined
+            }
+            if (!active) return
+            active = false
+            if (trickleInterval) {
+                window.clearInterval(trickleInterval)
+                trickleInterval = undefined
+            }
+            setProgress(1)
+            window.setTimeout(() => setOpacity(0), animationDuration / 2)
+            window.setTimeout(() => setProgress(0.33), animationDuration * 2)
+        }
+
+        document.addEventListener('astro:before-preparation', onBeforePreparation)
+        document.addEventListener('astro:before-swap', onBeforeSwap)
+        document.addEventListener('astro:after-swap', applyState)
+        applyState()
+    })()
+</script>

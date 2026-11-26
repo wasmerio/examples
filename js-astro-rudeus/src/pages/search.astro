@@ -1,0 +1,131 @@
+---
+import { getCollection } from 'astro:content'
+import { analyzeReading } from '@/utils/readingStat'
+import { genDescription } from '@/utils/genDescription'
+
+import NotFound from '@/components/NotFound.astro'
+import MainLayout from '@/layouts/MainLayout.astro'
+import CardArticle from '@/components/CardArticle.astro'
+
+import { siteConfig } from '@/config'
+
+const posts = (await getCollection('posts')).sort(
+    (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
+)
+
+const items = posts.map((post) => {
+    const stats = analyzeReading(post.body)
+    const description = post.data.description?.trim() ?? genDescription(post.body)
+    return { post, stats, description }
+})
+
+---
+
+<MainLayout title={'搜索 - ' + siteConfig.title} description="搜索博客文章">
+    <div class="r-content r-index-content">
+        <div class="r-result">
+            搜索 “<span id="search-keyword"></span>”，共得到 <span id="search-count"></span> 条结果。
+        </div>
+        {
+            items.map(({ post, stats, description }) => (
+                <CardArticle
+                    title={post.data.title}
+                    description={description}
+                    pubDate={post.data.pubDate}
+                    url={`/posts/${post.id + (siteConfig.isWithExt ? '.html' : '')}`}
+                    tags={post.data.tags}
+                    readingTime={stats.minutes}
+                    readingChars={stats.estimatedChars}
+                    image={post.data.image}
+                    data-title={post.data.title}
+                    data-tags={(post.data.tags ?? []).join(' ')}
+                    data-desc={description}
+                />
+            ))
+        }
+        <div class="r-empty" id="search-empty">
+            <br>
+            <NotFound />
+        </div>
+    </div>
+</MainLayout>
+
+<script>
+    const normalize = (value: String) => value.toLowerCase().trim()
+    const content = document.querySelector('.r-content') as HTMLElement | null
+    const elEmpty = document.getElementById('search-empty') as HTMLElement | null
+    const elKeyword = document.getElementById('search-keyword') as HTMLElement | null
+    const elCount = document.getElementById('search-count') as HTMLElement | null
+    const items = Array.from(document.querySelectorAll('a.r-card'))
+
+    const applyFilter = (query: String) => {
+        const rawQuery = String(query || '').trim()
+        const keyword = normalize(rawQuery)
+        let visibleCount = 0
+
+        items.forEach((item: any) => {
+            const title = item.getAttribute('data-title') || ''
+            const tags = item.getAttribute('data-tags') || ''
+            const desc = item.getAttribute('data-desc') || ''
+            const match =
+                !keyword ||
+                normalize(title).includes(keyword) ||
+                normalize(tags).includes(keyword) ||
+                normalize(desc).includes(keyword)
+
+            item.style.display = match ? '' : 'none'
+            if (match) visibleCount += 1
+        })
+
+        if (elKeyword && elCount) {
+            elKeyword.textContent = rawQuery || '全部'
+            elCount.textContent = String(visibleCount)
+        }
+
+        if (elEmpty && content) {
+            if (visibleCount === 0) {
+                elEmpty.style.display = 'flex'
+                content.classList.remove('r-index-content')
+            } else {
+                elEmpty.style.display = 'none'
+                content.classList.add('r-index-content')
+            }
+            
+        }
+    }
+
+    const initFromUrl = () => {
+        const params = new URLSearchParams(window.location.search)
+        const query = params.get('q') || ''
+        applyFilter(query)
+    }
+
+    window.addEventListener('r-search', (event: any) => {
+        applyFilter(event.detail?.query || '')
+    })
+
+    initFromUrl()
+</script>
+
+<style lang="less">
+    @import url('@/styles/variableConst.less');
+
+    .r-result {
+        background-color: #fff;
+        border-radius: @layout-content-border-radius;
+        padding: var(--index-card-padding);
+    }
+
+    .r-content {
+        padding: 0;
+    }
+
+    .r-empty {
+        padding-top: 10%;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 24px;
+    }
+
+</style>

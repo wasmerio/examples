@@ -1,0 +1,351 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Navbar from '../../components/Navbar.astro';
+import Header from '../../components/Header.astro';
+import InfoBar from '../../components/InfoBar.astro';
+import Footer from '../../components/Footer.astro';
+import ArticleHeader from '../../components/ArticleHeader.astro';
+import siteData from '../../data/site.json';
+
+export async function getStaticPaths() {
+  const articles = siteData.articles || [];
+  
+  // Load all Markdown files dynamically
+  const markdownModules = import.meta.glob('../../content/articles/*.md');
+  
+  // Create a map of filename to module path
+  const filenameToPath = new Map<string, string>();
+  for (const path in markdownModules) {
+    const filename = path.split('/').pop() || '';
+    filenameToPath.set(filename, path);
+  }
+  
+  const paths = articles.map((article) => {
+    if (!article.markdownFile) {
+      throw new Error(`Article ${article.slug} is missing markdownFile`);
+    }
+    
+    // Find the corresponding Markdown module path
+    const markdownPath = filenameToPath.get(article.markdownFile);
+    
+    if (!markdownPath) {
+      throw new Error(`Markdown file not found: ${article.markdownFile}. Available files: ${Array.from(filenameToPath.keys()).join(', ')}`);
+    }
+    
+    return {
+      params: { slug: article.slug },
+      props: { 
+        article,
+        markdownPath
+      },
+    };
+  });
+  
+  return paths;
+}
+
+interface Props {
+  article: {
+    slug: string;
+    title: string;
+    excerpt: string;
+    date: string;
+    author?: string;
+    coverImage?: string;
+    markdownFile: string;
+  };
+  markdownPath: string;
+}
+
+const { article, markdownPath } = Astro.props;
+
+// Import the Markdown content
+const markdownModules = import.meta.glob('../../content/articles/*.md');
+const markdownLoader = markdownModules[markdownPath];
+
+if (!markdownLoader) {
+  throw new Error(`Failed to load markdown module: ${markdownPath}`);
+}
+
+const markdownModule = await markdownLoader() as any;
+
+// Astro's Markdown import returns an object with Content component
+// Handle different possible structures
+let Content: any = markdownModule.Content || 
+                   markdownModule.default?.Content || 
+                   markdownModule.default;
+
+if (!Content) {
+  throw new Error(`Unable to extract Content from markdown module for ${article.markdownFile}`);
+}
+
+const pageTitle = `${article.title} | ${siteData.name}`;
+const pageDescription = article.excerpt;
+const pageImage = article.coverImage ? `${Astro.url.origin}${article.coverImage}` : `${Astro.url.origin}/images/logo.svg`;
+---
+
+<Layout title={pageTitle} description={pageDescription}>
+  <Navbar />
+  <Header />
+  <InfoBar />
+  
+  <main id="main-content">
+    <article class="article section">
+      <div class="container container--narrow">
+        <ArticleHeader
+          title={article.title}
+          date={article.date}
+          author={article.author}
+          coverImage={article.coverImage}
+        />
+        
+        <div class="article-content">
+          <Content />
+        </div>
+        
+        <div class="article__footer">
+          <a href="/articles" class="article__back-link">
+            <span class="article__back-arrow" aria-hidden="true">←</span>
+            Back to Articles
+          </a>
+        </div>
+      </div>
+    </article>
+  </main>
+  
+  <Footer />
+</Layout>
+
+<!-- SEO: Article structured data -->
+<script type="application/ld+json" set:html={JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": article.title,
+  "description": article.excerpt,
+  "image": pageImage,
+  "datePublished": article.date,
+  "author": {
+    "@type": "Organization",
+    "name": article.author || siteData.name
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": siteData.name,
+    "logo": {
+      "@type": "ImageObject",
+      "url": `${Astro.url.origin}/images/logo.svg`
+    }
+  }
+})} />
+
+<style>
+  .article-content {
+    max-width: 800px;
+    margin: 0 auto;
+    line-height: var(--leading-relaxed);
+    color: var(--color-text);
+  }
+  
+  .article-content :global(p) {
+    margin-bottom: var(--space-6);
+    font-size: var(--text-lg);
+  }
+  
+  .article-content :global(h1) {
+    font-family: var(--font-heading);
+    font-size: var(--text-4xl);
+    font-weight: 700;
+    color: var(--color-secondary);
+    margin-top: var(--space-12);
+    margin-bottom: var(--space-6);
+    line-height: var(--leading-tight);
+  }
+  
+  .article-content :global(h2) {
+    font-family: var(--font-heading);
+    font-size: var(--text-3xl);
+    font-weight: 700;
+    color: var(--color-secondary);
+    margin-top: var(--space-12);
+    margin-bottom: var(--space-6);
+    line-height: var(--leading-tight);
+  }
+  
+  .article-content :global(h3) {
+    font-family: var(--font-heading);
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    color: var(--color-secondary);
+    margin-top: var(--space-10);
+    margin-bottom: var(--space-4);
+    line-height: var(--leading-tight);
+  }
+  
+  .article-content :global(h4) {
+    font-family: var(--font-heading);
+    font-size: var(--text-xl);
+    font-weight: 700;
+    color: var(--color-secondary);
+    margin-top: var(--space-8);
+    margin-bottom: var(--space-4);
+    line-height: var(--leading-tight);
+  }
+  
+  .article-content :global(ul),
+  .article-content :global(ol) {
+    margin-bottom: var(--space-6);
+    padding-left: var(--space-6);
+  }
+  
+  .article-content :global(li) {
+    margin-bottom: var(--space-2);
+    font-size: var(--text-lg);
+  }
+  
+  .article-content :global(blockquote) {
+    margin: var(--space-8) 0;
+    padding-left: var(--space-6);
+    border-left: 3px solid var(--color-primary);
+    font-family: var(--font-heading);
+    font-size: var(--text-xl);
+    font-style: italic;
+    color: var(--color-secondary);
+    line-height: var(--leading-relaxed);
+  }
+  
+  .article-content :global(a) {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-decoration-color: rgba(201, 162, 39, 0.3);
+    text-underline-offset: 3px;
+    transition: text-decoration-color var(--transition-fast);
+  }
+  
+  .article-content :global(a:hover) {
+    color: var(--color-secondary);
+    text-decoration-color: var(--color-primary);
+  }
+  
+  .article-content :global(strong),
+  .article-content :global(b) {
+    font-weight: 600;
+    color: var(--color-secondary);
+  }
+  
+  .article-content :global(em),
+  .article-content :global(i) {
+    font-style: italic;
+  }
+  
+  .article-content :global(img) {
+    max-width: 100%;
+    height: auto;
+    margin: var(--space-8) 0;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-medium);
+  }
+  
+  .article-content :global(code) {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    padding: var(--space-1) var(--space-2);
+    background-color: var(--color-bg-mid);
+    border-radius: var(--radius-sm);
+    color: var(--color-primary);
+  }
+  
+  .article-content :global(pre) {
+    margin: var(--space-8) 0;
+    padding: var(--space-6);
+    background-color: var(--color-bg-mid);
+    border-radius: var(--radius-md);
+    overflow-x: auto;
+  }
+  
+  .article-content :global(pre code) {
+    padding: 0;
+    background-color: transparent;
+  }
+  
+  .article-content :global(hr) {
+    margin: var(--space-8) 0;
+    border: none;
+    border-top: 1px solid rgba(201, 162, 39, 0.2);
+  }
+  
+  @media (max-width: 768px) {
+    .article-content {
+      padding: 0 var(--space-4);
+    }
+    
+    .article-content :global(p) {
+      font-size: var(--text-base);
+    }
+    
+    .article-content :global(h1) {
+      font-size: var(--text-3xl);
+      margin-top: var(--space-10);
+    }
+    
+    .article-content :global(h2) {
+      font-size: var(--text-2xl);
+      margin-top: var(--space-10);
+    }
+    
+    .article-content :global(h3) {
+      font-size: var(--text-xl);
+      margin-top: var(--space-8);
+    }
+    
+    .article-content :global(blockquote) {
+      font-size: var(--text-lg);
+      padding-left: var(--space-4);
+    }
+  }
+  
+  .article__footer {
+    margin-top: var(--space-12);
+    padding-top: var(--space-8);
+    border-top: 1px solid rgba(201, 162, 39, 0.2);
+  }
+  
+  .article__back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-primary);
+    text-decoration: none;
+    transition: gap var(--transition-fast), color var(--transition-fast);
+  }
+  
+  .article__back-link:hover {
+    gap: var(--space-3);
+    color: var(--color-secondary);
+  }
+  
+  .article__back-link:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+  
+  .article__back-arrow {
+    transition: transform var(--transition-fast);
+  }
+  
+  .article__back-link:hover .article__back-arrow {
+    transform: translateX(-4px);
+  }
+  
+  @media (max-width: 640px) {
+    .article__footer {
+      margin-top: var(--space-8);
+      padding-top: var(--space-6);
+    }
+  }
+</style>
+

@@ -1,0 +1,200 @@
+---
+import { tablerSvgs } from "@/utils/icons";
+
+const icons = tablerSvgs(["zoom-in", "zoom-out", "zoom-reset", "x"]);
+---
+
+<script type="application/json" id="zoom-icons" set:html={JSON.stringify(icons)} />
+<script>
+  // 記事内画像をクリックすると全画面で拡大表示する。ホイール/ピンチで拡大縮小、ドラッグで移動できる。
+  // document への登録は1回だけ。オーバーレイは開くたびに作る (ページ遷移で body が差し替わっても壊れない)。
+  const MIN = 1;
+  const MAX = 8;
+
+  const readIcons = (): Record<string, string> => JSON.parse(document.getElementById("zoom-icons")?.textContent ?? "{}");
+
+  let overlay: HTMLElement | null = null;
+  let cleanup: (() => void) | null = null;
+
+  const close = () => {
+    if (!overlay) return;
+    const el = overlay;
+    overlay = null;
+    cleanup?.();
+    cleanup = null;
+    document.documentElement.style.overflow = "";
+    el.classList.add("closing");
+    el.addEventListener("animationend", () => el.remove(), { once: true });
+    // reduced-motion などでアニメーションが走らない場合の保険
+    setTimeout(() => el.remove(), 400);
+  };
+
+  const open = (src: HTMLImageElement) => {
+    close();
+    const el = document.createElement("div");
+    el.className = "zoom-overlay";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-label", "Image viewer");
+
+    const img = document.createElement("img");
+    img.src = src.currentSrc || src.src;
+    img.alt = src.alt;
+    img.draggable = false;
+    el.append(img);
+
+    if (src.alt) {
+      const caption = document.createElement("div");
+      caption.className = "zoom-caption";
+      caption.textContent = src.alt;
+      el.append(caption);
+    }
+
+    const bar = document.createElement("div");
+    bar.className = "zoom-bar";
+    const label = document.createElement("span");
+    label.className = "zoom-label";
+    const icons = readIcons();
+    const makeBtn = (icon: string, title: string, onClick: () => void) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = icons[icon] ?? "";
+      b.title = title;
+      b.setAttribute("aria-label", title);
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onClick();
+      });
+      return b;
+    };
+
+    // 変換: 画像中心を原点に translate(x, y) scale(s)
+    let s = 1;
+    let x = 0;
+    let y = 0;
+
+    const apply = (animate = false) => {
+      img.classList.toggle("animating", animate);
+      img.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+      label.textContent = `${Math.round(s * 100)}%`;
+      el.classList.toggle("zoomed", s > 1);
+    };
+
+    // 画面上の点 (px, py) を動かさずに倍率を newS にする
+    const zoomAt = (newS: number, px: number, py: number, animate = false) => {
+      newS = Math.min(MAX, Math.max(MIN, newS));
+      const r = img.getBoundingClientRect();
+      const ox = px - (r.left + r.width / 2 - x);
+      const oy = py - (r.top + r.height / 2 - y);
+      const k = newS / s;
+      x = ox - (ox - x) * k;
+      y = oy - (oy - y) * k;
+      s = newS;
+      if (s === MIN) x = y = 0;
+      apply(animate);
+    };
+    const zoomCenter = (factor: number) => zoomAt(s * factor, innerWidth / 2, innerHeight / 2, true);
+    const reset = () => {
+      s = 1;
+      x = y = 0;
+      apply(true);
+    };
+
+    bar.append(
+      makeBtn("zoom-out", "Zoom out", () => zoomCenter(1 / 1.5)),
+      label,
+      makeBtn("zoom-in", "Zoom in", () => zoomCenter(1.5)),
+      makeBtn("zoom-reset", "Reset", reset),
+      makeBtn("x", "Close", close),
+    );
+    el.append(bar);
+
+    // ホイール: カーソル位置を中心に拡大縮小
+    el.addEventListener(
+      "wheel",
+      (e) => {
+        e.preventDefault();
+        zoomAt(s * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY);
+      },
+      { passive: false },
+    );
+
+    // ポインタ: 1本でドラッグ移動、2本でピンチ
+    const pointers = new Map<number, { x: number; y: number }>();
+    let pinch: { dist: number } | null = null;
+
+    img.addEventListener("pointerdown", (e) => {
+      img.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      pinch = pointers.size === 2 ? { dist: distance() } : null;
+      img.classList.add("dragging");
+    });
+    img.addEventListener("pointermove", (e) => {
+      const p = pointers.get(e.pointerId);
+      if (!p) return;
+      const dx = e.clientX - p.x;
+      const dy = e.clientY - p.y;
+      p.x = e.clientX;
+      p.y = e.clientY;
+      if (pointers.size === 2 && pinch) {
+        const [a, b] = [...pointers.values()];
+        const d = distance();
+        // 指の中点を基準に拡大しつつ、中点の移動ぶんも追従させる
+        zoomAt(s * (d / pinch.dist), (a.x + b.x) / 2, (a.y + b.y) / 2);
+        x += dx / 2;
+        y += dy / 2;
+        pinch.dist = d;
+        apply();
+      } else if (pointers.size === 1) {
+        x += dx;
+        y += dy;
+        apply();
+      }
+    });
+    const endPointer = (e: PointerEvent) => {
+      pointers.delete(e.pointerId);
+      pinch = null;
+      if (pointers.size === 0) img.classList.remove("dragging");
+    };
+    img.addEventListener("pointerup", endPointer);
+    img.addEventListener("pointercancel", endPointer);
+    const distance = () => {
+      const [a, b] = [...pointers.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    };
+
+    // ダブルクリック/ダブルタップ: 等倍 ↔ 2.5倍
+    img.addEventListener("dblclick", (e) => {
+      if (s > 1) reset();
+      else zoomAt(2.5, e.clientX, e.clientY, true);
+    });
+
+    // 背景クリックで閉じる (画像・ボタン上では閉じない)
+    el.addEventListener("click", (e) => {
+      if (e.target === el) close();
+    });
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "+" || e.key === "=") zoomCenter(1.5);
+      else if (e.key === "-") zoomCenter(1 / 1.5);
+      else if (e.key === "0") reset();
+    };
+    document.addEventListener("keydown", onKey);
+    cleanup = () => document.removeEventListener("keydown", onKey);
+
+    apply();
+    document.body.append(el);
+    document.documentElement.style.overflow = "hidden";
+    overlay = el;
+  };
+
+  document.addEventListener("click", (e) => {
+    const target = (e.target as Element | null)?.closest?.<HTMLImageElement>(".prose img:not(.link-card-img)");
+    // リンク内の画像は通常のリンク動作を優先
+    if (!target || target.closest("a")) return;
+    open(target);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") close();
+  });
+  document.addEventListener("astro:before-swap", close);
+</script>

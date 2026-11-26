@@ -1,0 +1,74 @@
+---
+import { withBase } from "@/utils/url";
+import { ClientRouter } from "astro:transitions";
+import "@/styles/global.css";
+import { siteConfig } from "@/config";
+import Navbar from "@/components/Navbar.astro";
+import ProfileCard from "@/components/ProfileCard.astro";
+import IntroOverlay from "@/components/IntroOverlay.astro";
+import TagCloud from "@/components/TagCloud.astro";
+import Footer from "@/components/Footer.astro";
+
+interface Props {
+  title?: string;
+  description?: string;
+  // ヒーロー (hero スロット) を表示するページ。固定ヘッダーぶんの上余白を省くために必要
+  hero?: boolean;
+}
+
+const { title, description = siteConfig.description, hero: hasHero = false } = Astro.props;
+const pageTitle = title ? `${title} - ${siteConfig.title}` : `${siteConfig.title} - ${siteConfig.subtitle}`;
+---
+
+<!doctype html>
+<html lang={siteConfig.lang} class="scroll-smooth" style={`--hue: ${siteConfig.themeHue}`}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href={withBase("/favicon.svg")} />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <link rel="alternate" type="application/rss+xml" title={siteConfig.title} href={withBase("/rss.xml")} />
+    <title>{pageTitle}</title>
+    <ClientRouter />
+    <script is:inline define:vars={{ defaultHue: siteConfig.themeHue }}>
+      // 遷移後に差し替わる新しい <html> へもテーマを引き継ぐ
+      const applyTheme = (el) => {
+        const dark = localStorage.getItem("theme")
+          ? localStorage.getItem("theme") === "dark"
+          : matchMedia("(prefers-color-scheme: dark)").matches;
+        el.classList.toggle("dark", dark);
+        el.style.setProperty("--hue", localStorage.getItem("hue") ?? defaultHue);
+      };
+      applyTheme(document.documentElement);
+      // 初回読み込み専用のイントロ演出用クラス。
+      // 演出後に外すと遷移用の pop-in に切り替わって再生され直すので、最初のページ遷移まで付けたままにする
+      document.documentElement.classList.add("intro");
+      document.addEventListener("astro:before-swap", (e) => {
+        applyTheme(e.newDocument.documentElement);
+        e.newDocument.documentElement.classList.remove("intro");
+      });
+    </script>
+  </head>
+  <body class="flex min-h-svh flex-col antialiased">
+    <IntroOverlay />
+    <Navbar />
+    <slot name="hero" />
+    <div
+      class:list={[
+        "mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 pb-8 md:flex-row-reverse md:items-start",
+        hasHero ? "pt-4" : "pt-24",
+      ]}
+    >
+      <main class="min-w-0 flex-1">
+        <slot />
+      </main>
+      <aside class="flex w-full shrink-0 flex-col gap-4 md:sticky md:top-24 md:w-60">
+        <ProfileCard />
+        <slot name="sidebar" />
+        <TagCloud />
+      </aside>
+    </div>
+    <Footer />
+  </body>
+</html>

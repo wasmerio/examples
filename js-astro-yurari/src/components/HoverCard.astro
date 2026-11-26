@@ -1,0 +1,81 @@
+<script>
+  // ogp プラグイン (src/plugins/ogp.mjs) が付けた a.hover-link[data-ogp] にマウスを乗せるとプレビューを表示する。
+  // document への登録は1回だけ。カードは表示のたびに作る (ページ遷移で body が差し替わっても壊れない)。
+  type Ogp = { title: string; description: string; image: string; host: string };
+
+  let card: HTMLElement | null = null;
+  let timer: number | undefined;
+
+  const hide = () => {
+    clearTimeout(timer);
+    card?.remove();
+    card = null;
+  };
+
+  const show = (link: HTMLAnchorElement) => {
+    let ogp: Ogp;
+    try {
+      ogp = JSON.parse(link.dataset.ogp!);
+    } catch {
+      return;
+    }
+    hide();
+
+    const el = document.createElement("div");
+    el.className = "hover-card";
+    el.setAttribute("role", "tooltip");
+    if (ogp.image) {
+      const img = document.createElement("img");
+      img.src = ogp.image;
+      img.alt = "";
+      img.referrerPolicy = "no-referrer";
+      el.append(img);
+    }
+    const body = document.createElement("div");
+    body.className = "hover-card-body";
+    for (const [cls, text] of [
+      ["hover-card-title", ogp.title],
+      ["hover-card-desc", ogp.description],
+      ["hover-card-host", ogp.host],
+    ]) {
+      if (!text) continue;
+      const row = document.createElement("div");
+      row.className = cls;
+      row.textContent = text;
+      body.append(row);
+    }
+    el.append(body);
+    document.body.append(el);
+    card = el;
+
+    // リンクの下に出す。入らなければ上、横は画面内に収める
+    const r = link.getBoundingClientRect();
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const left = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), document.documentElement.clientWidth - w - 8);
+    const below = r.bottom + 8 + h <= window.innerHeight || r.top - 8 - h < 0;
+    el.style.left = `${left + window.scrollX}px`;
+    el.style.top = `${(below ? r.bottom + 8 : r.top - 8 - h) + window.scrollY}px`;
+  };
+
+  const linkOf = (e: Event) => (e.target as Element | null)?.closest?.<HTMLAnchorElement>("a.hover-link");
+
+  document.addEventListener("mouseover", (e) => {
+    const link = linkOf(e);
+    if (!link) return;
+    clearTimeout(timer);
+    timer = window.setTimeout(() => show(link), 200);
+  });
+  document.addEventListener("mouseout", (e) => {
+    if (linkOf(e)) hide();
+  });
+  document.addEventListener("focusin", (e) => {
+    const link = linkOf(e);
+    if (link) show(link);
+  });
+  document.addEventListener("focusout", (e) => {
+    if (linkOf(e)) hide();
+  });
+  document.addEventListener("astro:before-swap", hide);
+  window.addEventListener("scroll", hide, { passive: true });
+</script>

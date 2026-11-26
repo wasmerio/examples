@@ -1,0 +1,133 @@
+---
+import { getCollection, render } from "astro:content";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import Button from "@/components/Button.astro";
+import Icon from "@/components/Icon.astro";
+import { site } from "@config";
+
+export async function getStaticPaths() {
+  const projects = (await getCollection("projects"))
+    .filter((p) => !p.data.draft)
+    .sort((a, b) => a.data.order - b.data.order);
+
+  return projects.map((entry, i) => ({
+    params: { slug: entry.id },
+    props: {
+      entry,
+      prev: projects[i - 1] ?? null,
+      next: projects[i + 1] ?? null,
+    },
+  }));
+}
+
+const { entry, prev, next } = Astro.props;
+const { data } = entry;
+const { Content } = await render(entry);
+const meta = [data.role, data.period].filter(Boolean).join(" · ");
+
+const canonical = new URL(Astro.url.pathname, Astro.site ?? "https://example.com").href;
+const ld = {
+  "@context": "https://schema.org",
+  "@type": "CreativeWork",
+  name: data.title,
+  description: data.oneLiner,
+  url: canonical,
+  author: { "@type": "Person", name: site.name },
+  ...(data.tags.length ? { keywords: data.tags.join(", ") } : {}),
+};
+---
+
+<BaseLayout title={data.title} description={data.oneLiner} ogImage={data.cover?.src} type="article">
+  <article>
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(ld)} />
+    <!-- compact project hero -->
+    <header class="border-b border-border bg-surface">
+      <div class="shell py-14 sm:py-16">
+        {meta && <p class="eyebrow">{meta}</p>}
+        <h1 class="mt-3 max-w-3xl text-[clamp(2rem,4.5vw,3rem)] font-medium leading-tight tracking-tight">
+          {data.title}
+        </h1>
+        <p class="mt-4 max-w-2xl text-[1.1rem] leading-relaxed text-muted">{data.summary}</p>
+
+        {
+          data.tags.length > 0 && (
+            <ul class="mt-6 flex flex-wrap gap-1.5">
+              {data.tags.map((t) => (
+                <li class="rounded-sm border border-border bg-background px-2.5 py-1 font-mono text-[0.72rem] text-sand-600 dark:text-sand-200">
+                  {t}
+                </li>
+              ))}
+            </ul>
+          )
+        }
+
+        {
+          data.links.length > 0 && (
+            <div class="mt-7 flex flex-wrap items-center gap-3">
+              {data.links.map((l) =>
+                l.url === "#" ? (
+                  <span class="inline-flex items-center gap-2 rounded-md border border-dashed border-border-strong px-3.5 py-2 text-sm text-muted">
+                    {l.label}
+                    {l.note && <span class="font-mono text-xs">· {l.note}</span>}
+                  </span>
+                ) : (
+                  <Button href={l.url} variant="ghost" size="sm" target="_blank" rel="noopener noreferrer">
+                    {l.label}
+                    <Icon name="arrow-up-right" size={15} />
+                  </Button>
+                ),
+              )}
+            </div>
+          )
+        }
+      </div>
+    </header>
+
+    <!-- body -->
+    <div class="shell py-14">
+      <div class="prose">
+        <Content />
+      </div>
+    </div>
+
+    <!-- prev / next -->
+    <nav class="shell border-t border-border py-10" aria-label="More work">
+      <div class="grid gap-4 sm:grid-cols-2">
+        {
+          prev ? (
+            <a
+              href={`/work/${prev.id}`}
+              class="group flex flex-col gap-1 rounded-lg border border-border bg-surface p-5 transition-colors hover:border-border-strong"
+            >
+              <span class="eyebrow">← Previous</span>
+              <span class="font-sans font-semibold text-heading group-hover:text-accent-text">
+                {prev.data.title}
+              </span>
+            </a>
+          ) : (
+            <span />
+          )
+        }
+        {
+          next && (
+            <a
+              href={`/work/${next.id}`}
+              class="group flex flex-col gap-1 rounded-lg border border-border bg-surface p-5 text-right transition-colors hover:border-border-strong sm:col-start-2"
+            >
+              <span class="eyebrow">Next →</span>
+              <span class="font-sans font-semibold text-heading group-hover:text-accent-text">
+                {next.data.title}
+              </span>
+            </a>
+          )
+        }
+      </div>
+      <div class="mt-6">
+        <Button href="/work" variant="link">
+          <Icon name="arrow-right" size={15} class="rotate-180" />
+          Back to all work
+        </Button>
+      </div>
+    </nav>
+  </article>
+</BaseLayout>

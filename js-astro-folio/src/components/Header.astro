@@ -1,0 +1,172 @@
+---
+import { site } from "@config";
+import ThemeToggle from "./ThemeToggle.astro";
+import Button from "./Button.astro";
+import Icon from "./Icon.astro";
+
+const path = Astro.url.pathname.replace(/\/$/, "") || "/";
+const isActive = (href: string) =>
+  href === "/" ? path === "/" : path === href || path.startsWith(href + "/");
+---
+
+<header
+  id="site-header"
+  class="sticky top-0 z-40 border-b border-transparent bg-background/80 backdrop-blur-md transition-colors data-[scrolled]:border-border"
+>
+  <div class="shell flex h-16 items-center justify-between gap-4">
+    <a href="/" class="font-display text-lg font-medium text-heading" aria-label={`${site.name} home`}>
+      {site.name}<span class="text-accent">.</span>
+    </a>
+
+    <nav class="hidden items-center gap-1 md:flex" aria-label="Primary">
+      {
+        site.navItems.map((item) => (
+          <a
+            href={item.href}
+            class:list={[
+              "relative px-3 py-2 text-sm transition-colors hover:text-heading",
+              isActive(item.href) ? "text-heading" : "text-muted",
+            ]}
+            aria-current={isActive(item.href) ? "page" : undefined}
+          >
+            {item.label}
+            {isActive(item.href) && (
+              <span class="absolute inset-x-3 -bottom-px h-0.5 bg-accent" aria-hidden="true" />
+            )}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="flex items-center gap-1.5">
+      {site.features.themeToggle && <ThemeToggle />}
+      {
+        site.features.cvDownload && (
+          <Button href={site.cvPath} variant="ghost" size="sm" class="hidden lg:inline-flex" download>
+            <Icon name="download" size={16} />
+            CV
+          </Button>
+        )
+      }
+      <button
+        id="mobile-nav-toggle"
+        type="button"
+        class="inline-flex h-10 w-10 items-center justify-center rounded-md text-heading hover:bg-surface-2 md:hidden"
+        aria-label="Open menu"
+        aria-expanded="false"
+        aria-controls="mobile-nav"
+      >
+        <Icon name="menu" size={22} />
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- mobile drawer -->
+<div
+  id="mobile-nav"
+  class="fixed inset-0 z-50 hidden bg-olive-600 dark:bg-olive-800 text-sand-0 md:hidden"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Site menu"
+>
+  <div class="flex h-16 items-center justify-between px-[var(--page-gutter)]">
+    <span class="font-display text-lg font-medium text-sand-0">{site.name}<span class="text-accent">.</span></span>
+    <button
+      id="mobile-nav-close"
+      type="button"
+      class="inline-flex h-10 w-10 items-center justify-center rounded-md text-sand-0 hover:bg-white/10"
+      aria-label="Close menu"
+    >
+      <Icon name="close" size={24} />
+    </button>
+  </div>
+  <nav class="flex flex-col gap-2 px-[var(--page-gutter)] pt-8" aria-label="Mobile">
+    {
+      site.navItems.map((item) => (
+        <a
+          href={item.href}
+          class="border-b border-white/10 py-4 font-display text-2xl text-sand-0 transition-colors hover:text-accent"
+          data-mobile-link
+        >
+          {item.label}
+        </a>
+      ))
+    }
+    {
+      site.features.cvDownload && (
+        <a
+          href={site.cvPath}
+          download
+          class="mt-2 inline-flex items-center gap-2 py-2 text-accent"
+          data-mobile-link
+        >
+          <Icon name="download" size={18} />
+          Download CV
+        </a>
+      )
+    }
+  </nav>
+</div>
+
+<script>
+  // sticky header hairline on scroll
+  const header = document.getElementById("site-header");
+  const onScroll = () => {
+    if (!header) return;
+    if (window.scrollY > 8) header.setAttribute("data-scrolled", "");
+    else header.removeAttribute("data-scrolled");
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+
+  // mobile drawer
+  const toggle = document.getElementById("mobile-nav-toggle");
+  const drawer = document.getElementById("mobile-nav");
+  const closeBtn = document.getElementById("mobile-nav-close");
+  const links = document.querySelectorAll("[data-mobile-link]");
+
+  const background = [
+    document.getElementById("site-header"),
+    document.getElementById("main"),
+    document.querySelector("footer"),
+  ];
+
+  const open = () => {
+    drawer?.classList.remove("hidden");
+    toggle?.setAttribute("aria-expanded", "true");
+    document.body.style.overflow = "hidden";
+    background.forEach((el) => el && el.setAttribute("inert", ""));
+    closeBtn?.focus();
+  };
+  const close = () => {
+    drawer?.classList.add("hidden");
+    toggle?.setAttribute("aria-expanded", "false");
+    document.body.style.overflow = "";
+    background.forEach((el) => el && el.removeAttribute("inert"));
+    toggle?.focus();
+  };
+
+  toggle?.addEventListener("click", open);
+  closeBtn?.addEventListener("click", close);
+  links.forEach((l) => l.addEventListener("click", close));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !drawer?.classList.contains("hidden")) close();
+  });
+
+  // keep Tab focus inside the open drawer (belt-and-braces alongside inert)
+  drawer?.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const f = drawer.querySelectorAll<HTMLElement>("a[href], button:not([disabled])");
+    if (!f.length) return;
+    const first = f[0];
+    const last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+</script>

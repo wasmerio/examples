@@ -1,0 +1,148 @@
+import type { RawBookPageDefinition } from "../types";
+
+export const corePages = [
+	{
+		id: "literals",
+		partId: "core",
+		path: "/docs/book/core/literals",
+		aliases: ["/docs/language/core/literals", "/learn/language/core/literals"],
+		sourcePath: "content/musi-book/pages/core/literals.md",
+		questions: [],
+	},
+	{
+		id: "tuples-and-unit",
+		partId: "core",
+		path: "/docs/book/core/tuples-and-unit",
+		aliases: [
+			"/docs/language/core/tuples-and-unit",
+			"/learn/language/core/tuples-and-unit",
+		],
+		sourcePath: "content/musi-book/pages/core/tuples-and-unit.md",
+		questions: [],
+	},
+	{
+		id: "operators",
+		partId: "core",
+		path: "/docs/book/core/operators",
+		aliases: [
+			"/docs/language/core/operators",
+			"/learn/language/core/operators",
+		],
+		sourcePath: "content/musi-book/pages/core/operators.md",
+		questions: [],
+	},
+	{
+		id: "assignment-and-equality",
+		partId: "core",
+		path: "/docs/book/core/assignment-and-equality",
+		aliases: [
+			"/docs/language/core/assignment-and-equality",
+			"/learn/language/core/assignment-and-equality",
+		],
+		sourcePath: "content/musi-book/pages/core/assignment-and-equality.md",
+		questions: [],
+	},
+	{
+		id: "math-and-comparison",
+		partId: "core",
+		path: "/docs/book/core/math-and-comparison",
+		aliases: [
+			"/docs/language/core/math-and-comparison",
+			"/learn/language/core/math-and-comparison",
+		],
+		sourcePath: "content/musi-book/pages/core/math-and-comparison.md",
+		questions: [],
+	},
+	{
+		id: "logic-and-bits",
+		partId: "core",
+		path: "/docs/book/core/logic-and-bits",
+		aliases: [
+			"/docs/language/core/logic-and-bits",
+			"/learn/language/core/logic-and-bits",
+		],
+		sourcePath: "content/musi-book/pages/core/logic-and-bits.md",
+		questions: [],
+	},
+	{
+		id: "pipelines-and-access",
+		partId: "core",
+		path: "/docs/book/core/pipelines-and-access",
+		aliases: [
+			"/docs/language/core/pipelines-and-access",
+			"/learn/language/core/pipelines-and-access",
+		],
+		sourcePath: "content/musi-book/pages/core/pipelines-and-access.md",
+		questions: [],
+	},
+	{
+		id: "type-operators",
+		partId: "core",
+		path: "/docs/book/core/type-operators",
+		aliases: [
+			"/docs/language/core/type-operators",
+			"/learn/language/core/type-operators",
+		],
+		sourcePath: "content/musi-book/pages/core/type-operators.md",
+		questions: [],
+	},
+	{
+		id: "callable-arrows",
+		partId: "core",
+		path: "/docs/book/core/callable-arrows",
+		aliases: [
+			"/docs/language/core/callable-arrows",
+			"/learn/language/core/callable-arrows",
+		],
+		sourcePath: "content/musi-book/pages/core/callable-arrows.md",
+		questions: [],
+	},
+	{
+		id: "ranges",
+		partId: "core",
+		path: "/docs/book/core/ranges",
+		aliases: ["/docs/language/core/ranges", "/learn/language/core/ranges"],
+		sourcePath: "content/musi-book/pages/core/ranges.md",
+		questions: [],
+	},
+	{
+		id: "functions",
+		partId: "core",
+		path: "/docs/book/core/functions",
+		aliases: [
+			"/docs/language/core/functions",
+			"/learn/language/core/functions",
+		],
+		sourcePath: "content/musi-book/pages/core/functions.md",
+		questions: [],
+	},
+	{
+		id: "lambdas",
+		partId: "core",
+		path: "/docs/book/core/lambdas",
+		aliases: ["/docs/language/core/lambdas", "/learn/language/core/lambdas"],
+		sourcePath: "content/musi-book/pages/core/lambdas.md",
+		questions: [],
+	},
+	{
+		id: "calls",
+		partId: "core",
+		path: "/docs/book/core/calls",
+		aliases: ["/docs/language/core/calls", "/learn/language/core/calls"],
+		sourcePath: "content/musi-book/pages/core/calls.md",
+		questions: [],
+	},
+	{
+		id: "dot-calls",
+		partId: "core",
+		path: "/docs/book/core/dot-calls",
+		aliases: [
+			"/docs/language/core/dot-calls",
+			"/learn/language/core/dot-calls",
+			"/docs/language/core/methods",
+			"/learn/language/core/methods",
+		],
+		sourcePath: "content/musi-book/pages/core/dot-calls.md",
+		questions: [],
+	},
+] satisfies readonly RawBookPageDefinition[];

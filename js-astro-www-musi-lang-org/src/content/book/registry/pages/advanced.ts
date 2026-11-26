@@ -1,0 +1,75 @@
+import type { RawBookPageDefinition } from "../types";
+
+export const advancedPages = [
+	{
+		id: "attributes",
+		partId: "advanced",
+		path: "/docs/book/advanced/attributes",
+		aliases: [
+			"/docs/language/advanced/attributes",
+			"/learn/language/advanced/attributes",
+		],
+		sourcePath: "content/musi-book/pages/advanced/attributes.md",
+		questions: [],
+	},
+	{
+		id: "native-and-unsafe",
+		partId: "advanced",
+		path: "/docs/book/advanced/native-and-unsafe",
+		aliases: [
+			"/docs/language/advanced/native-and-unsafe",
+			"/learn/language/advanced/native-and-unsafe",
+			"/docs/book/advanced/native",
+			"/learn/book/advanced/native",
+			"/docs/language/advanced/native",
+			"/learn/language/advanced/native",
+			"/docs/book/advanced/unsafe-and-ffi",
+			"/learn/book/advanced/unsafe-and-ffi",
+			"/docs/language/advanced/unsafe-and-ffi",
+			"/learn/language/advanced/unsafe-and-ffi",
+		],
+		sourcePath: "content/musi-book/pages/advanced/native-and-unsafe.md",
+		questions: [],
+	},
+	{
+		id: "quote-and-syntax",
+		partId: "advanced",
+		path: "/docs/book/advanced/quote-and-syntax",
+		aliases: [
+			"/docs/language/advanced/quote-and-syntax",
+			"/learn/language/advanced/quote-and-syntax",
+		],
+		sourcePath: "content/musi-book/pages/advanced/quote-and-syntax.md",
+		questions: [],
+	},
+	{
+		id: "templates-and-splices",
+		partId: "advanced",
+		path: "/docs/book/advanced/templates-and-splices",
+		aliases: [
+			"/docs/language/advanced/templates-and-splices",
+			"/learn/language/advanced/templates-and-splices",
+		],
+		sourcePath: "content/musi-book/pages/advanced/templates-and-splices.md",
+		questions: [],
+	},
+	{
+		id: "testing-and-running",
+		partId: "advanced",
+		path: "/docs/book/advanced/testing-and-running",
+		aliases: [
+			"/docs/language/advanced/testing-and-running",
+			"/learn/language/advanced/testing-and-running",
+			"/docs/book/advanced/testing",
+			"/learn/book/advanced/testing",
+			"/docs/language/advanced/testing",
+			"/learn/language/advanced/testing",
+			"/docs/book/advanced/running-and-tooling",
+			"/learn/book/advanced/running-and-tooling",
+			"/docs/language/advanced/running-and-tooling",
+			"/learn/language/advanced/running-and-tooling",
+		],
+		sourcePath: "content/musi-book/pages/advanced/testing-and-running.md",
+		questions: [],
+	},
+] satisfies readonly RawBookPageDefinition[];

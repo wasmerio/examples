@@ -1,0 +1,297 @@
+---
+import { getCollection, render } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import Price from '../../components/Price.astro';
+import BuyBox from '../../components/BuyBox.astro';
+import AskProduct from '../../components/AskProduct.astro';
+import ProductGrid from '../../components/ProductGrid.astro';
+import { store } from '../../data/store';
+import { url, categoryLabel, sortProducts, buyState, type Product } from '../../lib/shop';
+
+export async function getStaticPaths() {
+	const all = await getCollection('products');
+	return all.map((product) => ({ params: { slug: product.id }, props: { product } }));
+}
+const { product } = Astro.props as { product: Product };
+const d = product.data;
+const { Content } = await render(product);
+const pageUrl = new URL(Astro.url.pathname, Astro.site).toString();
+const imageUrl = new URL(url(d.image), Astro.site).toString();
+const state = buyState(product);
+const related = sortProducts((await getCollection('products')).filter((p) => p.id !== product.id && p.data.category === d.category)).slice(0, 3);
+const more = related.length ? related : sortProducts((await getCollection('products')).filter((p) => p.id !== product.id)).slice(0, 3);
+
+// Product structured data for search engines. Price and availability come from the same frontmatter as the page.
+const jsonLd = {
+	'@context': 'https://schema.org',
+	'@type': 'Product',
+	name: d.title,
+	description: d.summary,
+	image: [imageUrl],
+	sku: product.id,
+	category: categoryLabel(d.category),
+	brand: { '@type': 'Brand', name: store.name },
+	additionalProperty: d.specs.map((s) => ({ '@type': 'PropertyValue', name: s.label, value: s.value })),
+	offers: {
+		'@type': 'Offer',
+		url: pageUrl,
+		price: d.price.toFixed(2),
+		priceCurrency: d.currency,
+		availability: d.soldOut ? 'https://schema.org/SoldOut' : 'https://schema.org/InStock',
+		itemCondition: 'https://schema.org/NewCondition',
+		seller: { '@type': 'Organization', name: store.name },
+	},
+};
+const faqLd = d.faq.length
+	? {
+			'@context': 'https://schema.org',
+			'@type': 'FAQPage',
+			mainEntity: d.faq.map((f) => ({ '@type': 'Question', name: f.q, acceptedAnswer: { '@type': 'Answer', text: f.a } })),
+		}
+	: null;
+const ld = (o: unknown) => JSON.stringify(o).replace(/</g, '\\u003c');
+---
+<Layout title={d.title} description={d.summary} image={d.image} type="product">
+	<Fragment slot="head">
+		<script type="application/ld+json" set:html={ld(jsonLd)} />
+		{faqLd && <script type="application/ld+json" set:html={ld(faqLd)} />}
+		<meta property="product:price:amount" content={d.price.toFixed(2)} />
+		<meta property="product:price:currency" content={d.currency} />
+	</Fragment>
+
+	<div class="wrap">
+		<nav class="crumbs" aria-label="Breadcrumb">
+			<a href={url('/shop/')}>Shop</a>
+			<span aria-hidden="true">/</span>
+			<a href={url(`/shop/category/${d.category}/`)}>{categoryLabel(d.category)}</a>
+		</nav>
+
+		<article class="product" data-buy-state={state.kind}>
+			<div class="media">
+				<div class:list={['frame', { 'is-soldout': d.soldOut }]}>
+					<img src={url(d.image)} alt={d.imageAlt ?? d.title} width="1000" height="1000" fetchpriority="high" />
+					{d.badge && !d.soldOut && <span class="tag badge">{d.badge}</span>}
+				</div>
+			</div>
+
+			<div class="info">
+				<h1>{d.title}</h1>
+				<div class="price-row">
+					<Price amount={d.price} currency={d.currency} class="pdp-price" />
+					<span class="avail">{d.soldOut ? 'Sold out' : d.specs.find((s) => s.label === 'Lead time')?.value ?? 'In stock'}</span>
+				</div>
+				<p class="summary">{d.summary}</p>
+
+				<BuyBox product={product} />
+
+				<div class="desc prose">
+					<Content />
+				</div>
+
+				{d.specs.length > 0 && (
+					<section aria-labelledby="specs">
+						<h2 id="specs">Specifications</h2>
+						<dl class="specs">
+							{d.specs.map((s) => (
+								<div><dt>{s.label}</dt><dd>{s.value}</dd></div>
+							))}
+						</dl>
+					</section>
+				)}
+			</div>
+		</article>
+
+		<section class="qa" aria-label="Questions">
+			<div>
+				<h2>Questions people ask</h2>
+				{d.faq.length ? (
+					<div class="faq">
+						{d.faq.map((f, i) => (
+							<details open={i === 0}>
+								<summary>{f.q}</summary>
+								<p>{f.a}</p>
+							</details>
+						))}
+					</div>
+				) : (
+					<p class="soft">No questions yet. Ask one in the box.</p>
+				)}
+				<p class="soft policy">Shipping, returns and payment: <a href={url('/shipping/')}>read the policy</a>.</p>
+			</div>
+			<AskProduct product={product} />
+		</section>
+
+		{more.length > 0 && (
+			<section class="more" aria-labelledby="more">
+				<h2 id="more">{related.length ? `More ${categoryLabel(d.category).toLowerCase()}` : 'More from the shop'}</h2>
+				<ProductGrid products={more} headingLevel="h3" />
+			</section>
+		)}
+	</div>
+</Layout>
+
+<style>
+	.crumbs {
+		display: flex;
+		gap: 0.6rem;
+		padding-block: 1.5rem;
+		font-size: 0.95rem;
+		color: var(--ink-soft);
+	}
+	.product {
+		display: grid;
+		grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+		gap: clamp(1.5rem, 5vw, 4.5rem);
+		align-items: start;
+	}
+	.media {
+		position: sticky;
+		top: 1.5rem;
+	}
+	.frame {
+		position: relative;
+		background: var(--greyboard);
+	}
+	.frame img {
+		width: 100%;
+		aspect-ratio: 1;
+	}
+	.frame.is-soldout img {
+		filter: grayscale(0.85) contrast(0.9);
+	}
+	.badge {
+		position: absolute;
+		top: 1rem;
+		left: 1rem;
+		font-size: 0.95rem;
+	}
+	h1 {
+		font-size: clamp(2.1rem, 4.6vw, 3.6rem);
+		letter-spacing: -0.03em;
+	}
+	.price-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: 0.5rem 1.25rem;
+		margin-top: 1.25rem;
+		padding-bottom: 1.25rem;
+		border-bottom: 2px solid var(--ink);
+	}
+	:global(.pdp-price) {
+		font-size: clamp(4rem, 9vw, 6.5rem);
+	}
+	[data-buy-state='soldout'] :global(.pdp-price) {
+		color: var(--ink-soft);
+	}
+	.avail {
+		padding-bottom: 0.6rem;
+		color: var(--ink-soft);
+		font-weight: 500;
+	}
+	[data-buy-state='soldout'] .avail {
+		color: var(--thread);
+		font-weight: 700;
+	}
+	.summary {
+		margin-block: 1.25rem 1.5rem;
+		font-size: 1.2rem;
+		line-height: 1.5;
+	}
+	.desc {
+		margin-top: 2.5rem;
+	}
+	section h2 {
+		font-size: 1.6rem;
+	}
+	.specs {
+		margin: 1rem 0 0;
+		border-top: 1px solid var(--greyboard);
+	}
+	.specs div {
+		display: grid;
+		grid-template-columns: 9rem 1fr;
+		gap: 1rem;
+		padding-block: 0.65rem;
+		border-bottom: 1px solid var(--greyboard);
+	}
+	.specs dt {
+		color: var(--ink-soft);
+	}
+	.specs dd {
+		margin: 0;
+		font-weight: 500;
+	}
+	.info > section {
+		margin-top: 2.5rem;
+	}
+	.qa {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+		gap: clamp(1.5rem, 5vw, 4.5rem);
+		align-items: start;
+		margin-top: clamp(4rem, 8vw, 6rem);
+	}
+	.qa h2 {
+		font-size: clamp(1.5rem, 3vw, 2rem);
+	}
+	.faq {
+		margin-top: 1rem;
+		border-top: 1px solid var(--greyboard);
+	}
+	details {
+		border-bottom: 1px solid var(--greyboard);
+	}
+	summary {
+		cursor: pointer;
+		list-style: none;
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+		padding-block: 0.9rem;
+		font-weight: 600;
+		font-size: 1.05rem;
+	}
+	summary::-webkit-details-marker {
+		display: none;
+	}
+	summary::after {
+		content: '+';
+		font: 700 1.4rem/1 var(--font-display);
+		color: var(--cloth);
+	}
+	details[open] summary::after {
+		content: '\2013';
+	}
+	details p {
+		padding-bottom: 1rem;
+		color: var(--ink-soft);
+		max-width: 38rem;
+	}
+	.soft {
+		color: var(--ink-soft);
+	}
+	.policy {
+		margin-top: 1rem;
+		font-size: 0.95rem;
+	}
+	.more {
+		margin-top: clamp(4rem, 8vw, 6rem);
+	}
+	.more h2 {
+		font-size: clamp(1.5rem, 3vw, 2rem);
+		margin-bottom: 1.25rem;
+	}
+	@media (max-width: 52rem) {
+		.product,
+		.qa {
+			grid-template-columns: 1fr;
+		}
+		.media {
+			position: static;
+		}
+		.specs div {
+			grid-template-columns: 7rem 1fr;
+		}
+	}
+</style>

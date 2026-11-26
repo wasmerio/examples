@@ -1,0 +1,203 @@
+---
+// "Ask about this product". The visitor's question goes to OneTag AI from the browser together with
+// this product's description, specs and FAQ and the store's shipping and returns text, and nothing else.
+// The OneTag script is loaded on first use (src/scripts/onetag.ts), so the box is free until someone asks.
+import type { Product } from '../lib/shop';
+import { askContext } from '../lib/shop';
+import { store } from '../data/store';
+interface Props {
+	product: Product;
+	placeholder?: string;
+}
+const { product, placeholder } = Astro.props;
+const context = askContext(product);
+const hint = placeholder ?? product.data.askPlaceholder ?? 'Can I get this to Canada, and what does shipping cost?';
+---
+<ask-product class="ask" data-placeholder={hint}>
+	<h2 id="ask-title">Ask about this product</h2>
+	<p class="lede">Answers come only from this page and our shipping and returns policy. If the page does not say, the answer will tell you.</p>
+	<form data-ask-form aria-labelledby="ask-title">
+		<label class="sr-only" for="ask-input">Your question about {product.data.title}</label>
+		<textarea id="ask-input" name="q" rows="2" maxlength="400" required autocomplete="off" placeholder={hint}></textarea>
+		<button class="btn" type="submit" data-ask-submit>Ask</button>
+	</form>
+	<p class="status" data-ask-status aria-live="polite"></p>
+	<div class="answer" data-ask-answer hidden></div>
+	<p class="foot" data-ask-foot hidden>Written by AI from this page. Check prices and delivery on the Stripe page before you pay. Still unsure? <a href={`mailto:${store.email}`}>{store.email}</a>. <button type="button" class="linkish" data-ask-reset>Ask something else</button></p>
+	<script type="application/json" data-ask-context set:html={JSON.stringify(context).replace(/</g, '\\u003c')}></script>
+</ask-product>
+
+<style>
+	.ask {
+		display: block;
+		background: var(--surface);
+		border: 3px dashed var(--thread);
+		padding: clamp(1.1rem, 3vw, 1.75rem);
+	}
+	h2 {
+		font-size: clamp(1.5rem, 3vw, 2rem);
+	}
+	.lede {
+		margin-top: 0.5rem;
+		color: var(--ink-soft);
+		font-size: 0.95rem;
+	}
+	form {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 0.6rem;
+		margin-top: 1.1rem;
+	}
+	textarea {
+		font: inherit;
+		color: inherit;
+		background: var(--blotter);
+		border: 2px solid var(--greyboard);
+		padding: 0.7rem 0.8rem;
+		resize: vertical;
+		min-height: 3.25rem;
+		min-width: 0;
+	}
+	textarea:focus {
+		border-color: var(--cloth);
+	}
+	textarea:focus-visible {
+		outline-offset: 1px;
+	}
+	.btn {
+		align-self: start;
+	}
+	@media (max-width: 30rem) {
+		form {
+			grid-template-columns: 1fr;
+		}
+	}
+	.status {
+		margin-top: 0.75rem;
+		min-height: 1.4em;
+		font-size: 0.925rem;
+		color: var(--ink-soft);
+	}
+	.answer {
+		white-space: pre-wrap;
+		border-left: 4px solid var(--cloth);
+		padding-left: 1rem;
+		font-size: 1.05rem;
+		line-height: 1.6;
+	}
+	.answer :global(.q) {
+		display: block;
+		font-weight: 600;
+		margin-bottom: 0.35rem;
+	}
+	.foot {
+		margin-top: 1rem;
+		font-size: 0.85rem;
+		color: var(--ink-soft);
+	}
+	.linkish {
+		font: inherit;
+		color: inherit;
+		background: none;
+		border: 0;
+		padding: 0;
+		text-decoration: underline;
+		text-underline-offset: 0.2em;
+		cursor: pointer;
+	}
+</style>
+
+<script>
+	import { loadOneTag, describe } from '../scripts/onetag';
+
+	const RULES =
+		'You are the shop assistant for one product page of a small online store. ' +
+		'Answer the visitor using ONLY the product and store text you are given. ' +
+		'If that text does not cover the question, say plainly that this page does not say, and suggest emailing the store. ' +
+		'Never invent or estimate prices, discounts, stock levels, restock dates, delivery dates or shipping costs: quote them only if they appear in the text, word for word. ' +
+		'Do not promise anything the text does not promise. Do not compare with other shops or products not in the text. ' +
+		'Reply in plain text, under 90 words, no headings, no lists, no markdown. Reply in the language of the question.';
+
+	class AskProduct extends HTMLElement {
+		history: { role: 'user' | 'assistant'; content: string }[] = [];
+		connectedCallback() {
+			const form = this.querySelector<HTMLFormElement>('[data-ask-form]')!;
+			const input = form.querySelector('textarea')!;
+			const status = this.querySelector<HTMLElement>('[data-ask-status]')!;
+			const answer = this.querySelector<HTMLElement>('[data-ask-answer]')!;
+			const foot = this.querySelector<HTMLElement>('[data-ask-foot]')!;
+			const submit = this.querySelector<HTMLButtonElement>('[data-ask-submit]')!;
+			const context: string = JSON.parse(this.querySelector('[data-ask-context]')!.textContent || '""');
+			let controller: AbortController | null = null;
+
+			// Start fetching the script when the visitor shows intent, not on page load.
+			input.addEventListener('focus', () => loadOneTag().catch(() => {}), { once: true });
+			input.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+					e.preventDefault();
+					form.requestSubmit();
+				}
+			});
+
+			form.addEventListener('submit', async (e) => {
+				e.preventDefault();
+				const q = input.value.trim();
+				if (!q || submit.disabled) return;
+				input.value = '';
+				submit.disabled = true;
+				status.textContent = 'Reading this page…';
+				// Model output is always written with textContent, never innerHTML.
+				answer.replaceChildren();
+				const asked = document.createElement('span');
+				asked.className = 'q';
+				asked.textContent = q;
+				const body = document.createElement('span');
+				answer.append(asked, body);
+				answer.hidden = false;
+				foot.hidden = true;
+				let started = false;
+				controller = new AbortController();
+				try {
+					const onetag = await loadOneTag();
+					const text: string = await onetag.ask(q, context, {
+						system: RULES,
+						history: this.history,
+						maxTokens: 260,
+						signal: controller.signal,
+						stream: (d: string) => {
+							if (!started) {
+								started = true;
+								status.textContent = '';
+							}
+							body.textContent += d;
+						},
+					});
+					if (!started) body.textContent = text;
+					status.textContent = '';
+					this.history.push({ role: 'user', content: q }, { role: 'assistant', content: text });
+					if (this.history.length > 8) this.history = this.history.slice(-8);
+					input.placeholder = 'Ask a follow-up';
+					foot.hidden = false;
+				} catch (err) {
+					status.textContent = describe(err);
+					if (!started) answer.hidden = true;
+				} finally {
+					submit.disabled = false;
+					controller = null;
+				}
+			});
+
+			this.querySelector('[data-ask-reset]')!.addEventListener('click', () => {
+				controller?.abort();
+				this.history = [];
+				answer.replaceChildren();
+				answer.hidden = true;
+				foot.hidden = true;
+				status.textContent = '';
+				input.placeholder = this.dataset.placeholder || '';
+				input.focus();
+			});
+		}
+	}
+	customElements.define('ask-product', AskProduct);
+</script>

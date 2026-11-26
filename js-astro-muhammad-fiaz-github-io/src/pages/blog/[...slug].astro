@@ -1,0 +1,528 @@
+---
+import { getCollection, render } from "astro:content";
+import AdUnit from "@/components/ads/AdUnit.astro";
+import type { CollectionEntry } from "astro:content";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import {
+  ArrowLeft,
+  Calendar,
+  User as UserIcon,
+  Clock,
+  Tag,
+  BookOpen,
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import { siteConfig } from "@/site.config";
+
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, "-");
+}
+
+export async function getStaticPaths() {
+  const posts: CollectionEntry<"blog">[] = await getCollection("blog");
+  const sortedPosts = posts.sort(
+    (a, b) => b.data.pubDate.getTime() - a.data.pubDate.getTime()
+  );
+
+  return sortedPosts.map((post: CollectionEntry<"blog">, index: number) => ({
+    params: { slug: post.id },
+    props: {
+      post,
+      prevPost: index < sortedPosts.length - 1 ? sortedPosts[index + 1] : null,
+      nextPost: index > 0 ? sortedPosts[index - 1] : null,
+      allPosts: sortedPosts,
+    },
+  }));
+}
+
+interface Props {
+  post: CollectionEntry<"blog">;
+  prevPost: CollectionEntry<"blog"> | null;
+  nextPost: CollectionEntry<"blog"> | null;
+  allPosts: CollectionEntry<"blog">[];
+}
+
+const { post, prevPost, nextPost, allPosts } = Astro.props;
+const { Content, headings } = await render(post);
+
+const wordsPerMinute = 200;
+const wordCount = post.body?.split(/\s+/).length || 0;
+const readingTime = Math.ceil(wordCount / wordsPerMinute);
+
+const relatedPosts = allPosts
+  .filter((p) => {
+    if (p.id === post.id) return false;
+    const sharedTags = post.data.tags?.filter((tag) =>
+      p.data.tags?.includes(tag)
+    );
+    return sharedTags && sharedTags.length > 0;
+  })
+  .slice(0, 3);
+
+// Fallback: If no related posts found by tags, just show the latest posts (excluding current)
+if (relatedPosts.length < 3) {
+  const remainingCount = 3 - relatedPosts.length;
+  const otherPosts = allPosts
+    .filter(
+      (p) => p.id !== post.id && !relatedPosts.find((rp) => rp.id === p.id)
+    )
+    .slice(0, remainingCount);
+  relatedPosts.push(...otherPosts);
+}
+
+const hasToc = headings && headings.length > 0;
+
+const shareUrl = `${siteConfig.url}/blog/${post.id}`;
+const shareTitle = encodeURIComponent(post.data.title);
+const shareText = encodeURIComponent(post.data.description || "");
+
+const twitterShareUrl = `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${shareTitle}`;
+const linkedinShareUrl = `https://www.linkedin.com/shareArticle?mini=true&url=${encodeURIComponent(shareUrl)}&title=${shareTitle}&summary=${shareText}`;
+
+const ogImage = post.data.image || `/open-graph/blog/${post.id}.png`;
+---
+
+<BaseLayout
+  title={post.data.title}
+  description={post.data.description}
+  image={ogImage}
+  type="blog"
+  publishedTime={post.data.pubDate.toISOString()}
+  modifiedTime={post.data.pubDate.toISOString()}
+  author={post.data.author}
+  tags={post.data.tags}
+  readingTime={`${readingTime} min read`}
+  blogPost={{
+    title: post.data.title,
+    description: post.data.description || "",
+    publishedTime: post.data.pubDate.toISOString(),
+    modifiedTime: post.data.pubDate.toISOString(),
+    author: post.data.author,
+    tags: post.data.tags || [],
+    image: ogImage,
+    readingTime: `${readingTime} min`,
+    wordCount: wordCount,
+  }}
+>
+  <div
+    class="container max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12"
+  >
+    <div class="mb-4 sm:mb-6">
+      <Button
+        variant="ghost"
+        asChild
+        className="group pl-0 hover:bg-transparent hover:text-primary gap-1.5 sm:gap-2 text-sm"
+      >
+        <a href="/blog" class="inline-flex items-center gap-1.5 sm:gap-2">
+          <ArrowLeft
+            className="h-4 w-4 transition-transform group-hover:-translate-x-1"
+          />
+          <span class="hidden xs:inline">Back to Blog</span>
+          <span class="xs:hidden">Back</span>
+        </a>
+      </Button>
+    </div>
+
+    <div
+      class="grid grid-cols-1 lg:grid-cols-[1fr_260px] xl:grid-cols-[1fr_280px] gap-6 lg:gap-10"
+    >
+      <article class="min-w-0">
+        <header class="mb-6 sm:mb-8">
+          <h1
+            class="text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-bold tracking-tight mb-4 sm:mb-5 leading-[1.15]"
+          >
+            {post.data.title}
+          </h1>
+
+          <div
+            class="flex flex-wrap items-center gap-x-2 sm:gap-x-3 gap-y-1.5 text-xs sm:text-sm text-muted-foreground"
+          >
+            <div class="flex items-center gap-1 sm:gap-1.5">
+              <Calendar className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+              <time datetime={post.data.pubDate.toISOString()}>
+                {
+                  post.data.pubDate.toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })
+                }
+              </time>
+            </div>
+
+            <span>•</span>
+            <a
+              href={`/authors/${slugify(post.data.author)}`}
+              class="flex items-center gap-1 sm:gap-1.5 hover:text-primary transition-colors"
+            >
+              <UserIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+              <span>{post.data.author}</span>
+            </a>
+
+            <span>•</span>
+            <div class="flex items-center gap-1 sm:gap-1.5">
+              <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+              <span>{readingTime} min read</span>
+            </div>
+
+            <span class="hidden sm:inline">•</span>
+            <div class="hidden sm:flex items-center gap-1 sm:gap-1.5">
+              <BookOpen className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+              <span>{wordCount.toLocaleString()} words</span>
+            </div>
+          </div>
+
+          {
+            post.data.tags && (
+              <div class="flex flex-wrap gap-1.5 sm:gap-2 mt-3 sm:mt-4">
+                {post.data.tags.map((tag) => (
+                  <a href={`/tags/${slugify(tag)}`}>
+                    <Badge
+                      variant="secondary"
+                      className="gap-1 hover:bg-primary/20 transition-colors cursor-pointer text-[10px] sm:text-xs px-2 py-0.5"
+                    >
+                      <Tag className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                      {tag}
+                    </Badge>
+                  </a>
+                ))}
+              </div>
+            )
+          }
+
+          {
+            post.data.description && (
+              <p class="mt-4 sm:mt-5 text-sm sm:text-base lg:text-lg text-muted-foreground leading-relaxed">
+                {post.data.description}
+              </p>
+            )
+          }
+
+          <div class="flex items-center gap-2 mt-4 sm:mt-5">
+            <span class="text-xs sm:text-sm text-muted-foreground">Share:</span>
+            <a
+              href={twitterShareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="p-1.5 sm:p-2 rounded-lg hover:bg-muted transition-colors"
+              title="Share on Twitter"
+            >
+              <svg
+                class="h-3.5 w-3.5 sm:h-4 sm:w-4"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                ></path>
+              </svg>
+            </a>
+            <a
+              href={linkedinShareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="p-1.5 sm:p-2 rounded-lg hover:bg-muted transition-colors"
+              title="Share on LinkedIn"
+            >
+              <svg
+                class="h-3.5 w-3.5 sm:h-4 sm:w-4"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"
+                ></path>
+              </svg>
+            </a>
+          </div>
+        </header>
+
+        <hr class="my-5 sm:my-6 border-border" />
+
+        <div
+          class="prose prose-sm sm:prose-base lg:prose-lg dark:prose-invert max-w-none prose-headings:scroll-mt-24 prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-img:rounded-xl prose-pre:bg-muted/50 prose-pre:border prose-pre:border-border blog-content"
+        >
+          <Content />
+          <!--
+          <div class="my-8 w-full overflow-hidden">
+            <div class="hidden sm:block">
+              <AdUnit
+                slot={siteConfig.adsense.slots.inArticle.main}
+                format="fluid"
+                layout="in-article"
+                class="min-h-[280px]"
+                style="display: block; text-align: center; width: 100%;"
+                fullWidthResponsive={true}
+              />
+            </div>
+            <div class="sm:hidden">
+              <AdUnit
+                slot={siteConfig.adsense.slots.inArticle.main}
+                format="fluid"
+                layout="in-article"
+                class="min-h-[280px]"
+                style="display: block; text-align: center; width: 100%;"
+                fullWidthResponsive={true}
+              />
+            </div>
+          </div>
+          -->
+        </div>
+
+        <hr class="my-6 sm:my-10 border-border" />
+
+        <nav class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          {
+            prevPost ? (
+              <a
+                href={`/blog/${prevPost.id}`}
+                class="group flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-border/50 hover:border-primary/50 hover:bg-muted/50 transition-all"
+              >
+                <div class="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-muted group-hover:bg-primary/10 transition-colors shrink-0">
+                  <ChevronLeft className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <span class="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">
+                    Previous
+                  </span>
+                  <p class="font-medium text-sm sm:text-base group-hover:text-primary transition-colors line-clamp-1 mt-0.5">
+                    {prevPost.data.title}
+                  </p>
+                </div>
+              </a>
+            ) : (
+              <div class="hidden sm:block" />
+            )
+          }
+
+          {
+            nextPost && (
+              <a
+                href={`/blog/${nextPost.id}`}
+                class="group flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-border/50 hover:border-primary/50 hover:bg-muted/50 transition-all sm:flex-row-reverse sm:text-right"
+              >
+                <div class="flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-muted group-hover:bg-primary/10 transition-colors shrink-0">
+                  <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <span class="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wider">
+                    Next
+                  </span>
+                  <p class="font-medium text-sm sm:text-base group-hover:text-primary transition-colors line-clamp-1 mt-0.5">
+                    {nextPost.data.title}
+                  </p>
+                </div>
+              </a>
+            )
+          }
+        </nav>
+
+        {
+          relatedPosts.length > 0 && (
+            <section class="mt-8 sm:mt-12">
+              <h2 class="text-lg sm:text-xl lg:text-2xl font-bold tracking-tight mb-4 sm:mb-6">
+                Related Posts
+              </h2>
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                {relatedPosts.map((relatedPost) => (
+                  <a href={`/blog/${relatedPost.id}`} class="group">
+                    <Card className="h-full hover:border-primary/50 hover:shadow-lg transition-all duration-300 bg-card/50">
+                      <CardHeader className="p-3 sm:p-4">
+                        <CardTitle className="line-clamp-2 group-hover:text-primary transition-colors text-sm sm:text-base">
+                          {relatedPost.data.title}
+                        </CardTitle>
+                        <CardDescription className="line-clamp-2 text-xs sm:text-sm mt-1">
+                          {relatedPost.data.description}
+                        </CardDescription>
+                        <div class="flex items-center gap-1.5 text-[10px] sm:text-xs text-muted-foreground pt-2">
+                          <Calendar className="h-3 w-3" />
+                          <time
+                            datetime={relatedPost.data.pubDate.toISOString()}
+                          >
+                            {relatedPost.data.pubDate.toLocaleDateString(
+                              "en-US",
+                              {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              }
+                            )}
+                          </time>
+                        </div>
+                      </CardHeader>
+                    </Card>
+                  </a>
+                ))}
+              </div>
+            </section>
+          )
+        }
+
+        <!--
+        <div class="mt-12 w-full overflow-hidden">
+          <div class="hidden sm:block">
+            <AdUnit
+              slot={siteConfig.adsense.slots.multiplex.main}
+              format="autorelaxed"
+              class="min-h-[280px]"
+              style="display: block; width: 100%;"
+              fullWidthResponsive={true}
+            />
+          </div>
+          <div class="sm:hidden">
+            <AdUnit
+              slot={siteConfig.adsense.slots.multiplex.main}
+              format="rectangle"
+              class="min-h-[250px]"
+              style="display: block; width: 100%;"
+              fullWidthResponsive={true}
+            />
+          </div>
+        </div>
+        -->
+      </article>
+
+      <aside class="hidden lg:block">
+        <div class="sticky top-24 space-y-4">
+          {
+            hasToc && (
+              <div class="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-4">
+                <h3 class="font-semibold text-sm mb-3 flex items-center gap-2">
+                  <BookOpen className="h-4 w-4" />
+                  On This Page
+                </h3>
+                <nav class="toc">
+                  <ul class="space-y-1.5 text-sm">
+                    {headings.map((heading) => (
+                      <li
+                        class={`${heading.depth === 2 ? "" : heading.depth === 3 ? "ml-3" : "ml-5"}`}
+                      >
+                        <a
+                          href={`#${heading.slug}`}
+                          class="block py-0.5 text-muted-foreground hover:text-primary transition-colors line-clamp-1 text-xs"
+                        >
+                          {heading.text}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </nav>
+              </div>
+            )
+          }
+
+          <div
+            class="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-4"
+          >
+            <h3 class="font-semibold text-sm mb-3">Share</h3>
+            <div class="flex gap-2">
+              <a
+                href={twitterShareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex-1 flex items-center justify-center gap-1.5 p-2 rounded-lg bg-muted hover:bg-primary/10 transition-colors text-xs"
+              >
+                <svg
+                  class="h-3.5 w-3.5"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"
+                  ></path>
+                </svg>
+                Tweet
+              </a>
+              <a
+                href={linkedinShareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex-1 flex items-center justify-center gap-1.5 p-2 rounded-lg bg-muted hover:bg-primary/10 transition-colors text-xs"
+              >
+                <svg
+                  class="h-3.5 w-3.5"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"
+                  ></path>
+                </svg>
+                Share
+              </a>
+            </div>
+          </div>
+
+          <a
+            href="#"
+            class="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-border/50 hover:border-primary/50 hover:bg-muted/50 transition-all text-xs text-muted-foreground hover:text-foreground"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+            Back to top
+          </a>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    function initTOC() {
+      const headings = document.querySelectorAll(
+        ".blog-content h2, .blog-content h3, .blog-content h4"
+      );
+      if (!headings.length) return;
+
+      const tocLinks = document.querySelectorAll(".toc a");
+      if (!tocLinks.length) return;
+
+      // Improved intersection observer with better margin
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              const id = entry.target.getAttribute("id");
+              if (!id) return;
+
+              // Remove active class from all links
+              tocLinks.forEach((link) => link.classList.remove("active"));
+
+              // Add active class to corresponding link
+              const activeLink = document.querySelector(
+                `.toc a[href="#${id}"]`
+              );
+              if (activeLink) {
+                activeLink.classList.add("active");
+              }
+            }
+          });
+        },
+        {
+          rootMargin: "-100px 0px -80% 0px", // Adjusted trigger zone
+          threshold: 0,
+        }
+      );
+
+      headings.forEach((heading) => observer.observe(heading));
+    }
+
+    // Run on both initial load and view transitions
+    document.addEventListener("astro:page-load", initTOC);
+    document.addEventListener("DOMContentLoaded", initTOC);
+  </script>
+
+  <style>
+    .toc a.active {
+      color: hsl(var(--primary));
+    }
+  </style>
+</BaseLayout>

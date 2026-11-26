@@ -1,0 +1,201 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { getCollection } from "astro:content";
+import type { CollectionEntry } from "astro:content";
+import { slugify } from "@/lib/utils";
+import { siteConfig } from "@/site.config";
+import { ArrowLeft, Calendar, Clock, BookOpen } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import AdUnit from "@/components/ads/AdUnit.astro";
+
+export async function getStaticPaths() {
+  const posts: CollectionEntry<"blog">[] = await getCollection("blog");
+  const uniqueAuthors: string[] = [
+    ...new Set(posts.map((post: CollectionEntry<"blog">) => post.data.author)),
+  ];
+
+  return uniqueAuthors.map((author) => {
+    return {
+      params: { author: slugify(author) },
+      props: {
+        authorName: author,
+        posts: posts
+          .filter((post) => post.data.author === author)
+          .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()),
+      },
+    };
+  });
+}
+
+interface Props {
+  authorName: string;
+  posts: CollectionEntry<"blog">[];
+}
+
+const { authorName, posts } = Astro.props;
+
+const isMainAuthor = authorName === siteConfig.author.name;
+
+function getReadingTime(content: string | undefined): number {
+  const wordsPerMinute = 200;
+  const wordCount = content?.split(/\s+/).length || 0;
+  return Math.ceil(wordCount / wordsPerMinute);
+}
+
+const totalWords = posts.reduce((acc, post) => {
+  return acc + (post.body?.split(/\s+/).length || 0);
+}, 0);
+---
+
+<BaseLayout
+  title={`Posts by ${authorName}`}
+  description={`All blog posts written by ${authorName}. ${posts.length} articles about software development, technology, and more.`}
+  type="profile"
+  isAuthorPage={true}
+>
+  <div
+    class="container max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12 md:py-16"
+  >
+    <div class="mb-6 sm:mb-8">
+      <Button
+        variant="ghost"
+        asChild
+        className="group pl-0 hover:bg-transparent hover:text-primary gap-2"
+      >
+        <a href="/blog" class="inline-flex items-center gap-2">
+          <ArrowLeft
+            className="h-4 w-4 transition-transform group-hover:-translate-x-1"
+          />
+          <span class="hidden sm:inline">Back to Blog</span>
+          <span class="sm:hidden">Back</span>
+        </a>
+      </Button>
+    </div>
+
+    <header class="mb-8 sm:mb-12">
+      <div class="flex items-start gap-4 sm:gap-6">
+        {
+          isMainAuthor && (
+            <img
+              src={siteConfig.author.avatar}
+              alt={authorName}
+              class="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-2 border-border"
+              loading="lazy"
+            />
+          )
+        }
+        <div class="flex-1">
+          <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold">
+            {authorName}
+          </h1>
+          {
+            isMainAuthor && (
+              <p class="text-muted-foreground mt-1 text-sm sm:text-base">
+                {siteConfig.author.bio}
+              </p>
+            )
+          }
+          <div
+            class="flex flex-wrap items-center gap-3 mt-3 text-sm text-muted-foreground"
+          >
+            <div class="flex items-center gap-1.5">
+              <BookOpen className="h-4 w-4" />
+              <span>{posts.length} articles</span>
+            </div>
+            <span>•</span>
+            <div class="flex items-center gap-1.5">
+              <Clock className="h-4 w-4" />
+              <span>{Math.round(totalWords / 200)} min total read</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="space-y-4 sm:space-y-6">
+      {
+        posts.map((post, index) => {
+          const readingTime = getReadingTime(post.body);
+          return (
+            <article>
+              <a
+                href={`/blog/${post.id}`}
+                class="group block p-5 sm:p-6 rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/50 hover:bg-card/80 hover:shadow-lg transition-all duration-300"
+              >
+                <div class="flex flex-col gap-2">
+                  <h2 class="text-lg sm:text-xl font-semibold group-hover:text-primary transition-colors line-clamp-2">
+                    {post.data.title}
+                  </h2>
+
+                  <div class="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                    <div class="flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5" />
+                      <time datetime={post.data.pubDate.toISOString()}>
+                        {post.data.pubDate.toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </time>
+                    </div>
+                    <span>•</span>
+                    <span>{readingTime} min read</span>
+                  </div>
+
+                  {post.data.tags && (
+                    <div class="flex flex-wrap gap-1.5 mt-1">
+                      {post.data.tags.slice(0, 3).map((tag) => (
+                        <Badge variant="secondary" className="text-xs">
+                          {tag}
+                        </Badge>
+                      ))}
+                      {post.data.tags.length > 3 && (
+                        <Badge variant="outline" className="text-xs">
+                          +{post.data.tags.length - 3}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+
+                  <p class="text-sm text-muted-foreground leading-relaxed line-clamp-2 mt-1">
+                    {post.data.description}
+                  </p>
+                </div>
+              </a>
+              {/* (index + 1) % 6 === 0 && (
+                <div class="py-4 overflow-hidden">
+                  <!-- Desktop Ad -->
+                  <div class="hidden sm:block">
+                    <AdUnit
+                      slot={siteConfig.adsense.slots.inFeed.main.id}
+                      layoutKey={siteConfig.adsense.slots.inFeed.main.layoutKey}
+                      format="fluid"
+                      class="bg-muted/50 border border-border/30 rounded-[14px]"
+                    />
+                  </div>
+                  <!-- Mobile Ad -->
+                  <div class="sm:hidden">
+                    <AdUnit
+                      slot={siteConfig.adsense.slots.multiplex.main}
+                      format="rectangle"
+                      class="bg-muted/50 border border-border/30 rounded-[14px]"
+                    />
+                  </div>
+                </div>
+              ) */}
+            </article>
+          );
+        })
+      }
+    </div>
+
+    {
+      posts.length === 0 && (
+        <div class="text-center py-16 text-muted-foreground">
+          <p>No posts found by this author.</p>
+        </div>
+      )
+    }
+  </div>
+</BaseLayout>

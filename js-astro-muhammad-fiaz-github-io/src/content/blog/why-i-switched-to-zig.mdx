@@ -1,0 +1,54 @@
+---
+title: "From Python to Zig: A System's Perspective"
+description: "An analysis of the transition from efficient scripting (Python) to high-performance systems programming (Zig). Includes performance benchmarks and a comparison with Rust."
+pubDate: 2025-12-29
+author: "Muhammad Fiaz"
+tags: ["zig", "python", "systems-programming", "performance", "rust"]
+---
+
+Python works exceptionally well for high-level orchestration, data science, and web APIs. However, for systems requiring predictable latency, direct memory control, or zero-dependency binaries, interpreted languages reach their architectural limits. This post documents the technical reasoning behind adopting Zig for performance-critical workloads.
+
+## The Performance Ceiling
+
+While optimizing a high-throughput event processor, I encountered the fundamental limitations of the Python Global Interpreter Lock (GIL) and dynamic type system. Profiling revealed CPU bottlenecks not in IO, but in the interpreter overhead itself.
+
+**Benchmark: Event Loop Throughput**
+
+- **Python (asyncio)**: ~50k ops/sec
+- **Zig (std.event.Loop)**: ~17M ops/sec
+
+The magnitude of this difference (340x) shifted the engineering constraints entirely.
+
+## Why Zig?
+
+### 1. Explicit Memory Layout
+
+Python abstracts memory management completely. Zig forces interaction with an `Allocator`.
+
+```zig
+const payload = try allocator.alloc(u8, 1024);
+defer allocator.free(payload);
+```
+
+This explicitness eliminates hidden allocations—a primary source of latency spikes in garbage-collected languages.
+
+### 2. Comptime: Logic at Compilation
+
+Zig's `comptime` feature allows executing arbitrary code during compilation. This enables powerful metaprogramming, such as generating optimized serialization logic for structs without runtime reflection overhead.
+
+### 3. C Integration
+
+Zig treats C libraries as native citizens. It can import `.h` files directly and link against them without complex FFI (Foreign Function Interface) bindings. This makes Zig an excellent "glue" language for existing C infrastructure.
+
+## Zig vs. Rust
+
+In the systems capabilities space, Rust is the dominant alternative.
+
+- **Rust** prioritizes **correctness**. Its borrow checker enforces memory safety at compile time. This leads to complex architectural patterns (fighting the borrower checker) when implementing shared mutable state.
+- **Zig** prioritizes **simplicity**. It accepts that the programmer is responsible for memory safety, providing runtime checks (Debug builds) and standard library tooling (Leak Detector) instead of compile-time proofs.
+
+For my use cases—often involving rapid iteration on low-level tools—Zig's reduced cognitive load and faster compile times were decisive.
+
+## Conclusion
+
+I continue to use Python for ML training and high-level scripting. However, the "backend of the backend"—the infrastructure that must run reliably and efficiently—is now written in Zig. It offers the control of C with the ergonomics of a modern toolchain.

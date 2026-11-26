@@ -1,0 +1,84 @@
+---
+title: "Fine-Tuning LLMs: Strategies for Domain Adaptation"
+description: "A technical overview of fine-tuning methodology, focusing on Parameter-Efficient Fine-Tuning (PEFT), LoRA, and dataset preparation strategies."
+pubDate: 2025-12-29
+author: "Muhammad Fiaz"
+tags: ["LLM", "fine-tuning", "LoRA", "PEFT", "AI"]
+---
+
+Pre-trained Large Language Models (LLMs) are generalized reasoners. To achieve state-of-the-art performance on specific tasks—such as legal analysis, medical diagnosis, or code generation—fine-tuning is often required.
+
+## Full Fine-Tuning vs. PEFT
+
+**Full Fine-Tuning** updates all parameters of the model. This is computationally prohibitive for models larger than 7B parameters, requiring massive GPU clusters.
+
+**Parameter-Efficient Fine-Tuning (PEFT)** freezes the base model weights and trains a small number of adapter parameters. This drastically reduces memory requirements while maintaining comparable performance.
+
+## Low-Rank Adaptation (LoRA)
+
+LoRA is the industry standard for efficient fine-tuning. It decomposes weight update matrices into low-rank matrices.
+
+Instead of optimizing the dense matrix $W$, LoRA optimizes $A$ and $B$, where $W' = W + BA$. Since $A$ and $B$ are much smaller than $W$, the number of trainable parameters is reduced by up to 10,000x.
+
+### Benefits of LoRA
+
+1.  **Reduced VRAM**: A 7B model can be fine-tuned on a single consumer GPU (e.g., RTX 3090 or 4090).
+2.  **Modularity**: Multiple LoRA adapters can be trained for different tasks and swapped at runtime on top of the same frozen base model.
+3.  **No Catastrophic Forgetting**: Since the base model is frozen, general capabilities are preserved.
+
+## QLoRA: Quantized LoRA
+
+QLoRA extends LoRA by quantizing the frozen base model to 4-bit precision (NormalFloat4). This allows fine-tuning a 33B or 65B parameter model on a single 24GB GPU, democratizing access to large-scale fine-tuning.
+
+## Dataset Preparation
+
+Data formatting is the single most critical factor in fine-tuning success.
+
+### Instruction Format
+
+For instruction following, data should follow a consistent schema:
+
+```json
+{
+  "instruction": "Summarize the following legal document.",
+  "input": "The party of the first part hereby agrees...",
+  "output": "The agreement states that..."
+}
+```
+
+### Data Quality
+
+- **Deduplication**: Remove near-duplicates to prevent overfitting.
+- **Tokenization**: Ensure inputs fit within the model's context window (commonly 2048 or 4096 tokens).
+- **Balancing**: Maintain a diverse distribution of examples.
+
+## The Training Loop
+
+Frameworks like Hugging Face's `trl` and `peft` libraries simplify implementation.
+
+```python
+from peft import LoraConfig, get_peft_model
+from transformers import AutoModelForCausalLM
+
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
+config = LoraConfig(
+    r=8,
+    lora_alpha=32,
+    target_modules=["q_proj", "v_proj"],
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM"
+)
+
+model = get_peft_model(model, config)
+# Proceed with standard Trainer loop
+```
+
+## When to Fine-Tune
+
+Fine-tuning is not always the answer. Evaluate RAG (Retrieval-Augmented Generation) first.
+
+- **Use RAG** when the model needs access to dynamic, up-to-date knowledge.
+- **Use Fine-Tuning** when the model needs to learn a new _behavior_, style, or highly technical vocabulary that prompt engineering cannot capture.
+
+For optimal results, hybrid approaches combining RAG and fine-tuned models are increasingly common.

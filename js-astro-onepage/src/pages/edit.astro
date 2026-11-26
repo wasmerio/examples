@@ -1,0 +1,65 @@
+---
+import "../styles/global.css";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
+import yaml from "js-yaml";
+import EditApp from "../edit/EditApp.tsx";
+import { enYamlHasAuthorResidue } from "../edit/residue";
+import { locales, siteFor } from "../lib/data";
+// @ts-ignore -- 纯 ESM 模块无类型声明；astro 能正常打包
+import { LANG_NAME_ALIAS, loadConfig } from "../../scripts/helpers.mjs";
+
+const p = (rel: string) => resolve(process.cwd(), rel);
+const zhRaw = readFileSync(p("src/data/projects.yaml"), "utf8");
+// 构建时把当前 projects.yaml 内联进来供「载入当前站配置」；离线可用、零外部请求。
+// 用 load→dump 剥掉注释：yamlToConfig 反正会把注释丢掉，别把注释（及用户可能写进注释里的内容）
+// 逐字内联进 /edit 页面的 HTML 源码里。lineWidth/noRefs 与 src/edit/serialize.ts 一致。
+// loadConfig 固定用 CORE_SCHEMA（原因见 scripts/helpers.mjs）——不加引号的 日期: 2026-05-01
+// 用默认 schema 会被解析成 JS Date，dump 回去变 ISO 串；这里从内联起就保持原始字符串。
+const dumpOpts = { lineWidth: -1, noRefs: true };
+const initialYaml = yaml.dump(loadConfig(zhRaw), dumpOpts);
+// 残留检测只需要一个布尔值，不该把整份英文翻译文件序列化进页面 HTML 发给每个访客
+const enPath = p("src/data/projects.en.yaml");
+const enHasAuthorResidue = existsSync(enPath)
+  ? enYamlHasAuthorResidue(readFileSync(enPath, "utf8"))
+  : false;
+// 编辑器默认界面语言用主文件的「语言/lang」（中英别名 + 语言名双认）；缺省按 v2 默认 zh-CN。
+// 岛内可切换、localStorage 记住。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const rawTop = loadConfig(zhRaw) as any;
+const langField = rawTop?.语言 ?? rawTop?.lang;
+const siteLang = langField
+  ? (LANG_NAME_ALIAS as Record<string, string>)[String(langField)] ?? String(langField)
+  : "zh-CN";
+// 编辑器跟着站点主题/外观走：别人配了暗色，进编辑器不该被整页白闪一下
+const site = siteFor(locales[0].code);
+const accentStyle = site.accent
+  ? `--color-accent:${site.accent.accent};--color-accent-2:${site.accent.accent2}`
+  : undefined;
+---
+
+<html
+  lang="zh-CN"
+  data-theme={site.themeName}
+  data-appearance={site.appearance}
+  style={accentStyle}
+>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="description" content="不改命令行：填表生成 onepage 的 projects.yaml，实时校样 YAML。" />
+    <title>可视化编辑 · onepage</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  </head>
+  <body class="min-h-screen">
+    {/* 静态标题已并入岛内工作台顶栏（t.wordmark），避免中英不一致 */}
+    <noscript>
+      <p class="mx-auto mt-8 max-w-prose px-5 text-(--color-ink-2)">
+        这个页面需要开启 JavaScript 才能用。不开也没关系：直接编辑仓库里的
+        <code>src/data/projects.yaml</code> 就行。
+      </p>
+    </noscript>
+    <EditApp client:only="preact" initialYaml={initialYaml} enHasAuthorResidue={enHasAuthorResidue} siteLang={siteLang} />
+  </body>
+</html>

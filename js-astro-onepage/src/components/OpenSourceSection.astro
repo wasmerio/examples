@@ -1,0 +1,90 @@
+---
+// 开源项目节：带真实缩略图的小卡网格。截断（高星组全显 + 尾巴按「开源上限」，再向上补到
+// 3 的倍数凑满末行）已在 src/lib/data.ts 里做好，这里只管渲染 items；hasMore 为真时末尾出
+// 「在 GitHub 看更多」。⚠ 下方网格列数（lg:grid-cols-3）与 helpers.DEFAULT_ALIGN_STEP 是一对，
+// 改列数时两处要一起改，否则末行又会残缺。
+// 缩略图 = 仓库自定义 Social preview（有则用）否则 GitHub 自动卡片（构建时抓好缓存，运行时零请求，见 fetch-github.mjs）。
+import { repoOf, fmtStars, thumbOf, ghUser } from "../lib/data";
+import { fmt } from "../i18n/ui";
+import type { UIStrings } from "../i18n/ui";
+import type { WorkItem } from "../lib/schema";
+import SectionHeader from "./SectionHeader.astro";
+
+interface Props {
+  items: WorkItem[];
+  t: UIStrings;
+  hasMore: boolean;
+  descriptions?: Record<string, string>;
+}
+const { items, t, hasMore, descriptions } = Astro.props;
+// 开源描述按语言覆盖（zh 主文件 / en 翻译文件），按仓库名查（大小写不敏感，与开源命名一致）；没写就用 GitHub 原描述
+const descMap = new Map(Object.entries(descriptions ?? {}).map(([k, v]) => [k.toLowerCase(), v]));
+const descOf = (it: WorkItem) => descMap.get(it.key.toLowerCase()) ?? it.desc;
+const moreHref = ghUser ? `https://github.com/${ghUser}?tab=repositories` : undefined;
+
+// GitHub linguist 语言色（常见子集 + 兜底灰）
+const LANG_COLOR: Record<string, string> = {
+  TypeScript: "#3178c6", JavaScript: "#f1e05a", Python: "#3572A5",
+  HTML: "#e34c26", CSS: "#563d7c", Vue: "#41b883", Astro: "#ff5a03",
+  Shell: "#89e051", Go: "#00ADD8", Rust: "#dea584", Java: "#b07219",
+  "C++": "#f34b7d", C: "#555555", "C#": "#178600", Ruby: "#701516",
+  PHP: "#4F5D95", Swift: "#F05138", Kotlin: "#A97BFF", Dart: "#00B4AB",
+  MDX: "#fcb32c", "Jupyter Notebook": "#DA5B0B", Svelte: "#ff3e00",
+};
+---
+
+<section aria-labelledby="open-source">
+  <SectionHeader id="open-source" title={t.opensourceTitle} />
+  <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {items.map((it) => {
+      const r = repoOf(it);
+      const lang = r?.language;
+      const main = it.link ?? it.source;
+      const img = thumbOf(it);
+      const desc = descOf(it);
+      return (
+        <article class="card flex min-w-0 flex-col overflow-hidden wrap-anywhere">
+          {img && main && (
+            <a href={main} target="_blank" rel="noopener noreferrer"
+              class="thumb block aspect-social overflow-hidden border-b border-(--color-line)">
+              <img src={img} alt={fmt(t.thumbAlt, { name: it.name })} loading="lazy" class="h-full w-full object-cover" />
+            </a>
+          )}
+          <div class="flex grow flex-col p-4">
+            <div class="flex items-baseline justify-between gap-3">
+              <h3 class="min-w-0 text-base font-semibold">
+                {main ? (
+                  <a href={main} target="_blank" rel="noopener noreferrer" class="link-quiet">{it.name}</a>
+                ) : (
+                  <span>{it.name}</span>
+                )}
+              </h3>
+              {r && r.stars >= 10 && <span class="chip chip-star shrink-0">★ {fmtStars(r.stars)}</span>}
+            </div>
+            {desc && <p class="mt-1.5 text-sm leading-relaxed text-(--color-ink-2)">{desc}</p>}
+            {(lang || it.source) && <div class="mt-auto flex flex-wrap items-center gap-x-3 pt-3">
+              {lang && (
+                <span class="mono mr-auto flex items-center gap-1.5 text-xs text-(--color-ink-2)">
+                  <span class="inline-block size-2.5 shrink-0 rounded-full" style={`background:${LANG_COLOR[lang] ?? "#8b949e"}`} aria-hidden="true"></span>
+                  {lang}
+                </span>
+              )}
+              {it.source && (
+                <a href={it.source} target="_blank" rel="noopener noreferrer"
+                  class="link-quiet py-1.5 text-sm text-(--color-ink-2)">{t.source} <span aria-hidden="true">↗</span></a>
+              )}
+            </div>}
+          </div>
+        </article>
+      );
+    })}
+  </div>
+  {moreHref && (
+    hasMore ? (
+      <a href={moreHref} target="_blank" rel="noopener noreferrer" class="btn mono mt-8 inline-block text-sm">{t.opensourceMore} →</a>
+    ) : (
+      <a href={moreHref} target="_blank" rel="noopener noreferrer"
+        class="mono mt-6 inline-block py-1 text-sm text-(--color-ink-2) hover:text-(--color-accent) hover:underline">github.com/{ghUser} ↗</a>
+    )
+  )}
+</section>

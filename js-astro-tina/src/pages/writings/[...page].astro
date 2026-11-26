@@ -1,0 +1,72 @@
+---
+import type { MDXPost, PostFrontmatter } from "@/types";
+import type { GetStaticPaths, Page } from "astro";
+
+import Pagination from "@/components/Paginator.astro";
+import PostPreview from "@/components/post/PostPreview.astro";
+import "@/css/blocks/site-writings.css";
+import { groupPostsByYear, sortMDByDate } from "@/data/post";
+import PageLayout from "@/layouts/Base.astro";
+
+export const getStaticPaths = (async ({ paginate }) => {
+	const MAX_POSTS_PER_PAGE = 10;
+	const allPosts = (await Astro.glob<PostFrontmatter>("../../posts/*.mdx")).filter((post) =>
+		import.meta.env.PROD ? !post.frontmatter.draft : true
+	);
+	const allPostsByDate = sortMDByDate(allPosts);
+	return paginate(allPostsByDate, { pageSize: MAX_POSTS_PER_PAGE });
+}) satisfies GetStaticPaths;
+
+interface Props {
+	page: Page<MDXPost>;
+}
+
+const { page } = Astro.props;
+
+const meta = {
+	description: "Read my collection of posts and the things that interest me",
+	title: "Writings",
+};
+
+const paginationProps = {
+	...(page.url.prev && {
+		prevUrl: {
+			text: `← Previous Page`,
+			url: page.url.prev,
+		},
+	}),
+	...(page.url.next && {
+		nextUrl: {
+			text: `Next Page →`,
+			url: page.url.next,
+		},
+	}),
+};
+
+const groupedByYear = groupPostsByYear(page.data);
+const descYearKeys = Object.keys(groupedByYear).sort((a, b) => +b - +a);
+---
+
+<PageLayout class="site-writings wrapper region" meta={meta}>
+	<div class="title-container repel">
+		<h1>Writings</h1>
+		<a class="button" href="/rss.xml">RSS Feed</a>
+	</div>
+	<section aria-label="Blog post list" class="region flow">
+		{
+			descYearKeys.map((yearKey) => (
+				<>
+					<h2>{yearKey}</h2>
+					<ul class="post-list" role="list">
+						{groupedByYear[yearKey]?.map((p) => (
+							<li>
+								<PostPreview dateTimeOptions={{ month: "numeric", year: undefined }} post={p} />
+							</li>
+						))}
+					</ul>
+				</>
+			))
+		}
+		<Pagination {...paginationProps} />
+	</section>
+</PageLayout>

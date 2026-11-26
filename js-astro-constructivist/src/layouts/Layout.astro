@@ -1,0 +1,303 @@
+---
+import BlueprintPanel from '@/components/BlueprintPanel.astro'
+import Cursor from '@/components/Cursor.astro'
+import IndexDialog from '@/components/IndexDialog.astro'
+import Lightbox from '@/components/Lightbox.astro'
+import PosterStudio from '@/components/PosterStudio.astro'
+import PrintPoster from '@/components/PrintPoster.astro'
+import SceneHud from '@/components/SceneHud.astro'
+import SectionRail from '@/components/SectionRail.astro'
+import SiteLoader from '@/components/SiteLoader.astro'
+import Stage from '@/components/Stage.astro'
+import TopBar from '@/components/TopBar.astro'
+import { DARK_STORAGE_KEY, PALETTE_STORAGE_KEY, THEMES } from '@/constants'
+import { cv } from '@/data/cv'
+import { absoluteUrl, allSections, asset, site, text, uiCopy } from '@/data/site'
+import '@fontsource/anton/latin-400.css'
+import '@fontsource-variable/space-grotesk'
+import '@fontsource-variable/jetbrains-mono'
+import '@fontsource/instrument-serif/latin-400.css'
+import '@fontsource/instrument-serif/latin-400-italic.css'
+import '../globals.css'
+import '../styles/scroll-experience.css'
+import '../styles/floating-nav.css'
+import '../styles/index-overlay.css'
+import '../styles/story-motion.css'
+
+interface Props {
+  title: string
+}
+
+const { title } = Astro.props
+const { name, label, summary, email, phone, url, location, theme, profiles } = cv.basics
+const locationText = [location?.city, location?.region].filter(Boolean).join(' · ')
+const contactLine = [
+  email,
+  phone,
+  locationText,
+  url?.replace(/^https?:\/\//, ''),
+]
+  .filter(Boolean)
+  .join(' · ')
+
+const canonical = new URL(import.meta.env.BASE_URL, Astro.site ?? site.url).href
+const pageTitle = site.seo.title || title
+const description = site.seo.description || summary || `${name} - ${label}`
+const ogImage = new URL(asset(site.seo.image), Astro.site ?? site.url).href
+
+const jsonLd = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Person',
+      '@id': `${canonical}#person`,
+      name,
+      'jobTitle': label,
+      'description': summary,
+      'url': canonical,
+      'email': email
+? `mailto:${email}`
+: undefined,
+      'image': cv.basics.image
+? absoluteUrl(cv.basics.image)
+: undefined,
+      'address': {
+        '@type': 'PostalAddress',
+        'addressLocality': location?.address,
+        'addressRegion': location?.region,
+        'addressCountry': location?.countryCode,
+      },
+      'sameAs': profiles.map(profile => profile.url),
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${canonical}#website`,
+      'name': pageTitle,
+      'url': canonical,
+      'description': description,
+      'inLanguage': site.lang,
+      'author': { '@id': `${canonical}#person` },
+    },
+  ],
+}).replace(/</g, '\\u003c')
+---
+<!doctype html>
+<html lang={site.lang} data-theme={theme} data-time-zone={site.timeZone} data-scroll-motion={String(site.features.scrollMotion)} data-smooth-scroll-enabled={String(site.features.smoothScroll)} data-project-exhibition-enabled={String(site.features.projectExhibition)}>
+  <head>
+    <meta charset="UTF-8" />
+    <style is:inline>@layer theme, base, components, utilities;</style>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={name} />
+    <meta name="theme-color" content="#f2eadb" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href={asset(site.favicon)} type="image/svg+xml" />
+    <link rel="apple-touch-icon" href={asset(site.appleTouchIcon)} />
+    <link rel="manifest" href={asset('/manifest.webmanifest')} />
+    <meta name="robots" content={site.seo.noIndex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large'} />
+    {site.seo.keywords.length > 0 && <meta name="keywords" content={site.seo.keywords.join(', ')} />}
+
+    <meta property="og:type" content="profile" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:site_name" content={name} />
+    <meta property="og:locale" content={site.locale} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={site.seo.imageAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content={site.seo.imageAlt} />
+    {site.seo.twitterHandle && <meta name="twitter:creator" content={site.seo.twitterHandle} />}
+
+    <script is:inline type="application/ld+json" set:html={jsonLd} />
+    <script is:inline id="ui-copy" type="application/json" set:html={JSON.stringify(uiCopy).replace(/</g, '\\u003c')} />
+
+    <script
+      is:inline
+      define:vars={{
+        defaultTheme: theme,
+        themes: THEMES,
+        darkKey: DARK_STORAGE_KEY,
+        paletteKey: PALETTE_STORAGE_KEY,
+        loaderEnabled: site.loader.enabled,
+        loaderMaxWait: site.loader.maxWait,
+      }}
+    >
+      // Restore the palette and mode before first paint to avoid a flash.
+      ;(() => {
+        const root = document.documentElement
+        root.classList.add('js')
+        const readPreference = (key) => {
+          try {
+            return localStorage.getItem(key)
+          }
+          catch {
+            // Storage can be blocked even when the page itself is accessible.
+            return null
+          }
+        }
+        const storedDark = readPreference(darkKey)
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        root.classList.toggle('dark', storedDark === 'dark' || (storedDark !== 'light' && prefersDark))
+
+        const storedPalette = readPreference(paletteKey)
+        root.dataset.theme = themes.includes(storedPalette)
+          ? storedPalette
+          : (root.dataset.theme || defaultTheme)
+
+        if (loaderEnabled && window.matchMedia('screen and (prefers-reduced-motion: no-preference)').matches) {
+          root.classList.add('loader-active')
+          root.dataset.loaderState = 'pending'
+          root.dataset.loaderReady = 'false'
+          // Independent of bundled scripts, so a failed import cannot trap the page.
+          window.setTimeout(() => {
+            if (!root.classList.contains('loader-active'))
+              return
+            root.classList.remove('loader-active')
+            root.dataset.loaderState = 'complete'
+            root.dataset.loaderReady = 'true'
+            root.dataset.loaderResult = 'failed-open'
+            for (const element of document.querySelectorAll('[data-loader-inert]')) {
+              element.removeAttribute('inert')
+              element.removeAttribute('data-loader-inert')
+            }
+            const overlay = document.querySelector('[data-site-loader]')
+            const focusWasInLoader = overlay?.contains(document.activeElement)
+            if (overlay) {
+              overlay.setAttribute('hidden', '')
+              overlay.setAttribute('aria-hidden', 'true')
+            }
+            if (focusWasInLoader)
+              document.getElementById('main')?.focus({ preventScroll: true })
+          }, loaderMaxWait + 1500)
+        }
+        else {
+          root.dataset.loaderState = 'complete'
+          root.dataset.loaderReady = 'true'
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{text('site.skip')}</a>
+    {site.loader.enabled && <SiteLoader />}
+
+    <Stage />
+    <TopBar />
+    <SectionRail />
+
+    <header class="print-masthead">
+      <p class="print-masthead__name">{name}</p>
+      <p class="print-masthead__label">{label}</p>
+      <p class="print-masthead__contact">{contactLine}</p>
+      {summary && <p class="print-masthead__summary">{summary}</p>}
+      <p class="print-masthead__tagline">{text('site.tagline')}</p>
+    </header>
+
+    {site.features.print && <PrintPoster />}
+
+    <main id="main" tabindex="-1">
+      {!allSections.some(item => item.id === 'top') && <h1 class="sr-only">{name} — {label}</h1>}
+      <slot />
+    </main>
+
+    <SceneHud />
+    {site.features.blueprint && <BlueprintPanel />}
+    {site.features.posterStudio && <PosterStudio />}
+    {site.features.commandPalette && <IndexDialog />}
+    <Lightbox />
+    {site.features.cursor && <Cursor />}
+
+    <script>
+      import { initMotion } from '@/scripts/motion'
+      import { initScrollExperience } from '@/scripts/scroll-experience'
+      import { initSiteLoader } from '@/scripts/site-loader'
+
+      initMotion()
+      void initSiteLoader().then(initScrollExperience, initScrollExperience)
+    </script>
+
+    <style>
+      @reference "../globals.css";
+
+      .skip-link {
+        position: fixed;
+        top: -100%;
+        left: 1rem;
+        z-index: 200;
+        padding: 0.8rem 1.1rem;
+        border: 2px solid var(--fg);
+        background: var(--accent);
+        color: var(--on-accent);
+        font-family: var(--font-mono);
+        font-size: var(--fs-meta);
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .skip-link:focus {
+        top: 1rem;
+      }
+
+      .print-masthead {
+        display: none;
+      }
+
+      @media print {
+        .print-masthead {
+          display: block;
+          margin-bottom: 6mm;
+          padding-bottom: 3mm;
+          border-bottom: 2px solid #111;
+        }
+
+        .print-masthead p {
+          margin: 0;
+        }
+
+        .print-masthead__name {
+          font-family: var(--font-display);
+          font-size: 28pt;
+          line-height: 0.9;
+          text-transform: uppercase;
+        }
+
+        .print-masthead__label {
+          margin-top: 1.5mm !important;
+          font-family: var(--font-mono);
+          font-size: 9pt;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .print-masthead__contact {
+          margin-top: 2mm !important;
+          font-size: 8.5pt;
+          color: #444;
+        }
+
+        .print-masthead__summary {
+          margin-top: 3mm !important;
+          font-size: 9pt;
+          line-height: 1.4;
+        }
+
+        .print-masthead__tagline {
+          margin-top: 2mm !important;
+          font-family: var(--font-mono);
+          font-size: 7pt;
+          letter-spacing: 0.08em;
+          color: #666;
+          text-transform: uppercase;
+        }
+      }
+    </style>
+  </body>
+</html>

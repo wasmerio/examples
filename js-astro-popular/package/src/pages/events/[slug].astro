@@ -1,0 +1,141 @@
+---
+import { SITE, STRINGS } from 'popular:config';
+import { buildEventLd, jsonld } from '../../lib/eventld';
+import { withBase, absoluteUrl } from '../../lib/url';
+import { render } from 'astro:content';
+import { safeCollection } from '../../lib/collections';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import AuthorBox from 'popular:component/AuthorBox';
+import { eventTalks } from '../../lib/talks';
+
+export async function getStaticPaths() {
+  const events = (await safeCollection('events')).filter((e) => !e.data.draft);
+  return events.map((event) => ({ params: { slug: event.id }, props: { event } }));
+}
+
+const { event } = Astro.props;
+const d = event.data;
+const { Content } = await render(event);
+const dateStr = d.date.toLocaleDateString(SITE.locale, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+
+/* Venue: a venueRef to the venues collection wins over the flat fields;
+   its arrival notes are inherited unless the event sets venueNotes. */
+const venuePage = d.venueRef ? (await safeCollection('venues')).find((v) => v.id === d.venueRef) : undefined;
+if (d.venueRef && !venuePage) throw new Error(`events/${event.id}: venueRef "${d.venueRef}" matches no venue page`);
+const venueNotes = d.venueNotes ?? venuePage?.data.notes;
+
+/* Speaker profile cards, resolved from the speakers collection. */
+const allSpeakers = await safeCollection('speakers');
+const speakerEntries = d.speakers.map((slug) => {
+  const entry = allSpeakers.find((s) => s.id === slug);
+  if (!entry) throw new Error(`events/${event.id}: speaker "${slug}" matches no speaker page`);
+  return entry;
+});
+
+/* §3 talks: multi-talk events render a Talks section; single-talk events
+   render recording/slides links inline in the meta block. */
+const talks = eventTalks(d, allSpeakers, event.id);
+const hasTalksArray = !!(d.talks && d.talks.length > 0);
+
+/* schema.org/Event JSON-LD (see lib/eventld; contract in PARITY.md). */
+const siteUrl = absoluteUrl('/', Astro.site ?? Astro.url);
+const permalink = absoluteUrl(`/events/${event.id}/`, Astro.site ?? Astro.url);
+const eventLd = jsonld(buildEventLd({
+  title: d.title,
+  date: d.date,
+  time: d.time,
+  description: d.description,
+  cancelled: (d as any).cancelled,
+  online: (d as any).online,
+  price: (d as any).price,
+  currency: (d as any).currency,
+  cost: (d as any).cost,
+  image: d.image ? absoluteUrl(d.image, Astro.site ?? Astro.url) : undefined,
+  rsvp: d.rsvp,
+  permalink,
+  siteUrl,
+  siteTitle: SITE.title,
+  defaultCurrency: (SITE as Record<string, any>).seo?.currency ?? 'USD',
+  venue: venuePage ? { name: venuePage.data.title, address: venuePage.data.address } : undefined,
+  performers: speakerEntries.map((s) => s.data.title),
+}));
+---
+
+<BaseLayout title={d.title} description={d.description} image={d.image}>
+  <script type="application/ld+json" slot="head" set:html={eventLd} />
+  <article>
+    <header class="g-pagehero">
+      <div class="g-container" style="padding-block:var(--space-6) var(--space-5)">
+        <div style="margin-bottom:1rem">
+          <a href={withBase('/events/')} style="display:inline-flex;gap:.4rem;align-items:center;font-size:var(--text-sm);font-weight:var(--weight-medium)">
+            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> {STRINGS.allEvents}
+          </a>
+        </div>
+        <span class="g-eyebrow">{dateStr}{d.time && ` · ${d.time}`}</span>
+        <h1 style="margin:.5rem 0 0">{d.title}{d.cancelled ? <> <span class="g-badge g-badge--danger" style="vertical-align:middle;font-size:var(--text-sm)">{STRINGS.eventCancelled}</span></> : d.planning ? <> <span class="g-badge g-badge--soft" style="vertical-align:middle;font-size:var(--text-sm)">{STRINGS.eventPlanning}</span></> : null}</h1>
+      </div>
+    </header>
+    <div class="g-container g-section--sm">
+     <div class="g-article">
+      <div class="g-meta-line" style="margin-bottom:var(--space-4)">
+        <span><i class="fa-solid fa-location-dot" aria-hidden="true"></i> {venuePage
+          ? <><a href={withBase(`/venues/${venuePage.id}/`)}>{venuePage.data.title}</a>{venuePage.data.address && ` · ${venuePage.data.address}`}</>
+          : <>{d.venue ?? STRINGS.venueTba}{d.address && ` · ${d.address}`}</>}</span>
+        {venuePage?.data.wheelchair && <span><span class="g-badge g-badge--success g-badge--soft"><i class="fa-solid fa-wheelchair" aria-hidden="true"></i> {STRINGS.wheelchairAccessible}</span></span>}
+        {venuePage && (venuePage.data.transit || venuePage.data.parking || venuePage.data.access) && <span><a href={withBase(`/venues/${venuePage.id}/`)}>{STRINGS.gettingThere}</a></span>}
+        {d.speaker && <span><i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> {d.speaker}</span>}
+        {!hasTalksArray && d.recording && <span><a href={withBase(d.recording)} rel="noopener" target="_blank"><i class="fa-solid fa-circle-play" aria-hidden="true"></i> {STRINGS.watchRecording}</a></span>}
+        {!hasTalksArray && d.slides && <span><a href={withBase(d.slides)} rel="noopener" target="_blank"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> {STRINGS.viewSlides}</a></span>}
+      </div>
+
+      {(d.checkin || venueNotes) && (
+        <div class="g-callout" style="flex-direction:column;gap:.6rem;margin:0 0 var(--space-4)">
+          <div class="g-callout__title">{STRINGS.beforeYouArrive}</div>
+          {d.checkin && <div class="g-callout__body"><i class="fa-solid fa-ticket" aria-hidden="true"></i> {d.checkin}</div>}
+          {venueNotes && <div class="g-callout__body"><i class="fa-solid fa-door-open" aria-hidden="true"></i> {venueNotes}</div>}
+        </div>
+      )}
+
+      <div class="g-prose"><Content /></div>
+
+      {speakerEntries.length > 0 && (
+        <>
+          <h2 style="font-size:var(--text-xl);margin:var(--space-5) 0 1rem">{STRINGS.speakers}</h2>
+          <div class="g-stack" style="gap:var(--space-3)">
+            {speakerEntries.map((s) => <AuthorBox entry={s} base="/speakers/" />)}
+          </div>
+        </>
+      )}
+
+      {hasTalksArray && (
+        <>
+          <h2 style="font-size:var(--text-xl);margin:var(--space-5) 0 1rem">{STRINGS.talks}</h2>
+          <div class="g-stack" style="gap:var(--space-3)">
+            {talks.map((t) => (
+              <div class="g-talk">
+                <div class="g-talk__title">{t.title}</div>
+                {t.speakerName && (
+                  <div class="g-talk__by"><i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> {t.speakerSlug ? <a href={withBase(`/speakers/${t.speakerSlug}/`)}>{t.speakerName}</a> : t.speakerName}</div>
+                )}
+                {(t.recording || t.slides) && (
+                  <div class="g-row" style="gap:var(--space-2)">
+                    {t.recording && <a class="g-btn g-btn--sm g-btn--outline" href={withBase(t.recording)} rel="noopener" target="_blank"><i class="fa-solid fa-circle-play" aria-hidden="true"></i> {STRINGS.watchRecording}</a>}
+                    {t.slides && <a class="g-btn g-btn--sm g-btn--ghost" href={withBase(t.slides)} rel="noopener" target="_blank"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> {STRINGS.viewSlides}</a>}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* An event still being planned takes no RSVPs yet, even with `rsvp` set. */}
+      {!d.planning && d.rsvp && (
+        <div class="g-row" style="margin-top:var(--space-4)">
+          <a class="g-btn g-btn--primary g-btn--lg" href={withBase(d.rsvp)}><i class="fa-solid fa-calendar" aria-hidden="true"></i> {STRINGS.rsvpExternal}</a>
+        </div>
+      )}
+     </div>
+    </div>
+  </article>
+</BaseLayout>

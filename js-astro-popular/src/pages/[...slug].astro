@@ -1,0 +1,77 @@
+---
+import { STRINGS } from '../config';
+/** Root-level content pages: prose pages (about, code-of-conduct, get-involved)
+ *  and docs pages (handbook, runbooks, rendered with a scroll-spy TOC). */
+import { render } from 'astro:content';
+import { safeCollection } from '../lib/collections';
+import { withBase } from '../lib/url';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+
+export async function getStaticPaths() {
+  const pages = await safeCollection('pages');
+  const docs = await safeCollection('docs');
+  const byId = new Map(pages.map((p) => [p.id, p]));
+  return [
+    ...pages.map((entry) => {
+      // Nested page (policies/conduct) links back to its parent segment;
+      // root pages have no parent. Label prefers the parent's shortTitle.
+      const cut = entry.id.lastIndexOf('/');
+      const parentEntry = cut > 0 ? byId.get(entry.id.slice(0, cut)) : undefined;
+      const parent = parentEntry
+        ? { href: withBase(`/${parentEntry.id}/`), label: parentEntry.data.shortTitle ?? parentEntry.data.title }
+        : null;
+      return { params: { slug: entry.id }, props: { entry, kind: 'page', parent } };
+    }),
+    ...docs.map((entry) => ({ params: { slug: entry.id }, props: { entry, kind: 'doc', parent: null } })),
+  ];
+}
+
+const { entry, kind, parent } = Astro.props;
+const d = entry.data;
+const { Content, headings } = await render(entry);
+/* Current page's h2/h3 links nest under its sidebar entry, in document
+   order, mirroring the Hugo theme's docs/single.html. */
+const sections = headings.filter((h) => h.depth === 2 || h.depth === 3);
+const allDocs = (await safeCollection('docs')).sort(
+  (a, b) => (a.data.weight ?? 100) - (b.data.weight ?? 100)
+);
+---
+
+<BaseLayout title={d.title} description={d.lead}>
+  <PageHero eyebrow={d.eyebrow} title={d.title} lead={d.lead} />
+
+  {kind === 'doc' ? (
+    <div class="g-container g-doc">
+      <nav class="g-doc-toc" aria-label={STRINGS.eyebrowDocs}>
+        <div class="g-doc-toc__label">{STRINGS.eyebrowDocs}</div>
+        {allDocs.map((e) => (
+          <>
+            <a
+              href={withBase(`/${e.id}/`)}
+              class={e.id === entry.id ? 'is-active' : ''}
+              aria-current={e.id === entry.id ? 'page' : undefined}
+            >{e.data.title}</a>
+            {e.id === entry.id && sections.map((h) => (
+              <a href={`#${h.slug}`} style={`padding-left:${h.depth === 2 ? '1.35rem' : '2rem'};font-size:var(--text-xs)`}>{h.text}</a>
+            ))}
+          </>
+        ))}
+      </nav>
+      <div class="g-doc__content g-prose">
+        <Content />
+      </div>
+    </div>
+  ) : (
+    <section class="g-bg-white g-section">
+      <div class="g-container">
+        <div class="g-article">
+          {parent && (
+            <a href={parent.href} style="display:inline-flex;gap:.4rem;align-items:center;font-size:var(--text-sm);font-weight:var(--weight-medium);margin-bottom:1rem"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> {parent.label}</a>
+          )}
+          <div class="g-prose"><Content /></div>
+        </div>
+      </div>
+    </section>
+  )}
+</BaseLayout>

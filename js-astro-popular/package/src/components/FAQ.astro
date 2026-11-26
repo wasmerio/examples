@@ -1,0 +1,30 @@
+---
+/** FAQ block: wraps <FAQItem> children (native <details>, zero JS; answers in
+ *  the DOM for indexing + AI answer engines). Emits FAQPage JSON-LD collected
+ *  from the rendered items (gated on SITE.seo.faqJsonLd, default true),
+ *  mirroring Hugo's faq shortcode. No FAQ rich results are expected (Google
+ *  restricts them); this aids agents and future-proofs. */
+import { SITE } from 'popular:config';
+import { jsonld } from '../lib/jsonld';
+
+const html = await Astro.slots.render('default');
+const strip = (s: string) => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+const items = [...html.matchAll(
+  /<summary class="g-faq__q">([\s\S]*?)<\/summary>\s*<div class="g-faq__a[^"]*">([\s\S]*?)<\/div>\s*<\/details>/g,
+)].map((m) => ({ q: strip(m[1]), a: strip(m[2]) }));
+
+const emit = (SITE as Record<string, any>).seo?.faqJsonLd !== false && items.length;
+const faqLd = emit
+  ? jsonld({
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: items.map((i) => ({
+        '@type': 'Question',
+        name: i.q,
+        acceptedAnswer: { '@type': 'Answer', text: i.a },
+      })),
+    })
+  : null;
+---
+<div class="g-faq" set:html={html} />
+{faqLd && <script type="application/ld+json" set:html={faqLd} />}

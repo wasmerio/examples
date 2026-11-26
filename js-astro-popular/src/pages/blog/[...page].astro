@@ -1,0 +1,53 @@
+---
+import { safeCollection } from '../../lib/collections';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHero from '../../components/PageHero.astro';
+import PostCard from '../../components/PostCard.astro';
+import Pagination from '../../components/Pagination.astro';
+import { withBase } from '../../lib/url';
+import { SECTIONS, STRINGS, PAGINATION } from '../../config';
+
+/* One route serves /blog/ and /blog/page/N/, matching the Hugo theme's
+   paginator URLs. /blog/<slug> still goes to [slug].astro: named params
+   take priority over rest params. */
+export async function getStaticPaths() {
+  const posts = (await safeCollection('blog')).filter((p) => !p.data.draft).sort((a, b) => +b.data.date - +a.data.date);
+  const size = PAGINATION.pageSize;
+  const total = Math.max(1, Math.ceil(posts.length / size));
+  const tags = [...new Set(posts.flatMap((p) => p.data.tags))];
+  return Array.from({ length: total }, (_, i) => ({
+    params: { page: i === 0 ? undefined : `page/${i + 1}` },
+    props: { current: i + 1, total, posts: posts.slice(i * size, (i + 1) * size), tags },
+  }));
+}
+
+const { current, total, posts, tags } = Astro.props;
+---
+
+<BaseLayout title="Blog">
+  <PageHero
+    eyebrow={SECTIONS.blog.eyebrow}
+    title={SECTIONS.blog.title}
+    lead={SECTIONS.blog.lead}
+  />
+  <section class="g-bg-white g-section">
+    <div class="g-container">
+      <div class="g-row" style="justify-content:space-between;align-items:center;margin-bottom:var(--space-5)">
+        <div class="g-row" data-filterbar>
+          {tags.length > 0 && (
+            <>
+              <span style="font-size:var(--text-sm);color:var(--text-muted)">{STRINGS.filterLabel}</span>
+              <button class="g-filter is-active" data-filter="*">{STRINGS.filterAll}</button>
+              {tags.map((t) => <button class="g-filter" data-filter={t}>#{t}</button>)}
+            </>
+          )}
+        </div>
+        <a class="g-btn g-btn--ghost g-btn--sm" href={withBase('/rss.xml')} title={STRINGS.subscribeRssTitle}><i class="fa-solid fa-rss" aria-hidden="true"></i> {STRINGS.subscribeRss}</a>
+      </div>
+      <div class="g-grid-3">
+        {posts.map((p) => <PostCard post={p} />)}
+      </div>
+      <Pagination current={current} total={total} base="/blog/" />
+    </div>
+  </section>
+</BaseLayout>

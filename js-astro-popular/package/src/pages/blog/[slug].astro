@@ -1,0 +1,138 @@
+---
+import { render } from 'astro:content';
+import { safeCollection } from '../../lib/collections';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import AuthorBox from 'popular:component/AuthorBox';
+import { SUPPORT, SITE, STRINGS, SECTIONS_MAP } from 'popular:config';
+import { buildBlogPostingLd, jsonld } from '../../lib/jsonld';
+import { withBase, absoluteUrl } from '../../lib/url';
+import { tagSlug } from '../../lib/slugs';
+
+export async function getStaticPaths() {
+  const posts = (await safeCollection('blog')).filter((p) => !p.data.draft);
+  /* PARITY.md pins the ordering: date desc, then title, then id, matching
+     Hugo's section order (posts must not set weight). next = newer. */
+  const cmp = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+  const sorted = [...posts].sort(
+    (a, b) => +b.data.date - +a.data.date || cmp(a.data.title, b.data.title) || cmp(a.id, b.id),
+  );
+  return sorted.map((post, i) => ({
+    params: { slug: post.id },
+    props: { post, newer: sorted[i - 1], older: sorted[i + 1] },
+  }));
+}
+
+const { post, newer, older } = Astro.props;
+const d = post.data;
+const { Content } = await render(post);
+const dateStr = d.date.toLocaleDateString(SITE.locale, { month: 'short', day: 'numeric', year: 'numeric' });
+
+const allAuthors = await safeCollection(SECTIONS_MAP.authors);
+const resolved = d.authors.map((slug) => allAuthors.find((a) => a.id === slug)).filter(Boolean);
+const bylineNames = [
+  ...d.authors.map((slug) => allAuthors.find((a) => a.id === slug)?.data.title ?? slug),
+  ...d.guestAuthors.map((g) => g.name),
+];
+if (!bylineNames.length && d.author) bylineNames.push(d.author);
+const siteUrl = absoluteUrl('/', Astro.site ?? Astro.url);
+const postLd = jsonld(buildBlogPostingLd({
+  title: d.title,
+  datePublished: d.date.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+  dateModified: d.date.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+  authors: bylineNames,
+  image: d.image ? absoluteUrl(d.image, Astro.site ?? Astro.url) : undefined,
+  url: absoluteUrl(`/blog/${post.id}/`, Astro.site ?? Astro.url),
+  description: d.description,
+  siteTitle: SITE.title,
+  siteUrl,
+}));
+const byline = bylineNames.length > 1
+  ? bylineNames.slice(0, -1).join(STRINGS.listSeparator) + STRINGS.listSeparatorFinal + bylineNames[bylineNames.length - 1]
+  : bylineNames.join('');
+---
+
+<BaseLayout title={d.title} description={d.description} image={d.image} article={{ published: d.date, authors: bylineNames, tags: d.tags }}>
+  <script type="application/ld+json" slot="head" set:html={postLd} />
+  <article>
+    <header class="g-pagehero">
+      <div class="g-container" style="padding-block:var(--space-6) var(--space-5)">
+        <a href={withBase('/blog/')} style="display:inline-flex;gap:.4rem;align-items:center;font-size:var(--text-sm);font-weight:var(--weight-medium);margin-bottom:1rem">
+          <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> {STRINGS.allPosts}
+        </a>
+        {d.tags.length > 0 && (
+          <div class="g-row" style="margin-bottom:.8rem">
+            {d.tags.map((t) => <a class="g-tag" href={withBase(`/tags/${tagSlug(t)}/`)}>{t}</a>)}
+          </div>
+        )}
+        <h1 style="margin:0">{d.title}</h1>
+        <p style="margin:.9rem 0 0;font-size:var(--text-sm);color:var(--ink-700)">
+          {byline && `${STRINGS.authorsBy} ${byline} · `}{dateStr}
+        </p>
+      </div>
+    </header>
+
+    <div class="g-container g-section--sm">
+     <div class="g-article">
+      {d.image && (
+        <div style="border-radius:var(--radius-xl);overflow:hidden;box-shadow:var(--shadow-md);margin-bottom:var(--space-5)">
+          <img src={withBase(d.image)} alt={d.title} style="width:100%;aspect-ratio:16/9;object-fit:cover" />
+        </div>
+      )}
+
+      <div class="g-prose"><Content /></div>
+
+      {d.speaker && (
+        <>
+          <h2 style="font-size:var(--text-xl);margin:var(--space-5) 0 1rem">{STRINGS.ourSpeaker}</h2>
+          <div class="g-persona">
+            {d.speaker.photo && <img class="g-persona__img" src={withBase(d.speaker.photo)} alt={d.speaker.name} />}
+            <div>
+              <div class="g-persona__name">{d.speaker.name}</div>
+              {d.speaker.title && <div class="g-persona__role">{d.speaker.title}</div>}
+              {d.speaker.bio && <p class="g-persona__bio">{d.speaker.bio}</p>}
+            </div>
+          </div>
+        </>
+      )}
+
+      {(resolved.length > 0 || d.guestAuthors.length > 0) && (
+        <>
+          <h2 style="font-size:var(--text-xl);margin:var(--space-5) 0 1rem">About the author{resolved.length + d.guestAuthors.length > 1 ? 's' : ''}</h2>
+          <div class="g-stack" style="gap:var(--space-3)">
+            {resolved.map((a) => <AuthorBox entry={a} base={`/${SECTIONS_MAP.authors}/`} />)}
+            {d.guestAuthors.map((g) => <AuthorBox guest={g} />)}
+          </div>
+        </>
+      )}
+
+      {(older || newer) && (
+        <nav class="g-postnav" aria-label={STRINGS.postNavigation}>
+          {older ? (
+            <a class="g-postnav__card" href={withBase(`/blog/${older.id}/`)} rel="prev">
+              <span class="g-postnav__label"><i class="fa-solid fa-arrow-left" aria-hidden="true"></i> {STRINGS.olderPost}</span>
+              <span class="g-postnav__title">{older.data.title}</span>
+            </a>
+          ) : <span></span>}
+          {newer && (
+            <a class="g-postnav__card g-postnav__card--next" href={withBase(`/blog/${newer.id}/`)} rel="next">
+              <span class="g-postnav__label">{STRINGS.newerPost} <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></span>
+              <span class="g-postnav__title">{newer.data.title}</span>
+            </a>
+          )}
+        </nav>
+      )}
+      {SUPPORT && (
+        <div class="g-callout" style="margin-top:var(--space-5);flex-direction:column;gap:.9rem">
+          <span class="g-badge g-badge--secondary g-badge--soft"><i class="fa-solid fa-heart" aria-hidden="true"></i> {SUPPORT.badge}</span>
+          <div class="g-callout__body">{SUPPORT.text}</div>
+          <div class="g-row">
+            {SUPPORT.ctas.map((c) => (
+              <a class={`g-btn g-btn--${c.variant ?? 'secondary'}`} href={withBase(c.url)}>{c.label}</a>
+            ))}
+          </div>
+        </div>
+      )}
+     </div>
+    </div>
+  </article>
+</BaseLayout>

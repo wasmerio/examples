@@ -1,0 +1,47 @@
+---
+import { SITE, STRINGS, PAGINATION } from 'popular:config';
+import { tagSlug } from '../../../lib/slugs';
+import { safeCollection } from '../../../lib/collections';
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import PageHero from 'popular:component/PageHero';
+import PostCard from 'popular:component/PostCard';
+import Pagination from '../../../components/Pagination.astro';
+
+/* One route serves /tags/<tag>/ and /tags/<tag>/page/N/, matching the Hugo
+   theme's paginated term pages. URLs use the Hugo-compatible slug; the page
+   displays the tag's first-seen spelling. */
+export async function getStaticPaths() {
+  const posts = (await safeCollection('blog')).filter((p) => !p.data.draft);
+  const labels = new Map(); // slug -> first-seen tag spelling
+  for (const p of posts) for (const t of p.data.tags) {
+    const slug = tagSlug(t);
+    if (!labels.has(slug)) labels.set(slug, t);
+  }
+  const size = PAGINATION.pageSize;
+  return [...labels.entries()].flatMap(([slug, label]) => {
+    const tagged = posts
+      .filter((p) => p.data.tags.some((t) => tagSlug(t) === slug))
+      .sort((a, b) => +b.data.date - +a.data.date);
+    const total = Math.max(1, Math.ceil(tagged.length / size));
+    return Array.from({ length: total }, (_, i) => ({
+      params: { tag: slug, page: i === 0 ? undefined : `page/${i + 1}` },
+      props: { label, current: i + 1, total, count: tagged.length, posts: tagged.slice(i * size, (i + 1) * size) },
+    }));
+  });
+}
+
+const { tag } = Astro.params;
+const { label, current, total, count, posts } = Astro.props;
+---
+
+<BaseLayout title={`#${label}`} noindex={(SITE as Record<string, any>).seo?.noindexTaxonomies ?? false}>
+  <PageHero eyebrow={STRINGS.eyebrowTag} title={`#${label}`} lead={STRINGS.taggedCount.replace('{n}', String(count)).replace('{tag}', label)} />
+  <section class="g-bg-white g-section">
+    <div class="g-container">
+      <div class="g-grid-3">
+        {posts.map((p) => <PostCard post={p} />)}
+      </div>
+      <Pagination current={current} total={total} base={`/tags/${tag}/`} />
+    </div>
+  </section>
+</BaseLayout>

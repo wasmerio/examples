@@ -1,0 +1,63 @@
+---
+import { STRINGS } from 'popular:config';
+import { render } from 'astro:content';
+import { safeCollection } from '../../lib/collections';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHero from '../../components/PageHero.astro';
+import EventRow from '../../components/EventRow.astro';
+import { withBase } from '../../lib/url';
+
+export async function getStaticPaths() {
+  const venues = await safeCollection('venues');
+  return venues.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const d = entry.data;
+const { Content } = await render(entry);
+const events = (await safeCollection('events'))
+  .filter((e) => !e.data.draft && e.data.venueRef === entry.id)
+  .sort((a, b) => +b.data.date - +a.data.date);
+---
+
+<BaseLayout title={d.title} description={d.address}>
+  <PageHero eyebrow={STRINGS.eyebrowVenue} backHref="/venues/" backLabel={STRINGS.allVenues} title={d.title} lead={d.address} />
+  <section class="g-bg-white g-section">
+    <div class="g-container">
+      <div class="g-article" style="margin-bottom:var(--space-5)">
+        {d.photo && <img src={withBase(d.photo)} alt={d.title} style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:var(--radius-xl);box-shadow:var(--shadow-md);margin-bottom:var(--space-4)" loading="lazy" decoding="async" />}
+        <div class="g-meta-line" style="margin-bottom:var(--space-3)">
+          {d.address && <span><i class="fa-solid fa-location-dot" aria-hidden="true"></i> {d.address}</span>}
+          {d.website && <span><i class="fa-solid fa-globe" aria-hidden="true"></i> <a href={withBase(d.website)} rel="noopener" target="_blank">{STRINGS.website}</a></span>}
+        </div>
+        {(d.notes || d.accessibility) && (
+          <div class="g-callout" style="flex-direction:column;gap:.6rem">
+            <div class="g-callout__title">{STRINGS.beforeYouArrive}</div>
+            {d.notes && <div class="g-callout__body"><i class="fa-solid fa-door-open" aria-hidden="true"></i> {d.notes}</div>}
+            {d.accessibility && <div class="g-callout__body"><i class="fa-solid fa-universal-access" aria-hidden="true"></i> {d.accessibility}</div>}
+          </div>
+        )}
+        {(d.wheelchair || d.transit || d.parking || d.access) && (
+          <>
+            <div class="g-section-head" style="margin-top:var(--space-4)"><span class="g-eyebrow">{STRINGS.eyebrowVenue}</span><h2 style="font-size:var(--text-xl)">{STRINGS.gettingThere}</h2></div>
+            {d.wheelchair && <p><span class="g-badge g-badge--success g-badge--soft"><i class="fa-solid fa-wheelchair" aria-hidden="true"></i> {STRINGS.wheelchairAccessible}</span></p>}
+            <div class="g-meta-line" style="flex-direction:column;align-items:flex-start;gap:.4rem">
+              {d.transit && <span><i class="fa-solid fa-train-subway" aria-hidden="true"></i> <strong>{STRINGS.transit}:</strong> {d.transit}</span>}
+              {d.parking && <span><i class="fa-solid fa-square-parking" aria-hidden="true"></i> <strong>{STRINGS.parking}:</strong> {d.parking}</span>}
+            </div>
+            {d.access && <div class="g-prose" style="margin-top:var(--space-3)"><p>{d.access}</p></div>}
+          </>
+        )}
+        <div class="g-prose" style="margin-top:var(--space-4)"><Content /></div>
+      </div>
+      {events.length > 0 && (
+        <>
+          <div class="g-section-head"><span class="g-eyebrow">{STRINGS.eyebrowEvents}</span><h2>{STRINGS.venueEvents}</h2></div>
+          <div class="g-stack" style="margin-top:var(--space-4);gap:var(--space-3)">
+            {events.map((e) => <EventRow event={e} />)}
+          </div>
+        </>
+      )}
+    </div>
+  </section>
+</BaseLayout>

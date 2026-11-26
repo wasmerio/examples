@@ -1,0 +1,73 @@
+---
+import { SITE, STRINGS } from '../config';
+import type { CollectionEntry } from 'astro:content';
+import { safeCollection } from '../lib/collections';
+import { withBase } from '../lib/url';
+import { eventHasRecording } from '../lib/talks';
+
+interface Props { event: CollectionEntry<'events'> }
+const { event } = Astro.props;
+const d = event.data;
+const hasRecording = eventHasRecording(d);
+
+/* Venue: a venueRef to the venues collection wins over the flat fields. */
+const venuePage = d.venueRef ? (await safeCollection('venues')).find((v) => v.id === d.venueRef) : undefined;
+if (d.venueRef && !venuePage) console.warn(`events/${event.id}: venueRef "${d.venueRef}" matches no venue page`);
+const venueName = venuePage?.data.title ?? d.venue;
+const venueAddress = venuePage?.data.address ?? (venuePage ? undefined : d.address);
+const tbd = d.venueWanted || !venueName;
+/* Planning: the event is on the calendar but its details are not settled.
+   Wins over the venue-wanted badge, which is inferred, and hides the RSVP
+   button even when `rsvp` is already filled in. */
+const planning = d.planning;
+
+/* Speaker line: resolved speaker-profile names, falling back to the string. */
+const allSpeakers = d.speakers.length ? await safeCollection('speakers') : [];
+const names = d.speakers.map((slug) => {
+  const found = allSpeakers.find((s) => s.id === slug);
+  if (!found) console.warn(`events/${event.id}: speaker "${slug}" matches no speaker page`);
+  return found?.data.title;
+}).filter(Boolean);
+const speakerLine = names.length ? names.join(', ') : d.speaker;
+
+const dow = d.date.toLocaleDateString(SITE.locale, { weekday: 'short' });
+const day = d.date.toLocaleDateString(SITE.locale, { month: 'short', day: 'numeric' });
+---
+
+<div class="g-event">
+  <div class="g-event__date">
+    <span class="g-event__dow">{dow}</span>
+    <span class="g-event__day">{day}</span>
+    {d.time && <span class="g-event__time">{d.time}</span>}
+  </div>
+  <div class="g-event__body">
+    {d.tags.length > 0 && (
+      <div class="g-card__footer" style="padding-top:0">
+        {d.tags.map((t) => <span class="g-tag">{t}</span>)}
+      </div>
+    )}
+    <h3><a href={withBase(`/events/${event.id}/`)} style="color:inherit">{d.title}</a></h3>
+    {d.description && <p>{d.description}</p>}
+    <div class="g-event__meta">
+      <i class="fa-solid fa-location-dot" aria-hidden="true"></i>{venueName ?? STRINGS.venueTba}{venueAddress && ` · ${venueAddress}`}
+    </div>
+    {speakerLine && (
+      <div class="g-event__meta"><i class="fa-solid fa-microphone-lines" aria-hidden="true"></i>{speakerLine}</div>
+    )}
+    {hasRecording && (
+      <div class="g-event__meta"><i class="fa-solid fa-circle-play" aria-hidden="true"></i>{STRINGS.hasRecording}</div>
+    )}
+  </div>
+  <div class="g-event__aside">
+    {d.cancelled
+      ? <span class="g-badge g-badge--danger g-badge--soft">{STRINGS.eventCancelled}</span>
+      : planning
+      ? <span class="g-badge g-badge--soft">{STRINGS.eventPlanning}</span>
+      : tbd
+      ? <span class="g-badge g-badge--warning g-badge--soft">{STRINGS.venueWanted}</span>
+      : <span class="g-badge g-badge--success g-badge--soft">{STRINGS.confirmed}</span>}
+    {!planning && d.rsvp && (
+      <a class="g-btn g-btn--primary g-btn--sm" href={withBase(d.rsvp)}><i class="fa-solid fa-calendar" aria-hidden="true"></i>{STRINGS.rsvp}</a>
+    )}
+  </div>
+</div>

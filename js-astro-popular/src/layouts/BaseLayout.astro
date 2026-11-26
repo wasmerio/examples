@@ -1,0 +1,144 @@
+---
+/** Popular: base layout: head, brand token overrides, header, footer, shared JS. */
+import '../styles/tokens/fonts.css';
+import '../styles/tokens/colors.css';
+import '../styles/tokens/typography.css';
+import '../styles/tokens/spacing.css';
+import '../styles/tokens/elevation.css';
+import '../styles/base.css';
+import '../styles/components.css';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import DemoBar from '../components/DemoBar.astro';
+import PreviewBar from '../components/PreviewBar.astro';
+import Notice from '../components/Notice.astro';
+import { SITE, BRAND, STRINGS } from '../config';
+import { withBase, absoluteUrl } from '../lib/url';
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+  /** Set on blog posts: emits og:type=article plus article meta. */
+  article?: { published?: Date; modified?: Date; authors?: string[]; tags?: string[] };
+  imageAlt?: string;
+  noindex?: boolean;
+}
+const { title, description, image, article, imageAlt, noindex } = Astro.props;
+const ogLocale = SITE.locale.replace('-', '_');
+/* The home title joins whichever of title and tagline are set, so a missing
+   one never leaves a stray separator (", Tagline" or "Title, undefined").
+   The Hugo twin does the same in partials/head.html. */
+const pageTitle = title
+  ? [title, SITE.title].filter(Boolean).join(' · ')
+  : [SITE.title, SITE.tagline].filter(Boolean).join(', ');
+const desc = description ?? SITE.description;
+const ogImage = image ?? SITE.ogImage;
+/* Astro.url.pathname already carries the base; Astro.site does not, hence
+   absoluteUrl() for everything built from a path we wrote ourselves. */
+const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url);
+
+/* Icons are served by the site itself from public/fontawesome/, so a site
+   works offline, survives a CDN outage, and tells no third party who is
+   reading it. `fontAwesome` is optional: leave it unset and the theme's own
+   copy is used; set it to a URL to use a CDN instead. withBase() keeps the
+   local default working on a subpath install and passes an external URL
+   through untouched. The Hugo twin does this in partials/head.html. */
+const CDNJS_FONT_AWESOME =
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css';
+const fontAwesome = SITE.fontAwesome ?? '/fontawesome/css/all.min.css';
+
+/* Brand overrides: mirrors the Hugo theme's brand-vars.html partial. */
+const vars: string[] = [];
+const b = BRAND;
+if (b.primary) {
+  vars.push(`--color-primary:${b.primary}`, `--gold-500:${b.primary}`);
+  vars.push(`--gold-50:color-mix(in srgb, ${b.primary} 7%, #fff)`);
+  vars.push(`--gold-100:color-mix(in srgb, ${b.primary} 20%, #fff)`);
+  vars.push(`--gold-300:color-mix(in srgb, ${b.primary} 55%, #fff)`);
+}
+if (b.primaryHover) vars.push(`--color-primary-hover:${b.primaryHover}`);
+if (b.primaryActive) vars.push(`--color-primary-active:${b.primaryActive}`, `--gold-700:${b.primaryActive}`, `--text-link:${b.primaryActive}`);
+if (b.link) vars.push(`--text-link:${b.link}`);
+if (b.linkHover) vars.push(`--text-link-hover:${b.linkHover}`);
+if (b.secondary) vars.push(`--color-secondary:${b.secondary}`);
+if (b.accent) vars.push(`--color-accent:${b.accent}`, `--indigo-500:${b.accent}`);
+if (b.accentHover) vars.push(`--color-accent-hover:${b.accentHover}`);
+if (b.ink) vars.push(`--ink-800:${b.ink}`, `--text-strong:${b.ink}`);
+if (b.surfaceWash) vars.push(`--surface-wash:${b.surfaceWash}`);
+if (b.surfaceWashSoft) vars.push(`--surface-wash-soft:${b.surfaceWashSoft}`);
+if (b.surfaceInk) vars.push(`--surface-ink:${b.surfaceInk}`);
+/* Dark-palette keys: page/card surfaces, body text, borders, and the text
+   color on filled buttons. Setting these lets a site run on a dark background. */
+if (b.surfacePage) vars.push(`--surface-page:${b.surfacePage}`);
+if (b.surfaceCard) vars.push(`--surface-card:${b.surfaceCard}`);
+if (b.surfaceTertiary) vars.push(`--surface-tertiary:${b.surfaceTertiary}`);
+if (b.textBody) vars.push(`--text-body:${b.textBody}`, `--ink-700:${b.textBody}`);
+if (b.textMuted) vars.push(`--text-muted:${b.textMuted}`, `--ink-500:${b.textMuted}`);
+if (b.textOnBrand) vars.push(`--text-on-brand:${b.textOnBrand}`);
+if (b.borderSubtle) vars.push(`--border-subtle:${b.borderSubtle}`, `--border-default:${b.borderSubtle}`);
+if (b.fontSans) vars.push(`--font-sans:${b.fontSans}`);
+if (b.fontDisplay) vars.push(`--font-display:${b.fontDisplay}`);
+if (b.radiusCard) vars.push(`--radius-xl:${b.radiusCard}`);
+if (b.containerMax) vars.push(`--container-max:${b.containerMax}`);
+/* html:root outranks the token files' :root so the override wins regardless of
+   where Astro injects the bundled stylesheet in <head>. */
+const brandCss = `html:root{${vars.join(';')}}`;
+---
+
+<!DOCTYPE html>
+<html lang={SITE.locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/* Says which generator built the page. Astro does not inject this; a
+        layout has to emit it, and the Astro theme catalogue's reviewers check
+        for exactly this tag when verifying a demo really is an Astro site. */}
+    <meta name="generator" content={Astro.generator} />
+    <title>{pageTitle}</title>
+    <meta name="description" content={desc} />
+    {/* With no site title, og:site_name is left out rather than written
+        empty, and the home og:title falls back to the tagline, the same way
+        the home <title> does. The Hugo twin does the same in seo.html. */}
+    {SITE.title && <meta property="og:site_name" content={SITE.title} />}
+    <meta property="og:locale" content={ogLocale} />
+    <meta property="og:title" content={title ?? (SITE.title || SITE.tagline)} />
+    <meta property="og:description" content={desc} />
+    <meta property="og:url" content={canonical} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:type" content={article ? 'article' : 'website'} />
+    {article?.published && <meta property="article:published_time" content={article.published.toISOString()} />}
+    {article?.modified && <meta property="article:modified_time" content={article.modified.toISOString()} />}
+    {article?.authors?.map((a) => <meta property="article:author" content={a} />)}
+    {article?.tags?.map((t) => <meta property="article:tag" content={t} />)}
+    {ogImage && <meta property="og:image" content={absoluteUrl(ogImage, Astro.site ?? Astro.url)} />}
+    {ogImage && <meta property="og:image:alt" content={imageAlt ?? title ?? SITE.title} />}
+    <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+    <link rel="icon" href={withBase(SITE.favicon ?? SITE.logo)} />
+    <link rel="alternate" type="application/rss+xml" title={(SITE as Record<string, any>).rssTitle ?? SITE.title} href={absoluteUrl('/rss.xml', Astro.site ?? Astro.url)} />
+    {fontAwesome === CDNJS_FONT_AWESOME && <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />}
+    <link rel="stylesheet" href={withBase(fontAwesome)} referrerpolicy="no-referrer"
+      integrity={fontAwesome === CDNJS_FONT_AWESOME ? "sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" : undefined}
+      crossorigin={fontAwesome === CDNJS_FONT_AWESOME ? "anonymous" : undefined} />
+    {(SITE as Record<string, any>).customCSS?.map((href: string) => <link rel="stylesheet" href={withBase(href)} />)}
+    {noindex && <meta name="robots" content="noindex,follow" />}
+    <style is:inline id="popular-brand" set:html={brandCss}></style>
+    <slot name="head" />
+  </head>
+  <body data-copy-label={STRINGS.copyCode} data-checklist-done={STRINGS.checklistDone}>
+    <a class="g-skip" href="#main">{STRINGS.skipToContent}</a>
+    <Notice />
+    <Header />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer />
+    <DemoBar />
+    <PreviewBar />
+    <script src={withBase('/scripts/nav.js')} is:inline defer></script>
+    <script src={withBase('/scripts/checklist.js')} is:inline defer></script>
+    <script src={withBase('/scripts/toc.js')} is:inline defer></script>
+    <script src={withBase('/scripts/blog-filter.js')} is:inline defer></script>
+    <script src={withBase('/scripts/copy-code.js')} is:inline defer></script>
+  </body>
+</html>

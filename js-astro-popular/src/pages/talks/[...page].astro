@@ -1,0 +1,59 @@
+---
+/** §3 talk archive index. Opt-in: builds only when SITE.talks is true (the
+ *  Astro counterpart of Hugo's "create content/talks/_index.md to enable"),
+ *  so sites without recordings do not grow an empty page. Aggregates every
+ *  talk across events, newest first, filterable by the parent event's tags
+ *  via the shared blog-filter.js (same [data-filterbar] / [data-tags] markup
+ *  as the blog list). */
+import { SITE, STRINGS } from '../../config';
+import { safeCollection } from '../../lib/collections';
+import { collectTalks } from '../../lib/talks';
+import { withBase } from '../../lib/url';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHero from '../../components/PageHero.astro';
+
+export async function getStaticPaths() {
+  if ((SITE as Record<string, any>).talks !== true) return [];
+  const events = (await safeCollection('events')).filter((e) => !e.data.draft);
+  const speakers = await safeCollection('speakers');
+  return [{ params: { page: undefined }, props: { talks: collectTalks(events, speakers) } }];
+}
+
+const { talks } = Astro.props;
+const tags = [...new Set(talks.flatMap((t) => t.tags))].sort();
+const fmt = (d: Date) => d.toLocaleDateString(SITE.locale, { month: 'short', day: 'numeric', year: 'numeric' });
+---
+
+<BaseLayout title={STRINGS.talks} description={STRINGS.talksLead}>
+  <PageHero eyebrow={STRINGS.talks} title={STRINGS.talks} lead={STRINGS.talksLead} />
+  <section class="g-bg-white g-section">
+    <div class="g-container">
+      <div class="g-row" data-filterbar style="margin-bottom:var(--space-5)">
+        {tags.length > 0 && (
+          <>
+            <span style="font-size:var(--text-sm);color:var(--text-muted)">{STRINGS.filterLabel}</span>
+            <button class="g-filter is-active" data-filter="*">{STRINGS.filterAll}</button>
+            {tags.map((t) => <button class="g-filter" data-filter={t}>#{t}</button>)}
+          </>
+        )}
+      </div>
+      <div class="g-stack" style="gap:var(--space-3)">
+        {talks.map((t) => (
+          <div class="g-talk" data-tags={t.tags.join(',')}>
+            <div class="g-talk__title">{t.title}</div>
+            {t.speakerName && (
+              <div class="g-talk__by"><i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> {t.speakerSlug ? <a href={withBase(`/speakers/${t.speakerSlug}/`)}>{t.speakerName}</a> : t.speakerName}</div>
+            )}
+            <div class="g-talk__event"><i class="fa-solid fa-calendar-day" aria-hidden="true"></i> <a href={withBase(`/events/${t.eventId}/`)}>{t.eventTitle}</a> · {fmt(t.date)}</div>
+            {(t.recording || t.slides) && (
+              <div class="g-row" style="gap:var(--space-2)">
+                {t.recording && <a class="g-btn g-btn--sm g-btn--outline" href={withBase(t.recording)} rel="noopener" target="_blank"><i class="fa-solid fa-circle-play" aria-hidden="true"></i> {STRINGS.watchRecording}</a>}
+                {t.slides && <a class="g-btn g-btn--sm g-btn--ghost" href={withBase(t.slides)} rel="noopener" target="_blank"><i class="fa-solid fa-file-lines" aria-hidden="true"></i> {STRINGS.viewSlides}</a>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+</BaseLayout>

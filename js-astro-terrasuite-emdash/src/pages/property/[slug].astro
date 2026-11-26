@@ -1,0 +1,112 @@
+---
+// A property page.
+//
+// This is the half of an agency site that needs no plugin at all: one entry by
+// slug, fields typed from the collection, rich text rendered by the host, SEO
+// and JSON-LD contributed by EmDash from the entry the page already fetched.
+import { getEmDashEntry, getSeoMeta } from "emdash";
+import { PortableText, Image } from "emdash/ui";
+import Site from "../../layouts/Site.astro";
+import PropertyCard from "../../components/PropertyCard.astro";
+import { search } from "../../lib/property-search";
+
+const { slug } = Astro.params;
+if (!slug) return Astro.redirect("/404");
+
+const { entry, cacheHint } = await getEmDashEntry("properties", slug);
+if (!entry) return Astro.redirect("/404");
+if (Astro.cache?.enabled) Astro.cache.set(cacheHint);
+
+const p = entry.data;
+
+const seo = getSeoMeta(entry, {
+	siteTitle: "TerraSuite",
+	siteUrl: Astro.url.origin,
+	path: `/property/${slug}`,
+});
+
+const money = new Intl.NumberFormat("en-GB", {
+	style: "currency",
+	currency: p.currency || "EUR",
+	maximumFractionDigits: 0,
+});
+
+const pretty = (s: string) =>
+	(s || "").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+const facts: Array<[string, string]> = [
+	["Bedrooms", p.beds ? String(p.beds) : "Not stated"],
+	["Bathrooms", p.baths ? String(p.baths) : "Not stated"],
+	["Receptions", p.receptions ? String(p.receptions) : "Not stated"],
+	["Built", p.built_area ? `${p.built_area} m²` : "Not stated"],
+	["Plot", p.plot_area ? `${p.plot_area} m²` : "Not stated"],
+	["Energy rating", p.energy || "Not stated"],
+];
+
+// Nearby stock, which is the one thing on this page that needs the search.
+const nearby = search({
+	dept: p.dept,
+	towns: p.town ? [p.town] : [],
+	perPage: 4,
+	orderBy: "price_asc",
+}).rows.filter((r) => r.slug !== slug).slice(0, 3);
+---
+
+<Site
+	title={p.title}
+	description={seo.description}
+	content={{ collection: "properties", id: p.id, slug }}
+>
+	<article class="band">
+		<div class="wrap">
+			<div class="property__head">
+				<p class="property__ref">
+					{p.reference} &middot; {pretty(p.town ?? "")} &middot; {pretty(p.property_type ?? "")}
+				</p>
+				<h1 {...entry.edit.title}>{p.title}</h1>
+				<p class="property__price">
+					{money.format(p.price ?? 0)}{p.dept === "rent" ? " per month" : ""}
+				</p>
+				<div class="badges">
+					{p.new_build ? <span class="badge">New build</span> : null}
+					{p.availability && p.availability !== "available"
+						? <span class="badge badge--quiet">{pretty(p.availability)}</span>
+						: null}
+				</div>
+			</div>
+
+			{p.featured_image ? (
+				<div {...entry.edit.featured_image} style="margin-bottom:2rem">
+					<Image image={p.featured_image} alt={p.title} />
+				</div>
+			) : null}
+
+			<dl class="facts">
+				{facts.map(([label, v]) => (
+					<div><dt>{label}</dt><dd>{v}</dd></div>
+				))}
+			</dl>
+
+			{Array.isArray(p.features) && p.features.length > 0 && (
+				<ul class="chips">
+					{p.features.map((f: string) => <li>{pretty(f)}</li>)}
+				</ul>
+			)}
+
+			<div class="prose">
+				<PortableText value={p.description} />
+			</div>
+		</div>
+	</article>
+
+	{nearby.length > 0 && (
+		<section class="band band--sand">
+			<div class="wrap">
+				<h2>Also in {pretty(p.town ?? "")}</h2>
+				<ul class="grid">
+					{nearby.map((r) => <PropertyCard property={r} />)}
+				</ul>
+			</div>
+		</section>
+	)}
+</Site>

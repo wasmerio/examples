@@ -1,0 +1,66 @@
+---
+// Everything on our books in one town.
+//
+// The page a search engine sends somebody to, and the reason the town index
+// exists separately from the search: a landing page needs its own address and
+// its own heading, not a query string.
+import Site from "../../layouts/Site.astro";
+import PropertyCard from "../../components/PropertyCard.astro";
+import { search, facets } from "../../lib/property-search";
+
+const { slug } = Astro.params;
+if (!slug) return Astro.redirect("/404");
+
+const { towns } = facets();
+const town = towns.find((t) => t.value === slug);
+if (!town) return Astro.redirect("/404");
+
+const page = Math.max(Number(Astro.url.searchParams.get("page")) || 1, 1);
+const { rows, total, pages, ms } = search({ towns: [slug], perPage: 12, page, orderBy: "price_asc" });
+
+const pretty = (s: string) =>
+	(s || "").replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+const name = pretty(slug);
+---
+
+<Site
+	title={`Property in ${name}`}
+	description={`Every property we hold in ${name}, for sale and to let.`}
+>
+	<section class="band">
+		<div class="wrap">
+			<h1>Property in {name}</h1>
+			<div class="results-head">
+				<p>
+					<span class="count">{total.toLocaleString("en-GB")}</span>
+					{total === 1 ? " property" : " properties"} on our books here
+				</p>
+				<p class="timing">Found in {ms.toFixed(3)} ms &middot; <a href={`/search?town=${slug}`}>Refine this</a></p>
+			</div>
+
+			<ul class="grid">
+				{rows.map((p) => <PropertyCard property={p} />)}
+			</ul>
+
+			{pages > 1 && (
+				<nav class="pager" aria-label="Pagination">
+					{page > 1 && <a class="btn btn--quiet" href={`/area/${slug}?page=${page - 1}`}>Previous</a>}
+					<span>Page {page} of {pages}</span>
+					{page < pages && <a class="btn btn--quiet" href={`/area/${slug}?page=${page + 1}`}>Next</a>}
+				</nav>
+			)}
+		</div>
+	</section>
+
+	<section class="band band--sand">
+		<div class="wrap">
+			<h2>Other towns</h2>
+			<ul class="towns">
+				{towns.filter((t) => t.value !== slug).map((t) => (
+					<li><a href={`/area/${t.value}`}>{pretty(t.value)} <span aria-hidden="true">&middot;</span> {t.count}</a></li>
+				))}
+			</ul>
+		</div>
+	</section>
+</Site>

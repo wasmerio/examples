@@ -1,0 +1,162 @@
+---
+// The results page.
+//
+// Two engines sit behind it and either can be asked for, because the difference
+// is the whole reason this template exists:
+//
+//   ?engine=sql  the collection table, which answers the question
+//   ?engine=api  getEmDashCollection(), which cannot
+//
+// The API path is not a strawman. It is the documented, supported way to read
+// content, and on a blog it is the right tool. It has no range operator, so a
+// price range, a minimum bed count and a minimum built area have nowhere to go.
+// Rather than return twelve plausible and wrong properties, the page says which
+// filters it had to drop.
+import { getEmDashCollection } from "emdash";
+import Site from "../layouts/Site.astro";
+import SearchForm from "../components/SearchForm.astro";
+import PropertyCard from "../components/PropertyCard.astro";
+import { search, facets, type Row } from "../lib/property-search";
+
+const q = Astro.url.searchParams;
+const engine = q.get("engine") === "api" ? "api" : "sql";
+
+const num = (key: string) => {
+	const n = Number(q.get(key));
+	return Number.isFinite(n) && n > 0 ? n : undefined;
+};
+
+const criteria = {
+	dept: q.get("dept") || "sale",
+	minPrice: num("min_price"),
+	maxPrice: num("max_price"),
+	minBeds: num("beds"),
+	minBaths: num("baths"),
+	minBuilt: num("built"),
+	types: q.getAll("type").filter(Boolean),
+	towns: q.getAll("town").filter(Boolean),
+	pool: q.get("pool") === "1",
+	newBuild: q.get("new_build") === "1",
+	feature: q.get("feature") || undefined,
+	// Sold and let stock is hidden unless it is asked for. An agency that
+	// wants to show what it has shifted can link to ?sold=1.
+	availability: q.get("sold") === "1" ? undefined : "available",
+	orderBy: q.get("sort") || "price_asc",
+	page: num("page") ?? 1,
+};
+
+const { towns, types, features } = facets(criteria.dept);
+
+let rows: Row[] = [];
+let total = 0;
+let pages = 1;
+let ms = 0;
+const dropped: string[] = [];
+
+if (engine === "sql") {
+	({ rows, total, pages, ms } = search(criteria));
+} else {
+	if (criteria.minPrice || criteria.maxPrice) dropped.push("the price range");
+	if (criteria.minBeds) dropped.push("minimum bedrooms");
+	if (criteria.minBaths) dropped.push("minimum bathrooms");
+	if (criteria.minBuilt) dropped.push("minimum built area");
+	if (criteria.feature) dropped.push("the feature");
+
+	const where: Record<string, unknown> = { dept: criteria.dept };
+	if (criteria.towns.length) where.town = criteria.towns;
+	if (criteria.types.length) where.property_type = criteria.types;
+	if (criteria.pool) where.pool = true;
+
+	const started = process.hrtime.bigint();
+	const result = await getEmDashCollection("properties", {
+		status: "published",
+		where,
+		orderBy: { price: "asc" },
+		limit: 12,
+	});
+	ms = Number(process.hrtime.bigint() - started) / 1e6;
+
+	rows = result.entries.map((e) => ({
+		id: e.data.id,
+		slug: e.id ?? "",
+		title: e.data.title,
+		price: e.data.price ?? 0,
+		currency: e.data.currency ?? "EUR",
+		beds: e.data.beds ?? 0,
+		baths: e.data.baths ?? 0,
+		built_area: e.data.built_area ?? 0,
+		town: e.data.town ?? "",
+		property_type: e.data.property_type ?? "",
+		dept: e.data.dept ?? "",
+		pool: Boolean(e.data.pool),
+		new_build: Boolean(e.data.new_build),
+		availability: e.data.availability ?? "",
+	}));
+	total = rows.length;
+}
+
+const other = new URLSearchParams(Astro.url.search);
+other.set("engine", engine === "sql" ? "api" : "sql");
+
+const pageLink = (n: number) => {
+	const p = new URLSearchParams(Astro.url.search);
+	p.set("page", String(n));
+	return `/search?${p.toString()}`;
+};
+
+const heading = criteria.dept === "rent" ? "Property to let" : "Property for sale";
+---
+
+<Site title={heading} description="Search every property on our books.">
+	<section class="band">
+		<div class="wrap">
+			<h1>{heading}</h1>
+
+			<SearchForm
+				towns={towns}
+				types={types}
+				features={features}
+				current={criteria}
+				variant="inline"
+			/>
+
+			<div class="results-head" style="margin-top:2rem">
+				<p>
+					<span class="count">{total.toLocaleString("en-GB")}</span>
+					{total === 1 ? " property" : " properties"}
+				</p>
+				<p class="timing">
+					{engine === "sql" ? "Collection table" : "getEmDashCollection()"} answered in
+					{" "}<strong>{ms.toFixed(3)} ms</strong>.
+					{" "}<a href={`/search?${other.toString()}`}>Try the other engine</a>
+				</p>
+			</div>
+
+			{dropped.length > 0 && (
+				<div class="notice">
+					<p>
+						The content API has no range operator, so this search ignored {dropped.join(", ")}.
+						These results do not answer what was asked. That is the finding, not a fault in
+						the template.
+					</p>
+				</div>
+			)}
+
+			{rows.length === 0 ? (
+				<p>Nothing matched. Try widening the price range or adding a town.</p>
+			) : (
+				<ul class="grid">
+					{rows.map((p) => <PropertyCard property={p} />)}
+				</ul>
+			)}
+
+			{pages > 1 && (
+				<nav class="pager" aria-label="Pagination">
+					{criteria.page > 1 && <a class="btn btn--quiet" href={pageLink(criteria.page - 1)}>Previous</a>}
+					<span>Page {criteria.page} of {pages}</span>
+					{criteria.page < pages && <a class="btn btn--quiet" href={pageLink(criteria.page + 1)}>Next</a>}
+				</nav>
+			)}
+		</div>
+	</section>
+</Site>

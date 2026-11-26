@@ -1,0 +1,186 @@
+---
+import siteConfig from "../../config/site";
+import { url } from "../../utils/paths";
+import { Search, X } from "lucide-astro";
+
+const searchConfig = siteConfig.search || {
+  modalTitle: "Search Publications",
+  placeholder: "Type keywords (e.g. Astro, TypeScript, Islands, CSS)...",
+};
+const pagefindScriptUrl = url("/pagefind/pagefind-ui.js");
+const pagefindCssUrl = url("/pagefind/pagefind-ui.css");
+---
+
+<!-- Search Trigger Button -->
+<button
+  id="search-open-btn"
+  type="button"
+  aria-label="Search articles"
+  class="flex items-center gap-2 px-3.5 py-1.5 rounded-full liquid-pill text-zinc-700 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-400/40 transition-all text-xs font-medium cursor-pointer shadow-xs"
+>
+  <Search class="w-3.5 h-3.5 text-zinc-400" />
+  <span class="hidden sm:inline">Search</span>
+  <kbd
+    class="hidden md:inline-block px-1.5 py-0.5 text-[10px] font-mono bg-white/40 dark:bg-white/10 border border-white/30 dark:border-white/10 text-zinc-500 dark:text-zinc-400 rounded-md"
+  >
+    ⌘ + K
+  </kbd>
+</button>
+
+<!-- Search Dialog Modal -->
+<dialog
+  id="search-dialog"
+  data-placeholder={searchConfig.placeholder}
+  data-pagefind-script={pagefindScriptUrl}
+  class="backdrop:bg-slate-950/60 backdrop:backdrop-blur-xl p-0 bg-transparent max-w-2xl w-[92vw] m-auto rounded-3xl border-0 overflow-visible focus:outline-none"
+>
+  <div
+    class="liquid-glass rounded-3xl p-6 sm:p-7 relative overflow-hidden shadow-2xl"
+  >
+    <!-- Top Header -->
+    <div
+      class="flex items-center justify-between border-b border-white/20 dark:border-white/10 pb-4 mb-5"
+    >
+      <div class="flex items-center gap-2.5">
+        <span
+          class="w-2.5 h-2.5 rounded-full bg-linear-to-r from-cyan-400 to-indigo-500 animate-pulse"
+        ></span>
+        <span class="font-bold text-base text-zinc-900 dark:text-zinc-100">
+          {searchConfig.modalTitle}
+        </span>
+      </div>
+      <button
+        id="search-close-btn"
+        type="button"
+        class="p-1.5 rounded-full liquid-pill hover:text-rose-500 transition-colors cursor-pointer"
+        aria-label="Close search"
+      >
+        <X class="w-4 h-4" />
+      </button>
+    </div>
+
+    <!-- Pagefind UI Mount Container -->
+    <div
+      id="pagefind-container"
+      class="min-h-56 max-h-[60vh] overflow-y-auto pr-1"
+    >
+      <div id="pagefind-search"></div>
+    </div>
+
+    <!-- Footer hint -->
+    <div
+      class="mt-5 pt-3.5 border-t border-white/15 dark:border-white/10 flex justify-between items-center text-xs text-zinc-500 dark:text-zinc-400 font-mono"
+    >
+      <span
+        >Press <kbd
+          class="px-1.5 py-0.5 bg-white/30 dark:bg-white/10 rounded-md">ESC</kbd
+        > or <kbd class="px-1.5 py-0.5 bg-white/30 dark:bg-white/10 rounded-md"
+          >⌘K</kbd
+        > to exit</span
+      >
+      <span class="text-indigo-600 dark:text-indigo-400 font-sans font-medium"
+        >Fast Static Indexing</span
+      >
+    </div>
+  </div>
+</dialog>
+
+<script>
+  function setupSearch() {
+    const dialog = document.getElementById(
+      "search-dialog",
+    ) as HTMLDialogElement | null;
+    const openBtn = document.getElementById("search-open-btn");
+    const closeBtn = document.getElementById("search-close-btn");
+    let pagefindInitialized = false;
+
+    function initPagefind() {
+      if (pagefindInitialized) return;
+
+      const container = document.getElementById("pagefind-search");
+      if (!container) return;
+
+      const initUI = () => {
+        if ((window as any).PagefindUI) {
+          pagefindInitialized = true;
+          new (window as any).PagefindUI({
+            element: "#pagefind-search",
+            showSubResults: true,
+            showImages: false,
+            autofocus: true,
+            translations: {
+              placeholder:
+                document.getElementById("search-dialog")?.dataset.placeholder ||
+                "Type keywords (e.g. Astro, TypeScript, Islands, CSS)...",
+              clear_search: "Clear",
+              load_more: "Load more",
+              search_label: "Search articles",
+              filters_label: "Filters",
+              zero_results: 'No articles found matching "[SEARCH_TERM]"',
+              many_results: "[COUNT] articles found",
+              one_result: "1 article found",
+            },
+          });
+        }
+      };
+
+      if ((window as any).PagefindUI) {
+        initUI();
+      } else {
+        const script = document.createElement("script");
+        script.src =
+          dialog?.dataset.pagefindScript || "/pagefind/pagefind-ui.js";
+        script.onload = initUI;
+        script.onerror = () => {
+          console.warn("Pagefind static index is compiled via npm run build.");
+          if (container && !container.innerHTML) {
+            container.innerHTML = `
+              <div class="p-4 rounded-2xl liquid-glass text-zinc-600 dark:text-zinc-400 text-xs">
+                <strong class="text-zinc-900 dark:text-zinc-100 block mb-1">Search Index Status</strong>
+                Static search index compiles via <code>npm run build</code> or <code>npm run pagefind</code>.
+              </div>
+            `;
+          }
+        };
+        document.head.appendChild(script);
+      }
+    }
+
+    function openSearch() {
+      dialog?.showModal();
+      initPagefind();
+    }
+
+    function closeSearch() {
+      dialog?.close();
+    }
+
+    openBtn?.addEventListener("click", openSearch);
+    closeBtn?.addEventListener("click", closeSearch);
+
+    dialog?.addEventListener("click", (e) => {
+      if (e.target === dialog) {
+        closeSearch();
+      }
+    });
+
+    window.addEventListener("keydown", (e) => {
+      const isCmdOrCtrl = e.metaKey || e.ctrlKey;
+      const isK = e.key === "k" || e.key === "K" || e.code === "KeyK";
+
+      if (isCmdOrCtrl && isK) {
+        e.preventDefault();
+        if (dialog?.open) {
+          closeSearch();
+        } else {
+          openSearch();
+        }
+      }
+    });
+  }
+
+  setupSearch();
+  document.addEventListener("astro:after-swap", setupSearch);
+</script>
+
+<link href={pagefindCssUrl} rel="stylesheet" />

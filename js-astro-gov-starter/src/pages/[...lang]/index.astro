@@ -1,0 +1,155 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Hero from '../../components/uswds/Hero.astro';
+import ServiceCard from '../../components/uswds/ServiceCard.astro';
+import ProcessList from '../../components/uswds/ProcessList.astro';
+import ProcessListItem from '../../components/uswds/ProcessListItem.astro';
+import CallToAction from '../../components/uswds/CallToAction.astro';
+import SiteAlert from '../../components/uswds/SiteAlert.astro';
+import { siteConfig } from '../../config/site';
+import type { Locale } from '../../i18n/utils';
+import { localeStaticPaths, useTranslations, withBase, localizeUrl } from '../../i18n/utils';
+import { entriesForLocale } from '../../utils/content';
+import { idToSlug } from '../../utils/content';
+
+export function getStaticPaths() {
+  return localeStaticPaths();
+}
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+const prefix = locale === 'es' ? '/es' : '';
+
+// Page-level copy that is too long or structured for flat i18n keys.
+const copy = {
+  en: {
+    heroLabel: undefined,
+    viewAll: 'View all programs →',
+    ctaHeading: 'How to apply',
+    steps: [
+      {
+        heading: 'Check eligibility',
+        body: 'Answer a few questions to find out which programs you may qualify for. This takes about 5 minutes and does not start an application.',
+      },
+      {
+        heading: 'Gather documents',
+        body: 'You may need proof of identity, income, and residency. Our checklist will tell you exactly what to bring.',
+      },
+      {
+        heading: 'Submit your application',
+        body: "Apply online in about 20 minutes. You'll get a confirmation number immediately and a decision within 30 days.",
+      },
+    ],
+  },
+  es: {
+    heroLabel: 'Introducción',
+    viewAll: 'Ver todos los programas →',
+    ctaHeading: 'Cómo solicitar',
+    steps: [
+      {
+        heading: 'Verifique su elegibilidad',
+        body: 'Responda algunas preguntas para saber qué programas puede calificar. Esto toma alrededor de 5 minutos y no inicia una solicitud.',
+      },
+      {
+        heading: 'Reúna sus documentos',
+        body: 'Es posible que necesite comprobante de identidad, ingresos y residencia. Nuestra lista le dirá exactamente qué traer.',
+      },
+      {
+        heading: 'Envíe su solicitud',
+        body: 'Solicite en línea en aproximadamente 20 minutos. Recibirá un número de confirmación de inmediato y una decisión en 30 días.',
+      },
+    ],
+  },
+}[locale];
+
+const headingId = locale === 'es' ? 'services-heading-es' : 'services-heading';
+
+const services = entriesForLocale(
+  await getCollection('services', ({ data }) => !data.draft),
+  locale,
+)
+  .sort((a, b) => a.data.order - b.data.order)
+  .slice(0, 3);
+
+const now = new Date();
+const activeAnnouncements = entriesForLocale(
+  await getCollection('announcements', ({ data }) => {
+    if (data.draft) return false;
+    if (locale === 'es' && !data.showInEs) return false;
+    if (data.endDate && data.endDate < now) return false;
+    return data.startDate <= now;
+  }),
+  locale,
+);
+---
+
+<BaseLayout
+  title={locale === 'es' ? t('site.name') : siteConfig.name}
+  description={siteConfig.description}
+  locale={locale}
+>
+  {activeAnnouncements.map((ann) => (
+    <SiteAlert
+      type={ann.data.severity === 'warning' ? 'emergency' : 'info'}
+      heading={ann.data.title}
+    >
+      {ann.data.linkText && ann.data.linkUrl && (
+        <a href={localizeUrl(ann.data.linkUrl, locale)} class="usa-link">{ann.data.linkText}</a>
+      )}
+    </SiteAlert>
+  ))}
+
+  <Hero
+    heading={t('home.heroHeading')}
+    headingSuffix={t('home.heroHeadingAlt')}
+    subheading={t('home.heroSubheading')}
+    ctaText={t('home.heroCta')}
+    ctaHref={`${prefix}/services/`}
+    label={copy.heroLabel}
+  />
+
+  <section class="usa-section" aria-labelledby={headingId}>
+    <div class="grid-container">
+      <h2 id={headingId} class="font-heading-xl">{t('home.servicesHeading')}</h2>
+      <p class="usa-intro">{t('home.servicesSubheading')}</p>
+
+      <ul class="usa-card-group">
+        {services.map((service) => (
+          <ServiceCard
+            title={service.data.title}
+            summary={service.data.summary}
+            href={`${prefix}/services/${idToSlug(service.id)}/`}
+            ctaText={t('home.learnMore')}
+            acceptingApplications={service.data.acceptingApplications}
+            locale={locale}
+            class="tablet:grid-col-4"
+          />
+        ))}
+      </ul>
+
+      <p class="margin-top-4">
+        <a href={withBase(`${prefix}/services/`)} class="usa-link">{copy.viewAll}</a>
+      </p>
+    </div>
+  </section>
+
+  <CallToAction
+    heading={copy.ctaHeading}
+    bg="base-lightest"
+    textColor="ink"
+    primaryCta={{ label: t('home.applyNow'), href: `${prefix}/services/` }}
+  >
+    <ProcessList>
+      {copy.steps.map((step) => (
+        <ProcessListItem heading={step.heading}>
+          <p>{step.body}</p>
+        </ProcessListItem>
+      ))}
+    </ProcessList>
+  </CallToAction>
+</BaseLayout>

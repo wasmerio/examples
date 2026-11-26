@@ -1,0 +1,91 @@
+---
+import { getCollection, render } from 'astro:content';
+import ServiceLayout from '../../../layouts/ServiceLayout.astro';
+import SummaryBox from '../../../components/uswds/SummaryBox.astro';
+import { entriesForLocale, idToSlug } from '../../../utils/content';
+import type { Locale } from '../../../i18n/utils';
+import { locales, localeParam, withBase } from '../../../i18n/utils';
+
+export async function getStaticPaths() {
+  const services = await getCollection('services', ({ data }) => !data.draft);
+  return locales.flatMap((locale) =>
+    // One route per slug per locale, rendering that locale's file when the
+    // service has been translated and the default locale's file when it has not.
+    entriesForLocale(services, locale).map((service) => ({
+      params: { lang: localeParam(locale), slug: idToSlug(service.id) },
+      props: { service, locale },
+    }))
+  );
+}
+
+const { service, locale } = Astro.props;
+const { Content } = await render(service);
+const slug = idToSlug(service.id);
+const prefix = locale === 'es' ? '/es' : '';
+const applyHref = service.data.applySlug ? withBase(`${prefix}/apply/${service.data.applySlug}/`) : undefined;
+
+const copy = {
+  en: {
+    eligibility: 'Eligibility at a glance',
+    keyFacts: 'Key facts',
+    related: 'Related programs',
+  },
+  es: {
+    eligibility: 'Elegibilidad en resumen',
+    keyFacts: 'Datos clave',
+    related: 'Programas relacionados',
+  },
+}[locale as Locale];
+---
+
+<ServiceLayout
+  title={service.data.title}
+  description={service.data.description}
+  locale={locale}
+  breadcrumbs={[{ label: service.data.title, href: `${prefix}/services/${slug}/` }]}
+  acceptingApplications={service.data.acceptingApplications}
+  applyHref={applyHref}
+>
+  <Content />
+
+  <Fragment slot="sidebar">
+    {service.data.eligibility.length > 0 && (
+      <SummaryBox heading={copy.eligibility} label={copy.eligibility}>
+        <dl>
+          {service.data.eligibility.map((item) => (
+            <>
+              <dt class="text-bold">{item.label}</dt>
+              <dd class="margin-left-0 margin-bottom-1">{item.value}</dd>
+            </>
+          ))}
+        </dl>
+      </SummaryBox>
+    )}
+
+    {service.data.keyFacts.length > 0 && (
+      <SummaryBox heading={copy.keyFacts} class="margin-top-3">
+        <dl>
+          {service.data.keyFacts.map((fact) => (
+            <>
+              <dt class="text-bold">{fact.label}</dt>
+              <dd class="margin-left-0 margin-bottom-1">{fact.value}</dd>
+            </>
+          ))}
+        </dl>
+      </SummaryBox>
+    )}
+
+    {service.data.related.length > 0 && (
+      <div class="margin-top-3">
+        <h2 class="font-heading-md">{copy.related}</h2>
+        <ul class="usa-list">
+          {service.data.related.map((relSlug) => (
+            <li>
+              <a href={withBase(`${prefix}/services/${relSlug}/`)} class="usa-link">{relSlug.toUpperCase()}</a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
+  </Fragment>
+</ServiceLayout>

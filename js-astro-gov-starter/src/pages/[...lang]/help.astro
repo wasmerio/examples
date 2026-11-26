@@ -1,0 +1,162 @@
+---
+import { getCollection, render } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Search from '../../components/uswds/Search.astro';
+import Accordion from '../../components/uswds/Accordion.astro';
+import AccordionItem from '../../components/uswds/AccordionItem.astro';
+import SummaryBox from '../../components/uswds/SummaryBox.astro';
+import SideNav from '../../components/uswds/SideNav.astro';
+import type { Locale } from '../../i18n/utils';
+import { localeStaticPaths, useTranslations, telHref, withBase } from '../../i18n/utils';
+import { entriesForLocale } from '../../utils/content';
+
+export function getStaticPaths() {
+  return localeStaticPaths();
+}
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const t = useTranslations(locale);
+const prefix = locale === 'es' ? '/es' : '';
+
+// Per-locale ids keep the two rendered pages' anchors distinct.
+const idSuffix = locale === 'es' ? '-es' : '';
+
+const copy = {
+  en: {
+    title: 'Help center',
+    description: 'Find answers to common questions about our programs and services.',
+    heading: 'Help center',
+    introBefore: "Find answers to common questions. If you don't find what you need,",
+    introLink: 'contact us',
+    introAfter: "and we'll help.",
+    searchLabel: 'Search help topics',
+    generalHeading: 'General questions',
+    snapHeading: 'SNAP questions',
+    moreHeading: 'More questions',
+    sideNavLabel: 'Help topics',
+    sideNavGeneral: 'General questions',
+    sideNavSnap: 'SNAP questions',
+    sideNavContact: 'Contact us',
+    stillNeedHelp: 'Still need help?',
+    callUs: 'Call us at',
+    sendMessage: 'Send a message',
+  },
+  es: {
+    title: 'Centro de ayuda',
+    description: 'Encuentre respuestas a preguntas frecuentes sobre nuestros programas y servicios.',
+    heading: 'Centro de ayuda',
+    introBefore: 'Encuentre respuestas a preguntas frecuentes. Si no encuentra lo que necesita,',
+    introLink: 'contáctenos',
+    introAfter: 'y le ayudaremos.',
+    searchLabel: 'Buscar temas de ayuda',
+    generalHeading: 'Preguntas generales',
+    snapHeading: 'Preguntas sobre SNAP',
+    moreHeading: 'Más preguntas',
+    sideNavLabel: 'Temas de ayuda',
+    sideNavGeneral: 'Preguntas generales',
+    sideNavSnap: 'Preguntas sobre SNAP',
+    sideNavContact: 'Contáctenos',
+    stillNeedHelp: '¿Aún necesita ayuda?',
+    callUs: 'Llámenos al',
+    sendMessage: 'Enviar un mensaje',
+  },
+}[locale];
+
+const faqs = entriesForLocale(
+  await getCollection('faqs', ({ data }) => !data.draft),
+  locale,
+).sort((a, b) => a.data.order - b.data.order);
+
+const generalFaqs = faqs.filter((f) => f.data.tags.includes('general'));
+const snapFaqs = faqs.filter((f) => f.data.tags.includes('snap') && !f.data.tags.includes('general'));
+const otherFaqs = faqs.filter((f) => !f.data.tags.includes('general') && !f.data.tags.includes('snap'));
+
+function faqHeading(faq: (typeof faqs)[number]): string {
+  return faq.data.question;
+}
+---
+
+<BaseLayout title={copy.title} description={copy.description} locale={locale}>
+  <div class="grid-container usa-section">
+    <h1>{copy.heading}</h1>
+    <p class="usa-intro">
+      {copy.introBefore}{' '}
+      <a href={withBase(`${prefix}/contact/`)} class="usa-link">{copy.introLink}</a> {copy.introAfter}
+    </p>
+
+    <Search label={copy.searchLabel} action={`${prefix}/search/`} class="margin-bottom-4" />
+
+    <div class="grid-row grid-gap">
+      <div class="grid-col-12 tablet:grid-col-8">
+        {generalFaqs.length > 0 && (
+          <section aria-labelledby={`general-faqs-heading${idSuffix}`}>
+            <h2 id={`general-faqs-heading${idSuffix}`}>{copy.generalHeading}</h2>
+            <Accordion multiselectable>
+              {generalFaqs.map(async (faq, i) => {
+                const { Content } = await render(faq);
+                return (
+                  <AccordionItem heading={faqHeading(faq)} expanded={i === 0} headingLevel="h3">
+                    <Content />
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
+          </section>
+        )}
+
+        {snapFaqs.length > 0 && (
+          <section aria-labelledby={`snap-faqs-heading${idSuffix}`} class="margin-top-5">
+            <h2 id={`snap-faqs-heading${idSuffix}`}>{copy.snapHeading}</h2>
+            <Accordion multiselectable>
+              {snapFaqs.map(async (faq) => {
+                const { Content } = await render(faq);
+                return (
+                  <AccordionItem heading={faqHeading(faq)} headingLevel="h3">
+                    <Content />
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
+          </section>
+        )}
+
+        {otherFaqs.length > 0 && (
+          <section class="margin-top-5" aria-labelledby={`all-faqs-heading${idSuffix}`}>
+            <h2 id={`all-faqs-heading${idSuffix}`}>{copy.moreHeading}</h2>
+            <Accordion multiselectable>
+              {otherFaqs.map(async (faq) => {
+                const { Content } = await render(faq);
+                return (
+                  <AccordionItem heading={faqHeading(faq)} headingLevel="h3">
+                    <Content />
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
+          </section>
+        )}
+      </div>
+
+      <div class="grid-col-12 tablet:grid-col-4">
+        <SideNav
+          label={copy.sideNavLabel}
+          items={[
+            { label: copy.sideNavGeneral, href: `#general-faqs-heading${idSuffix}` },
+            { label: copy.sideNavSnap, href: `#snap-faqs-heading${idSuffix}` },
+            { label: copy.sideNavContact, href: `${prefix}/contact/` },
+          ]}
+        />
+
+        <SummaryBox heading={copy.stillNeedHelp} class="margin-top-4">
+          <p>{copy.callUs} <a href={telHref(t('footer.phone'))} class="usa-link">{t('footer.phone')}</a></p>
+          <p class="font-sans-sm text-base-dark">{t('footer.hours')}</p>
+          <a href={withBase(`${prefix}/contact/`)} class="usa-button usa-button--outline">{copy.sendMessage}</a>
+        </SummaryBox>
+      </div>
+    </div>
+  </div>
+</BaseLayout>

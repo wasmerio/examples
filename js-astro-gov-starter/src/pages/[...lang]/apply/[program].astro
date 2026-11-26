@@ -1,0 +1,171 @@
+---
+import { getCollection } from 'astro:content';
+import ApplyLayout from '../../../layouts/ApplyLayout.astro';
+import Alert from '../../../components/uswds/Alert.astro';
+import { entriesForLocale, idToSlug } from '../../../utils/content';
+import type { Locale } from '../../../i18n/utils';
+import { locales, localeParam, withBase } from '../../../i18n/utils';
+
+export async function getStaticPaths() {
+  const services = await getCollection('services', ({ data }) => !data.draft && !!data.applySlug);
+  return locales.flatMap((locale) =>
+    entriesForLocale(services, locale).map((service) => ({
+      params: { lang: localeParam(locale), program: service.data.applySlug },
+      props: { service, locale },
+    }))
+  );
+}
+
+const { service, locale } = Astro.props;
+const slug = idToSlug(service.id);
+const prefix = locale === 'es' ? '/es' : '';
+
+// Per-locale ids keep the two rendered pages' form controls distinct.
+const idSuffix = locale === 'es' ? '-es' : '';
+
+const copy = {
+  en: {
+    title: `Apply for ${service.data.title}`,
+    steps: [
+      { label: 'Eligibility check' },
+      { label: 'Personal information' },
+      { label: 'Household & income' },
+      { label: 'Documents' },
+      { label: 'Review & submit' },
+    ],
+    noscriptHeading: 'JavaScript is required for the online application',
+    noscriptBody: 'The online application requires JavaScript to save your progress across steps. You can apply another way:',
+    noscriptPhone: 'Phone:',
+    noscriptPhoneNote: ' (Mon–Fri, 8 a.m.–8 p.m.)',
+    noscriptInPerson: 'In person:',
+    noscriptInPersonLink: 'Find an office near you',
+    noscriptMail: 'By mail:',
+    noscriptMailLink: 'Download a paper application',
+    stepHeading: 'Step 1: Check your eligibility',
+    stepIntro: `Answer a few questions to see if you may qualify for ${service.data.title}. This does not start your application.`,
+    requirementsLead: 'General requirements:',
+    residencyLegend: 'Do you live in this state?',
+    incomeLegend: 'Is your household income below 130% of the federal poverty level?',
+    incomeHintBefore: 'For a family of 4, this is roughly $3,900/month.',
+    incomeHintLink: 'See the full income chart',
+    yes: 'Yes',
+    no: 'No',
+    unsure: "I'm not sure",
+    submit: 'Check eligibility and continue',
+    cancel: 'Cancel',
+  },
+  es: {
+    title: `Solicitar: ${service.data.title}`,
+    steps: [
+      { label: 'Verificar elegibilidad' },
+      { label: 'Información personal' },
+      { label: 'Hogar e ingresos' },
+      { label: 'Documentos' },
+      { label: 'Revisar y enviar' },
+    ],
+    noscriptHeading: 'Se requiere JavaScript para la solicitud en línea',
+    noscriptBody: 'La solicitud en línea requiere JavaScript para guardar su progreso. Puede solicitar de otra manera:',
+    noscriptPhone: 'Teléfono:',
+    noscriptPhoneNote: '',
+    noscriptInPerson: 'En persona:',
+    noscriptInPersonLink: 'Encuentre una oficina cerca de usted',
+    noscriptMail: 'Por correo:',
+    noscriptMailLink: 'Descargue una solicitud en papel',
+    stepHeading: 'Paso 1: Verificar su elegibilidad',
+    stepIntro: `Responda algunas preguntas para ver si podría calificar para ${service.data.title}.`,
+    requirementsLead: 'Requisitos generales:',
+    residencyLegend: '¿Vive usted en este estado?',
+    incomeLegend: '¿El ingreso de su hogar es inferior al 130% del nivel federal de pobreza?',
+    incomeHintBefore: 'Para una familia de 4, esto es aproximadamente $3,900/mes.',
+    incomeHintLink: 'Vea la tabla completa de ingresos',
+    yes: 'Sí',
+    no: 'No',
+    unsure: 'No estoy seguro/a',
+    submit: 'Verificar elegibilidad y continuar',
+    cancel: 'Cancelar',
+  },
+}[locale as Locale];
+---
+
+<ApplyLayout
+  title={copy.title}
+  programName={service.data.title}
+  locale={locale}
+  steps={copy.steps}
+  currentStep={1}
+>
+  <!--
+    M2 SCAFFOLD: Structural skeleton for the 5-step apply flow.
+    In M3, each step becomes a client-side island with preserved state.
+    With JS disabled the <noscript> message below is shown (acceptance criteria §6).
+  -->
+
+  <noscript>
+    <Alert type="warning" heading={copy.noscriptHeading} headingLevel="h2">
+      <p>{copy.noscriptBody}</p>
+      <ul>
+        <li><strong>{copy.noscriptPhone}</strong> <a href="tel:18005550100" class="usa-link">1&#8209;800&#8209;555&#8209;0100</a>{copy.noscriptPhoneNote}</li>
+        <li><strong>{copy.noscriptInPerson}</strong> <a href={withBase(`${prefix}/contact/`)} class="usa-link">{copy.noscriptInPersonLink}</a></li>
+        <li><strong>{copy.noscriptMail}</strong> <a href={withBase(`${prefix}/help/`)} class="usa-link">{copy.noscriptMailLink}</a></li>
+      </ul>
+    </Alert>
+  </noscript>
+
+  <div id={`apply-step-1${idSuffix}`} data-apply-program={service.data.applySlug}>
+    <h2>{copy.stepHeading}</h2>
+    <p class="usa-intro">{copy.stepIntro}</p>
+
+    {service.data.eligibility.length > 0 && (
+      <Alert type="info" slim class="margin-bottom-3">
+        <strong>{copy.requirementsLead}</strong>{' '}
+        {service.data.eligibility.map((e) => `${e.label}: ${e.value}`).join(' · ')}
+      </Alert>
+    )}
+
+    <form class="usa-form usa-form--large" method="post" action={withBase(`${prefix}/apply/check-eligibility`)}>
+      <input type="hidden" name="program" value={service.data.applySlug} />
+
+      <fieldset class="usa-fieldset">
+        <legend class="usa-legend usa-legend--large">{copy.residencyLegend}</legend>
+        <div class="usa-radio">
+          <input class="usa-radio__input" id={`residency-yes${idSuffix}`} type="radio" name="residency" value="yes" />
+          <label class="usa-radio__label" for={`residency-yes${idSuffix}`}>{copy.yes}</label>
+        </div>
+        <div class="usa-radio">
+          <input class="usa-radio__input" id={`residency-no${idSuffix}`} type="radio" name="residency" value="no" />
+          <label class="usa-radio__label" for={`residency-no${idSuffix}`}>{copy.no}</label>
+        </div>
+      </fieldset>
+
+      <fieldset class="usa-fieldset">
+        <legend class="usa-legend usa-legend--large">{copy.incomeLegend}</legend>
+        <p class="usa-hint">
+          {copy.incomeHintBefore}{' '}
+          <a href={withBase(`${prefix}/help/`)} class="usa-link">{copy.incomeHintLink}</a>.
+        </p>
+        <div class="usa-radio">
+          <input class="usa-radio__input" id={`income-yes${idSuffix}`} type="radio" name="income" value="yes" />
+          <label class="usa-radio__label" for={`income-yes${idSuffix}`}>{copy.yes}</label>
+        </div>
+        <div class="usa-radio">
+          <input class="usa-radio__input" id={`income-no${idSuffix}`} type="radio" name="income" value="no" />
+          <label class="usa-radio__label" for={`income-no${idSuffix}`}>{copy.no}</label>
+        </div>
+        <div class="usa-radio">
+          <input class="usa-radio__input" id={`income-unsure${idSuffix}`} type="radio" name="income" value="unsure" />
+          <label class="usa-radio__label" for={`income-unsure${idSuffix}`}>{copy.unsure}</label>
+        </div>
+      </fieldset>
+
+      <div class="margin-top-4">
+        <!-- TODO (M3): Replace submit with client-side navigation to step 2 -->
+        <button type="submit" class="usa-button usa-button--big">
+          {copy.submit}
+        </button>
+        <a href={withBase(`${prefix}/services/${slug}/`)} class="usa-button usa-button--unstyled margin-left-3">
+          {copy.cancel}
+        </a>
+      </div>
+    </form>
+  </div>
+</ApplyLayout>

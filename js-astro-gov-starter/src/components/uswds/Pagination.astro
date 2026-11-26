@@ -1,0 +1,133 @@
+---
+/**
+ * Pagination — usa-pagination
+ * https://designsystem.digital.gov/components/pagination/
+ *
+ * Static pagination for multi-page lists (services, search results).
+ * Pass the base URL pattern and total/current page numbers.
+ * For client-side pagination, use this as a server-rendered fallback
+ * with an Astro island wrapping it.
+ */
+
+import type { Locale } from '../../i18n/utils';
+import { useTranslations, withBase } from '../../i18n/utils';
+
+interface Props {
+  /** Total number of pages */
+  totalPages: number;
+  /** Current page (1-based) */
+  currentPage: number;
+  /** Function or pattern to build page URLs. "%d" is replaced with page number. */
+  urlPattern: string;
+  /** How many page number buttons to show (excluding prev/next) */
+  maxVisible?: number;
+  locale?: Locale;
+  label?: string;
+}
+
+const {
+  totalPages,
+  currentPage,
+  urlPattern,
+  maxVisible = 7,
+  locale = 'en',
+  label,
+} = Astro.props;
+
+const t = useTranslations(locale);
+const navLabel = label ?? t('pagination.label');
+
+const base = import.meta.env.BASE_URL;
+const sprite = `${base}uswds/img/sprite.svg`;
+
+function pageUrl(page: number): string {
+  // Callers pass an unbased pattern (e.g. "/news/page/%d/"), matching how
+  // Breadcrumb, Hero, Search, ServiceCard and SideNav take their href props.
+  return withBase(urlPattern.replace('%d', String(page)));
+}
+
+// Build the visible page range centered on currentPage
+function visiblePages(): (number | null)[] {
+  if (totalPages <= maxVisible) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  const half = Math.floor(maxVisible / 2);
+  let start = Math.max(1, currentPage - half);
+  let end = Math.min(totalPages, start + maxVisible - 1);
+  if (end - start < maxVisible - 1) start = Math.max(1, end - maxVisible + 1);
+
+  const pages: (number | null)[] = [];
+  if (start > 1) { pages.push(1); if (start > 2) pages.push(null); }
+  for (let i = start; i <= end; i++) pages.push(i);
+  if (end < totalPages) { if (end < totalPages - 1) pages.push(null); pages.push(totalPages); }
+  return pages;
+}
+
+const pages = visiblePages();
+---
+
+<nav aria-label={navLabel} class="usa-pagination">
+  <ul class="usa-pagination__list">
+    <!-- Previous -->
+    {currentPage > 1 && (
+      <li class="usa-pagination__item usa-pagination__arrow">
+        <a
+          href={pageUrl(currentPage - 1)}
+          class="usa-pagination__link usa-pagination__previous-page"
+          aria-label={t('pagination.previousPage')}
+        >
+          <svg class="usa-icon" aria-hidden="true" role="img">
+            <use href={`${sprite}#navigate_before`}></use>
+          </svg>
+          <span class="usa-pagination__link-text">{t('pagination.previous')}</span>
+        </a>
+      </li>
+    )}
+
+    <!-- Page numbers -->
+    {pages.map((page) =>
+      page === null ? (
+        <li class="usa-pagination__item usa-pagination__overflow" role="presentation">
+          <span>…</span>
+        </li>
+      ) : (
+        <li class="usa-pagination__item usa-pagination__page-no">
+          {page === currentPage ? (
+            <a
+              href={pageUrl(page)}
+              class="usa-pagination__button usa-current"
+              aria-label={`${t('pagination.page')} ${page}`}
+              aria-current="page"
+            >
+              {page}
+            </a>
+          ) : (
+            <a
+              href={pageUrl(page)}
+              class="usa-pagination__button"
+              aria-label={`${t('pagination.page')} ${page}`}
+            >
+              {page}
+            </a>
+          )}
+        </li>
+      )
+    )}
+
+    <!-- Next -->
+    {currentPage < totalPages && (
+      <li class="usa-pagination__item usa-pagination__arrow">
+        <a
+          href={pageUrl(currentPage + 1)}
+          class="usa-pagination__link usa-pagination__next-page"
+          aria-label={t('pagination.nextPage')}
+        >
+          <span class="usa-pagination__link-text">{t('pagination.next')}</span>
+          <svg class="usa-icon" aria-hidden="true" role="img">
+            <use href={`${sprite}#navigate_next`}></use>
+          </svg>
+        </a>
+      </li>
+    )}
+  </ul>
+</nav>

@@ -1,0 +1,120 @@
+---
+import USABanner from '../components/uswds/USABanner.astro';
+import USAIdentifier from '../components/uswds/USAIdentifier.astro';
+import Header from '../components/uswds/Header.astro';
+import Footer from '../components/uswds/Footer.astro';
+import type { Locale } from '../i18n/utils';
+import { useTranslations, locales, localeMeta, localizePath, stripLocaleFromPath } from '../i18n/utils';
+import { siteConfig } from '../config/site';
+
+// Import global styles — USWDS first, then Tailwind utilities
+import '../styles/uswds-theme.scss';
+import '../styles/globals.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  locale?: Locale;
+  /** Canonical URL for this page */
+  canonicalUrl?: string;
+  /** Open Graph image */
+  ogImage?: string;
+  /** Set true on dev-only pages to block search engine indexing */
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description = siteConfig.description,
+  locale = 'en',
+  canonicalUrl,
+  ogImage,
+  noindex = false,
+} = Astro.props;
+
+const base = import.meta.env.BASE_URL;
+
+const t = useTranslations(locale);
+const lang = locale;
+const pageTitle = title === siteConfig.name
+  ? title
+  : `${title} | ${siteConfig.name}`;
+// Strip the base prefix so Header nav/toggle logic works on base-relative paths
+const basePath = base.slice(0, -1); // '/astro-gov-starter/' -> '/astro-gov-starter'
+const rawPath = Astro.url.pathname;
+const currentPath = basePath && rawPath.startsWith(basePath)
+  ? rawPath.slice(basePath.length) || '/'
+  : rawPath;
+
+// Absolute URLs for canonical/hreflang/og — include the base path so
+// subpath deployments (e.g. GitHub Pages project sites) emit correct URLs
+const siteOrigin = `https://${siteConfig.domain}`;
+const barePath = stripLocaleFromPath(currentPath);
+const alternateLocales = locales.map((code) => ({
+  code,
+  ogLocale: localeMeta[code].ogLocale,
+  href: `${siteOrigin}${basePath}${localizePath(barePath, code)}`,
+}));
+const pageUrl = `${siteOrigin}${basePath}${currentPath}`;
+const resolvedCanonical = canonicalUrl ?? pageUrl;
+const ogLocale = localeMeta[locale].ogLocale;
+const ogLocaleAlternates = alternateLocales
+  .filter((alt) => alt.code !== locale)
+  .map((alt) => alt.ogLocale);
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+
+    {!noindex && <link rel="canonical" href={resolvedCanonical} />}
+
+    <!-- Open Graph -->
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:locale" content={ogLocale} />
+    {ogLocaleAlternates.map((alt) => <meta property="og:locale:alternate" content={alt} />)}
+    {ogImage && <meta property="og:image" content={ogImage} />}
+
+    <!-- Alternate languages -->
+    {alternateLocales.map((alt) => <link rel="alternate" hreflang={alt.code} href={alt.href} />)}
+
+    <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+  </head>
+
+  <body>
+    <!-- Skip navigation for keyboard and screen reader users -->
+    <a class="usa-skipnav" href="#main-content">
+      {t('nav.skipToMain')}
+    </a>
+
+    <!-- Required: Official US government website identification banner -->
+    <USABanner locale={locale} />
+
+    <!-- Site header and navigation -->
+    <Header locale={locale} currentPath={currentPath} />
+
+    <!-- Main page content -->
+    <main id="main-content" tabindex="-1">
+      <slot />
+    </main>
+
+    <!-- Site footer with navigation links -->
+    <Footer locale={locale} />
+
+    <!-- Required: Agency identifier footer -->
+    <USAIdentifier locale={locale} />
+
+    <!-- USWDS JavaScript for accordion, banner, and nav behaviors.
+         Served from public/uswds/js/ — copied by scripts/setup-uswds.mjs. -->
+    <script src={`${base}uswds/js/uswds.min.js`} is:inline defer></script>
+  </body>
+</html>

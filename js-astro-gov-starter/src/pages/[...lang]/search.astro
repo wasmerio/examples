@@ -1,0 +1,116 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import type { Locale } from '../../i18n/utils';
+import { localeStaticPaths } from '../../i18n/utils';
+
+export function getStaticPaths() {
+  return localeStaticPaths();
+}
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const base = import.meta.env.BASE_URL;
+
+const copy = {
+  en: {
+    title: 'Search',
+    description: 'Search this site for programs, services, and answers.',
+    heading: 'Search',
+    label: 'Search this site',
+    placeholder: 'Search programs, services, and help topics',
+    noscript: 'Search requires JavaScript. If you cannot enable JavaScript, visit the help center or contact us for assistance.',
+    devNote: 'The search index is generated at build time by Pagefind. Run a production build (pnpm build) and preview it (pnpm preview) to test search — it is not available in the dev server.',
+  },
+  es: {
+    title: 'Buscar',
+    description: 'Busque programas, servicios y respuestas en este sitio.',
+    heading: 'Buscar',
+    label: 'Buscar en este sitio',
+    placeholder: 'Busque programas, servicios y temas de ayuda',
+    noscript: 'La búsqueda requiere JavaScript. Si no puede habilitar JavaScript, visite el centro de ayuda o contáctenos para recibir asistencia.',
+    devNote: 'El índice de búsqueda se genera durante la compilación con Pagefind. Ejecute una compilación de producción (pnpm build) y previsualícela (pnpm preview) para probar la búsqueda — no está disponible en el servidor de desarrollo.',
+  },
+}[locale];
+---
+
+<BaseLayout title={copy.title} description={copy.description} locale={locale}>
+  <div class="grid-container usa-section">
+    <div class="grid-row">
+      <div class="grid-col-12 tablet:grid-col-10">
+        <h1>{copy.heading}</h1>
+
+        <noscript>
+          <p class="usa-intro">{copy.noscript}</p>
+        </noscript>
+
+        {import.meta.env.DEV && (
+          <div class="usa-alert usa-alert--info usa-alert--slim" role="status">
+            <div class="usa-alert__body">
+              <p class="usa-alert__text">{copy.devNote}</p>
+            </div>
+          </div>
+        )}
+
+        <label class="usa-label" for="pagefind-search-input">{copy.label}</label>
+        <div
+          id="pagefind-search"
+          class="margin-top-1"
+          data-placeholder={copy.placeholder}
+          data-base={base}
+        ></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pagefind assets are generated into dist/pagefind/ by `pagefind --site dist`
+       after `astro build` (see the build script in package.json). They are
+       same-origin, so the existing CSP script/style 'self' directives apply;
+       the search index runs as WebAssembly, which needs 'wasm-unsafe-eval'
+       in script-src (configured in astro.config.mjs). -->
+  <link rel="stylesheet" href={`${base}pagefind/pagefind-ui.css`} />
+  <script src={`${base}pagefind/pagefind-ui.js`} is:inline defer></script>
+
+  <script>
+    // Initialize Pagefind UI and run a search for ?q= (set by the Search
+    // component on the help pages). Pagefind serves results matching this
+    // page's <html lang>, so /search/ returns English and /es/search/ Spanish.
+    function initSearch() {
+      const el = document.getElementById('pagefind-search');
+      // @ts-expect-error PagefindUI is a global from pagefind-ui.js
+      if (!el || typeof PagefindUI === 'undefined') return;
+      // @ts-expect-error PagefindUI is a global from pagefind-ui.js
+      const ui = new PagefindUI({
+        element: '#pagefind-search',
+        baseUrl: el.dataset.base,
+        showSubResults: true,
+        translations: { placeholder: el.dataset.placeholder },
+      });
+
+      // Pagefind's input is labeled only via a title attribute, which fails
+      // axe's label-title-only rule. Bind it to our visible <label> instead.
+      function labelInput(): boolean {
+        const input = el!.querySelector('input.pagefind-ui__search-input');
+        if (!input) return false;
+        input.id = 'pagefind-search-input';
+        input.removeAttribute('title');
+        return true;
+      }
+      if (!labelInput()) {
+        new MutationObserver((_records, observer) => {
+          if (labelInput()) observer.disconnect();
+        }).observe(el, { childList: true, subtree: true });
+      }
+
+      const q = new URLSearchParams(window.location.search).get('q');
+      if (q) ui.triggerSearch(q);
+    }
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', initSearch);
+    } else {
+      initSearch();
+    }
+  </script>
+</BaseLayout>

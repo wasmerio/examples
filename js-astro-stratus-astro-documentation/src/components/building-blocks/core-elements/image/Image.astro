@@ -1,0 +1,282 @@
+---
+import { spaceBeforeAttr } from "@component-utils/spaceBefore.mjs";
+import { Picture } from "astro:assets";
+import { prepareImageData } from "../../../utils/image";
+import { isNonEmptyString } from "@component-utils/isNonEmptyString";
+
+const {
+  source,
+  alternateSource = null,
+  alt,
+  decorative = false,
+  sizes = "(max-width: 1280px) 100vw, 1280px",
+  widths = [640, 1280, 2560],
+  rounded = false,
+  priority = false,
+  aspectRatio = "none",
+  width,
+  height,
+  positionVertical = "center",
+  positionHorizontal = "center",
+  background = false,
+  useDefaultEditableBinding = false,
+  spaceBefore = "default",
+  class: className,
+  "data-prop-src": customDataPropSrc,
+  "data-prop-alt": customDataPropAlt,
+  imageElementAttributes = {},
+  _component,
+  ...htmlAttributes
+} = Astro.props;
+
+const hasValidSrc = isNonEmptyString(source);
+
+if (!_component && !hasValidSrc) {
+  return;
+}
+
+const normalizedAlt = decorative ? "" : alt || "";
+const isEditable =
+  useDefaultEditableBinding || customDataPropSrc != null || customDataPropAlt != null;
+const dataAttributes = isEditable
+  ? {
+      "data-editable": "image",
+      "data-prop-src": customDataPropSrc || "source",
+      "data-prop-alt": customDataPropAlt || "alt",
+    }
+  : {};
+
+// "none" means no fixed ratio — treat it as unset, as utils/image.ts does,
+// or it emits inert `ratio ratio-none` classes.
+const effectiveAspectRatio = aspectRatio && aspectRatio !== "none" ? aspectRatio : null;
+
+const positionClass = `position-${positionVertical}-${positionHorizontal}`;
+const preparedImage = prepareImageData({
+  source,
+  width,
+  height,
+  widths,
+  aspectRatio,
+  positionVertical,
+  positionHorizontal,
+});
+
+const effectiveSizes = priority ? sizes : `auto, ${sizes}`;
+
+const hasAlternate = isNonEmptyString(alternateSource);
+const preparedAlternate = hasAlternate
+  ? prepareImageData({
+      source: alternateSource,
+      width,
+      height,
+      widths,
+      aspectRatio,
+      positionVertical,
+      positionHorizontal,
+    })
+  : null;
+
+const imageEntries = [
+  {
+    prepared: preparedImage,
+    attrs: { ...dataAttributes, ...imageElementAttributes },
+    wrapperClass: hasAlternate ? "image-primary" : null,
+  },
+];
+
+if (hasAlternate) {
+  imageEntries.push({
+    prepared: preparedAlternate!,
+    attrs: { ...imageElementAttributes },
+    wrapperClass: "image-alternate",
+  });
+}
+---
+
+<div
+  class:list={["image", "stackable", className]}
+  {...htmlAttributes}
+>
+  <div
+    data-space-before={spaceBeforeAttr(spaceBefore)}
+    class:list={[
+      "image-inner",
+      effectiveAspectRatio && "ratio",
+      effectiveAspectRatio && `ratio-${effectiveAspectRatio}`,
+      positionClass,
+      rounded && "rounded",
+      background && "background",
+    ]}
+  >
+    {
+      imageEntries.map(({ prepared, attrs, wrapperClass }) => {
+        const img = prepared.shouldRenderOptimizedPicture ? (
+          <Picture
+            src={prepared.imageSrc}
+            alt={normalizedAlt}
+            widths={prepared.filteredWidths}
+            sizes={effectiveSizes}
+            formats={["webp"]}
+            width={prepared.finalWidth}
+            height={prepared.finalHeight}
+            fit={prepared.useFit}
+            position={prepared.usePosition}
+            loading={priority ? "eager" : "lazy"}
+            decoding={priority ? "sync" : "async"}
+            fetchpriority={priority ? "high" : undefined}
+            {...attrs}
+          />
+        ) : (
+          <picture>
+            <img
+              src={prepared.imageSrc}
+              alt={normalizedAlt}
+              loading={priority ? "eager" : "lazy"}
+              decoding={priority ? "sync" : "async"}
+              fetchpriority={priority ? "high" : undefined}
+              width={prepared.imageWidth}
+              height={prepared.imageHeight}
+              {...attrs}
+            />
+          </picture>
+        );
+
+        return wrapperClass ? <div class:list={wrapperClass}>{img}</div> : img;
+      })
+    }
+  </div>
+</div>
+
+<style is:global>
+  @layer components {
+    .image {
+      display: block;
+      overflow: hidden;
+
+      /* `stackable` stays on the root: `_flow.css` selects that class directly,
+         so `:has()` can't hoist it. */
+      &:has(> .image-inner.background) {
+        --space-before: var(--space-before-none);
+
+        inset: 0;
+        position: absolute;
+      }
+
+      > .image-inner {
+        overflow: hidden;
+        width: 100%;
+
+        &.ratio-square {
+          aspect-ratio: var(--ratio-square);
+        }
+
+        &.ratio-landscape {
+          aspect-ratio: var(--ratio-landscape);
+        }
+
+        &.ratio-portrait {
+          aspect-ratio: var(--ratio-portrait);
+        }
+
+        &.ratio-widescreen {
+          aspect-ratio: var(--ratio-widescreen);
+        }
+
+        &.ratio-horizontal-strip {
+          aspect-ratio: var(--ratio-horizontal-strip);
+        }
+
+        &.ratio {
+          picture {
+            height: 100%;
+          }
+
+          img {
+            height: 100%;
+            object-fit: cover;
+            object-position: center center;
+          }
+        }
+
+        &.background {
+          height: 100%;
+          width: 100%;
+
+          > picture {
+            height: 100%;
+          }
+
+          > picture > img {
+            height: 100%;
+            object-fit: cover;
+            width: 100%;
+          }
+        }
+
+        picture {
+          display: block;
+          margin-block: auto;
+          width: 100%;
+        }
+
+        img {
+          display: block;
+          height: auto;
+          width: 100%;
+        }
+
+        &.position-center-center img {
+          object-position: center center;
+        }
+
+        &.position-top-center img {
+          object-position: center top;
+        }
+
+        &.position-bottom-center img {
+          object-position: center bottom;
+        }
+
+        &.position-center-left img {
+          object-position: left center;
+        }
+
+        &.position-center-right img {
+          object-position: right center;
+        }
+
+        &.position-top-left img {
+          object-position: left top;
+        }
+
+        &.position-top-right img {
+          object-position: right top;
+        }
+
+        &.position-bottom-left img {
+          object-position: left bottom;
+        }
+
+        &.position-bottom-right img {
+          object-position: right bottom;
+        }
+
+        &.rounded {
+          border-radius: var(--radius-lg);
+        }
+      }
+
+      .image-alternate {
+        display: none;
+      }
+    }
+
+    html[data-theme-toggled] .image .image-primary {
+      display: none;
+    }
+
+    html[data-theme-toggled] .image .image-alternate {
+      display: block;
+    }
+  }
+</style>

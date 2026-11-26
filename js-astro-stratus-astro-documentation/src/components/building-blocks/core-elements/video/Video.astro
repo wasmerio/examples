@@ -1,0 +1,180 @@
+---
+import { spaceBeforeAttr } from "@component-utils/spaceBefore.mjs";
+import { resolveVideoPosterSource } from "@component-utils/image";
+import type { VideoSource } from "@component-utils/discoverVideoSources";
+
+const {
+  type,
+  videoId,
+  title,
+  source,
+  thumbnail,
+  background = false,
+  autoplay = background,
+  loop = background,
+  // The media elements are the roots, so data-space-before rides them: live
+  // edits to spaceBefore need a reload (see _flow.css).
+  spaceBefore = "default",
+  class: className,
+  useDefaultEditableBinding: _useDefaultEditableBinding = false,
+  _component,
+  ...htmlAttributes
+} = Astro.props;
+
+const trimmedThumbnail =
+  typeof thumbnail === "string" && thumbnail.trim() !== "" ? thumbnail.trim() : "";
+
+const posterUrl = trimmedThumbnail ? await resolveVideoPosterSource(trimmedThumbnail) : undefined;
+
+let localVideoSources: VideoSource[] = [];
+
+if (type === "local-source" && source) {
+  const { discoverVideoSources } = await import("@component-utils/discoverVideoSources");
+
+  localVideoSources = await discoverVideoSources(source);
+}
+
+// YouTube needs loop=1 paired with playlist=<videoId>. Autoplay skips the
+// lite-youtube facade: it pins autoplay=0 first, and YouTube honors the first.
+const youtubeParams =
+  [
+    ...(autoplay ? ["autoplay=1", "mute=1", "playsinline=1"] : []),
+    ...(loop ? ["loop=1", `playlist=${videoId}`] : []),
+  ].join("&") || undefined;
+---
+
+{
+  type === "vimeo" ? (
+    <lite-vimeo
+      class:list={["video", "stackable", className]}
+      data-space-before={spaceBeforeAttr(spaceBefore)}
+      videotitle={`${title}`}
+      videoid={`${videoId}`}
+      autoload={autoplay}
+      autoplay={autoplay}
+      loop={loop}
+      {...htmlAttributes}
+    >
+      <a
+        class="lite-vimeo-fallback"
+        href={`https://vimeo.com/${videoId}`}
+      >
+        Watch on Vimeo: "{title}"
+      </a>
+    </lite-vimeo>
+  ) : type === "youtube" && autoplay ? (
+    <iframe
+      class:list={["video", "stackable", "video-embed", className]}
+      data-space-before={spaceBeforeAttr(spaceBefore)}
+      src={`https://www.youtube.com/embed/${videoId}?${youtubeParams}`}
+      title={`${title}`}
+      loading="lazy"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+      allowfullscreen
+      {...htmlAttributes}
+    />
+  ) : type === "youtube" ? (
+    <lite-youtube
+      class:list={["video", "stackable", className]}
+      data-space-before={spaceBeforeAttr(spaceBefore)}
+      videotitle={`${title}`}
+      videoid={`${videoId}`}
+      params={youtubeParams}
+      {...htmlAttributes}
+    >
+      <a
+        class="lite-youtube-fallback"
+        href={`https://www.youtube.com/watch?v=${videoId}`}
+      >
+        Watch on YouTube: "{title}"
+      </a>
+    </lite-youtube>
+  ) : background ? (
+    <div
+      class:list={["video", "background", className]}
+      aria-hidden="true"
+      {...htmlAttributes}
+    >
+      <video
+        preload="metadata"
+        autoplay={autoplay}
+        muted
+        loop={loop}
+        playsinline
+        poster={posterUrl}
+      >
+        {localVideoSources.map(({ src, type: sourceType }) => (
+          <source
+            src={src}
+            type={sourceType}
+          />
+        ))}
+      </video>
+    </div>
+  ) : (
+    <video
+      preload={autoplay ? "auto" : "none"}
+      controls
+      autoplay={autoplay}
+      muted={autoplay}
+      playsinline={autoplay}
+      loop={loop}
+      poster={posterUrl}
+      class:list={["video", "stackable", className]}
+      data-space-before={spaceBeforeAttr(spaceBefore)}
+      {...htmlAttributes}
+    >
+      {localVideoSources.map(({ src, type: sourceType }) => (
+        <source
+          src={src}
+          type={sourceType}
+        />
+      ))}
+      Your browser does not support the HTML5 video element.
+    </video>
+  )
+}
+
+<script>
+  import { onPageLoad } from "@component-utils/onPageLoad";
+  import { setupAllVideos } from "./setup";
+
+  onPageLoad(setupAllVideos);
+</script>
+
+<style is:global>
+  @layer components {
+    .video {
+      display: block;
+
+      &.video-embed {
+        aspect-ratio: 16 / 9;
+        border: 0;
+        height: auto;
+        width: 100%;
+      }
+
+      &.background {
+        inset: 0;
+        margin-top: 0;
+        overflow: hidden;
+        pointer-events: none;
+        position: absolute;
+
+        > video {
+          height: 100%;
+          object-fit: cover;
+          object-position: var(--background-position, center center);
+          width: 100%;
+        }
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .video.background {
+        display: none;
+      }
+    }
+  }
+</style>

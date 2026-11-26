@@ -1,0 +1,125 @@
+---
+import { spaceBeforeAttr } from "@component-utils/spaceBefore.mjs";
+import RenderBlock from "@components/utils/renderBlock.astro";
+
+type FormBlock = { _component?: string };
+
+const {
+  action,
+  method = "post",
+  honeypotName,
+  successMessage,
+  formBlocks = [],
+  spaceBefore = "default",
+  class: className,
+  _component,
+  useDefaultEditableBinding = false,
+  "data-children-prop": childrenDataProp,
+  ...htmlAttributes
+} = Astro.props;
+
+const effectiveChildrenProp = childrenDataProp ?? (useDefaultEditableBinding ? "formBlocks" : null);
+const arrayDataAttributes = effectiveChildrenProp
+  ? { "data-editable": "array", "data-prop": effectiveChildrenProp }
+  : {};
+
+const hasFormBlocks = formBlocks?.length > 0;
+const hasSlotContent = Astro.slots.has("default");
+
+if (!_component && !hasFormBlocks && !hasSlotContent) return;
+
+// Multipart only when a file field needs it; a slot-built form can't be
+// inspected, so it needs `enctype` set on the component.
+const hasFileUpload = (formBlocks as FormBlock[])?.some((block) =>
+  String(block?._component ?? "").endsWith("/file-upload")
+);
+---
+
+<form
+  class:list={["form", "stackable", className]}
+  action={action}
+  method={method}
+  enctype={hasFileUpload ? "multipart/form-data" : undefined}
+  {...htmlAttributes}
+>
+  {
+    successMessage && (
+      <p
+        class="form-success"
+        role="status"
+        tabindex="-1"
+        hidden
+      >
+        {successMessage}
+      </p>
+    )
+  }
+  <div
+    class="form-fields"
+    data-space-before={spaceBeforeAttr(spaceBefore)}
+    {...arrayDataAttributes}
+  >
+    <slot>
+      {
+        formBlocks && (
+          <RenderBlock
+            contentSections={formBlocks}
+            useDefaultEditableBinding={!!effectiveChildrenProp}
+          />
+        )
+      }
+    </slot>
+  </div>
+  {
+    honeypotName && (
+      <div class="form-honeypot">
+        <label for={`${honeypotName}-field`}>Leave this field empty</label>
+        <input
+          type="text"
+          id={`${honeypotName}-field`}
+          name={honeypotName}
+          tabindex="-1"
+          autocomplete="off"
+        />
+      </div>
+    )
+  }
+</form>
+
+<script>
+  import { onPageLoad } from "@component-utils/onPageLoad";
+  import { setupAllForms } from "./setup";
+
+  onPageLoad(() => setupAllForms());
+</script>
+
+<style is:global>
+  @layer components {
+    .form {
+      width: 100%;
+
+      > .form-fields {
+        /* Not per-field margins: they would also sit below the last field. */
+        align-items: flex-start;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+      }
+
+      /* Not `hidden`: the value still has to be submitted, and `display: none`
+         keeps it out of the tab order and the accessibility tree. */
+      > .form-honeypot {
+        display: none;
+      }
+
+      > .form-success {
+        background-color: var(--color-bg-surface);
+        border-inline-start: var(--border-width-md) solid var(--color-success);
+        border-radius: var(--radius-xs);
+        color: var(--color-text-strong);
+        margin: 0 0 var(--spacing-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+      }
+    }
+  }
+</style>

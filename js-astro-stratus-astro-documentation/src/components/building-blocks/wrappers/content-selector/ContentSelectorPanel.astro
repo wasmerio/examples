@@ -1,0 +1,221 @@
+---
+import RenderBlock from "@components/utils/renderBlock.astro";
+import { slugifyLabel } from "@components/utils/slugify";
+import Heading from "@core-elements/heading/Heading.astro";
+import Icon from "@core-elements/icon/Icon.astro";
+
+const {
+  title,
+  subtext,
+  iconName,
+  iconColor,
+  contentSections,
+  useDefaultEditableBinding = false,
+  checked = false,
+  groupName = "content-selector-tabs",
+  index,
+  navigationPosition = "start",
+  _component,
+  "data-children-prop": childrenDataProp,
+  "data-prop-title": customDataPropTitle,
+  "data-prop-subtext": customDataPropSubtext,
+  ...htmlAttributes
+} = Astro.props;
+
+// The index makes this unique: a shared title would point every `<label for>`
+// at the first radio. MDX-child panels get no index.
+const uniqueId =
+  index === undefined
+    ? `${groupName}-${title ? `${slugifyLabel(title)}-` : ""}${crypto.randomUUID()}`
+    : `${groupName}-${index}`;
+const tabId = `tab-${uniqueId}`;
+const panelId = `panel-${uniqueId}`;
+const tabLabelId = `tablabel-${uniqueId}`;
+
+const effectiveChildrenProp =
+  childrenDataProp ?? (useDefaultEditableBinding ? "contentSections" : null);
+const arrayDataAttributes = effectiveChildrenProp
+  ? { "data-editable": "array", "data-prop": effectiveChildrenProp }
+  : {};
+
+const effectiveTitleProp = customDataPropTitle ?? (useDefaultEditableBinding ? "title" : null);
+const effectiveSubtextProp =
+  customDataPropSubtext ?? (useDefaultEditableBinding ? "subtext" : null);
+const subtextDataAttributes = effectiveSubtextProp
+  ? { "data-editable": "text", "data-prop": effectiveSubtextProp }
+  : {};
+---
+
+<div
+  class="content-selector-item"
+  {...htmlAttributes}
+>
+  <input
+    type="radio"
+    name={groupName}
+    id={tabId}
+    class="content-selector-input visually-hidden"
+    checked={checked}
+    autocomplete="off"
+  />
+  <label
+    class="content-selector-tab"
+    id={tabLabelId}
+    for={tabId}
+    role="button"
+    aria-controls={panelId}
+    aria-expanded={checked ? "true" : "false"}
+    tabindex="0"
+  >
+    <Heading
+      text={title}
+      level="h3"
+      size="sm"
+      iconName={iconName}
+      iconColor={iconColor}
+      alignmentHorizontal={navigationPosition === "top" ? "center" : "start"}
+      class="content-selector-tab-heading"
+      data-prop={effectiveTitleProp}
+    />
+    {
+      subtext && (
+        <span
+          class:list={[
+            "content-selector-tab-subtext",
+            `align-${navigationPosition === "top" ? "center" : "start"}`,
+          ]}
+          {...subtextDataAttributes}
+        >
+          {subtext}
+        </span>
+      )
+    }
+    <Icon
+      name="chevron-down"
+      size="none"
+      class="content-selector-tab-chevron"
+      aria-hidden="true"
+    />
+  </label>
+  <div
+    class="content-selector-panel"
+    id={panelId}
+    role="region"
+    aria-labelledby={tabLabelId}
+    aria-hidden={checked ? "false" : "true"}
+  >
+    <div
+      class="content-selector-panel-content flow"
+      {...arrayDataAttributes}
+    >
+      <slot>
+        {
+          contentSections && (
+            <RenderBlock
+              contentSections={contentSections}
+              useDefaultEditableBinding={!!effectiveChildrenProp}
+            />
+          )
+        }
+      </slot>
+    </div>
+  </div>
+</div>
+
+<style is:global>
+  @layer components {
+    /*
+     * Each item overlays the whole grid via `subgrid` and must stay a real box:
+     * it is the array-item region root, and `display: contents` leaves the
+     * editor nothing to select. pointer-events passes clicks through the overlap;
+     * the tab's row/column comes from `:nth-of-type` in ContentSelector.
+     */
+    .content-selector-item {
+      display: grid;
+      grid-area: 1 / 1 / -1 / -1;
+      grid-template-columns: subgrid;
+      grid-template-rows: subgrid;
+      pointer-events: none;
+
+      > * {
+        pointer-events: auto;
+      }
+    }
+
+    /* The radio is visually hidden, not `display: none`: it is the focusable
+       control that arrow keys move between, so its ring is drawn on the tab. */
+    .content-selector-input:focus-visible + .content-selector-tab {
+      outline: var(--focus-ring-width) var(--focus-ring-style) var(--color-focus-ring);
+      outline-offset: -2px;
+    }
+
+    .content-selector-tab {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      display: block;
+      padding: var(--spacing-md);
+      position: relative;
+      transition: background-color var(--animation-normal) var(--ease-in-out);
+
+      &::before {
+        background: transparent;
+        content: "";
+        position: absolute;
+        transition:
+          transform var(--animation-normal),
+          background var(--animation-normal);
+      }
+
+      &:hover {
+        background: var(--color-state-hover);
+      }
+
+      > .content-selector-tab-heading {
+        margin: 0;
+      }
+    }
+
+    .content-selector-tab-subtext {
+      color: var(--color-text-muted);
+      display: block;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-normal);
+      margin-top: var(--spacing-xs);
+
+      &.align-center {
+        text-align: center;
+      }
+
+      &.align-start {
+        text-align: start;
+      }
+    }
+
+    .content-selector-tab-chevron {
+      display: none;
+      flex: 0 0 auto;
+      transition: transform var(--animation-normal) var(--ease-out);
+    }
+
+    .content-selector-input:checked + .content-selector-tab::before {
+      background: var(--color-border-strong);
+    }
+
+    .content-selector-input:checked + .content-selector-tab + .content-selector-panel {
+      display: block;
+    }
+
+    .content-selector-panel {
+      animation: fade-in var(--animation-slow) var(--ease-in-out) forwards;
+      container-type: inline-size;
+      display: none;
+    }
+
+    /* MDX children arrive as bare `<p>`/`<ul>` with no Text wrapper to strip
+       their default margins, so `.flow` alone would stack on top of them. */
+    .content-selector-panel-content > :not(.stackable) {
+      margin-block: 0;
+    }
+  }
+</style>

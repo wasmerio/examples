@@ -1,0 +1,63 @@
+---
+import { componentKeyFromPath } from "@components/utils/componentKey.mjs";
+import type { ContentBlock } from "../../types";
+
+export interface Props {
+  contentSections: ContentBlock[];
+  useDefaultEditableBinding?: boolean;
+}
+
+type AstroComponent = (_props: Record<string, unknown>) => unknown;
+
+type ComponentLoader = () => Promise<Record<string, AstroComponent>>;
+
+const loaders: Record<string, ComponentLoader> = {};
+const componentImports = import.meta.glob("../**/*.{jsx,astro}");
+
+Object.entries(componentImports).forEach(([path, loader]) => {
+  const componentName = componentKeyFromPath(path.replace("../", ""));
+
+  loaders[componentName] = loader as ComponentLoader;
+});
+
+const { contentSections, useDefaultEditableBinding = true } = Astro.props;
+
+const resolved = await Promise.all(
+  (contentSections ?? []).map(async (block) => {
+    const loader = block._component ? loaders[block._component] : undefined;
+
+    if (!loader) {
+      if (block._component) {
+        console.warn(
+          `Component not found: ${block._component}. Available components:`,
+          Object.keys(loaders)
+        );
+      } else {
+        console.warn(
+          "Skipping content block with no _component key:",
+          JSON.stringify(block).slice(0, 200)
+        );
+      }
+      return { block, Component: null as AstroComponent | null };
+    }
+
+    const module = await loader();
+
+    return { block, Component: module.default };
+  })
+);
+---
+
+{
+  // Array-level editable attributes are owned by the caller's container element.
+  resolved.map(({ block, Component }) =>
+    Component ? (
+      <Component
+        data-editable={useDefaultEditableBinding ? "array-item" : undefined}
+        data-id={block._component}
+        {...block}
+        useDefaultEditableBinding={useDefaultEditableBinding}
+      />
+    ) : null
+  )
+}

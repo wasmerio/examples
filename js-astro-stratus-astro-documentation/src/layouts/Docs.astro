@@ -1,0 +1,225 @@
+---
+import AnnouncementBar from "@components/navigation/announcement-bar/AnnouncementBar.astro";
+import DocsSidebar from "@components/navigation/docs-sidebar/DocsSidebar.astro";
+import DocsTopbar from "@components/navigation/docs-topbar/DocsTopbar.astro";
+import Footer from "@components/navigation/footer/Footer.astro";
+import CodeSurfaces from "@core-elements/code-block/CodeSurfaces.astro";
+import HeadingLinks from "@components/navigation/heading-links/HeadingLinks.astro";
+import ThemeToggleScript from "@components/navigation/theme-toggle/ThemeToggleScript.astro";
+import announcementBarData from "@data/announcementBar.json";
+import footerData from "@data/footer.json";
+import header from "@data/header.json";
+import themeData from "@data/theme.json";
+import Layout from "@layouts/BaseLayout.astro";
+import type { DocsNav } from "@utils/docsNav";
+import { getReleases } from "@utils/releases";
+
+type Props = {
+  nav: DocsNav;
+  title: string;
+  description?: string;
+  keywords?: string[];
+  image?: string;
+  canonical?: string;
+  noindex?: boolean;
+  wide?: boolean;
+};
+
+const {
+  nav,
+  title,
+  description,
+  keywords,
+  image,
+  canonical,
+  noindex = false,
+  wide = false,
+} = Astro.props as Props;
+
+const pathname = Astro.url.pathname;
+const hasToc = Astro.slots.has("toc");
+const [latestRelease] = await getReleases();
+
+// `system` has no baseline of its own, so the markup ships light and the
+// pre-paint script flips it if the reader's OS asks for dark.
+const configuredTheme = themeData.defaultTheme ?? "system";
+const baselineTheme = configuredTheme === "dark" ? "dark" : "light";
+---
+
+<Layout
+  title={title}
+  description={description}
+  keywords={keywords}
+  image={image}
+  canonical={canonical}
+  noindex={noindex}
+  defaultTheme={baselineTheme}
+>
+  <ThemeToggleScript
+    slot="head"
+    defaultTheme={configuredTheme}
+  />
+  <a
+    class="skip-link"
+    href="#main-content"
+  >
+    Skip to content
+  </a>
+  <AnnouncementBar
+    {...announcementBarData}
+    editableSource="@data[announcementBar]"
+  />
+  <DocsTopbar
+    logoSource={header.logoSource}
+    logoAlternateSource={header.logoAlternateSource}
+    logoAlt={header.logoAlt}
+    version={latestRelease ? `v${latestRelease.data.version}` : ""}
+    showVersionNumber={header.showVersionNumber}
+    themeToggle={header.themeToggle}
+    search={header.search}
+    searchPlaceholder={header.searchPlaceholder}
+    topbarLinks={header.topbarLinks}
+    pathname={pathname}
+  />
+
+  <div class:list={["docs-shell", (wide || !hasToc) && "is-wide"]}>
+    <DocsSidebar
+      nav={nav}
+      pathname={pathname}
+    />
+
+    <aside class="docs-toc-rail">
+      <slot name="toc" />
+    </aside>
+
+    <main
+      id="main-content"
+      class="docs-main"
+      data-pagefind-body={noindex ? undefined : ""}
+      tabindex="-1"
+    >
+      <slot />
+    </main>
+  </div>
+
+  <Footer
+    {...footerData}
+    editableSource="@data[footer]"
+  />
+  <CodeSurfaces />
+  <HeadingLinks />
+</Layout>
+
+<style is:global>
+  @layer page-sections {
+    :root {
+      --docs-topbar-height: 3.5rem;
+      /* `Footer.astro`'s rendered height, rounded up: a taller footer fails the
+         sidebar smoke test. */
+      --docs-footer-height: 5.5rem;
+      --docs-shell-gap: var(--spacing-2xl);
+      --docs-sidebar-width: 16rem;
+      --docs-toc-width: 13.5rem;
+    }
+
+    /* The rail sits before `.docs-main` in the DOM so it can be the disclosure
+       above the article; `Toc` switches presentation at the same 1280px. */
+    .docs-shell {
+      display: grid;
+      gap: 0 var(--docs-shell-gap);
+      grid-template-areas: "sidebar toc" "sidebar main";
+      grid-template-columns: var(--docs-sidebar-width) minmax(0, 1fr);
+      grid-template-rows: auto 1fr;
+      margin-inline: auto;
+      max-width: var(--content-width-3xl);
+      padding-inline: var(--spacing-lg);
+    }
+
+    .docs-main {
+      grid-area: main;
+      min-width: 0;
+      padding-block: var(--spacing-xl) var(--spacing-5xl);
+
+      &:focus {
+        outline: none;
+      }
+    }
+
+    /* Not `display: none`, which would take it out of the tab order. `opacity` keeps
+       iOS overscroll from revealing it above the page. */
+    .skip-link {
+      background-color: var(--color-bg-brand);
+      border-radius: var(--radius-md);
+      color: var(--color-text-on-brand);
+      font-size: var(--font-size-sm);
+      font-weight: var(--font-weight-semibold);
+      inset-block-start: var(--spacing-sm);
+      inset-inline-start: var(--spacing-sm);
+      opacity: 0;
+      padding: var(--spacing-sm) var(--spacing-md);
+      position: fixed;
+      text-decoration: none;
+      transform: translateY(calc(-100% - var(--spacing-xl)));
+      z-index: var(--layer-8);
+
+      &:focus-visible {
+        outline: var(--focus-ring-width) var(--focus-ring-style) var(--color-focus-ring);
+        opacity: 1;
+        outline-offset: var(--spacing-xs);
+        transform: none;
+      }
+    }
+
+    .docs-toc-rail {
+      grid-area: toc;
+      min-width: 0;
+    }
+
+    @media (width >= 1280px) {
+      .docs-shell {
+        grid-template-areas: "sidebar main toc";
+        grid-template-columns: var(--docs-sidebar-width) minmax(0, 1fr) var(--docs-toc-width);
+        grid-template-rows: auto;
+      }
+
+      .docs-shell.is-wide {
+        grid-template-areas: "sidebar main";
+        grid-template-columns: var(--docs-sidebar-width) minmax(0, 1fr);
+      }
+
+      /* Same geometry as `DocsSidebar.astro`; change the two together. */
+      .docs-toc-rail {
+        margin-block-end: calc(-1 * var(--spacing-3xl));
+      }
+
+      .docs-toc-rail > .toc {
+        align-self: start;
+        max-height: calc(100vh - var(--docs-topbar-height) - var(--docs-footer-height));
+        overflow-y: auto;
+        padding-block: var(--spacing-xl);
+        position: sticky;
+        top: var(--docs-topbar-height);
+      }
+    }
+
+    @media (width < 1280px) {
+      /* Not `:empty`: the rail always holds the table of contents, even hidden. */
+      .docs-toc-rail:has(> .toc:not([data-toggle-hidden])) {
+        padding-top: var(--spacing-xl);
+      }
+    }
+
+    @media (width < 1024px) {
+      .docs-shell {
+        grid-template-areas: "toc" "main";
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    @media (width < 640px) {
+      .docs-shell {
+        padding-inline: var(--spacing-md);
+      }
+    }
+  }
+</style>

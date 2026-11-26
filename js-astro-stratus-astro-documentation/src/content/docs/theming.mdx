@@ -1,0 +1,127 @@
+---
+_schema: default
+title: Theming
+description: Design tokens define the whole surface. Override the ones you care
+  about; the rest stay coherent.
+group: Customizing
+order: 2
+showTableOfContents: true
+showFeedback: true
+showCopyPage: true
+showPager: true
+---
+## Tokens
+
+Color, spacing, radius, type and motion are CSS custom properties in three tiers: primitives in `src/styles/variables/`, semantic tokens in `src/styles/themes/`, and component-local properties on a component's own root. Components consume the semantic tier only, so a rebrand is a token change rather than a component change.
+
+<CodeBlock language="css" filename="src/styles/themes/_light.css" showCopy={true}>
+
+```
+[data-theme="light"] {
+  --color-accent: var(--teal-700);
+  --color-text: var(--black);
+  --color-bg: var(--white);
+  --color-border: var(--gray-200);
+}
+```
+
+</CodeBlock>
+
+<Alert variant="danger" title="Never guess a token name" text="An unresolved `var()` is invalid at computed-value time, so the property silently inherits — no error anywhere. Run `npm run lint:css-vars -- --list` to print every declared token; `npm run check` fails on an unresolved one."/>
+
+## The accent
+
+The accent is the interactive color — links, active sidebar item, focus rings, the marker on an annotated line, the brand tile in the header. It is deliberately not the button color: primary buttons stay ink on paper, so changing the accent never turns the page into a wall of one hue.
+
+This template ships teal: `--teal-700` on light, `--teal-300` on dark. The dark end of a ramp is the calmer step for a dark page — a fully saturated accent vibrates against near-black. Swap both, and `--color-accent-surface` / `--color-accent-border` with them, and every accent on the site follows.
+
+## The theme file
+
+`src/data/theme.json` holds the decisions an editor is allowed to make without touching CSS: the default color scheme, two accent colors, two brand colors and a corner radius. `BaseLayout` turns them into custom properties on `<html>`, and the theme files read those as optional overrides.
+
+<CodeBlock language="json" filename="src/data/theme.json" showCopy={true}>
+
+```
+{
+  "themeSelector": true,
+  "defaultTheme": "dark",
+  "theme": {
+    "accentLight": "#0f766e",
+    "accentDark": "#5eead4",
+    "brandLight": "#08090b",
+    "brandDark": "#ffffff",
+    "radius": 10
+  }
+}
+```
+
+</CodeBlock>
+
+Each color is one swatch, not a set. `src/utils/themeTokens.mjs` derives the rest of the family from it — the hover state, the tinted surface, the border, and the legible text color to sit on top, chosen by relative luminance so a pale accent gets ink and a deep one gets paper. `radius` drives the whole `--radius-*` scale from a single base — every rounded corner on the site, including sections and cards with **Rounded** switched on. `--radius-full` stays out of it, so pills and avatars are round at every setting.
+
+<ParamList params={[{ name: "accentLight / accentDark", type: "hex color", description: "The interactive color — links, active sidebar item, focus rings, the brand tile. Use a paler step for dark: a fully saturated accent vibrates against near-black." }, { name: "brandLight / brandDark", type: "hex color", description: "Primary button and brand fill. Shipped near-black on light and white on dark, so an accent change never floods the page with one hue." }, { name: "radius", type: "0–24", defaultValue: "10", description: "Corner rounding in pixels, driving the whole scale. 0 is square." }]}/>
+
+Nothing is required. The theme files read every one as `var(--accent-light, var(--teal-700))`, so a missing or malformed value leaves the shipped design standing rather than blanking a token — which matters, because an unresolved `var()` with no fallback is invalid at computed-value time and fails silently.
+
+### Editing it in CloudCannon
+
+In the Visual Editor a swatch button sits in the bottom corner of the preview. It opens `theme.json` in a data panel, and the page repaints as you drag the color picker — no save, no reload. Set `themeSelector` to `false` to hide the button and edit the colors from the data file instead — the preview drops it the moment you untick the switch, with no save and no rebuild, because `setup.ts` reads that key from the same live handle as the colors. It never renders for a site visitor either way.
+
+That button is the starter's worked example of the [CloudCannon Visual Editor JavaScript API](https://cloudcannon.com/documentation/developer-articles/read-and-write-data-with-the-visual-editor-api/), in `src/components/navigation/theme-selector/setup.ts`:
+
+<CodeBlock language="js" filename="src/components/navigation/theme-selector/setup.ts" showCopy={true}>
+
+```
+const api = window.CloudCannonAPI.useVersion("v1", true);
+
+// The dataset, not api.file() — see the note below.
+const dataset = api.dataset("theme");
+const file = await dataset.items();
+
+// Open CloudCannon's own inputs panel, anchored to the button.
+file.data.edit({ slug: "theme", position });
+
+// Fires while the panel is open, on every drag of the picker.
+dataset.addEventListener("change", async () => {
+  apply(themeCustomProperties(await file.data.get()));
+});
+```
+
+</CodeBlock>
+
+`apply` only calls `style.setProperty()` on `<html>`. Custom properties inherit, so a section pinning its own `data-theme` repaints in the same frame as the rest of the page — no re-render, no stylesheet rewriting, and no state to keep in sync between the editor and the preview.
+
+<Alert variant="warning" title="Subscribe to the dataset, not the file" text="`api.file()` on the same path reads the same JSON, but CloudCannon fires `change` on the **dataset** handle while a panel is open — the file handle only settles up later. Subscribed to the file, the preview repaints when you navigate away and back, but not while you drag the picker. The dataset exists only because `data_config.theme` is declared in `cloudcannon.config.yml`; delete that entry and live preview stops."/>
+
+<Alert variant="note" title="The button never reaches your readers" text="`ThemeSelector.astro` ships `hidden`, and only `editor-live-sync.js` — which loads solely inside CloudCannon — reveals it. On the live site it is inert markup."/>
+
+## Typography
+
+One sans for interface and prose, one mono for code and labels, both registered in `site-fonts.mjs` — the only place to change them.
+
+<CodeBlock language="js" filename="site-fonts.mjs" showCopy={true}>
+
+```
+export const siteFonts = [
+  { name: "Instrument Sans", cssVariable: "--font-body", weights: ["400 700"] },
+  { name: "JetBrains Mono", cssVariable: "--font-mono", weights: ["400 600"] },
+];
+```
+
+</CodeBlock>
+
+Sizes are a fixed scale: headings step 42 / 24 / 18, body sits at 16 with a 1.72 line height for long reads.
+
+## Dark mode
+
+The mode is applied as `data-theme` on the root element before first paint, so there is no flash. Try the toggle in the header — nothing here is a screenshot.
+
+Three things decide it, in order:
+
+<ParamList params={[{ name: "The reader's choice", type: "localStorage", description: "Always wins, and persists across pages and reloads." }, { name: "defaultTheme", type: "\"dark\" | \"light\" | \"system\"", defaultValue: "\"dark\"", description: "The site's own default, set in `src/data/theme.json`. This template ships dark." }, { name: "The operating system", type: "prefers-color-scheme", description: "Consulted only when `defaultTheme` is `system`." }]}/>
+
+<Alert variant="note" title="A dark default stays dark" text="With `defaultTheme: dark`, a reader whose operating system is set to light still gets the dark site until they use the toggle. Set it to `system` if you would rather follow them."/>
+
+Hiding the toggle (`themeToggle: false`) doesn't change any of this — the scheme is still resolved, the reader just can't change it.
+
+Code blocks stay dark in both themes on purpose: a sample that inverts with the page re-reads as a different snippet, and syntax colors are tuned for one ground.

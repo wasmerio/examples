@@ -1,0 +1,127 @@
+---
+import { highlightCode, parseLineRanges } from "@component-utils/highlight";
+import { slugifyLabel } from "@component-utils/slugify";
+import { spaceBeforeAttr } from "@component-utils/spaceBefore.mjs";
+import CodeBlockSurface from "@core-elements/code-block/CodeBlockSurface.astro";
+
+type Tab = { label?: string; language?: string; code?: string; highlight?: string };
+
+const {
+  tabs = [] as Tab[],
+  filename = "",
+  showCopy = true,
+  spaceBefore = "default",
+  class: className,
+  useDefaultEditableBinding: _useDefaultEditableBinding = false,
+  _component,
+  ...htmlAttributes
+} = Astro.props;
+
+const entries = (tabs as Tab[]).filter((tab) => tab?.code);
+
+if (!_component && entries.length === 0) return;
+
+const groupId = slugifyLabel(entries.map((tab) => tab.label).join("-") || "code-tabs");
+const panels = await Promise.all(
+  entries.map(async (tab, index) => ({
+    label: tab.label || tab.language || `Tab ${index + 1}`,
+    tabId: `code-tab-${groupId}-${index}`,
+    panelId: `code-panel-${groupId}-${index}`,
+    html: await highlightCode(String(tab.code), String(tab.language || "text"), {
+      highlight: parseLineRanges(tab.highlight),
+    }),
+  }))
+);
+---
+
+<div
+  class:list={["code-tabs", "stackable", className]}
+  {...htmlAttributes}
+>
+  <CodeBlockSurface
+    showCopy={showCopy}
+    data-space-before={spaceBeforeAttr(spaceBefore)}
+  >
+    <Fragment slot="header">
+      <div
+        class="code-tabs-list"
+        role="tablist"
+        aria-label={filename || "Code language"}
+      >
+        {
+          panels.map((panel, index) => (
+            <button
+              type="button"
+              role="tab"
+              id={panel.tabId}
+              class="code-tabs-tab"
+              data-label={panel.label}
+              aria-controls={panel.panelId}
+              aria-selected={index === 0 ? "true" : "false"}
+              tabindex={index === 0 ? 0 : -1}
+            >
+              {panel.label}
+            </button>
+          ))
+        }
+      </div>
+      {filename && <span class="code-surface-label">{filename}</span>}
+    </Fragment>
+
+    {
+      panels.map((panel, index) => (
+        <div
+          id={panel.panelId}
+          role="tabpanel"
+          aria-labelledby={panel.tabId}
+          hidden={index !== 0}
+          data-code-source
+          set:html={panel.html}
+        />
+      ))
+    }
+  </CodeBlockSurface>
+</div>
+
+<script>
+  import { onPageLoad } from "@component-utils/onPageLoad";
+  import { setupAllCodeSurfaces } from "@core-elements/code-block/setup";
+  import { setupAllCodeTabs } from "./setup";
+
+  onPageLoad(() => {
+    setupAllCodeSurfaces();
+    setupAllCodeTabs();
+  });
+</script>
+
+<style is:global>
+  @layer components {
+    .code-tabs-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--spacing-xs);
+      margin-inline-start: calc(var(--spacing-sm) * -1);
+    }
+
+    .code-tabs-tab {
+      background: none;
+      border: none;
+      border-radius: var(--radius-xs);
+      color: var(--color-text-muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: var(--font-size-sm);
+      padding: var(--spacing-xs) var(--spacing-sm);
+
+      &:hover {
+        color: var(--color-text-strong);
+      }
+
+      &[aria-selected="true"] {
+        background-color: var(--color-bg);
+        color: var(--color-text-strong);
+        font-weight: var(--font-weight-semibold);
+      }
+    }
+  }
+</style>

@@ -1,0 +1,139 @@
+---
+import { renderMarkdownInline } from "@component-utils/markdown";
+import Icon from "@core-elements/icon/Icon.astro";
+
+const {
+  enabled = false,
+  text = "",
+  editableSource = "",
+  class: className,
+  useDefaultEditableBinding: _useDefaultEditableBinding = false,
+  _component,
+  ...htmlAttributes
+} = Astro.props;
+
+const message = typeof text === "string" ? text.trim() : "";
+
+// Rendered whenever there is a message, then hidden if the switch is off — a
+// build-time gate would leave the editor nothing to reveal when it goes back on.
+if (!message) return;
+
+/**
+ * `editableSource` is `@data[announcementBar]` from `Docs.astro` and absent in a page
+ * builder, where the binding falls back to page frontmatter. Hardcoding either breaks the other.
+ */
+const textProp = editableSource ? `${editableSource}.text` : "text";
+---
+
+<aside
+  class:list={["announcement-bar", className]}
+  aria-label="Announcement"
+  {...htmlAttributes}
+>
+  <p
+    class="announcement-bar-text"
+    data-announcement={message}
+    data-editable="text"
+    data-type="text"
+    data-prop={textProp}
+    data-toggle-hidden={enabled ? undefined : ""}
+  >
+    <Fragment set:html={renderMarkdownInline(message)} />
+  </p>
+  <button
+    type="button"
+    class="announcement-bar-close tap-target"
+    aria-label="Dismiss announcement"
+  >
+    <Icon
+      name="x-mark"
+      size="sm"
+    />
+  </button>
+</aside>
+
+<script is:inline data-astro-rerun>
+  // is:inline so the dismissed check runs before paint; data-astro-rerun re-runs it
+  // after navigation. Don't port it to the editor: editors must always see the bar.
+  (function () {
+    var bar = document.querySelector(".announcement-bar:not([data-announcement-initialized])");
+
+    if (!bar) return;
+    bar.setAttribute("data-announcement-initialized", "");
+
+    var KEY = "announcement-bar-dismissed";
+    var text = bar.querySelector(".announcement-bar-text");
+    var message = (text && text.getAttribute("data-announcement")) || "";
+
+    // Keyed by the message, so a new announcement reappears for everyone.
+    if (localStorage.getItem(KEY) === message) {
+      bar.remove();
+
+      return;
+    }
+
+    var close = bar.querySelector(".announcement-bar-close");
+
+    if (close) {
+      close.addEventListener("click", function () {
+        localStorage.setItem(KEY, message);
+        bar.remove();
+      });
+    }
+  })();
+</script>
+
+<style is:global>
+  @layer page-sections {
+    /* The switch rides a child, never the root (`npm run lint:roots`). */
+    .announcement-bar:has(> .announcement-bar-text[data-toggle-hidden]) {
+      display: none;
+    }
+
+    .announcement-bar {
+      align-items: center;
+      background-color: var(--color-accent-surface);
+      border-bottom: var(--border-width-sm) solid var(--color-accent-border);
+      color: var(--color-text);
+      display: flex;
+      font-size: var(--font-size-sm);
+      justify-content: center;
+      /* The close button's 44px `.tap-target` overhangs the right edge and widens the page on phones. */
+      overflow-x: clip;
+      padding-block: var(--spacing-sm);
+      padding-inline: var(--spacing-2xl);
+      position: relative;
+      text-align: center;
+
+      > .announcement-bar-text {
+        color: var(--color-text);
+        margin: 0;
+
+        > a {
+          color: var(--color-accent);
+          font-weight: var(--font-weight-semibold);
+          text-decoration: underline;
+          text-underline-offset: 0.2em;
+        }
+      }
+
+      > .announcement-bar-close {
+        background: none;
+        border: none;
+        border-radius: var(--radius-sm);
+        color: var(--color-text-muted);
+        cursor: pointer;
+        display: flex;
+        inset-inline-end: var(--spacing-sm);
+        padding: var(--spacing-xs);
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+      }
+
+      > .announcement-bar-close:hover {
+        opacity: 0.75;
+      }
+    }
+  }
+</style>

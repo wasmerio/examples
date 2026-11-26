@@ -1,0 +1,336 @@
+---
+/**
+ * Below 1024px this is the mobile drawer, opened by the topbar's `<label for>` via the
+ * checkbox (no JS, so it works in the editor). Keep the order: the CSS reaches the scrim
+ * and nav as siblings of `:checked`.
+ */
+import Icon from "@core-elements/icon/Icon.astro";
+import type { DocsNav } from "@utils/docsNav";
+import { DOCS_NAV_TOGGLE_ID } from "./navToggle";
+
+const {
+  nav,
+  pathname,
+  class: className,
+  "aria-label": ariaLabel = "Documentation",
+  ...htmlAttributes
+} = Astro.props as {
+  nav: DocsNav;
+  pathname: string;
+  class?: string;
+  "aria-label"?: string;
+  [key: string]: unknown;
+};
+
+const isCurrent = (href: string) => href === pathname;
+const groupHasCurrent = (pages: { href: string; children?: { href: string }[] }[]) =>
+  pages.some(
+    (page) => isCurrent(page.href) || (page.children ?? []).some((child) => isCurrent(child.href))
+  );
+---
+
+<input
+  type="checkbox"
+  id={DOCS_NAV_TOGGLE_ID}
+  class="docs-nav-toggle visually-hidden"
+  aria-label="Toggle documentation navigation"
+  autocomplete="off"
+/>
+<label
+  for={DOCS_NAV_TOGGLE_ID}
+  class="docs-nav-scrim"
+  aria-hidden="true"
+></label>
+
+<nav
+  aria-label={ariaLabel}
+  class:list={["docs-sidebar", className]}
+  {...htmlAttributes}
+>
+  <div class="docs-sidebar-drawer-header">
+    <span class="docs-sidebar-drawer-title">{ariaLabel}</span>
+    <label
+      for={DOCS_NAV_TOGGLE_ID}
+      class="docs-sidebar-drawer-close"
+      aria-hidden="true"
+    >
+      <Icon
+        name="x-mark"
+        size="none"
+      />
+    </label>
+  </div>
+
+  <div class="docs-sidebar-inner">
+    {
+      nav.lead.length > 0 && (
+        <ul
+          class="docs-sidebar-list"
+          data-nav-lead
+        >
+          {nav.lead.map((page) => (
+            <li>
+              <a
+                href={page.href}
+                aria-current={isCurrent(page.href) ? "page" : undefined}
+              >
+                {page.title}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+
+    {
+      nav.groups.map((group) => (
+        <details
+          class:list={["docs-sidebar-group", group.collapsed && "is-collapsible"]}
+          data-group={group.name}
+          open={!group.collapsed || groupHasCurrent(group.pages)}
+        >
+          <summary class="docs-sidebar-group-label">
+            <span>{group.name}</span>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="m19.5 8.25-7.5 7.5-7.5-7.5"
+              />
+            </svg>
+          </summary>
+          <ul class="docs-sidebar-list">
+            {group.pages.map((page) => (
+              <li
+                data-href={page.href}
+                data-order={page.order}
+              >
+                <a
+                  href={page.href}
+                  aria-current={isCurrent(page.href) ? "page" : undefined}
+                >
+                  {page.title}
+                </a>
+                {page.children.length > 0 && (
+                  <ul class="docs-sidebar-list docs-sidebar-children">
+                    {page.children.map((child) => (
+                      <li
+                        data-href={child.href}
+                        data-order={child.order}
+                      >
+                        <a
+                          href={child.href}
+                          aria-current={isCurrent(child.href) ? "page" : undefined}
+                        >
+                          {child.title}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ))
+    }
+  </div>
+</nav>
+
+<style is:global>
+  @layer components {
+    .docs-nav-scrim,
+    .docs-sidebar-drawer-header {
+      display: none;
+    }
+
+    .docs-sidebar {
+      grid-area: sidebar;
+      /* Claims the footer's top margin (`Footer.astro`): the sticky child unpins
+         where this box ends. */
+      margin-block-end: calc(-1 * var(--spacing-3xl));
+    }
+
+    .docs-sidebar-inner {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-lg);
+      /* Uncapped, a nav taller than the topbar–footer gap rides up under the topbar
+         at the end of the page. */
+      max-height: calc(100vh - var(--docs-topbar-height) - var(--docs-footer-height));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding-block: var(--spacing-xl) var(--spacing-3xl);
+      padding-inline-end: var(--spacing-md);
+      position: sticky;
+      top: var(--docs-topbar-height);
+    }
+
+    .docs-sidebar-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+
+      a {
+        border-radius: var(--radius-xs);
+        color: var(--color-text-muted);
+        display: block;
+        font-size: var(--font-size-sm);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        text-decoration: none;
+        transition: background-color var(--animation-fast) var(--ease-out);
+
+        &:hover {
+          background-color: var(--color-state-hover);
+          color: var(--color-text);
+        }
+
+        &[aria-current="page"] {
+          background-color: var(--color-bg-muted);
+          color: var(--color-text-strong);
+          font-weight: var(--font-weight-semibold);
+        }
+      }
+    }
+
+    .docs-sidebar-group > .docs-sidebar-list {
+      margin-top: var(--spacing-xs);
+    }
+
+    .docs-sidebar-children {
+      border-inline-start: var(--border-width-sm) solid var(--color-border);
+      margin-block: 1px var(--spacing-xs);
+      margin-inline-start: var(--spacing-md);
+
+      a {
+        font-size: var(--font-size-sm);
+        padding-inline-start: var(--spacing-md);
+      }
+    }
+
+    .docs-sidebar-group-label {
+      align-items: center;
+      color: var(--color-text-faint);
+      cursor: pointer;
+      display: flex;
+      font-family: var(--font-mono);
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-semibold);
+      gap: var(--spacing-sm);
+      justify-content: space-between;
+      letter-spacing: var(--letter-spacing-wide);
+      list-style: none;
+      padding-inline: var(--spacing-sm);
+      text-transform: uppercase;
+
+      &::-webkit-details-marker {
+        display: none;
+      }
+
+      svg {
+        display: none;
+        flex: none;
+        height: 12px;
+        transition: transform var(--animation-fast) var(--ease-in-out);
+        width: 12px;
+      }
+    }
+
+    .docs-sidebar-group:not(.is-collapsible) > .docs-sidebar-group-label {
+      cursor: default;
+      pointer-events: none;
+    }
+
+    .docs-sidebar-group.is-collapsible > .docs-sidebar-group-label svg {
+      display: block;
+    }
+
+    .docs-sidebar-group.is-collapsible[open] > .docs-sidebar-group-label svg {
+      transform: rotate(180deg);
+    }
+
+    /* 1024px is the shell's three-column breakpoint — see `Docs.astro`. */
+    @media (width < 1024px) {
+      .docs-sidebar {
+        background-color: var(--color-bg);
+        border-inline-end: var(--border-width-sm) solid var(--color-border);
+        display: flex;
+        flex-direction: column;
+        inset-block: 0;
+        inset-inline-start: 0;
+        margin-block-end: 0;
+        position: fixed;
+        transform: translateX(-100%);
+        transition: transform var(--animation-normal) var(--ease-out);
+        width: min(20rem, 84vw);
+        /* Above the header, which the drawer covers. */
+        z-index: var(--layer-7);
+      }
+
+      .docs-sidebar-drawer-header {
+        align-items: center;
+        border-bottom: var(--border-width-sm) solid var(--color-border);
+        display: flex;
+        flex: none;
+        height: var(--docs-topbar-height);
+        justify-content: space-between;
+        padding-inline: var(--spacing-md);
+      }
+
+      .docs-sidebar-drawer-title {
+        color: var(--color-text-faint);
+        font-family: var(--font-mono);
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
+        letter-spacing: var(--letter-spacing-wide);
+        text-transform: uppercase;
+      }
+
+      .docs-sidebar-drawer-close {
+        align-items: center;
+        border: var(--border-width-sm) solid var(--color-border);
+        border-radius: var(--radius-sm);
+        color: var(--color-text);
+        cursor: pointer;
+        display: flex;
+        height: 2.125rem;
+        justify-content: center;
+        width: 2.125rem;
+
+        svg {
+          height: 1.125rem;
+          width: 1.125rem;
+        }
+      }
+
+      .docs-sidebar-inner {
+        flex: 1;
+        max-height: none;
+        padding-block: var(--spacing-md) var(--spacing-3xl);
+        padding-inline: var(--spacing-md);
+        position: static;
+      }
+
+      .docs-nav-toggle:checked ~ .docs-sidebar {
+        transform: translateX(0);
+      }
+
+      .docs-nav-toggle:checked ~ .docs-nav-scrim {
+        background-color: var(--color-overlay);
+        display: block;
+        inset: 0;
+        position: fixed;
+        z-index: var(--layer-6);
+      }
+    }
+  }
+</style>

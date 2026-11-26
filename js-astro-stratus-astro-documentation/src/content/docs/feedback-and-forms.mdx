@@ -1,0 +1,127 @@
+---
+_schema: default
+title: Feedback & forms
+description: The helpful vote at the foot of every page, and how to collect
+  anything else from readers.
+group: Customizing
+order: 4
+showTableOfContents: true
+showFeedback: true
+showCopyPage: true
+showPager: true
+---
+## The helpful vote
+
+Every documentation page ends with "Was this page helpful?". It is a real `<form method="post">`, so it works with JavaScript disabled — a script upgrades it to submit in the background and swap in the thank-you message without a page load. The reader never leaves the page, so the vote has no success page.
+
+Turn it off per page with `showFeedback: false` in frontmatter, or site-wide in `src/data/pageTools.json`.
+
+## Where the vote goes
+
+The vote's settings live under `feedback` in `src/data/pageTools.json`. What you set there depends on where the votes go:
+
+* **CloudCannon Forms** (the default, and only if CloudCannon hosts the site): keep `inboxKey` as `stratus-form`, the Inbox every form on this site uses. Set `action` to any page on this site, or leave it empty to post to the page the reader voted on. With JavaScript on, the reader stays on the page either way. With it off, CloudCannon sends them to the `action` page, so empty brings them back to where they voted. First create the Inbox and link it to the site — see [Setting up CloudCannon Forms](#setting-up-cloudcannon-forms) below. Until you do, votes have nowhere to go.
+* **Any other endpoint:** set `action` to the endpoint's URL, and delete `inboxKey` so the field isn't sent.
+
+<CodeTabs showCopy={true}>
+<CodeTab label="CloudCannon" language="json">
+
+```
+{
+  "feedback": {
+    "enabled": true,
+    "action": "",
+    "inboxKey": "stratus-form"
+  }
+}
+```
+
+</CodeTab>
+<CodeTab label="Formspree" language="json">
+
+```
+{
+  "feedback": {
+    "enabled": true,
+    "action": "https://formspree.io/f/YOUR_ID"
+  }
+}
+```
+
+</CodeTab>
+<CodeTab label="Netlify" language="json">
+
+```
+{
+  "feedback": {
+    "enabled": true,
+    "action": ""
+  }
+}
+
+// Netlify needs the form to declare itself; the block already
+// posts a `form-name` field, so add data-netlify="true" in
+// navigation/page-feedback/PageFeedback.astro.
+```
+
+</CodeTab>
+<CodeTab label="Your own" language="json">
+
+```
+{
+  "feedback": {
+    "enabled": true,
+    "action": "https://api.acme.com/docs-feedback"
+  }
+}
+```
+
+</CodeTab>
+</CodeTabs>
+
+Every endpoint receives the same three fields, posted as `multipart/form-data`. With `inboxKey` set, the vote sends a fourth field, `inbox_key`:
+
+<ParamList params={[{ name: "form-name", type: "string", required: true, description: "Always `page-feedback`, so one endpoint can serve several forms." }, { name: "page", type: "string", required: true, description: "The path of the page that was voted on, e.g. `/theming/`." }, { name: "vote", type: "string", required: true, description: "`yes` or `no`." }, { name: "inbox_key", type: "string", description: "The value of `feedback.inboxKey`. Sent only when it is set." }]}/>
+
+<Alert variant="warning" title="A cross-origin endpoint needs CORS" text="The upgraded submit uses `fetch`, so an endpoint on another domain must send `Access-Control-Allow-Origin`. Without it the vote is silently dropped — deliberately: a reader who clicked Yes should never be shown an error."/>
+
+## Setting up CloudCannon Forms
+
+<Alert variant="warning" title="CloudCannon Forms needs CloudCannon hosting" text="Forms only receive submissions on a site that CloudCannon hosts. If you deploy somewhere else, or use CloudCannon in Headless Mode, use another form service instead — see [Any other form](#any-other-form)."/>
+
+Setting it up takes two steps, both in the CloudCannon app, and no code.
+
+<Steps items={[{ contentSections: [{ _component: "building-blocks/core-elements/heading", text: "Create an Inbox", level: "h3", size: "xs" }, { _component: "building-blocks/core-elements/text", text: "In your **Organization** settings, open **Hosting › Forms** and click **Add Inbox**. Name it, set its key to `stratus-form`, and optionally add a CAPTCHA provider. An Inbox belongs to the organization, so several sites can share one.", size: "md" }] }, { contentSections: [{ _component: "building-blocks/core-elements/heading", text: "Link it to this site", level: "h3", size: "xs" }, { _component: "building-blocks/core-elements/text", text: "In the **site's** settings, open **Hosting › Forms**, choose the Inbox under **Link Inbox**, and click **Link Inbox**. Forms on the site can now send submissions to it.", size: "md" }] }, { contentSections: [{ _component: "building-blocks/core-elements/heading", text: "Decide where submissions go next", level: "h3", size: "xs" }, { _component: "building-blocks/core-elements/text", text: "Read them in the Inbox, or forward them by email or to Slack, Zapier, Make or IFTTT from the Inbox's settings.", size: "md" }] }]} orientation="horizontal"/>
+
+Every form on this site includes a hidden field that names the `stratus-form` Inbox: `<input type="hidden" name="inbox_key" value="stratus-form">`. The helpful vote adds it from `feedback.inboxKey`. In a Form block, add it as a Hidden field with `name` set to `inbox_key` and `value` set to `stratus-form`.
+
+A CloudCannon form's `action` is the page the visitor is sent to after submitting. It must be a page on this site, but it doesn't have to be `/` — point it at a thank-you page, or back at the form's own page with `?success` on the end to show the form's `successMessage`. CloudCannon's guides cover the details: [creating an Inbox](https://cloudcannon.com/documentation/developer-articles/creating-an-inbox-to-receive-your-forms/) and [connecting a site to one](https://cloudcannon.com/documentation/developer-articles/connecting-your-site-to-an-inbox/).
+
+To filter spam, set the form's `honeypotName` to `_gotcha`. That adds a field people never see; CloudCannon discards any submission where a bot filled it in. For more protection, add a CAPTCHA provider in the Inbox's settings.
+
+<Alert variant="note" title="Inboxes have a monthly limit" text="Each Inbox accepts 2,250 submissions a month. Every form on this site shares the `stratus-form` Inbox, and the helpful vote on every page counts toward it — a busy docs site can reach that."/>
+
+## Any other form
+
+Forms are built from the same blocks as the rest of the site, and can be dropped into a documentation page. On a CloudCannon-hosted site with a linked Inbox, a form collects submissions with no backend.
+
+<Alert variant="warning" title="A form needs somewhere to send submissions" text="The Form component only builds the HTML form. It does not store or send anything. Before you publish one, choose where its submissions go."/>
+
+There are two ways to set that up:
+
+* **Use CloudCannon Forms.** This works only if CloudCannon hosts your site. First, follow [Setting up CloudCannon Forms](#setting-up-cloudcannon-forms) to create an Inbox and link it to your site. CloudCannon's [Forms documentation](https://cloudcannon.com/documentation/host/forms/) has the full reference. Then, in the form itself:
+  * Set `action` to the page on this site to send the visitor to after they submit. The form below uses a thank-you page, [`/form-success/`](/form-success/). You can also send them back to the form's own page with `?success` on the end, as described below.
+  * Give every field a `name`.
+  * Leave `method` set to `POST`.
+  * Set `honeypotName` to `_gotcha`.
+  * Add a Hidden field with `name` set to `inbox_key` and `value` set to `stratus-form`.
+* **Use another form service.** Formspree, Basin, Netlify Forms and your own API all work, and so does any host. You can paste the service's own embed code into an `Embed` block, as described in [Media & components](/media-and-components/), or keep using this form:
+  * Set `action` to the endpoint URL the service gives you.
+  * Give every field the `name` the service expects.
+  * Set `honeypotName` to the service's spam field, if it has one.
+
+With either option, you can set `successMessage` to show a confirmation after someone submits the form. The message appears only when the visitor comes back to the form's page with `?success` on the end of the URL. With CloudCannon Forms, set `action` to that address. With another service, set the service's redirect to it.
+
+<Form action="/form-success/" honeypotName="_gotcha" formBlocks={[{ _component: "building-blocks/forms/input", label: "Your email", name: "email", type: "email", placeholder: "you@company.com", required: true }, { _component: "building-blocks/forms/input", label: "Which page?", name: "page", type: "text", placeholder: "/installation/", required: true }, { _component: "building-blocks/forms/textarea", label: "What's missing?", name: "message", rows: 4, required: true }, { _component: "building-blocks/forms/hidden", name: "form-name", value: "docs-gap" }, { _component: "building-blocks/forms/hidden", name: "inbox_key", value: "stratus-form" }, { _component: "building-blocks/forms/submit", text: "Send", variant: "primary", size: "md" }]}/>
+
+<Alert variant="tip" title="Validation is the browser's, with better messages" text="Fields marked `required` are validated natively; a script replaces the browser's tooltip with an inline message under each field, and focuses the first one that failed."/>

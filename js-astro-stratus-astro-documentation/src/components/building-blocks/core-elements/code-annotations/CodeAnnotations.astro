@@ -1,0 +1,165 @@
+---
+/**
+ * Code with numbered notes underneath rather than inline comments, so the
+ * snippet stays copy-paste clean. Each note names the 1-based `line` it marks;
+ * a note pointing past the end of the code is dropped rather than rendered
+ * against nothing.
+ */
+import { highlightCode, parseLineRanges } from "@component-utils/highlight";
+import { renderMarkdown } from "@component-utils/markdown";
+import { spaceBeforeAttr } from "@component-utils/spaceBefore.mjs";
+import CodeBlockSurface from "@core-elements/code-block/CodeBlockSurface.astro";
+
+type Note = { line?: number; text?: string };
+
+const {
+  code = "",
+  language = "js",
+  filename = "",
+  highlight = "",
+  notes = [] as Note[],
+  showCopy = true,
+  spaceBefore = "default",
+  class: className,
+  useDefaultEditableBinding: _useDefaultEditableBinding = false,
+  _component,
+  ...htmlAttributes
+} = Astro.props;
+
+if (!_component && !code) return;
+
+const lineCount = String(code).replace(/\n+$/, "").split("\n").length;
+const validNotes = (notes as Note[])
+  .filter((note) => note?.text && Number(note.line) >= 1 && Number(note.line) <= lineCount)
+  .sort((a, b) => Number(a.line) - Number(b.line));
+
+const markers = new Map<number, number>(
+  validNotes.map((note, index) => [Number(note.line), index + 1])
+);
+
+const html = await highlightCode(String(code), String(language), {
+  highlight: [...parseLineRanges(highlight), ...markers.keys()],
+  annotations: markers,
+});
+const label = filename || language;
+---
+
+<div
+  class:list={["code-annotations", "stackable", className]}
+  {...htmlAttributes}
+>
+  <CodeBlockSurface
+    showCopy={showCopy}
+    data-space-before={spaceBeforeAttr(spaceBefore)}
+  >
+    {
+      label && (
+        <span
+          slot="header"
+          class="code-surface-label"
+        >
+          {label}
+        </span>
+      )
+    }
+    <div
+      data-code-source
+      set:html={html}
+    />
+    {
+      validNotes.length > 0 && (
+        <ol class="code-annotations-notes">
+          {validNotes.map((note, index) => (
+            <li>
+              <span
+                class="code-annotations-marker"
+                aria-hidden="true"
+              >
+                {index + 1}
+              </span>
+              <span set:html={renderMarkdown(String(note.text))} />
+            </li>
+          ))}
+        </ol>
+      )
+    }
+  </CodeBlockSurface>
+</div>
+
+<script>
+  import { onPageLoad } from "@component-utils/onPageLoad";
+  import { setupAllCodeSurfaces } from "@core-elements/code-block/setup";
+
+  onPageLoad(setupAllCodeSurfaces);
+</script>
+
+<style is:global>
+  @layer components {
+    .code-annotations {
+      .line[data-annotation] {
+        position: relative;
+
+        &::after {
+          align-items: center;
+          background-color: var(--color-accent);
+          border-radius: var(--radius-full);
+          color: var(--color-accent-on);
+          content: attr(data-annotation);
+          display: flex;
+          font-family: var(--font-mono);
+          font-size: var(--font-size-xs);
+          height: 1.125rem;
+          inset-inline-end: var(--spacing-sm);
+          justify-content: center;
+          position: absolute;
+          top: 50%;
+          transform: translateY(-50%);
+          width: 1.125rem;
+        }
+      }
+
+      .code-annotations-notes {
+        border-top: var(--border-width-sm) solid var(--color-code-border);
+        color: var(--color-code-text);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        list-style: none;
+        margin: 0;
+        padding: var(--spacing-md);
+
+        li {
+          align-items: baseline;
+          color: inherit;
+          display: flex;
+          font-size: var(--font-size-sm);
+          gap: var(--spacing-sm);
+          line-height: var(--line-height-normal);
+        }
+
+        p {
+          color: inherit;
+          margin: 0;
+        }
+
+        code {
+          color: var(--color-code-muted);
+        }
+      }
+
+      .code-annotations-marker {
+        align-items: center;
+        background-color: var(--color-accent);
+        border-radius: var(--radius-full);
+        color: var(--color-accent-on);
+        display: flex;
+        flex: none;
+        font-family: var(--font-mono);
+        font-size: var(--font-size-xs);
+        height: 1.125rem;
+        justify-content: center;
+        width: 1.125rem;
+      }
+    }
+  }
+</style>

@@ -1,0 +1,178 @@
+---
+import RenderBlock from "@components/utils/renderBlock.astro";
+import { isNonEmptyString } from "@component-utils/isNonEmptyString";
+import Image from "@core-elements/image/Image.astro";
+import type { ContentBlock } from "../../../../types";
+
+const {
+  image = "",
+  imageAlt = "",
+  link = "",
+  contentSections = [],
+  aspectRatio = "landscape",
+  class: className,
+  _component,
+  useDefaultEditableBinding = false,
+  "data-children-prop": childrenDataProp,
+  "data-prop-src": imageSrcDataProp,
+  "data-prop-alt": imageAltDataProp,
+  ...htmlAttributes
+} = Astro.props;
+
+const blocks: ContentBlock[] = Array.isArray(contentSections) ? contentSections : [];
+const headingText = blocks.find(
+  (block) => block._component === "building-blocks/core-elements/heading"
+)?.text;
+const headingLabel = typeof headingText === "string" ? headingText : "";
+const hasLink = isNonEmptyString(link);
+const linkLabel = isNonEmptyString(headingLabel) ? headingLabel : "View";
+const coverAlt = imageAlt || headingLabel;
+
+const effectiveChildrenProp =
+  childrenDataProp ?? (useDefaultEditableBinding ? "contentSections" : null);
+const arrayDataAttributes = effectiveChildrenProp
+  ? { "data-editable": "array", "data-prop": effectiveChildrenProp }
+  : {};
+const imageEditable = useDefaultEditableBinding || effectiveChildrenProp;
+const imageSrcProp = imageSrcDataProp ?? (imageEditable ? "image" : undefined);
+const imageAltProp = imageAltDataProp ?? (imageEditable ? "imageAlt" : undefined);
+---
+
+<article
+  class:list={["card-grid-item", className]}
+  {...htmlAttributes}
+>
+  {
+    image && (
+      <Image
+        class="card-grid-image"
+        source={image}
+        alt={coverAlt}
+        aspectRatio={aspectRatio}
+        sizes="(max-width: 640px) 100vw, 400px"
+        widths={[320, 400, 640, 800]}
+        width={800}
+        data-prop-src={imageSrcProp}
+        data-prop-alt={imageAltProp}
+      />
+    )
+  }
+  <div
+    class="card-grid-body flow"
+    {...arrayDataAttributes}
+  >
+    <slot>
+      {
+        blocks.length > 0 && (
+          <RenderBlock
+            contentSections={blocks}
+            useDefaultEditableBinding={!!effectiveChildrenProp}
+          />
+        )
+      }
+    </slot>
+  </div>
+  {
+    hasLink && (
+      <a
+        class="card-grid-hit"
+        href={link}
+      >
+        <span class="visually-hidden">{linkLabel}</span>
+      </a>
+    )
+  }
+</article>
+
+<style is:global>
+  @layer components {
+    .card-grid-item {
+      background-color: var(--color-bg);
+      border: var(--border-width-sm) solid var(--color-border);
+      border-radius: var(--radius-md);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+
+      &:has(> .card-grid-hit) {
+        position: relative;
+        transition:
+          border-color var(--animation-normal) var(--ease-out),
+          box-shadow var(--animation-normal) var(--ease-out),
+          transform var(--animation-normal) var(--ease-out);
+
+        .heading-icon-after {
+          transition:
+            color var(--animation-normal) var(--ease-out),
+            transform var(--animation-normal) var(--ease-out);
+        }
+
+        &:hover {
+          border-color: var(--color-border-strong);
+          box-shadow: var(--shadow-md);
+          transform: translateY(-3px);
+
+          .heading-icon-after {
+            color: var(--color-accent);
+            transform: translateX(3px);
+          }
+
+          .heading:not(:has(.heading-icon-after)) {
+            text-decoration: underline;
+          }
+        }
+      }
+
+      /* The global reset only kills the transition, so the movement itself has to go. */
+      @media (prefers-reduced-motion: reduce) {
+        &:has(> .card-grid-hit):hover {
+          transform: none;
+
+          .heading-icon-after {
+            transform: none;
+          }
+        }
+      }
+
+      .card-grid-image {
+        flex: none;
+        margin: 0;
+
+        img {
+          display: block;
+          height: auto;
+          width: 100%;
+        }
+      }
+
+      .card-grid-body {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        padding: var(--spacing-lg);
+
+        > * {
+          margin-block: 0;
+        }
+
+        > .simple-text,
+        > .text {
+          color: var(--color-text-muted);
+        }
+
+        /* Nested links (a category badge) sit above the stretched card hit. */
+        a,
+        .badge {
+          position: relative;
+          z-index: var(--layer-1);
+        }
+      }
+
+      .card-grid-hit {
+        inset: 0;
+        position: absolute;
+        z-index: var(--layer-0);
+      }
+    }
+  }
+</style>

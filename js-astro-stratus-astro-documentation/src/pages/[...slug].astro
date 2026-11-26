@@ -1,0 +1,277 @@
+---
+import Breadcrumbs from "@components/navigation/breadcrumbs/Breadcrumbs.astro";
+import CopyPage from "@components/navigation/copy-page/CopyPage.astro";
+import DocsPager from "@components/navigation/docs-pager/DocsPager.astro";
+import PageFeedback from "@components/navigation/page-feedback/PageFeedback.astro";
+import Toc from "@components/navigation/toc/Toc.astro";
+import MainComponent from "@components/utils/MainComponent.astro";
+import { mdxComponents } from "@components/utils/mdxComponents";
+import pageTools from "@data/pageTools.json";
+import Docs from "@layouts/Docs.astro";
+import { markdownHref } from "@utils/docsMarkdown";
+import { docHref, findCrumbs, findPager, getDocsNav } from "@utils/docsNav";
+import { gitLastModified } from "@utils/gitDates.mjs";
+import { editPageUrl } from "@utils/repository";
+import { getCollection, render, type CollectionEntry } from "astro:content";
+
+export async function getStaticPaths() {
+  const [pages, docs] = await Promise.all([getCollection("pages"), getCollection("docs")]);
+
+  const paths = [
+    ...pages.map((page: CollectionEntry<"pages">) => ({
+      params: { slug: page.id.replace(/\/?index$/, "") || undefined },
+      props: { page, doc: undefined },
+    })),
+    ...docs.map((doc: CollectionEntry<"docs">) => ({
+      params: { slug: doc.id.replace(/\/?index$/, "") || undefined },
+      props: { page: undefined, doc },
+    })),
+  ];
+
+  const seen = new Map<string, string>();
+
+  for (const path of paths) {
+    const key = path.params.slug ?? "";
+    const source = path.props.doc ? "src/content/docs" : "src/content/pages";
+
+    if (seen.has(key)) {
+      throw new Error(
+        `Two entries claim the URL "/${key}" — ${seen.get(key)} and ${source}. Rename one.`
+      );
+    }
+
+    seen.set(key, source);
+  }
+
+  return paths;
+}
+
+type Props = {
+  page?: CollectionEntry<"pages">;
+  doc?: CollectionEntry<"docs">;
+};
+
+const { page, doc } = Astro.props as Props;
+const entry = (doc ?? page)!;
+const nav = await getDocsNav();
+const { Content, headings } = await render(entry as CollectionEntry<"docs">);
+
+const tocHeadings = headings.filter(
+  (heading) => (heading.depth === 2 || heading.depth === 3) && heading.slug !== "footnote-label"
+);
+// Hidden rather than gated: a build-time gate leaves the editor nothing to reveal.
+const hasToc = tocHeadings.length > 0;
+const showTableOfContents = Boolean(doc?.data.showTableOfContents) && hasToc;
+
+const href = docHref(entry.id);
+const { prev, next } = findPager(nav, href);
+const crumbs = findCrumbs(nav, href);
+
+const updatedDate = doc ? gitLastModified(doc.filePath) : null;
+const updated = updatedDate
+  ? updatedDate.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    })
+  : "";
+const editUrl = doc ? editPageUrl(doc.filePath) : "";
+// Opt-out: an entry parsed before the field existed must still get the control.
+const showCopyPage = Boolean(doc && doc.data.showCopyPage !== false && pageTools.copyPage.enabled);
+const showFeedback = Boolean(doc?.data.showFeedback && pageTools.feedback?.enabled);
+---
+
+<Docs
+  nav={nav}
+  title={entry.data.title}
+  description={entry.data.description}
+  keywords={entry.data.keywords}
+  image={entry.data.image}
+  noindex={entry.data.noindex}
+  wide={!doc || !showTableOfContents}
+>
+  {
+    hasToc && (
+      <Toc
+        slot="toc"
+        headings={tocHeadings}
+        data-toggle-hidden={showTableOfContents ? undefined : ""}
+      />
+    )
+  }
+
+  {
+    doc ? (
+      <article class="doc">
+        {/* Group and parent crumbs have no path to bind; `siteChrome` keeps them live. */}
+        <Breadcrumbs
+          class="doc-breadcrumbs"
+          currentProp="title"
+          items={crumbs.length > 0 ? crumbs : [{ label: doc.data.title }]}
+        />
+        <div class="doc-heading">
+          <h1
+            class="doc-title"
+            data-pagefind-meta="title"
+            data-editable="text"
+            data-type="span"
+            data-prop="title"
+          >
+            {doc.data.title}
+          </h1>
+          <CopyPage
+            label={pageTools.copyPage.label}
+            markdownHref={markdownHref(href)}
+            data-toggle-hidden={showCopyPage ? undefined : ""}
+          />
+        </div>
+
+        {(updated || editUrl) && (
+          <p class="doc-meta">
+            {updated && <span>Updated {updated}</span>}
+            {updated && editUrl && (
+              <span
+                class="doc-meta-separator"
+                aria-hidden="true"
+              >
+                ·
+              </span>
+            )}
+            {editUrl && <a href={editUrl}>{pageTools.editPageLabel || "Edit this page"}</a>}
+          </p>
+        )}
+
+        {doc.data.description && (
+          <p
+            class="doc-lede"
+            data-pagefind-meta="description"
+            data-pagefind-weight="3"
+            data-editable="text"
+            data-type="span"
+            data-prop="description"
+          >
+            {doc.data.description}
+          </p>
+        )}
+
+        <div
+          class="prose"
+          data-editable="text"
+          data-prop="@content"
+        >
+          <Content components={mdxComponents} />
+        </div>
+
+        <div
+          class="doc-footer"
+          data-pagefind-ignore
+        >
+          <PageFeedback
+            prompt={pageTools.feedback.prompt}
+            action={pageTools.feedback.action}
+            inboxKey={pageTools.feedback.inboxKey}
+            successMessage={pageTools.feedback.successMessage}
+            page={href}
+            data-toggle-hidden={showFeedback ? undefined : ""}
+          />
+          <DocsPager
+            prev={prev}
+            next={next}
+            data-toggle-hidden={doc.data.showPager ? undefined : ""}
+          />
+        </div>
+      </article>
+    ) : (
+      <>
+        {page!.data.pageSections?.length > 0 && (
+          <MainComponent sections={page!.data.pageSections} />
+        )}
+        <div class="prose">
+          <Content components={mdxComponents} />
+        </div>
+      </>
+    )
+  }
+</Docs>
+
+<style is:global>
+  @layer page-sections {
+    .doc {
+      max-width: var(--content-width-lg);
+    }
+
+    .doc-breadcrumbs {
+      margin-bottom: var(--spacing-sm);
+    }
+
+    .doc-heading {
+      align-items: start;
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-md);
+      margin-bottom: var(--spacing-md);
+    }
+
+    .doc-heading > .copy-page {
+      flex: none;
+    }
+
+    .doc-heading .copy-page-menu {
+      inset-inline: 0 auto;
+    }
+
+    @media (width >= 640px) {
+      .doc-heading {
+        flex-direction: row;
+      }
+
+      .doc-heading .copy-page-menu {
+        inset-inline: auto 0;
+      }
+
+      .doc-title {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+    }
+
+    .doc-title {
+      font-size: var(--font-size-heading-lg);
+      letter-spacing: var(--letter-spacing-tighter);
+      line-height: var(--line-height-heading-lg);
+      margin-block: 0;
+    }
+
+    .doc-meta {
+      align-items: center;
+      color: var(--color-text-faint);
+      display: flex;
+      flex-wrap: wrap;
+      font-size: var(--font-size-xs);
+      gap: var(--spacing-sm);
+      margin-block: 0 var(--spacing-lg);
+
+      a {
+        color: var(--color-text-muted);
+        text-decoration: none;
+
+        &:hover {
+          color: var(--color-text-strong);
+        }
+      }
+    }
+
+    .doc-lede {
+      color: var(--color-text-muted);
+      font-size: var(--font-size-lg);
+      line-height: var(--line-height-relaxed);
+      margin-block: 0 var(--spacing-2xl);
+    }
+
+    .doc-footer {
+      border-top: var(--border-width-sm) solid var(--color-border);
+      margin-top: var(--spacing-3xl);
+      padding-top: var(--spacing-xl);
+    }
+  }
+</style>

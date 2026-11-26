@@ -1,0 +1,122 @@
+import sitemap from "@astrojs/sitemap";
+import editableRegions from "@cloudcannon/editable-regions/astro-integration";
+import { defineConfig } from "astro/config";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import mdx from "@astrojs/mdx";
+
+import { siteFonts } from "./site-fonts.mjs";
+import { CODE_THEME } from "./src/utils/codeTheme.mjs";
+import { fenceMetaTransformer } from "./src/utils/markdown.mjs";
+import { satteri } from "@astrojs/markdown-satteri";
+import { codeFencePlugin } from "./src/utils/codeFencePlugin.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export default defineConfig({
+  site: "https://glamorous-boar.cloudvent.net",
+  fonts: siteFonts,
+  build: {
+    inlineStylesheets: "always",
+  },
+  devToolbar: {
+    enabled: false,
+  },
+  server: {
+    port: 4321,
+  },
+  image: {
+    domains: [],
+  },
+  markdown: {
+    processor: satteri({ mdastPlugins: [codeFencePlugin] }),
+    shikiConfig: {
+      theme: CODE_THEME,
+      transformers: [fenceMetaTransformer()],
+      wrap: false,
+    },
+  },
+  integrations: [
+    editableRegions(),
+    sitemap({
+      filter: (page) => {
+        if (page.endsWith("/404") || page.endsWith("/404.html")) {
+          return false;
+        }
+        // `search.md` is noindex; listing it in the sitemap would contradict that.
+        if (page.endsWith("/search/") || page.endsWith("/search")) {
+          return false;
+        }
+        return true;
+      },
+    }),
+    mdx(),
+  ],
+  vite: {
+    build: {
+      minify: "esbuild",
+      // Astro builds pages with target `esnext`, so without this the CSS minifier assumes
+      // no browser needs a prefix and strips `-webkit-text-size-adjust` and friends.
+      cssTarget: ["chrome111", "edge111", "firefox114", "safari16.4", "ios16.4"],
+      chunkSizeWarningLimit: 1024,
+    },
+    plugins: [
+      {
+        name: "suppress-node-externalized-warning",
+        config() {
+          return {
+            build: {
+              rollupOptions: {
+                onwarn(warning, defaultHandler) {
+                  if (
+                    warning.message?.includes("externalized for browser compatibility") &&
+                    warning.message?.includes("discoverVideoSources")
+                  )
+                    return;
+                  defaultHandler(warning);
+                },
+              },
+            },
+          };
+        },
+        configResolved(config) {
+          const originalWarn = config.logger.warn;
+
+          config.logger.warn = (msg, options) => {
+            if (
+              typeof msg === "string" &&
+              msg.includes("externalized for browser compatibility") &&
+              msg.includes("discoverVideoSources")
+            )
+              return;
+            originalWarn(msg, options);
+          };
+        },
+      },
+    ],
+    css: {
+      devSourcemap: true,
+    },
+    resolve: {
+      alias: {
+        "@components": path.resolve(__dirname, "src/components"),
+        "@building-blocks": path.resolve(__dirname, "src/components/building-blocks"),
+        "@core-elements": path.resolve(__dirname, "src/components/building-blocks/core-elements"),
+        "@forms": path.resolve(__dirname, "src/components/building-blocks/forms"),
+        "@wrappers": path.resolve(__dirname, "src/components/building-blocks/wrappers"),
+        "@navigation": path.resolve(__dirname, "src/components/navigation"),
+        "@page-sections": path.resolve(__dirname, "src/components/page-sections"),
+        "@explainers": path.resolve(__dirname, "src/components/page-sections/explainers"),
+        "@builders": path.resolve(__dirname, "src/components/page-sections/builders"),
+        "@data": path.resolve(__dirname, "src/data"),
+        "@utils": path.resolve(__dirname, "src/utils"),
+        "@content": path.resolve(__dirname, "src/content"),
+        "@assets": path.resolve(__dirname, "src/assets"),
+        "@layouts": path.resolve(__dirname, "src/layouts"),
+        "@component-utils": path.resolve(__dirname, "src/components/utils"),
+        "@styles": path.resolve(__dirname, "src/styles"),
+      },
+    },
+  },
+});

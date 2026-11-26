@@ -1,0 +1,265 @@
+---
+import { spaceBeforeAttr } from "@component-utils/spaceBefore.mjs";
+import Component from "@components/utils/renderBlock.astro";
+import { slugifyLabel } from "@components/utils/slugify";
+
+const {
+  firstColumnContentSections = [],
+  secondColumnContentSections = [],
+  distributionMode = "half",
+  alignmentVertical = "top",
+  reverse = false,
+  reverseOrderOnMobile = false,
+  fixedWidth,
+  minSplitWidth = 700,
+  gap = "lg",
+  useDefaultEditableBinding = false,
+  spaceBefore = "default",
+  class: className,
+  label,
+  "data-first-prop": customFirstDataProp,
+  "data-second-prop": customSecondDataProp,
+  _component,
+  ...htmlAttributes
+} = Astro.props;
+
+if (!htmlAttributes.id && label) {
+  htmlAttributes.id = slugifyLabel(label);
+}
+
+const effectiveFirstProp =
+  customFirstDataProp ?? (useDefaultEditableBinding ? "firstColumnContentSections" : null);
+const effectiveSecondProp =
+  customSecondDataProp ?? (useDefaultEditableBinding ? "secondColumnContentSections" : null);
+
+const firstSplitBlocks = reverse ? secondColumnContentSections : firstColumnContentSections;
+const secondSplitBlocks = reverse ? firstColumnContentSections : secondColumnContentSections;
+const firstPropName = reverse ? effectiveSecondProp : effectiveFirstProp;
+const secondPropName = reverse ? effectiveFirstProp : effectiveSecondProp;
+const firstSlotName = reverse ? "second" : "first";
+const secondSlotName = reverse ? "first" : "second";
+const firstPaneUsesSlot = Astro.slots.has(firstSlotName);
+const secondPaneUsesSlot = Astro.slots.has(secondSlotName);
+const firstPaneEditable = !!firstPropName && !firstPaneUsesSlot;
+const secondPaneEditable = !!secondPropName && !secondPaneUsesSlot;
+
+const arrayDataAttributesFirst = firstPropName
+  ? { "data-editable": "array", "data-prop": firstPropName }
+  : {};
+
+const arrayDataAttributesSecond = secondPropName
+  ? { "data-editable": "array", "data-prop": secondPropName }
+  : {};
+
+const getReversedDistributionMode = (mode: string) => {
+  const reverseMap = {
+    "third-two-thirds": "two-thirds-third",
+    "two-thirds-third": "third-two-thirds",
+    "quarter-three-quarters": "three-quarters-quarter",
+    "three-quarters-quarter": "quarter-three-quarters",
+    "fixed-flexible": "flexible-fixed",
+    "flexible-fixed": "fixed-flexible",
+    half: "half",
+  };
+
+  return reverseMap[mode as keyof typeof reverseMap] || mode;
+};
+
+const finalDistributionMode = reverse
+  ? getReversedDistributionMode(distributionMode)
+  : distributionMode;
+
+// Keyed by what the emitted rule actually varies on, not by instance: two
+// splits with the same breakpoint share it, and the selector survives an
+// editor re-render that a per-instance id would not.
+const splitId = `${minSplitWidth}${reverseOrderOnMobile ? "-reverse" : ""}`;
+---
+
+<section
+  class:list={["split", "stackable", className]}
+  {...htmlAttributes}
+>
+  <div
+    data-space-before={spaceBeforeAttr(spaceBefore)}
+    class:list={[
+      "split-inner",
+      "uses-spacing-utils",
+      `align-${alignmentVertical}`,
+      finalDistributionMode,
+      `gap-${gap}`,
+      { reversed: reverse },
+    ]}
+    data-split-id={splitId}
+    style={fixedWidth ? `--split-fixed-width: ${fixedWidth}px;` : ""}
+  >
+    <div
+      class="pane first flow"
+      {...arrayDataAttributesFirst}
+    >
+      {
+        reverse ? (
+          <slot name="second">
+            {firstSplitBlocks && (
+              <Component
+                contentSections={firstSplitBlocks}
+                useDefaultEditableBinding={firstPaneEditable}
+              />
+            )}
+          </slot>
+        ) : (
+          <slot name="first">
+            {firstSplitBlocks && (
+              <Component
+                contentSections={firstSplitBlocks}
+                useDefaultEditableBinding={firstPaneEditable}
+              />
+            )}
+          </slot>
+        )
+      }
+    </div>
+    <div
+      class="pane second flow"
+      {...arrayDataAttributesSecond}
+    >
+      {
+        reverse ? (
+          <slot name="first">
+            {secondSplitBlocks && (
+              <Component
+                contentSections={secondSplitBlocks}
+                useDefaultEditableBinding={secondPaneEditable}
+              />
+            )}
+          </slot>
+        ) : (
+          <slot name="second">
+            {secondSplitBlocks && (
+              <Component
+                contentSections={secondSplitBlocks}
+                useDefaultEditableBinding={secondPaneEditable}
+              />
+            )}
+          </slot>
+        )
+      }
+    </div>
+  </div>
+  {
+    minSplitWidth > 0 && (
+      <style
+        is:inline
+        set:html={`
+      @container (max-width: ${minSplitWidth}px) {
+        .split-inner[data-split-id="${splitId}"] {
+          grid-template-columns: var(--split-columns-mobile);
+        }
+        .split[data-bleed] > .split-inner[data-split-id="${splitId}"] > .pane {
+          margin-inline: 0;
+        }
+        ${
+          reverseOrderOnMobile
+            ? `
+        .split-inner.reversed[data-split-id="${splitId}"] .pane.first {
+          order: 2;
+        }
+        .split-inner.reversed[data-split-id="${splitId}"] .pane.second {
+          order: 1;
+        }
+        `
+            : ""
+        }
+      }
+    `}
+      />
+    )
+  }
+</section>
+
+<style is:global>
+  @layer components {
+    .split {
+      > .split-inner {
+        --split-columns-mobile: 1fr;
+        --split-columns-desktop: 1fr 1fr;
+        --split-fixed-width: auto;
+
+        display: grid;
+        gap: var(--spacing-lg);
+        grid-template-columns: var(--split-columns-desktop);
+
+        &.align-top {
+          align-items: start;
+        }
+
+        &.align-center {
+          align-items: center;
+        }
+
+        &.align-bottom {
+          align-items: end;
+        }
+
+        &.align-stretch {
+          align-items: stretch;
+
+          > .pane > *:only-child {
+            height: 100%;
+          }
+        }
+
+        & .pane {
+          container-type: inline-size;
+          min-width: 0;
+          overflow-wrap: break-word;
+        }
+
+        &.half {
+          --split-columns-desktop: 1fr 1fr;
+        }
+
+        &.third-two-thirds {
+          --split-columns-desktop: 1fr 2fr;
+        }
+
+        &.two-thirds-third {
+          --split-columns-desktop: 2fr 1fr;
+        }
+
+        &.quarter-three-quarters {
+          --split-columns-desktop: 1fr 3fr;
+        }
+
+        &.three-quarters-quarter {
+          --split-columns-desktop: 3fr 1fr;
+        }
+
+        &.fixed-flexible {
+          --split-columns-desktop: var(--split-fixed-width) 1fr;
+        }
+
+        &.flexible-fixed {
+          --split-columns-desktop: 1fr var(--split-fixed-width);
+        }
+      }
+    }
+
+    .split[data-bleed="inline-end"] > .split-inner > .pane.second {
+      margin-inline-end: calc(-1 * var(--section-bleed, 0px));
+    }
+
+    .split[data-bleed="inline-start"] > .split-inner > .pane.first {
+      margin-inline-start: calc(-1 * var(--section-bleed, 0px));
+    }
+
+    .split[data-bleed="inline-end"] > .split-inner > .pane.second .image > .image-inner.rounded {
+      border-end-end-radius: 0;
+      border-start-end-radius: 0;
+    }
+
+    .split[data-bleed="inline-start"] > .split-inner > .pane.first .image > .image-inner.rounded {
+      border-end-start-radius: 0;
+      border-start-start-radius: 0;
+    }
+  }
+</style>

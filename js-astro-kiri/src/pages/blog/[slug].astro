@@ -1,0 +1,87 @@
+---
+import { getCollection, type CollectionEntry } from "astro:content";
+import { slide } from "astro:transitions";
+import Layout from "@/layouts/Layout.astro";
+import PostTags from "@/components/PostTags.astro";
+import PostCoverImage from "@/components/PostCoverImage.astro";
+import PostInfo from "@/components/PostInfo.astro";
+import type { MarkdownHeading } from "astro";
+import TableOfContents from "@/components/TableOfContents.astro";
+import ReadingIndicator from "@/components/ReadingIndicator.astro";
+
+export const getStaticPaths = async () => {
+	const blogs = await getCollection("blogs");
+
+	const headings = await Promise.all(
+		blogs.map((entry) =>
+			entry.render().then(({ headings }) => headings),
+		),
+	);
+
+	return blogs.map((blog, index) => {
+		return {
+			params: {
+				slug: blog.slug,
+			},
+			props: { blog, headings: headings[index] },
+		};
+	});
+};
+
+type Props = {
+	blog: CollectionEntry<"blogs">;
+	headings: MarkdownHeading[];
+};
+
+const { blog, headings } = Astro.props;
+const { Content } = await blog.render();
+
+const { title, excerpt, coverImage, publishedDate, tags, author, avatar } =
+	blog.data;
+
+const wordCount = blog.body.split(/\s+/).length;
+
+const coverImageURL =
+	typeof coverImage === "string" ? coverImage : coverImage?.src;
+---
+
+<Layout title={title} description={excerpt} image={coverImageURL}>
+	<ReadingIndicator slot="reading-indicator" />
+	<main
+		id="main-content"
+		transition:animate={slide({ duration: "0.4s" })}
+		class="mx-auto"
+	>
+		<article>
+			<PostCoverImage coverImage={coverImage} />
+			<div
+				class="mx-auto my-3 max-sm:w-sm sm:max-w-sm md:max-w-xl lg:max-w-3xl"
+			>
+				<h1
+					class="text-center text-xl font-semibold md:text-3xl lg:text-4xl"
+				>
+					{blog.data.title}
+				</h1>
+				<PostInfo
+					avatar={avatar}
+					author={author}
+					publishedDate={publishedDate}
+					wordCount={wordCount}
+				/>
+				<PostTags tags={tags} />
+			</div>
+			<div
+				class="relative mx-auto my-10 grid max-w-7xl grid-cols-1 gap-2 xl:grid-cols-[1fr_minmax(auto,auto)_1fr]"
+			>
+				<TableOfContents headings={headings} />
+				<div>
+					<div
+						class="prose text-muted prose-headings:text-foreground prose-a:text-blue-400 prose-img:rounded-lg prose-strong:text-foreground relative mx-auto mb-20 overflow-visible px-2 text-justify max-sm:w-sm sm:max-w-sm sm:px-0 md:max-w-xl lg:max-w-3xl"
+					>
+						<Content />
+					</div>
+				</div>
+			</div>
+		</article>
+	</main>
+</Layout>

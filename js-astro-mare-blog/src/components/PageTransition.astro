@@ -1,0 +1,94 @@
+---
+import { ClientRouter } from "astro:transitions";
+---
+
+<ClientRouter fallback="swap" />
+
+<script>
+  const TARGET_SELECTOR = "[data-page-transition]";
+  const OFFSET = "1rem";
+  const LEAVE = { duration: 160, easing: "cubic-bezier(0.4, 0, 1, 1)" };
+  const ENTER = { duration: 320, easing: "cubic-bezier(0, 0, 0.2, 1)" };
+
+  interface PreparationEvent extends Event {
+    from: URL;
+    to: URL;
+    loader: () => Promise<void>;
+  }
+
+  let leaveAnimations: Animation[] = [];
+  let leaving: Promise<void> | null = null;
+
+  const prefersReducedMotion = () =>
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const getTargets = () =>
+    Array.from(document.querySelectorAll<HTMLElement>(TARGET_SELECTOR));
+
+  const reset = () => {
+    leaveAnimations = [];
+    leaving = null;
+  };
+
+  const playLeave = (): Promise<void> => {
+    if (leaving) return leaving;
+
+    leaveAnimations = getTargets().map((element) =>
+      element.animate(
+        [
+          { opacity: 1, transform: "translateY(0)" },
+          { opacity: 0, transform: `translateY(${OFFSET})` },
+        ],
+        { ...LEAVE, fill: "forwards" },
+      ),
+    );
+
+    leaving = Promise.all(
+      leaveAnimations.map((animation) =>
+        animation.finished.catch(() => undefined),
+      ),
+    ).then(() => undefined);
+
+    return leaving;
+  };
+
+  const cancelLeave = () => {
+    leaveAnimations.forEach((animation) => animation.cancel());
+    reset();
+  };
+
+  document.addEventListener("astro:before-preparation", (event) => {
+    if (prefersReducedMotion()) return;
+
+    const preparation = event as PreparationEvent;
+    const { from, to } = preparation;
+    if (from.pathname === to.pathname && from.search === to.search) return;
+
+    const originalLoader = preparation.loader;
+    preparation.loader = async () => {
+      const leave = playLeave();
+      try {
+        await Promise.all([leave, originalLoader()]);
+      } catch (error) {
+        cancelLeave();
+        throw error;
+      }
+    };
+  });
+
+  document.addEventListener("astro:after-swap", () => {
+    const shouldEnter = leaving !== null;
+    reset();
+    if (!shouldEnter || prefersReducedMotion()) return;
+
+    getTargets().forEach((element) => {
+      element.animate(
+        [
+          { opacity: 0, transform: `translateY(${OFFSET})` },
+          { opacity: 1, transform: "translateY(0)" },
+        ],
+        { ...ENTER, fill: "backwards" },
+      );
+    });
+  });
+</script>

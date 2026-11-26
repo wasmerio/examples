@@ -1,0 +1,104 @@
+---
+import { render } from "astro:content";
+import BaseLayout from "../layouts/BaseLayout.astro";
+import {
+  formatISODate,
+  formatMonthDay,
+  getJournalEntries,
+} from "../utils/content";
+
+const entries = await getJournalEntries();
+
+const renderedEntries = await Promise.all(
+  entries.map(async (entry) => {
+    const { Content } = await render(entry);
+
+    return {
+      entry,
+      Content,
+    };
+  }),
+);
+
+const entriesByYear = new Map<number, typeof renderedEntries>();
+
+for (const item of renderedEntries) {
+  const year = item.entry.data.pubDate.getUTCFullYear();
+  const yearEntries = entriesByYear.get(year) ?? [];
+
+  yearEntries.push(item);
+  entriesByYear.set(year, yearEntries);
+}
+
+const journalYears = [...entriesByYear.entries()];
+---
+
+<BaseLayout
+  pageTitle="Journal"
+  description="Short notes and moments collected over time."
+>
+  {
+    renderedEntries.length > 0 ? (
+      <div class="rounded-xl bg-white px-4 py-6 shadow-sm sm:px-8 sm:py-8 lg:px-10 dark:bg-gray-900">
+        <div class="flex flex-col gap-7 sm:gap-8">
+          {journalYears.map(([year, yearEntries]) => (
+            <section
+              aria-labelledby={`journal-year-${year}`}
+              class="relative before:absolute before:top-5 before:bottom-0 before:left-20 before:border-l before:border-gray-300 before:content-[''] sm:before:top-5.75 dark:before:border-gray-700"
+            >
+              <h2
+                id={`journal-year-${year}`}
+                class="relative grid grid-cols-[3.5rem_3rem_minmax(0,1fr)] items-center text-xl font-bold tracking-tight text-gray-800 sm:text-2xl dark:text-gray-100"
+              >
+                <span>{year}</span>
+                <span class="flex justify-center">
+                  <span class="relative z-10 h-3.5 w-3.5 rounded-full border-2 border-blue-500 bg-white dark:border-blue-400 dark:bg-gray-900" />
+                </span>
+                <span class="text-xs font-normal tracking-normal text-gray-500 sm:text-sm dark:text-gray-400">
+                  {yearEntries.length}{" "}
+                  {yearEntries.length === 1 ? "entry" : "entries"}
+                </span>
+              </h2>
+              <ol class="relative mt-2 space-y-0.5">
+                {yearEntries.map(({ entry, Content }) => {
+                  const date = entry.data.pubDate;
+                  return (
+                    <li class="grid grid-cols-[3.5rem_3rem_minmax(0,1fr)] items-start">
+                      <time
+                        datetime={formatISODate(date)}
+                        class="col-start-1 row-start-1 mt-2.5 mr-1 text-right text-xs font-medium text-gray-500 sm:text-sm dark:text-gray-400"
+                      >
+                        {formatMonthDay(date)}
+                      </time>
+                      <span class="relative z-10 col-start-2 row-start-1 flex justify-center pt-2.75 sm:pt-3.25">
+                        <span class="h-3.5 w-3.5 rounded-full border-2 border-blue-500 bg-white dark:border-blue-400 dark:bg-gray-900" />
+                      </span>
+                      <article class="col-start-3 row-start-1 min-w-0 py-2">
+                        <h3 class="mt-0 mb-2 text-sm font-semibold text-gray-800 sm:text-base dark:text-gray-200">
+                          {entry.data.title}
+                        </h3>
+                        <div class="markdown-content">
+                          <Content />
+                        </div>
+                      </article>
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+          ))}
+        </div>
+      </div>
+    ) : (
+      <section class="rounded-lg bg-white p-5 shadow-sm sm:p-8 lg:p-12 dark:bg-gray-900">
+        <p class="text-sm text-gray-500 dark:text-gray-400">
+          No journal entries yet. Add a Markdown file in{" "}
+          <code class="rounded bg-gray-100 px-1.5 py-0.5 text-sm text-blue-600 dark:bg-gray-800 dark:text-blue-400">
+            src/content/journal/
+          </code>{" "}
+          to begin.
+        </p>
+      </section>
+    )
+  }
+</BaseLayout>

@@ -1,0 +1,105 @@
+<script>
+  import NProgress from "nprogress";
+
+  const SHOW_DELAY = 120;
+  const SETTLE_DELAY = 500;
+  const SAFETY_TIMEOUT = 15000;
+
+  NProgress.configure({
+    parent: "html",
+    showSpinner: false,
+    speed: 200,
+    trickleSpeed: 200,
+    minimum: 0,
+  });
+
+  let navigating = false;
+  let navigationBarShown = false;
+  let readingActive = false;
+  let resumeAt = 0;
+  let frame = 0;
+  let showTimer: number | undefined;
+  let hideTimer: number | undefined;
+  let safetyTimer: number | undefined;
+
+  const retractReading = () => {
+    if (!readingActive) return;
+    readingActive = false;
+    NProgress.set(0);
+    window.clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(() => {
+      if (!readingActive) NProgress.remove();
+    }, SETTLE_DELAY / 2);
+  };
+
+  const updateReading = () => {
+    frame = 0;
+    if (navigating || navigationBarShown) return;
+
+    const remaining = resumeAt - Date.now();
+    if (remaining > 0) {
+      window.setTimeout(scheduleUpdate, remaining + 20);
+      return;
+    }
+
+    const article = document.querySelector(
+      "main[data-reading-progress] article",
+    );
+    if (!(article instanceof HTMLElement)) {
+      retractReading();
+      return;
+    }
+
+    const rect = article.getBoundingClientRect();
+    const articleEnd = rect.bottom + window.scrollY;
+    const scrollable = Math.max(articleEnd - window.innerHeight, 1);
+    const progress = Math.min(Math.max(window.scrollY / scrollable, 0), 1);
+
+    if (progress <= 0) {
+      retractReading();
+      return;
+    }
+
+    window.clearTimeout(hideTimer);
+    NProgress.set(Math.min(progress, 0.999));
+    readingActive = true;
+  };
+
+  function scheduleUpdate() {
+    if (!frame) frame = window.requestAnimationFrame(updateReading);
+  }
+
+  const startNavigation = () => {
+    navigating = true;
+    window.clearTimeout(showTimer);
+    window.clearTimeout(hideTimer);
+    window.clearTimeout(safetyTimer);
+
+    showTimer = window.setTimeout(() => {
+      NProgress.remove();
+      NProgress.set(0.08);
+      readingActive = false;
+      navigationBarShown = true;
+      NProgress.start();
+    }, SHOW_DELAY);
+    safetyTimer = window.setTimeout(endNavigation, SAFETY_TIMEOUT);
+  };
+
+  function endNavigation() {
+    window.clearTimeout(showTimer);
+    window.clearTimeout(safetyTimer);
+    navigating = false;
+
+    if (navigationBarShown) {
+      navigationBarShown = false;
+      NProgress.done();
+      resumeAt = Date.now() + SETTLE_DELAY;
+    }
+    scheduleUpdate();
+  }
+
+  document.addEventListener("astro:before-preparation", startNavigation);
+  document.addEventListener("astro:page-load", endNavigation);
+  window.addEventListener("scroll", scheduleUpdate, { passive: true });
+  window.addEventListener("resize", scheduleUpdate, { passive: true });
+</script>

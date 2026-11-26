@@ -1,0 +1,221 @@
+---
+import { loadData } from "../lib/parser";
+import { loadConfig } from "../lib/parser/configParser";
+import { resolveTheme } from "../themes/registry";
+
+const data = await loadData();
+const config = await loadConfig();
+
+const resolvedTheme = resolveTheme(config.theme);
+const WebComponent = resolvedTheme.theme.web;
+
+// SEO Calculations
+const siteUrl = Astro.site ? Astro.site.href : Astro.url.origin;
+const canonicalURL = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : Astro.url.href;
+const title = `${data.profile.name} — ${data.profile.title}`;
+const description = data.profile.bio || `${data.profile.name} | ${data.profile.title} Curriculum Vitae`;
+
+// Avatar absolute URL
+let avatarUrl = data.profile.avatar;
+if (avatarUrl && !avatarUrl.startsWith("http://") && !avatarUrl.startsWith("https://")) {
+  try {
+    const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+    const fullPath = base ? `${base}/${avatarUrl.replace(/^\//, "")}` : avatarUrl;
+    avatarUrl = new URL(fullPath, siteUrl).href;
+  } catch {
+    avatarUrl = undefined;
+  }
+}
+
+// Social handles (e.g. Twitter/X)
+const twitterSocial = data.profile.socials?.find(
+  (s) => s.plattform.toLowerCase().includes("twitter") || s.plattform.toLowerCase().includes("x")
+);
+const twitterHandle = twitterSocial?.username
+  ? twitterSocial.username.startsWith("@")
+    ? twitterSocial.username
+    : `@${twitterSocial.username}`
+  : undefined;
+
+// Split name for OpenGraph profile
+const nameParts = data.profile.name.trim().split(" ");
+const firstName = nameParts[0];
+const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "";
+
+// Collect all skills for keywords
+const skillKeywords = data.skills?.flatMap((s) => s.skills).join(", ");
+
+// JSON-LD Structured Data (Person Schema)
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Person",
+  name: data.profile.name,
+  jobTitle: data.profile.title,
+  description: data.profile.bio,
+  url: data.profile.website || canonicalURL,
+  ...(avatarUrl ? { image: avatarUrl } : {}),
+  ...(data.profile.email ? { email: `mailto:${data.profile.email}` } : {}),
+  ...(data.profile.phone ? { telephone: data.profile.phone } : {}),
+  ...(data.profile.location
+    ? {
+        address: {
+          "@type": "PostalAddress",
+          addressLocality: data.profile.location,
+        },
+      }
+    : {}),
+  ...(data.profile.socials && data.profile.socials.length > 0
+    ? { sameAs: data.profile.socials.map((s) => s.url) }
+    : {}),
+  ...(data.skills && data.skills.length > 0
+    ? { knowsAbout: data.skills.flatMap((s) => s.skills) }
+    : {}),
+};
+---
+
+<!doctype html>
+<html lang={config.locale || "en"}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={data.profile.name} />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="robots" content="index, follow" />
+    {skillKeywords && <meta name="keywords" content={skillKeywords} />}
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href={canonicalURL} />
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" href="/favicon.ico" />
+
+    <!-- Open Graph / LinkedIn / Facebook -->
+    <meta property="og:type" content="profile" />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:site_name" content={`${data.profile.name} — CV`} />
+    <meta property="og:locale" content={config.locale === "de" ? "de_DE" : "en_US"} />
+    {firstName && <meta property="profile:first_name" content={firstName} />}
+    {lastName && <meta property="profile:last_name" content={lastName} />}
+    {avatarUrl && <meta property="og:image" content={avatarUrl} />}
+
+    <!-- Twitter / X Cards -->
+    <meta name="twitter:card" content={avatarUrl ? "summary_large_image" : "summary"} />
+    <meta name="twitter:url" content={canonicalURL} />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    {avatarUrl && <meta name="twitter:image" content={avatarUrl} />}
+    {twitterHandle && <meta name="twitter:creator" content={twitterHandle} />}
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <style is:global>
+      *, *::before, *::after {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #f1f5f9;
+      }
+
+      /* Theme Fallback Notification Banner */
+      .theme-fallback-banner {
+        background-color: #fef3c7;
+        color: #92400e;
+        border-bottom: 1px solid #fcd34d;
+        padding: 0.75rem 1.25rem;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 0.875rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        text-align: center;
+      }
+
+      .theme-fallback-banner code {
+        background: #fde68a;
+        padding: 0.15rem 0.4rem;
+        border-radius: 4px;
+        font-weight: 600;
+        font-family: monospace;
+      }
+
+      @media print {
+        .theme-fallback-banner {
+          display: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    {resolvedTheme.isFallback && (
+      <div class="theme-fallback-banner" role="alert">
+        <span>⚠️</span>
+        <span>
+          <strong>Theme Warning:</strong> {resolvedTheme.fallbackReason}. Falling back to <code>classic</code>.
+        </span>
+      </div>
+    )}
+
+    <WebComponent data={data} locale={config.locale} config={config} />
+
+    <!-- Hidden iframe print script -->
+    <!-- Hidden iframe print script -->
+    <script define:vars={{ base: import.meta.env.BASE_URL }}>
+      const cleanBase = base.endsWith("/") ? base : `${base}/`;
+
+      function triggerPdfPrint(printUrl = `${cleanBase}print/ats`) {
+        let iframe = document.getElementById("cv-hidden-print-frame");
+        
+        if (iframe) {
+          iframe.remove();
+        }
+
+        iframe = document.createElement("iframe");
+        iframe.id = "cv-hidden-print-frame";
+        iframe.style.position = "fixed";
+        iframe.style.right = "0";
+        iframe.style.bottom = "0";
+        iframe.style.width = "0";
+        iframe.style.height = "0";
+        iframe.style.border = "0";
+        iframe.style.visibility = "hidden";
+        document.body.appendChild(iframe);
+
+        iframe.onload = () => {
+          setTimeout(() => {
+            try {
+              iframe.contentWindow?.focus();
+              iframe.contentWindow?.print();
+            } catch (err) {
+              console.error("Print dialog failed:", err);
+            }
+          }, 250);
+        };
+
+        iframe.src = printUrl;
+      }
+
+      function setupPrintButtons() {
+        document.addEventListener("click", (event) => {
+          const target = event.target?.closest("[data-print-pdf]");
+          if (target) {
+            event.preventDefault();
+            const type = target.getAttribute("data-print-pdf");
+            const printUrl = type === "design" ? `${cleanBase}print/design` : `${cleanBase}print/ats`;
+            triggerPdfPrint(printUrl);
+          }
+        });
+      }
+
+      setupPrintButtons();
+      document.addEventListener("astro:after-swap", setupPrintButtons);
+    </script>
+  </body>
+</html>

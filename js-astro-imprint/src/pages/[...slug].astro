@@ -1,0 +1,56 @@
+---
+import { getCollection, render } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { t } from '../i18n';
+import { pathFor } from '../utils/paths';
+import { excerpt, formatDate, normalizeTerms, postPath, type Post } from '../utils/posts';
+
+export async function getStaticPaths() {
+  return (await getCollection('posts')).map(post => ({
+    params: { slug: post.id },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props as { post: Post };
+const { Content, headings } = await render(post);
+const toc = headings.filter(heading => heading.depth === 2 || heading.depth === 3);
+const description = excerpt(post, 155);
+---
+<BaseLayout title={post.data.title} description={description} canonical={postPath(post)} noindex={post.data.noindex} type="article">
+  <div class="container article-shell">
+    <article>
+      <header class="article-header">
+        <p class="eyebrow">{t('technicalNote')}</p>
+        <h1>{post.data.title}</h1>
+        <div class="article-meta">
+          <time datetime={post.data.date.toISOString()}>{t('published')} {formatDate(post.data.date)}</time>
+          {post.data.updated && <time datetime={post.data.updated.toISOString()}>{t('updated')} {formatDate(post.data.updated)}</time>}
+        </div>
+        {(normalizeTerms(post.data.categories).length > 0 || normalizeTerms(post.data.tags).length > 0) && (
+          <div class="badges">
+            {normalizeTerms(post.data.categories).map(category => post.data.noindex
+              ? <span class="badge archive">{category}</span>
+              : <a class="badge archive" href={pathFor(`categories/${encodeURIComponent(category)}`)}>{category}</a>)}
+            {normalizeTerms(post.data.tags).map(tag => post.data.noindex
+              ? <span class="badge">{tag}</span>
+              : <a class="badge" href={pathFor(`tags/${encodeURIComponent(tag)}`)}>{tag}</a>)}
+          </div>
+        )}
+      </header>
+      {post.data.archived && (
+        <aside class="archive-notice" role="note">
+          <strong>{t('archived')}</strong>
+          <p>{t('archiveNotice')}</p>
+        </aside>
+      )}
+      <div class="prose"><Content /></div>
+    </article>
+    {toc.length > 1 && (
+      <nav class="toc" aria-label={t('tableOfContents')}>
+        <strong>{t('tableOfContents')}</strong>
+        <ol>{toc.map(item => <li class={`depth-${item.depth}`}><a href={`#${item.slug}`}>{item.text}</a></li>)}</ol>
+      </nav>
+    )}
+  </div>
+</BaseLayout>

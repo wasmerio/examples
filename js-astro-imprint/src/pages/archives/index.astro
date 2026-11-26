@@ -1,0 +1,37 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostList from '../../components/PostList.astro';
+import Pagination from '../../components/Pagination.astro';
+import { SITE } from '../../config';
+import { archiveMonthLabel, countLabel, t } from '../../i18n';
+import { pathFor } from '../../utils/paths';
+import { dateParts, sortPosts } from '../../utils/posts';
+
+const posts = sortPosts((await getCollection('posts')).filter(post => !post.data.noindex));
+const periods = new Map<string, Set<string>>();
+for (const post of posts) {
+  const { year, month } = dateParts(post.data.date);
+  if (!periods.has(year)) periods.set(year, new Set());
+  periods.get(year)?.add(month);
+}
+const years = [...periods].map(([year, months]) => ({ year, months: [...months].toSorted().toReversed() }));
+const total = Math.ceil(posts.length / SITE.pageSize);
+---
+<BaseLayout title={t('archives')}>
+  <div class="container">
+    <div class="section-heading"><h1>{t('postArchives')}</h1><span>{countLabel(posts.length, 'post', 'posts')}</span></div>
+    <div class="archive-index">
+      {years.map(({ year, months }) => (
+        <section class="archive-period" aria-labelledby={`archive-${year}`}>
+          <a id={`archive-${year}`} class="archive-year" href={pathFor(`archives/${year}`)}>{year}</a>
+          <div class="badges">
+            {months.map(month => <a class="badge" href={pathFor(`archives/${year}/${month}`)}>{archiveMonthLabel(month)}</a>)}
+          </div>
+        </section>
+      ))}
+    </div>
+    <PostList posts={posts.slice(0, SITE.pageSize)} />
+    <Pagination current={1} total={total} base="archives" />
+  </div>
+</BaseLayout>

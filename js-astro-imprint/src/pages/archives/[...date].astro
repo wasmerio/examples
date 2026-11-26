@@ -1,0 +1,52 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostList from '../../components/PostList.astro';
+import Pagination from '../../components/Pagination.astro';
+import { SITE } from '../../config';
+import { archiveLabel, t } from '../../i18n';
+import { dateParts, sortPosts } from '../../utils/posts';
+
+export async function getStaticPaths() {
+  const posts = sortPosts((await getCollection('posts')).filter(post => !post.data.noindex));
+  const groups = new Map<string, typeof posts>();
+  for (const post of posts) {
+    const { year, month } = dateParts(post.data.date);
+    for (const key of [year, `${year}/${month}`]) groups.set(key, [...(groups.get(key) ?? []), post]);
+  }
+  const paths = [];
+  const totalPages = Math.ceil(posts.length / SITE.pageSize);
+
+  for (let page = 2; page <= totalPages; page += 1) {
+    const start = (page - 1) * SITE.pageSize;
+    paths.push({
+      params: { date: `page/${page}` },
+      props: { label: t('postArchives'), posts: posts.slice(start, start + SITE.pageSize), current: page, total: totalPages, base: 'archives' },
+    });
+  }
+
+  for (const [date, entries] of groups) {
+    const [year, month] = date.split('/');
+    const label = archiveLabel(year, month);
+    const groupPages = Math.ceil(entries.length / SITE.pageSize);
+    for (let page = 1; page <= groupPages; page += 1) {
+      const start = (page - 1) * SITE.pageSize;
+      paths.push({
+        params: { date: page === 1 ? date : `${date}/page/${page}` },
+        props: { label, posts: entries.slice(start, start + SITE.pageSize), current: page, total: groupPages, base: `archives/${date}` },
+      });
+    }
+  }
+  return paths;
+}
+
+const { label, posts, current, total, base } = Astro.props;
+const title = current > 1 ? `${label} · ${current}` : label;
+---
+<BaseLayout title={title} noindex={current > 1}>
+  <div class="container">
+    <div class="section-heading"><h1>{label}</h1><span>{current} / {total}</span></div>
+    <PostList posts={posts} />
+    <Pagination current={current} total={total} base={base} />
+  </div>
+</BaseLayout>

@@ -1,0 +1,103 @@
+---
+import type { ImageMetadata } from "astro";
+import { getImage } from "astro:assets";
+import LogoMenu from "@/components/chrome/LogoMenu.astro";
+import SiteFooter from "@/components/chrome/SiteFooter.astro";
+import SiteHeader from "@/components/chrome/SiteHeader.astro";
+import { siteConfig } from "@/config/site";
+import { websiteSchema } from "@/lib/schema";
+import "@/styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+  /** An imported image is cropped to a 1200x630 share card at build time. */
+  image?: ImageMetadata | string;
+  imageAlt?: string;
+  type?: "website" | "article";
+  noindex?: boolean;
+  structuredData?: Record<string, unknown>;
+  /** The header starts transparent over a full-bleed hero and turns solid on scroll. */
+  overlay?: boolean;
+}
+
+const {
+  title = siteConfig.title,
+  description = siteConfig.description,
+  image,
+  imageAlt,
+  type = "website",
+  noindex = false,
+  structuredData,
+  overlay = false,
+} = Astro.props;
+
+const card =
+  image && typeof image !== "string"
+    ? await getImage({ src: image, width: 1200, height: 630, fit: "cover", format: "png" })
+    : undefined;
+const socialImage = card?.src ?? (typeof image === "string" ? image : siteConfig.socialImage);
+const absoluteImage = new URL(socialImage, siteConfig.siteUrl).toString();
+const canonical = new URL(Astro.url.pathname, siteConfig.siteUrl).toString();
+const pageTitle = title === siteConfig.title ? title : `${title} | ${siteConfig.name}`;
+const schema = structuredData ?? websiteSchema();
+---
+
+<!doctype html>
+<html lang={siteConfig.language}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preload" href="/fonts/libre-franklin/libre-franklin-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href={canonical} />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    <meta property="og:locale" content={siteConfig.locale} />
+    <meta property="og:type" content={type} />
+    <meta property="og:site_name" content={siteConfig.name} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={absoluteImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={imageAlt ?? siteConfig.title} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={absoluteImage} />
+    <script is:inline type="application/ld+json" set:html={JSON.stringify(schema)} />
+    <script is:inline>
+      (() => {
+        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (reduce || !("IntersectionObserver" in window)) return;
+        document.documentElement.classList.add("can-reveal");
+        window.addEventListener("DOMContentLoaded", () => {
+          const observer = new IntersectionObserver(
+            (entries) =>
+              entries.forEach((entry) => {
+                if (!entry.isIntersecting) return;
+                entry.target.classList.add("is-visible");
+                observer.unobserve(entry.target);
+              }),
+            { rootMargin: "0px 0px -8% 0px" },
+          );
+          document.querySelectorAll(".reveal").forEach((element) => observer.observe(element));
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#content">Skip to content</a>
+    <SiteHeader overlay={overlay} />
+    <main id="content" class:list={[!overlay && "pt-(--header-h)"]}>
+      <slot />
+    </main>
+    <SiteFooter />
+    <LogoMenu />
+  </body>
+</html>

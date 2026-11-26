@@ -1,0 +1,129 @@
+---
+import logo from "@/assets/brand/logo.svg?raw";
+import Icon from "@/components/ui/Icon.astro";
+import { siteConfig } from "@/config/site";
+
+// Standalone copies get solid fills; inline, the logo follows the theme colours.
+const svg = logo.replaceAll('fill="currentColor"', 'fill="#1d1b26"').trim();
+const file = `${siteConfig.name.toLowerCase()}-logo.svg`;
+---
+
+<div
+  class="logo-menu fixed z-[60] grid min-w-56 rounded-xl bg-surface p-1.5 text-sm"
+  role="menu"
+  aria-label="Brand assets"
+  data-logo-menu
+  hidden
+>
+  <button type="button" class="logo-menu-item" role="menuitem" data-logo-copy>
+    <Icon name="copy" class="size-4" />
+    <span data-logo-copy-label>Copy logo as SVG</span>
+  </button>
+  <a
+    class="logo-menu-item"
+    role="menuitem"
+    href={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`}
+    download={file}
+    data-logo-download
+  >
+    <Icon name="download" class="size-4" />
+    <span>Download logo as SVG</span>
+  </a>
+  <template data-logo-svg set:html={svg} />
+</div>
+
+<style>
+  .logo-menu {
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 18px 40px -18px rgb(0 0 0 / 0.35);
+  }
+
+  .logo-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.5rem;
+    text-align: left;
+    transition: background-color 0.15s;
+  }
+
+  .logo-menu-item:hover,
+  .logo-menu-item:focus-visible {
+    background: var(--wash);
+    outline: none;
+  }
+</style>
+
+<script>
+  const menu = document.querySelector<HTMLElement>("[data-logo-menu]");
+
+  if (menu) {
+    const svg = menu.querySelector<HTMLTemplateElement>("[data-logo-svg]")!.innerHTML;
+    const copy = menu.querySelector<HTMLButtonElement>("[data-logo-copy]")!;
+    const label = copy.querySelector<HTMLElement>("[data-logo-copy-label]")!;
+    const items = [...menu.querySelectorAll<HTMLElement>(".logo-menu-item")];
+    const defaultLabel = label.textContent;
+    let trigger: HTMLElement | null = null;
+    let reset = 0;
+
+    const close = (refocus = false) => {
+      if (menu.hidden) return;
+      menu.hidden = true;
+      if (refocus) trigger?.focus();
+    };
+
+    const openAt = (x: number, y: number) => {
+      menu.hidden = false;
+      const rect = menu.getBoundingClientRect();
+      menu.style.left = `${Math.max(8, Math.min(x, innerWidth - rect.width - 8))}px`;
+      menu.style.top = `${Math.max(8, Math.min(y, innerHeight - rect.height - 8))}px`;
+      items[0].focus();
+    };
+
+    document.addEventListener("contextmenu", (event) => {
+      const target = (event.target as Element).closest<HTMLElement>("[data-logo-menu-trigger]");
+      if (!target) return close();
+      event.preventDefault();
+      trigger = target;
+      // Keyboard context menus report 0,0: open under the logo instead.
+      if (event.clientX === 0 && event.clientY === 0) {
+        const rect = target.getBoundingClientRect();
+        openAt(rect.left, rect.bottom + 6);
+      } else openAt(event.clientX, event.clientY);
+    });
+
+    document.addEventListener("pointerdown", (event) => {
+      if (!menu.contains(event.target as Node)) close();
+    });
+
+    menu.addEventListener("keydown", (event) => {
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      if (event.key === "Escape") close(true);
+      else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        items[(i + (event.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus();
+      } else if (event.key === "Tab") close();
+    });
+
+    addEventListener("scroll", () => close(), { passive: true });
+    addEventListener("resize", () => close());
+
+    copy.addEventListener("click", async () => {
+      window.clearTimeout(reset);
+      try {
+        await navigator.clipboard.writeText(svg);
+        label.textContent = "Copied";
+      } catch {
+        label.textContent = "Copy failed";
+      }
+      reset = window.setTimeout(() => {
+        label.textContent = defaultLabel;
+        close(true);
+      }, 900);
+    });
+
+    menu.querySelector("[data-logo-download]")?.addEventListener("click", () => close(true));
+  }
+</script>

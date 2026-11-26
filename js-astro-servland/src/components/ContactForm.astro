@@ -1,0 +1,183 @@
+---
+// Generate CSRF token for security
+const csrfToken = crypto.randomUUID();
+---
+
+<form id="contact-form" class="space-y-6 w-full max-w-lg mx-auto px-4 sm:px-6 md:px-8">
+  <input type="hidden" name="csrf_token" value={csrfToken} />
+  
+  <div class="space-y-2">
+    <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-200">Name</label>
+    <input 
+      type="text" 
+      name="name" 
+      id="name" 
+      required 
+      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 sm:text-sm md:text-base"
+    />
+    <p class="text-sm text-red-600 dark:text-red-400 hidden" id="nameError"></p>
+  </div>
+
+  <div class="space-y-2">
+    <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-200">Email</label>
+    <input 
+      type="email" 
+      name="email" 
+      id="email" 
+      required 
+      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 sm:text-sm md:text-base"
+    />
+    <p class="text-sm text-red-600 dark:text-red-400 hidden" id="emailError"></p>
+  </div>
+
+  <div class="space-y-2">
+    <label for="tel" class="block text-sm font-medium text-gray-700 dark:text-gray-200">Phone Number</label>
+    <input 
+      type="tel" 
+      name="tel" 
+      id="tel"
+      required
+      pattern="[0-9]{10}"
+      title="Please enter a valid 10-digit phone number"
+      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 sm:text-sm md:text-base"
+    />
+    <p class="text-sm text-red-600 dark:text-red-400 hidden" id="telError"></p>
+  </div>
+
+  <div class="space-y-2">
+    <label for="message" class="block text-sm font-medium text-gray-700 dark:text-gray-200">Message</label>
+    <textarea 
+      name="message" 
+      id="message" 
+      rows="4" 
+      required
+      class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-600 sm:text-sm md:text-base"
+    ></textarea>
+    <p class="text-sm text-red-600 dark:text-red-400 hidden" id="messageError"></p>
+  </div>
+
+  <div class="mt-6">
+    <button 
+      type="submit"
+      class="w-full flex justify-center items-center py-2 sm:py-3 px-4 sm:px-6 border border-transparent rounded-md shadow-sm text-sm sm:text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" id="submitSpinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg>
+      <span>Send Message</span>
+    </button>
+  </div>
+
+  <div id="formMessage" class="hidden mt-4 text-sm sm:text-base rounded-md p-4"></div>
+</form>
+
+<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+
+<script>
+  // Initialize EmailJS
+  emailjs.init(import.meta.env.PUBLIC_EMAILJS_USER_ID);
+
+  const form = document.getElementById('contact-form') as HTMLFormElement;
+  const formMessage = document.getElementById('formMessage') as HTMLDivElement;
+  const submitButton = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+  const submitSpinner = document.getElementById('submitSpinner') as HTMLElement;
+  const nameError = document.getElementById('nameError') as HTMLParagraphElement;
+  const emailError = document.getElementById('emailError') as HTMLParagraphElement;
+  const telError = document.getElementById('telError') as HTMLParagraphElement;
+  const messageError = document.getElementById('messageError') as HTMLParagraphElement;
+
+  function showError(element: HTMLParagraphElement, message: string) {
+    element.textContent = message;
+    element.classList.remove('hidden');
+  }
+
+  function hideError(element: HTMLParagraphElement) {
+    element.textContent = '';
+    element.classList.add('hidden');
+  }
+
+  function setSubmitting(isSubmitting: boolean) {
+    submitButton.disabled = isSubmitting;
+    submitSpinner.classList.toggle('hidden', !isSubmitting);
+  }
+
+  function showMessage(message: string, isError: boolean) {
+    formMessage.textContent = message;
+    formMessage.className = `mt-4 p-4 text-sm sm:text-base rounded-md ${
+      isError ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+    }`;
+    formMessage.classList.remove('hidden');
+  }
+
+  function validateEmail(email: string): boolean {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  }
+
+  function validatePhone(tel: string): boolean {
+    const phoneRegex = /^[0-9]{10}$/;
+    return phoneRegex.test(tel);
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    // Reset errors
+    hideError(nameError);
+    hideError(emailError);
+    hideError(telError);
+    hideError(messageError);
+    formMessage.classList.add('hidden');
+    
+    const formData = new FormData(form);
+    const name = formData.get('name') as string;
+    const email = formData.get('email') as string;
+    const tel = formData.get('tel') as string;
+    const message = formData.get('message') as string;
+    
+    // Client-side validation
+    let hasError = false;
+    if (!name) {
+      showError(nameError, 'Name is required');
+      hasError = true;
+    }
+    if (!email || !validateEmail(email)) {
+      showError(emailError, !email ? 'Email is required' : 'Please enter a valid email address');
+      hasError = true;
+    }
+    if (!tel || !validatePhone(tel)) {
+      showError(telError, !tel ? 'Phone number is required' : 'Please enter a valid 10-digit phone number');
+      hasError = true;
+    }
+    if (!message) {
+      showError(messageError, 'Message is required');
+      hasError = true;
+    }
+    
+    if (hasError) return;
+    
+    try {
+      setSubmitting(true);
+      
+      const response = await emailjs.sendForm(
+        import.meta.env.PUBLIC_EMAILJS_SERVICE_ID,
+        import.meta.env.PUBLIC_EMAILJS_TEMPLATE_ID,
+        form,
+        import.meta.env.PUBLIC_EMAILJS_USER_ID
+      );
+      
+      if (response.status === 200) {
+        showMessage('Thank you for your message! We will get back to you soon.', false);
+        form.reset();
+      } else {
+        throw new Error('Failed to send message');
+      }
+    } catch (error) {
+      showMessage('An error occurred while sending your message. Please try again.', true);
+      console.error('EmailJS Error:', error);
+    } finally {
+      setSubmitting(false);
+    }
+  });
+</script>

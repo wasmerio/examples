@@ -1,0 +1,121 @@
+---
+/*
+  A product. The page opens with the row you clicked, set at the size of a
+  heading: same title on the left, same leader, same category at the far end,
+  so the list appears to have opened in place rather than handed you off to a
+  different kind of page. The metadata line under it is the only chrome.
+*/
+import { render } from 'astro:content';
+import katexCss from 'katex/dist/katex.min.css?url';
+import Base from '../../layouts/Base.astro';
+import LeaderRow from '../../components/LeaderRow.astro';
+import NoteList from '../../components/NoteList.astro';
+import {
+  categoryOf,
+  categoryPath,
+  getNotes,
+  getWork,
+  neighbours,
+  workPath,
+  year,
+} from '../../lib/content';
+import { fmt, useT } from '../../i18n/t';
+
+export async function getStaticPaths() {
+  const work = await getWork();
+  return work.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { data } = entry;
+const category = categoryOf(data.category);
+const t = useT(Astro.currentLocale);
+const { Content, remarkPluginFrontmatter } = await render(entry);
+
+const shelf = await getWork();
+const { next } = neighbours(shelf, entry.id);
+const following = next ?? shelf[0]; // the shelf wraps; a lone product has no next
+
+// The line under the title: what is true about this product, in mono.
+const meta = [
+  { label: t.status[data.status] },
+  { label: fmt(t.since, { year: year(data.started) }) },
+  data.url && { label: new URL(data.url).host, href: data.url },
+  data.repo && { label: t.source, href: data.repo },
+].filter(Boolean) as { label: string; href?: string }[];
+
+const notes = (await getNotes()).filter((n) => n.data.work?.id === entry.id);
+
+const jsonLd = [
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: t.work, item: new URL('/work', Astro.site).href },
+      { '@type': 'ListItem', position: 2, name: data.title },
+    ],
+  },
+];
+---
+
+<Base title={data.title} description={data.summary} {jsonLd}>
+  {remarkPluginFrontmatter.hasMath && <link slot="head" rel="stylesheet" href={katexCss} />}
+  <section class="mx-auto max-w-wide px-4 pt-10 pb-8 md:pt-14">
+    <p class="text-sm">
+      <a href="/work" class="text-muted hover:text-foreground">
+        ← {t.work}
+      </a>
+    </p>
+
+    <h1 class="mt-7 text-3xl md:text-5xl">
+      <LeaderRow title={data.title} right={category.name} accent={category.accent} />
+    </h1>
+
+    <p class="text-muted mt-4 font-mono text-sm">
+      {meta.map(({ label, href }, i) => (
+        <>
+          {i > 0 && <span aria-hidden="true"> · </span>}
+          {href ? (
+            <a href={href} class="hover:text-foreground">
+              {label}
+            </a>
+          ) : (
+            label
+          )}
+        </>
+      ))}
+    </p>
+  </section>
+
+  <section class="border-border border-t">
+    <div class="mx-auto max-w-wide px-4 py-12 md:py-16">
+      <div class="prose">
+        <Content />
+      </div>
+      <p class="text-muted mt-10 font-mono text-sm">
+        {t.filedUnder}{' '}
+        <a href={categoryPath(category.slug)} style={`color: var(--accent-${category.accent})`}>
+          {category.name}
+        </a>
+      </p>
+    </div>
+  </section>
+
+  {notes.length > 0 && (
+    <section class="border-border border-t">
+      <div class="mx-auto max-w-wide px-4 py-10 md:py-14">
+        <h2 class="text-muted font-mono text-sm">{fmt(t.notesOn, { title: data.title })}</h2>
+        <NoteList notes={notes} class="mt-5 text-lg md:text-2xl" />
+      </div>
+    </section>
+  )}
+
+  {following && following.id !== entry.id && (
+    <section class="border-border border-t">
+      <div class="mx-auto max-w-wide px-4 py-8 text-right">
+        <a href={workPath(following.id)} class="text-muted hover:text-foreground text-sm">
+          {fmt(t.nextProduct, { title: following.data.title })} →
+        </a>
+      </div>
+    </section>
+  )}
+</Base>

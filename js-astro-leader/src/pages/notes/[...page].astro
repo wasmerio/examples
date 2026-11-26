@@ -1,0 +1,84 @@
+---
+/*
+  Notes, newest first. The filter above the list is the category names set in
+  their own colours -- the same four colours that run down the right edge of
+  the rows -- so the filter is a legend as much as a control. No pills.
+*/
+import type { GetStaticPaths, Page } from 'astro';
+import Base from '../../layouts/Base.astro';
+import PageHead from '../../components/PageHead.astro';
+import NoteList from '../../components/NoteList.astro';
+import { categoryPath, getNotes, getWork, type NoteEntry } from '../../lib/content';
+import { blog, categories } from '../../config';
+import { fmt, useT } from '../../i18n/t';
+
+export const getStaticPaths = (async ({ paginate }) => {
+  const notes = await getNotes();
+  return paginate(notes, { pageSize: blog.postsPerPage });
+}) satisfies GetStaticPaths;
+
+const { page } = Astro.props as { page: Page<NoteEntry> };
+
+// A category with nothing in it has no archive page, so it is not offered here.
+const work = await getWork();
+const all = await getNotes();
+const filters = categories.filter(
+  (c) =>
+    all.some((n) => n.data.category === c.slug) || work.some((w) => w.data.category === c.slug),
+);
+
+const t = useT(Astro.currentLocale);
+const description = t.notesDescription;
+const title = page.currentPage > 1 ? fmt(t.notesPage, { n: page.currentPage }) : t.notes;
+---
+
+<Base {title} {description} prev={page.url.prev} next={page.url.next}>
+  <PageHead title={t.notes} lead={description}>
+    <nav class="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-lg" aria-label={t.categories}>
+      {filters.map((c) => (
+        <a
+          href={categoryPath(c.slug)}
+          class="font-display tracking-tight no-underline"
+          style={`color: var(--accent-${c.accent})`}
+        >
+          {c.name}
+        </a>
+      ))}
+    </nav>
+  </PageHead>
+
+  <section class="border-border border-t">
+    <div class="mx-auto max-w-wide px-4 py-10 md:py-14">
+      <NoteList notes={page.data} class="text-lg md:text-2xl" />
+
+      {page.lastPage > 1 && (
+        <nav
+          class="text-muted mt-10 flex items-baseline justify-between font-mono text-sm"
+          aria-label={t.pagination}
+        >
+          {page.url.prev ? (
+            <a href={page.url.prev} class="hover:text-foreground">
+              ← {t.newer}
+            </a>
+          ) : (
+            <span class="opacity-0" aria-hidden="true">
+              ← {t.newer}
+            </span>
+          )}
+          <span>
+            {page.currentPage} / {page.lastPage}
+          </span>
+          {page.url.next ? (
+            <a href={page.url.next} class="hover:text-foreground">
+              {t.older} →
+            </a>
+          ) : (
+            <span class="opacity-0" aria-hidden="true">
+              {t.older} →
+            </span>
+          )}
+        </nav>
+      )}
+    </div>
+  </section>
+</Base>

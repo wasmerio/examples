@@ -1,0 +1,67 @@
+---
+/*
+  A category archive: the products and the notes that share one colour. Every
+  row here belongs to that colour already, so the far end of the leader carries
+  something else -- status and year for a product, reading time for a note --
+  and the colour is left to the title and the rules.
+*/
+import Base from '../../layouts/Base.astro';
+import PageHead from '../../components/PageHead.astro';
+import NoteList from '../../components/NoteList.astro';
+import WorkList from '../../components/WorkList.astro';
+import { getNotes, getWork } from '../../lib/content';
+import { categories, site } from '../../config';
+import { count, useT } from '../../i18n/t';
+
+export async function getStaticPaths() {
+  const [work, notes] = [await getWork(), await getNotes()];
+  return (
+    categories
+      .map((category) => ({
+        category,
+        work: work.filter((w) => w.data.category === category.slug),
+        notes: notes.filter((n) => n.data.category === category.slug),
+      }))
+      // An empty category has no page: there would be nothing under the title.
+      .filter(({ work, notes }) => work.length + notes.length > 0)
+      .map(({ category, work, notes }) => ({
+        params: { slug: category.slug },
+        props: { category, work, notes },
+      }))
+  );
+}
+
+const { category, work, notes } = Astro.props;
+const locale = Astro.currentLocale ?? site.locale;
+const t = useT(locale);
+const counts = [
+  work.length && count(t.products, work.length, locale),
+  count(t.noteCount, notes.length, locale),
+]
+  .filter(Boolean)
+  .join(' · ');
+---
+
+<Base title={category.name} description={category.blurb}>
+  <PageHead title={category.name} lead={category.blurb} accent={category.accent}>
+    <p class="text-muted mt-6 font-mono text-sm">{counts}</p>
+  </PageHead>
+
+  {work.length > 0 && (
+    <section class="border-border border-t">
+      <div class="mx-auto max-w-wide px-4 py-10 md:py-14">
+        <h2 class="text-muted font-mono text-sm">{t.work}</h2>
+        <WorkList items={work} right="status" summary={false} class="mt-5 text-xl md:text-3xl" />
+      </div>
+    </section>
+  )}
+
+  {notes.length > 0 && (
+    <section class="border-border border-t">
+      <div class="mx-auto max-w-wide px-4 py-10 md:py-14">
+        <h2 class="text-muted font-mono text-sm">{t.notes}</h2>
+        <NoteList notes={notes} right="reading" class="mt-5 text-lg md:text-2xl" />
+      </div>
+    </section>
+  )}
+</Base>

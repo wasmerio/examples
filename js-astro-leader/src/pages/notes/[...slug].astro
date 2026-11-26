@@ -1,0 +1,145 @@
+---
+/*
+  A note. The title is plain here -- the leader belongs to rows, and a row that
+  has been opened is the product page, not this one. What the byline carries is
+  who, when, which category (as colour, not as a link: the link is the "filed
+  under" line at the foot, and one of the two is enough) and how long it takes.
+*/
+import { render } from 'astro:content';
+import katexCss from 'katex/dist/katex.min.css?url';
+import Base from '../../layouts/Base.astro';
+import {
+  categoryOf,
+  categoryPath,
+  excerpt,
+  formatDate,
+  getNotes,
+  getWork,
+  isoDate,
+  neighbours,
+  notePath,
+  readingTime,
+  workPath,
+} from '../../lib/content';
+import { blog, site } from '../../config';
+import { fmt, useT } from '../../i18n/t';
+
+export async function getStaticPaths() {
+  const notes = await getNotes();
+  return notes.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}
+
+const { entry } = Astro.props;
+const { data } = entry;
+const locale = Astro.currentLocale ?? site.locale;
+const t = useT(locale);
+const category = categoryOf(data.category);
+const { Content, remarkPluginFrontmatter } = await render(entry);
+
+const description = data.description ?? excerpt(entry.body);
+const author = data.author ?? site.author;
+const product = data.work ? (await getWork()).find((w) => w.id === data.work?.id) : undefined;
+const { prev: newer, next: older } = neighbours(await getNotes(), entry.id);
+
+const jsonLd = [
+  {
+    '@type': 'BlogPosting',
+    headline: data.title,
+    description,
+    datePublished: isoDate(data.pubDate),
+    ...(data.updatedDate && { dateModified: isoDate(data.updatedDate) }),
+    author: { '@type': 'Person', name: author },
+    articleSection: category.name,
+    mainEntityOfPage: new URL(notePath(entry.id), Astro.site).href,
+  },
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: t.notes, item: new URL('/notes', Astro.site).href },
+      { '@type': 'ListItem', position: 2, name: data.title },
+    ],
+  },
+];
+---
+
+<Base title={data.title} {description} type="article" {jsonLd}>
+  {remarkPluginFrontmatter.hasMath && <link slot="head" rel="stylesheet" href={katexCss} />}
+  <article>
+    <section class="mx-auto max-w-wide px-4 pt-10 pb-8 md:pt-14">
+      <p class="text-sm">
+        <a href="/notes" class="text-muted hover:text-foreground">
+          ← {t.notes}
+        </a>
+      </p>
+
+      <h1 class="mt-7 max-w-content text-3xl leading-[1.08] md:text-5xl">{data.title}</h1>
+
+      <p class="text-muted mt-5 font-mono text-sm">
+        {author}
+        <span aria-hidden="true"> · </span>
+        <time datetime={isoDate(data.pubDate)}>{formatDate(data.pubDate, locale)}</time>
+        {data.updatedDate && (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span>
+              {t.updated}{' '}
+              <time datetime={isoDate(data.updatedDate)}>
+                {formatDate(data.updatedDate, locale)}
+              </time>
+            </span>
+          </>
+        )}
+        <span aria-hidden="true"> · </span>
+        <span style={`color: var(--accent-${category.accent})`}>{category.name}</span>
+        {product && (
+          <>
+            <span aria-hidden="true"> · </span>
+            <a href={workPath(product.id)} class="hover:text-foreground">
+              {product.data.title}
+            </a>
+          </>
+        )}
+        {blog.showReadingTime && (
+          <>
+            <span aria-hidden="true"> · </span>
+            <span>{fmt(t.minutes, { n: readingTime(entry.body) })}</span>
+          </>
+        )}
+      </p>
+    </section>
+
+    <section class="border-border border-t">
+      <div class="mx-auto max-w-wide px-4 py-12 md:py-16">
+        <div class="prose">
+          <Content />
+        </div>
+        <p class="text-muted mt-10 font-mono text-sm">
+          {t.filedUnder}{' '}
+          <a href={categoryPath(category.slug)} style={`color: var(--accent-${category.accent})`}>
+            {category.name}
+          </a>
+        </p>
+      </div>
+    </section>
+  </article>
+
+  {(newer || older) && (
+    <nav class="border-border border-t" aria-label={t.moreNotes}>
+      <div class="mx-auto flex max-w-wide flex-wrap gap-x-8 gap-y-3 px-4 py-8 text-sm">
+        {newer && (
+          <a href={notePath(newer.id)} class="text-muted hover:text-foreground max-w-content">
+            ← {newer.data.title}
+          </a>
+        )}
+        {older && (
+          <a
+            href={notePath(older.id)}
+            class="text-muted hover:text-foreground ml-auto max-w-content text-right"
+          >
+            {older.data.title} →
+          </a>
+        )}
+      </div>
+    </nav>
+  )}
+</Base>

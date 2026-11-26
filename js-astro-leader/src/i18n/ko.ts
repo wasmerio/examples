@@ -1,0 +1,110 @@
+// The Korean edition of en.ts. A key left out here is a type error, not an English word
+// in the middle of a Korean page.
+import type en from './en';
+
+const ko: typeof en = {
+  skipToContent: '본문으로 건너뛰기',
+  mainNav: '주 메뉴',
+  language: '언어',
+  untranslated: '번역 없음',
+  thisPage: '이 페이지',
+  themeSystem: '시스템',
+  themeLight: '밝게',
+  themeDark: '어둡게',
+
+  work: '작업',
+  notes: '노트',
+  allWork: '작업 전체',
+  allNotes: '노트 전체',
+
+  status: { live: '운영 중', building: '만드는 중', archived: '보관' },
+
+  products: { other: '제품 {n}개' },
+  noteCount: { other: '노트 {n}편' },
+  tagCount: { other: '태그 {n}개' },
+  minutes: '{n}분',
+
+  workDescription: '진열대에 오른 것 전부, 그리고 아직 만들고 있는 것.',
+  archived: '보관',
+  filterShelf: '진열대 거르기',
+  filterStatus: '상태',
+  filterCategory: '갈래',
+  filterAll: '전체',
+  shownOf: '제품 {total}개 중 {shown}개',
+
+  since: '{year}년부터',
+  source: '소스',
+  notesOn: '{title}에 대한 노트',
+  nextProduct: '다음 제품: {title}',
+  whatChanged: '{title}에서 바뀐 것',
+
+  notesDescription: '이 사이트의 것들을 만들면서 적어 둔 것 전부.',
+  notesPage: '노트, {n}쪽',
+  categories: '분류',
+  byYear: '연도별로 전부',
+  pagination: '쪽 이동',
+  newer: '최신',
+  older: '이전',
+
+  updated: '수정',
+  contents: '차례',
+  filedUnder: '분류',
+  tagged: '태그',
+  related: '관련 노트',
+  sameProduct: '같은 제품',
+  sharesTag: '태그 {tag}',
+  sameCategory: '같은 분류',
+  thisNote: '이 노트',
+  comments: '댓글',
+  moreNotes: '다른 노트',
+  copy: '복사',
+  copied: '복사됨',
+  copyFailed: '직접 복사해 주세요',
+  copyLabel: '코드를 클립보드에 복사',
+
+  feed: '피드',
+
+  tag: '태그',
+  product: '제품',
+  tagTitle: '태그: {name}',
+  tagDescription: '이 사이트에서 {name} 태그가 붙은 것 전부.',
+  everyTag: '태그 전체',
+  archive: '보관함',
+  archiveDescription: '여기 있는 것 전부를 일어난 순서대로, 그리고 붙은 태그 전부.',
+  tags: '태그',
+  notesBy: '{name}의 노트.',
+
+  search: '검색',
+  searchDescription: '제품, 노트, 또는 어렴풋이 기억나는 문구를 찾아보세요.',
+  searchLabel: '찾을 말',
+  searchIdle: '목록에 나오지 않는 본문까지 전부 찾습니다.',
+  searchNoIndex: '아직 색인이 없습니다. 빌드한 뒤 띄워 보세요: pnpm build && pnpm preview.',
+  searchResults: { other: '“{q}” 검색 결과 {n}쪽' },
+  searchClosest: ', 가까운 {n}개',
+  searchNothing: '“{q}”에 해당하는 것이 없습니다.',
+
+  contact: '연락',
+  contactDescription: '{name}에게 연락하기.',
+  yourName: '이름',
+  yourEmail: '이메일',
+  message: '메시지',
+  send: '보내기',
+  email: '이메일',
+  subscribe: '구독',
+
+  letter: '편지',
+  letterNav: '편지',
+  pastLetters: '지난 편지',
+  letterSent: '메일함을 확인하세요',
+  letterSentBody: '링크가 든 메일을 보냈습니다. 그 링크를 누르기 전에는 아무것도 보내지 않습니다.',
+  letterConfirmed: '구독되었습니다',
+  letterConfirmedBody: '다음 편지는 뭔가 나올 때 갑니다. 그때까지는 노트가 여기 있습니다.',
+  stepOf: '{total}단계 중 {n}',
+
+  notFound: '페이지를 찾을 수 없습니다',
+  notFoundBody: '그 주소에는 아무것도 없습니다. 이름이 바뀌었거나, 처음부터 없었을 수 있습니다.',
+  elsewhere: '다른 곳',
+  home: '홈',
+};
+
+export default ko;

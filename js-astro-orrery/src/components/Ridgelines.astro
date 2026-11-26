@@ -1,0 +1,67 @@
+---
+/**
+ * 10. A ridgeline chart drawn at build time from a fixed seed: stacked distributions, each one
+ * hiding the rows behind it. It stands in for a photo in the split section. Change `seed` for
+ * a different picture.
+ */
+interface Props {
+  seed?: number;
+  class?: string;
+}
+const { seed = 42, class: className } = Astro.props;
+
+let s = seed;
+const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+
+const W = 600;
+const rows = 24;
+const gap = 26;
+const top = 120;
+const H = top + rows * gap + 40;
+const peaks = (n: number) =>
+  Array.from({ length: n }, () => ({ at: 120 + rnd() * 360, height: 30 + rnd() * 110, width: 18 + rnd() * 50 }));
+
+const ridges = Array.from({ length: rows }, (_, r) => {
+  const base = top + r * gap;
+  const ps = peaks(1 + Math.floor(rnd() * 3));
+  const pts: string[] = [];
+  for (let x = 0; x <= W; x += 6) {
+    const bump = ps.reduce((sum, p) => sum + p.height * Math.exp(-(((x - p.at) / p.width) ** 2)), 0);
+    const jitter = (rnd() - 0.5) * 2.2;
+    pts.push(`${x},${(base - bump * (0.35 + r / rows) + jitter).toFixed(1)}`);
+  }
+  return { d: `M${pts.join("L")}`, fillD: `M0,${H}L${pts.join("L")}L${W},${H}Z`, lit: r % 6 === 4 };
+});
+---
+
+<svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true" class:list={["ridges", className]}>
+  {
+    ridges.map((ridge) => (
+      <g>
+        <path d={ridge.fillD} class="ridge-fill" />
+        <path d={ridge.d} class:list={["ridge-line", ridge.lit && "lit"]} />
+      </g>
+    ))
+  }
+</svg>
+
+<style>
+  .ridges {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .ridge-fill {
+    fill: var(--c-surface);
+  }
+  .ridge-line {
+    fill: none;
+    stroke: #6b6a8e;
+    stroke-width: 1.3;
+    stroke-linejoin: round;
+  }
+  .ridge-line.lit {
+    stroke: var(--accent);
+    stroke-width: 1.6;
+  }
+</style>

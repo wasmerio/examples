@@ -1,0 +1,224 @@
+---
+/**
+ * Contact form posting to Formgong (https://formgong.com).
+ *
+ * Without JavaScript it is a plain HTML POST: Formgong stores the message, notifies you and
+ * redirects the visitor to /thanks/. With JavaScript it is sent with fetch and the visitor stays
+ * on the page. The success state is shown ONLY when the server answers { success: true }.
+ */
+import { getCollection } from "astro:content";
+import { SITE } from "../config";
+import Icon from "./Icon.astro";
+
+interface Props {
+  /** Prefix for the field ids, so the form can appear twice on one site. */
+  id?: string;
+}
+const { id = "enquiry" } = Astro.props;
+
+const services = (await getCollection("services")).sort((a, b) => a.data.order - b.data.order);
+const PLACEHOLDER_KEY = "fk_your_access_key";
+const accessKey = import.meta.env.PUBLIC_FORMGONG_ACCESS_KEY || SITE.formgong.accessKey;
+const endpoint = import.meta.env.PUBLIC_FORMGONG_ENDPOINT || SITE.formgong.endpoint;
+const redirect = new URL("/thanks/", Astro.site ?? Astro.url).href;
+const showKeyNotice = import.meta.env.DEV && accessKey === PLACEHOLDER_KEY;
+const f = (name: string) => `${id}-${name}`;
+---
+
+<div class="form-card card relative p-5 sm:p-8" data-contact data-email={SITE.email}>
+  {
+    showKeyNotice && (
+      <p class="mb-6 rounded-xl border border-dashed border-accent p-4 text-sm">
+        <strong>Dev notice:</strong> add your Formgong access key as <code>PUBLIC_FORMGONG_ACCESS_KEY</code> in <code>.env</code>
+        (see the README). This note is not shown in production builds.
+      </p>
+    )
+  }
+
+  <form action={endpoint} method="POST" class="relative" data-contact-form>
+    <input type="hidden" name="access_key" value={accessKey} />
+    <input type="hidden" name="_lang" value="en" />
+    <input type="hidden" name="_redirect" value={redirect} />
+    <input type="hidden" name="_subject" value={SITE.formgong.subject} />
+    <!-- Spam honeypot: never fill it, never remove it. -->
+    <div aria-hidden="true" style="position:absolute;inset-inline-start:0;top:0;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">
+      <input type="text" name="botcheck" tabindex="-1" autocomplete="off" />
+    </div>
+
+    <div class="grid gap-5 sm:grid-cols-2">
+      <div>
+        <label for={f("name")} class="field-label">Your name</label>
+        <input id={f("name")} name="name" type="text" class="field" autocomplete="name" required maxlength="120" />
+      </div>
+      <div>
+        <label for={f("company")} class="field-label">Company <span class="field-hint">(optional)</span></label>
+        <input id={f("company")} name="company" type="text" class="field" autocomplete="organization" maxlength="160" />
+      </div>
+      <div class="sm:col-span-2">
+        <label for={f("email")} class="field-label">Work email</label>
+        <input id={f("email")} name="email" type="email" class="field" autocomplete="email" required maxlength="160" />
+      </div>
+      <div class="sm:col-span-2">
+        <label for={f("topic")} class="field-label">What is it about?</label>
+        <div class="relative">
+          <select id={f("topic")} name="topic" class="field">
+            <option value="Not sure yet">Not sure yet</option>
+            {services.map((s) => <option value={s.data.title}>{s.data.title}</option>)}
+          </select>
+          <Icon name="chevron-down" size={18} class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-muted" />
+        </div>
+      </div>
+      <div class="sm:col-span-2">
+        <label for={f("message")} class="field-label">The decision you are working on</label>
+        <textarea
+          id={f("message")}
+          name="message"
+          rows="4"
+          class="field resize-y"
+          required
+          maxlength="4000"
+          placeholder="For example: how many units to order for spring, or whether to raise prices on the basic plan."></textarea>
+      </div>
+    </div>
+
+    <div class="form-error mt-5" data-form-error hidden>
+      <Icon name="x" size={18} class="mt-0.5 shrink-0" />
+      <p data-form-error-text></p>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-lg mt-6 w-full" data-submit>
+      <svg class="spinner" viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" opacity=".3"></circle>
+        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+      </svg>
+      <span data-submit-label>Send message</span>
+      <Icon name="arrow-right" class="icon-shift submit-arrow" />
+    </button>
+    <p class="mt-4 text-center text-sm text-muted">We reply within one working day and use your details only to answer you.</p>
+  </form>
+
+  <div class="form-success py-6 text-center" data-form-success hidden>
+    <svg class="mx-auto size-20 text-accent" viewBox="0 0 80 80" fill="none" aria-hidden="true">
+      <circle class="check-ring" pathLength="1" cx="40" cy="40" r="36" stroke="currentColor" stroke-width="3"></circle>
+      <path class="check-mark" pathLength="1" d="M25 41.5 35.5 52 56 30" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>
+    </svg>
+    <h3 class="mt-6 text-3xl font-light tracking-tight" tabindex="-1" data-success-heading>Message received</h3>
+    <p class="mx-auto mt-3 max-w-sm text-muted">
+      One of us will reply within one working day. If it is urgent, call{" "}
+      <a href={`tel:${SITE.phone.tel}`} class="whitespace-nowrap text-accent">{SITE.phone.display}</a>.
+    </p>
+    <button type="button" class="btn btn-secondary mt-8" data-form-reset>Send another message</button>
+  </div>
+
+  <p class="sr-only" role="status" data-form-live></p>
+</div>
+
+<script>
+  type ServerReply = { success?: unknown; message?: unknown } | null;
+
+  for (const card of document.querySelectorAll<HTMLElement>("[data-contact]")) {
+    const form = card.querySelector<HTMLFormElement>("form[data-contact-form]");
+    const success = card.querySelector<HTMLElement>("[data-form-success]");
+    const errorBox = card.querySelector<HTMLElement>("[data-form-error]");
+    const errorText = card.querySelector<HTMLElement>("[data-form-error-text]");
+    const button = card.querySelector<HTMLButtonElement>("[data-submit]");
+    const label = card.querySelector<HTMLElement>("[data-submit-label]");
+    const live = card.querySelector<HTMLElement>("[data-form-live]");
+    if (!form || !success || !errorBox || !errorText || !button || !label || !live) continue;
+
+    const idleLabel = label.textContent ?? "";
+    const email = card.dataset.email ?? "";
+
+    const setSending = (sending: boolean) => {
+      button.disabled = sending;
+      form.setAttribute("aria-busy", String(sending));
+      card.classList.toggle("is-sending", sending);
+      label.textContent = sending ? "Sending…" : idleLabel;
+    };
+
+    const showError = (message: string) => {
+      errorText.textContent = message;
+      errorBox.hidden = false;
+      // Restart the shake when the same error appears twice in a row.
+      errorBox.style.animation = "none";
+      void errorBox.offsetWidth;
+      errorBox.style.animation = "";
+      live.textContent = message;
+    };
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      errorBox.hidden = true;
+      setSending(true);
+
+      let reply: ServerReply = null;
+      try {
+        const response = await fetch(form.action, {
+          method: "POST",
+          headers: { Accept: "application/json" },
+          body: new FormData(form),
+        });
+        reply = await response.json().catch(() => null);
+      } catch {
+        setSending(false);
+        showError(`We couldn't reach the server. Check your connection and try again, or email us at ${email}.`);
+        return;
+      }
+      setSending(false);
+
+      // The only path to the success state: the server explicitly confirmed it.
+      if (reply?.success === true) {
+        form.reset();
+        form.hidden = true;
+        success.hidden = false;
+        live.textContent = "Message received. We reply within one working day.";
+        success.scrollIntoView({ block: "nearest" });
+        success.querySelector<HTMLElement>("[data-success-heading]")?.focus({ preventScroll: true });
+        return;
+      }
+      const message = typeof reply?.message === "string" && reply.message.trim() ? reply.message : "";
+      showError(message || `Your message was not sent. Please try again, or email us at ${email}.`);
+    });
+
+    card.querySelector("[data-form-reset]")?.addEventListener("click", () => {
+      success.hidden = true;
+      form.hidden = false;
+      live.textContent = "";
+      form.querySelector<HTMLElement>("input:not([type=hidden]):not([tabindex='-1'])")?.focus();
+    });
+  }
+</script>
+
+<style>
+  .spinner {
+    display: none;
+  }
+  .is-sending .spinner {
+    display: block;
+  }
+  .is-sending .submit-arrow {
+    display: none;
+  }
+  .form-error {
+    display: flex;
+    gap: 0.625rem;
+    padding: 0.875rem 1rem;
+    border-radius: 0.875rem;
+    border: 1px solid color-mix(in oklab, var(--c-danger) 45%, transparent);
+    background: color-mix(in oklab, var(--c-danger) 9%, var(--c-surface));
+    color: var(--c-danger);
+    line-height: 1.5;
+  }
+  .form-error[hidden],
+  [data-form-success][hidden],
+  form[hidden] {
+    display: none;
+  }
+  [data-success-heading]:focus {
+    outline: none;
+  }
+  button:disabled {
+    cursor: progress;
+    opacity: 0.85;
+  }
+</style>

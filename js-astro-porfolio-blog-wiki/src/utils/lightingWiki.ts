@@ -1,0 +1,1 @@
+export { WIKI_PREFIX as GENERIC_WIKI_PREFIX, wikiUrl as genericWikiUrl, wikiLetter as genericWikiLetter, sortWikiTerms as sortGenericWikiTerms, normalizeWikiSearchText, searchWikiTerms } from './wiki';

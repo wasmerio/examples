@@ -1,0 +1,168 @@
+---
+import PostBaseLayout from './PostBaseLayout.astro';
+import PostDate from '../components/PostDate.astro';
+import PostTags from '../components/PostTags.astro';
+import { type CollectionEntry } from 'astro:content';
+import AuthorBox from "../components/AuthorBox.astro";
+import RelatedPosts from '../components/RelatedPosts.astro';
+import RandomPosts from '../components/RandomPosts.astro';
+
+interface Props {
+  post: CollectionEntry<'blog'>;
+  siteUrl: string;
+  defaultImage: string;
+  defaultLocale?: string;
+  author?: string;
+  headings?: Array<{ depth: number; text: string; slug: string }>;
+  relatedPosts?: CollectionEntry<'blog'>[];
+  randomPosts?: CollectionEntry<'blog'>[];
+}
+
+const {
+  post,
+  siteUrl,
+  defaultImage,
+  defaultLocale = "es-ES",
+  headings = [],
+  relatedPosts = [],
+  randomPosts = [],
+} = Astro.props;
+    const { title, description, date, tags, image, image_alt, author } = post.data;
+    const normalizeAnchor = (value: string) => value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+    const tocHeadings = headings.filter(({ depth }) => depth >= 2 && depth <= 3);
+---
+
+<PostBaseLayout siteUrl={siteUrl} defaultImage={defaultImage} defaultLocale={defaultLocale} entry={post}>
+  <article class="editorial-post">
+    <div class="editorial-post-utility" aria-label="Breadcrumb">
+      <a href="/">Inicio</a>
+      <span aria-hidden="true">/</span>
+      <a href="/articulos/">Artículos</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">{title}</span>
+    </div>
+
+    <div class="editorial-post-layout">
+      <div class="editorial-post-main">
+        <header class="editorial-post-header">
+          <p class="editorial-post-kicker">Artículo de fondo</p>
+          <h1 class="editorial-post-title">{title}</h1>
+          <div class="editorial-post-meta">
+            <PostDate date={date} />
+            {tags && <PostTags tags={tags} />}
+          </div>
+        </header>
+
+        {image && (
+          <figure class="editorial-post-lead">
+            <img src={image} alt={image_alt || title} loading="eager" decoding="async" />
+          </figure>
+        )}
+      </div>
+
+      {(description || tocHeadings.length > 0) && (
+        <aside class="editorial-post-aside" aria-label="Article information">
+          {description && <p class="editorial-post-description">{description}</p>}
+
+          {tocHeadings.length > 0 && (
+            <nav class="editorial-post-toc" aria-label="Table of contents">
+              <p class="editorial-post-toc-title">Contents</p>
+              <ol>
+                {tocHeadings.map(({ depth, text, slug }) => (
+                  <li class:list={{ "editorial-post-toc-subitem": depth === 3 }}>
+                    <a href={`#${normalizeAnchor(slug)}`}>{text}</a>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          )}
+        </aside>
+      )}
+
+      <div class="editorial-prose editorial-post-body">
+        <slot />
+        {author && <AuthorBox author={author} />}
+        <RelatedPosts posts={relatedPosts} />
+        <RandomPosts posts={randomPosts} />
+      </div>
+    </div>
+  </article>
+    </PostBaseLayout>
+
+    <script>
+      let stopContentsSpy: (() => void) | undefined;
+
+      const setupContentsSpy = () => {
+        stopContentsSpy?.();
+
+        const contents = document.querySelector<HTMLElement>(".editorial-post-toc");
+        if (!contents) return;
+
+        const links = Array.from(contents.querySelectorAll<HTMLAnchorElement>("a[href^='#']"));
+        const normalizeHash = (value: string) => {
+          try {
+            return decodeURIComponent(value)
+              .normalize("NFD")
+              .replace(/[\u0300-\u036f]/g, "")
+              .toLowerCase();
+          } catch {
+            return value.toLowerCase();
+          }
+        };
+        const headingByHash = new Map(
+          Array.from(document.querySelectorAll<HTMLElement>(".editorial-post-body h2, .editorial-post-body h3"), (heading) => {
+            const normalizedId = normalizeHash(heading.id);
+            heading.id = normalizedId;
+            return [normalizedId, heading];
+          }),
+        );
+        const headings = links
+          .map((link) => headingByHash.get(normalizeHash(link.hash.slice(1))))
+          .filter((heading): heading is HTMLElement => heading !== undefined);
+
+        if (!headings.length) return;
+
+        const setActive = (heading: HTMLElement) => {
+          links.forEach((link) => {
+            const active = normalizeHash(link.hash.slice(1)) === normalizeHash(heading.id);
+            link.classList.toggle("is-active", active);
+            if (active) link.setAttribute("aria-current", "location");
+            else link.removeAttribute("aria-current");
+          });
+        };
+
+        const updateActive = () => {
+          const activationLine = window.innerHeight * 0.45;
+          const current = headings.reduce((active, heading) => {
+            const headingTop = heading.getBoundingClientRect().top;
+            return headingTop <= activationLine ? heading : active;
+          }, headings[0]);
+          setActive(current);
+        };
+
+        let frame = 0;
+        const onScroll = () => {
+          if (frame) return;
+          frame = window.requestAnimationFrame(() => {
+            frame = 0;
+            updateActive();
+          });
+        };
+
+        updateActive();
+        window.addEventListener("scroll", onScroll, { passive: true });
+        window.addEventListener("resize", onScroll);
+
+        stopContentsSpy = () => {
+          window.removeEventListener("scroll", onScroll);
+          window.removeEventListener("resize", onScroll);
+          if (frame) window.cancelAnimationFrame(frame);
+        };
+      };
+
+      document.addEventListener("astro:page-load", setupContentsSpy);
+      setupContentsSpy();
+    </script>

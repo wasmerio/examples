@@ -1,0 +1,261 @@
+---
+import HomeBaseLayout from "../layouts/HomeBaseLayout.astro";
+import { siteConfig, verifiedPerson } from "../config";
+---
+
+<HomeBaseLayout
+  siteUrl={siteConfig.site}
+  title="Your Site | Portfolio, technology, and ideas"
+  description="A generic editorial portfolio for practical projects, thoughtful writing, and useful references."
+  person={verifiedPerson}
+>
+  <section class="home-index" aria-labelledby="home-title">
+    <header class="home-header">
+      <img class="home-logo" src="/abstract-card.svg" alt="" aria-hidden="true" width="256" height="171" />
+      <span class="home-header-name">{siteConfig.title.toUpperCase()}</span>
+    </header>
+
+    <div class="home-architecture" aria-hidden="true"></div>
+    <img
+          class="home-portrait"
+          src="/abstract-card.svg"
+          srcset="/abstract-card.svg 432w, /abstract-card.svg 864w"
+          sizes="(max-width: 800px) 55vw, 45vw"
+          alt=""
+          aria-hidden="true"
+          width="864"
+          height="1184"
+          fetchpriority="high"
+          loading="eager"
+          transition:name="generic-portrait"
+        />
+    <div class="home-copy">
+      <h1 id="home-title"><span>Projects.</span><span>Technology.</span><span>Ideas.</span></h1>
+      <p class="home-subtitle"><span>A considered space for</span><span class="subtitle-overflow"> useful work and writing.</span></p>
+    </div>
+    <nav class="home-index-list" aria-label="Inicio, categorías, wiki, blog y páginas">
+      <a href="/"><span>00</span>HOME</a>
+      <a href="/iluminacion/" data-kind="category"><span>01</span>LIGHTING</a>
+      <a href="/tecnologia/" data-kind="category"><span>02</span>TECHNOLOGY</a>
+      <a href="/projects/" data-kind="category"><span>03</span>PROJECTS</a>
+      <a href="/articulos/" data-kind="blog"><span>04</span>ARTICLES</a>
+      <a href="/wiki/iluminacion/" data-kind="wiki"><span>05</span>REFERENCE WIKI</a>
+      <a href="/trayectoria/" data-kind="page"><span>06</span>JOURNEY</a>
+      <a href="/sobre-mi/" data-kind="page"><span>07</span>ABOUT</a>
+    </nav>
+    <div class="home-social" aria-label="Contacto y redes sociales">
+      <a href={siteConfig.social.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a>
+      <a href={siteConfig.social.github} target="_blank" rel="noopener noreferrer">GitHub</a>
+      {siteConfig.social.email && <a href={`mailto:${siteConfig.social.email}`}>Contacto</a>}
+    </div>
+    <div class="home-swipe-cue" data-home-swipe-cue hidden>
+      <img src="/abstract-card.svg" alt="Swipe left to open Lighting" />
+    </div>
+  </section>
+
+  <style>
+    .home-index {
+      transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease;
+    }
+
+    .home-index.is-swiping {
+      transition: none;
+    }
+
+    .home-swipe-cue {
+      position: absolute;
+      z-index: 4;
+      right: 1.5rem;
+      bottom: 5.25rem;
+      display: grid;
+      place-items: center;
+      pointer-events: none;
+    }
+
+    .home-swipe-cue[hidden] {
+      display: none;
+    }
+
+    .home-swipe-cue img {
+      display: block;
+      width: 3.75rem;
+      height: auto;
+      opacity: 0.44;
+      animation: home-swipe-cue-entrance 1.6s ease-in-out infinite;
+    }
+
+    @keyframes home-swipe-cue-entrance {
+      0% {
+        transform: translateX(0);
+        opacity: 0;
+      }
+      18% {
+        opacity: 0.44;
+      }
+      55% {
+        transform: translateX(-0.45rem);
+        opacity: 0.62;
+      }
+      100% {
+        transform: translateX(0);
+        opacity: 0.44;
+      }
+    }
+
+    @media (min-width: 801px) and (max-width: 1100px) {
+      .home-swipe-cue {
+        top: 4rem;
+        right: 1.5rem;
+        bottom: auto;
+      }
+    }
+
+    @media (max-width: 800px) {
+      .home-swipe-cue {
+        right: 1rem;
+        bottom: 4.5rem;
+      }
+    }
+  </style>
+
+  <script>
+    import { navigate } from "astro:transitions/client";
+
+    const HOME_SWIPE_SEEN_KEY = "generic-swipe-hint-seen-v1";
+    const SWIPE_HINT_DURATION = 5000;
+    const SWIPE_THRESHOLD = 84;
+    const MAX_SWIPE_DISTANCE = 180;
+
+    const bindHomeInteractions = () => {
+      const home = document.querySelector<HTMLElement>(".home-index");
+      const cue = document.querySelector<HTMLElement>("[data-home-swipe-cue]");
+      if (!home || home.dataset.interactionsBound) return;
+
+      home.dataset.interactionsBound = "true";
+      home.style.touchAction = "pan-y";
+
+      let swipeSeen = false;
+      try {
+        swipeSeen = window.localStorage.getItem(HOME_SWIPE_SEEN_KEY) === "1";
+      } catch {
+        // The gesture remains available when storage is blocked or unavailable.
+      }
+
+      const markSwipeSeen = () => {
+        if (cue) cue.hidden = true;
+        try {
+          window.localStorage.setItem(HOME_SWIPE_SEEN_KEY, "1");
+        } catch {
+          // Storage is optional; do not disable the gesture when it fails.
+        }
+      };
+
+      if (cue && !swipeSeen) {
+        cue.hidden = false;
+        window.setTimeout(markSwipeSeen, SWIPE_HINT_DURATION);
+      }
+
+      let startX = 0;
+      let startY = 0;
+      let currentX = 0;
+      let dragging = false;
+      let committed = false;
+
+      const resetSwipe = () => {
+        home.classList.remove("is-swiping", "is-swipe-committed");
+        home.style.transform = "";
+        home.style.opacity = "";
+        dragging = false;
+        committed = false;
+      };
+
+      const beginSwipe = (clientX: number, clientY: number, primary = true) => {
+        if (!primary) return;
+        startX = currentX = clientX;
+        startY = clientY;
+        dragging = true;
+        committed = false;
+        home.classList.add("is-swiping");
+      };
+
+      const moveSwipe = (clientX: number, clientY: number) => {
+        if (!dragging || committed) return;
+        const deltaX = clientX - startX;
+        const deltaY = clientY - startY;
+        if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 12) {
+          resetSwipe();
+          return;
+        }
+        if (deltaX >= 0) {
+          currentX = clientX;
+          home.style.transform = "translateX(0)";
+          home.style.opacity = "1";
+          return;
+        }
+        currentX = clientX;
+        const distance = Math.min(-deltaX, MAX_SWIPE_DISTANCE);
+        if (distance > 12) markSwipeSeen();
+        home.style.transform = `translateX(-${distance}px)`;
+        home.style.opacity = String(1 - distance / (MAX_SWIPE_DISTANCE * 5));
+      };
+
+      const endSwipe = () => {
+        if (!dragging || committed) return;
+        const distance = startX - currentX;
+        if (distance >= SWIPE_THRESHOLD) {
+          committed = true;
+          markSwipeSeen();
+          home.classList.add("is-swipe-committed");
+          home.style.transform = "translateX(-100%)";
+          home.style.opacity = "0.2";
+          window.setTimeout(() => navigate("/iluminacion/"), 280);
+          return;
+        }
+        resetSwipe();
+      };
+
+      const isInteractiveTarget = (target: EventTarget | null) =>
+        target instanceof Element && Boolean(target.closest("a, button, input, textarea, select"));
+
+      if ("PointerEvent" in window) {
+        home.addEventListener("pointerdown", (event) => {
+          if (isInteractiveTarget(event.target)) return;
+          beginSwipe(event.clientX, event.clientY, event.isPrimary && (event.button === 0 || event.button === -1));
+          if (dragging) home.setPointerCapture?.(event.pointerId);
+        });
+        home.addEventListener("pointermove", (event) => moveSwipe(event.clientX, event.clientY));
+        home.addEventListener("pointerup", endSwipe);
+        home.addEventListener("pointercancel", resetSwipe);
+      } else {
+        home.addEventListener("touchstart", (event) => {
+          if (isInteractiveTarget(event.target)) return;
+          const touch = event.changedTouches[0];
+          if (touch) beginSwipe(touch.clientX, touch.clientY);
+        }, { passive: true });
+        home.addEventListener("touchmove", (event) => {
+          const touch = event.changedTouches[0];
+          if (touch) moveSwipe(touch.clientX, touch.clientY);
+        }, { passive: true });
+        home.addEventListener("touchend", endSwipe);
+            home.addEventListener("mousedown", (event) => {
+              if (!isInteractiveTarget(event.target)) beginSwipe(event.clientX, event.clientY);
+            });
+        home.addEventListener("mousemove", (event) => moveSwipe(event.clientX, event.clientY));
+        home.addEventListener("mouseup", endSwipe);
+        home.addEventListener("mouseleave", resetSwipe);
+      }
+
+      home.addEventListener(
+        "wheel",
+        (event) => {
+          if (event.deltaY <= 12) return;
+          navigate("/iluminacion/");
+        },
+        { passive: true },
+      );
+    };
+
+    document.addEventListener("astro:page-load", bindHomeInteractions);
+    bindHomeInteractions();
+  </script>
+</HomeBaseLayout>

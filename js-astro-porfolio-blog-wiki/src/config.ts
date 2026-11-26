@@ -1,0 +1,5 @@
+import type { PostFilter } from './utils/posts';
+export interface SeoPerson { name: string; image: string; sameAs: string[]; }
+export const verifiedPerson: SeoPerson = { name: 'Site author', image: '/avatar-placeholder.svg', sameAs: [] };
+export interface SiteConfig { lang?: string; title: string; image?: string; defaultImage?: string; image_alt?: string; slogan: string; description?: string; site: string; social: { github?: string; linkedin?: string; email?: string; rss?: boolean }; homepage: PostFilter; googleAnalysis?: string; search?: boolean; }
+export const siteConfig: SiteConfig = { lang: 'en', site: 'https://example.com', title: 'Your Site', slogan: 'Portfolio, notes, and practical ideas.', image: '/abstract-card.svg', defaultImage: '/abstract-card.svg', image_alt: 'Abstract geometric illustration', description: 'A reusable Astro starter for a portfolio, blog, and optional knowledge wiki.', social: { rss: true }, homepage: { maxPosts: 5, tags: [], excludeTags: [] }, search: true };

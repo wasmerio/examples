@@ -1,0 +1,186 @@
+---
+---
+
+<button id="search-button" class="legacy-search-button" aria-label="Search">
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+<circle cx="11" cy="11" r="6.5" />
+<path d="m16 16 5 5" />
+  </svg>
+</button>
+
+<div id="search-modal" class="legacy-search-modal hidden">
+  <div class="legacy-search-dialog">
+    <input type="text" id="search-input" class="legacy-search-input" placeholder="Search posts..." autocomplete="off" />
+    <div id="search-results" class="legacy-search-results">
+      <div class="legacy-search-empty">No results found</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let searchData = []
+  let searchInput
+  let searchResults
+  let searchModal
+  let searchButton
+  let closeButton
+  let searchDebounceTimeout
+
+  function debounce(func, wait) {
+    return (...args) => {
+      clearTimeout(searchDebounceTimeout)
+      searchDebounceTimeout = setTimeout(() => func(...args), wait)
+    }
+  }
+
+  async function initialize() {
+    const response = await fetch('/api/search.json')
+    searchData = await response.json()
+
+    searchInput = document.getElementById('search-input')
+    searchResults = document.getElementById('search-results')
+    searchModal = document.getElementById('search-modal')
+    searchButton = document.getElementById('search-button')
+    closeButton = document.getElementById('close-search')
+
+    const debouncedSearch = debounce(handleSearch, 300)
+    searchInput?.addEventListener('input', debouncedSearch)
+    searchButton?.addEventListener('click', openModal)
+    closeButton?.addEventListener('click', closeModal)
+
+    // Close modal on outside click
+    searchModal?.addEventListener('click', (e) => {
+      if (e.target === searchModal) {
+        closeModal()
+      }
+    })
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !searchModal?.classList.contains('hidden')) {
+        closeModal()
+      }
+    })
+
+    // Cleanup function
+    return () => {
+      clearTimeout(searchDebounceTimeout)
+    }
+  }
+
+  function openModal() {
+    searchModal?.classList.remove('hidden')
+    searchInput?.focus()
+  }
+
+  function closeModal() {
+    searchModal?.classList.add('hidden')
+    searchInput.value = ''
+    searchResults.innerHTML = `
+<div class="legacy-search-empty">
+          No results found
+        </div>
+  `
+  }
+
+  function highlightText(text, query) {
+    if (!query) return text
+    const regex = new RegExp(`(${query})`, 'gi')
+    return text.replace(regex, '<mark class="legacy-search-highlight">$1</mark>')
+  }
+
+  function handleSearch(e) {
+    const query = e.target.value.toLowerCase()
+
+if (!query) {
+      searchResults.innerHTML = `
+        <div class="legacy-search-empty">
+          No results found
+        </div>
+      `
+      return
+    }
+
+    const results = searchData
+      .filter((post) => {
+        const searchContent = `${post.title} ${post.description} ${post.content} ${post.tags?.join(' ')}`.toLowerCase()
+        return searchContent.includes(query)
+      })
+      .map((post) => {
+        // Find content match
+        const contentMatch = post.content.toLowerCase().indexOf(query.toLowerCase())
+        let matchedContent = ''
+        if (contentMatch !== -1) {
+          const start = Math.max(0, contentMatch - 50)
+          const end = Math.min(post.content.length, contentMatch + query.length + 50)
+          matchedContent = post.content.slice(start, end)
+          if (start > 0) matchedContent = '...' + matchedContent
+          if (end < post.content.length) matchedContent = matchedContent + '...'
+        }
+
+        // Highlight matches in title and content
+        const highlightedTitle = highlightText(post.title, query)
+        const highlightedContent = highlightText(matchedContent, query)
+
+        return {
+          ...post,
+          matchedContent: highlightedContent,
+          matchedTitle: highlightedTitle,
+        }
+      })
+      .slice(0, 5)
+
+    displayResults(results)
+  }
+
+  function displayResults(results) {
+if (results.length === 0) {
+      searchResults.innerHTML = `
+        <div class="legacy-search-empty">
+          No results found
+        </div>
+      `
+    } else {
+      searchResults.innerHTML = results
+        .map(
+          (post) => `
+            <a
+              href="/blog/${post.id}/"
+              class="legacy-search-result"
+            >
+              <h3 class="legacy-search-result-title">
+                ${post.matchedTitle || post.title}
+              </h3>
+              <p class="legacy-search-result-description">
+                ${post.description || ''}
+              </p>
+              ${
+                post.matchedContent
+                  ? `
+                <p class="legacy-search-result-excerpt">
+                  ${post.matchedContent}
+                </p>
+              `
+                  : ''
+              }
+              ${post.tags
+                ?.map(
+                  (tag) => `
+                  <span class="legacy-search-tag">
+                    ${tag}
+                  </span>
+                  `
+                )
+                .join('')}
+            </a>
+          `
+        )
+        .join('')
+    }
+
+    searchResults.classList.remove('hidden')
+  }
+
+  // Initialize search functionality
+  document.addEventListener('astro:page-load', initialize)
+</script>

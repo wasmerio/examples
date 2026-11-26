@@ -1,0 +1,297 @@
+---
+import { siteConfig } from "../config";
+
+interface Props {
+  omitPortrait?: boolean;
+}
+
+const { omitPortrait = false } = Astro.props;
+
+const sections = [
+  { number: "00", label: "HOME", href: "/", kind: "home" },
+  { number: "01", label: "ILUMINACIÓN", href: "/iluminacion/", kind: "category" },
+  { number: "02", label: "TECNOLOGÍA", href: "/tecnologia/", kind: "category" },
+  { number: "03", label: "PROJECTS", href: "/projects/", kind: "category" },
+  { number: "04", label: "ARTÍCULOS", href: "/articulos/", kind: "blog" },
+  { number: "05", label: "WIKI ILUMINACIÓN", href: "/wiki/iluminacion/", kind: "wiki" },
+  { number: "06", label: "TRAYECTORIA", href: "/trayectoria/", kind: "page" },
+      { number: "07", label: "SOBRE MÍ", href: "/sobre-mi/", kind: "page" },
+];
+---
+
+<aside id="_sidebar" class="site-sidebar" aria-label="Navegación principal">
+  <div class="sidebar-top">
+    <a class="sidebar-brand" href="/" aria-label={`${siteConfig.title}, inicio`}>
+      <img class="sidebar-logo" src="/abstract-card.svg" alt="" aria-hidden="true" width="256" height="171" />
+      <span class="sidebar-brand-name">{siteConfig.title.toUpperCase()}</span>
+    </a>
+    {!omitPortrait && (
+      <img class="sidebar-portrait" src="/abstract-card.svg" alt="Generic Author" transition:name="generic-portrait" />
+    )}
+  </div>
+  <p class="sidebar-swipe-cue" data-swipe-indicator hidden>
+    <img src="/abstract-card.svg" alt="Swipe from the left edge to close the menu" />
+  </p>
+  <nav class="sidebar-nav">
+    <p class="sidebar-kicker">Índice</p>
+    <ol>
+      {sections.map((section) => (
+        <li>
+          <a href={section.href} data-kind={section.kind}>
+            <span class="sidebar-number">{section.number}</span>
+            <span>{section.label}</span>
+          </a>
+        </li>
+      ))}
+    </ol>
+  </nav>
+  <div class="sidebar-social">
+    <a href={siteConfig.social.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</a>
+    <a href={siteConfig.social.github} target="_blank" rel="noopener noreferrer">GitHub</a>
+    {siteConfig.social.email && <a href={`mailto:${siteConfig.social.email}`}>Contacto</a>}
+  </div>
+</aside>
+<div class="sidebar-backdrop" aria-hidden="true"></div>
+
+<script is:inline>
+  if (!window.__sidebarNavigationBound) {
+    window.__sidebarNavigationBound = true;
+
+    const EDGE_GUARD = 35;
+    const MOBILE_RANGE = 150;
+    const SWIPE_THRESHOLD = 0.35;
+    const SWIPE_VELOCITY = 0.45;
+        let gesture = null;
+        let lastPointerTime = -Infinity;
+        const SWIPE_HINT_KEY = "generic-swipe-hint-seen-v1";
+        const SWIPE_HINT_DURATION = 5000;
+        let swipeHintTimer = null;
+
+        const hasSeenSwipeHint = () => {
+          try {
+            return window.localStorage.getItem(SWIPE_HINT_KEY) === "1";
+          } catch {
+            return false;
+          }
+        };
+
+        const markSwipeHintSeen = () => {
+          try {
+            window.localStorage.setItem(SWIPE_HINT_KEY, "1");
+          } catch {
+            // Ignore storage restrictions; the gesture remains functional.
+          }
+          const indicator = document.querySelector("[data-swipe-indicator]");
+          if (indicator) indicator.hidden = true;
+          if (swipeHintTimer) window.clearTimeout(swipeHintTimer);
+        }
+
+        const showSwipeHint = (indicator) => {
+          if (!indicator || hasSeenSwipeHint()) return;
+          indicator.hidden = false;
+          swipeHintTimer = window.setTimeout(markSwipeHintSeen, SWIPE_HINT_DURATION);
+        };
+
+    const fitSidebarBrandName = () => {
+      const name = document.querySelector(".sidebar-brand-name");
+      if (!(name instanceof HTMLElement)) return;
+
+      name.style.removeProperty("font-size");
+      const computedSize = Number.parseFloat(window.getComputedStyle(name).fontSize);
+      let size = computedSize;
+      while (name.scrollWidth > name.clientWidth && size > 6) {
+        size -= 0.25;
+        name.style.fontSize = `${size}px`;
+      }
+    };
+
+    const getElements = () => ({
+      drawer: document.querySelector("#_drawer"),
+      sidebar: document.querySelector("#_sidebar"),
+      backdrop: document.querySelector(".sidebar-backdrop"),
+      content: document.querySelector(".interior-main"),
+      indicator: document.querySelector("[data-swipe-indicator]"),
+    });
+
+    const clamp = (value) => Math.min(1, Math.max(0, value));
+    const isMobile = () => window.matchMedia("(max-width: 800px)").matches;
+
+    window.requestAnimationFrame(fitSidebarBrandName);
+    window.addEventListener("resize", fitSidebarBrandName);
+    const isSafari = () => /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+    const getRange = (size, inputType = "touch", pointerType = "touch") => {
+      if (!isMobile()) return [0, size];
+      const isTouchInput = inputType === "touch" || pointerType === "touch";
+      return isSafari() && isTouchInput ? [EDGE_GUARD, MOBILE_RANGE] : [0, MOBILE_RANGE];
+    };
+
+    const updateSidebar = (progress, size, distance) => {
+      const { sidebar, backdrop, content } = getElements();
+      if (!sidebar) return;
+      const boundedProgress = clamp(progress);
+      const t = 1 - boundedProgress;
+      sidebar.style.transform = `translateX(${distance * t}px)`;
+      if (backdrop) backdrop.style.opacity = String(boundedProgress * 0.68);
+      if (content) content.style.opacity = String(1 - boundedProgress * 0.12);
+      const indicator = document.querySelector("[data-swipe-indicator]");
+      if (indicator) indicator.hidden = boundedProgress < 0.05;
+      sidebar.dispatchEvent(new CustomEvent("hy-drawer-prepare"));
+    };
+
+    const setSidebarOpen = (open) => {
+      const { sidebar, backdrop, content, indicator } = getElements();
+      if (!sidebar) return;
+      sidebar.classList.toggle("is-open", open);
+      backdrop?.classList.toggle("is-visible", open);
+      sidebar.style.removeProperty("transform");
+      backdrop?.style.removeProperty("opacity");
+      content?.style.removeProperty("opacity");
+      if (indicator) {
+        if (!open) indicator.hidden = true;
+        else showSwipeHint(indicator);
+      }
+      document.querySelectorAll("[data-sidebar-toggle]").forEach((toggle) => {
+        toggle.setAttribute("aria-expanded", String(open));
+        toggle.setAttribute("aria-label", open ? "Cerrar menú" : "Abrir menú");
+      });
+    };
+
+    const completeTransition = () => {
+      const { sidebar, indicator } = getElements();
+      if (!sidebar) return;
+      sidebar.dispatchEvent(new CustomEvent("hy-drawer-transitioned"));
+      if (sidebar.classList.contains("is-open") && indicator) showSwipeHint(indicator);
+    };
+
+    const beginGesture = (startX, startedAt, inputType, target, pointerId = null, touchId = null, pointerType = "touch") => {
+      if (!isMobile()) return false;
+      const { sidebar } = getElements();
+      if (!sidebar) return false;
+      const open = sidebar.classList.contains("is-open");
+      const startedInSidebar = sidebar.contains(target);
+      const range = getRange(sidebar.getBoundingClientRect().width, inputType, pointerType);
+      const fromEdge = startX >= range[0] && startX <= range[1];
+      if ((!open && !fromEdge) || (open && !startedInSidebar)) return false;
+
+      markSwipeHintSeen();
+      gesture = {
+        inputType,
+        pointerId,
+        touchId,
+        startX,
+        startedAt,
+        open,
+        progress: open ? 1 : 0,
+      };
+      sidebar.classList.add("is-dragging");
+      document.querySelector(".sidebar-backdrop")?.classList.add("is-dragging");
+      document.querySelector(".interior-main")?.classList.add("is-dragging");
+      return true;
+    };
+
+    const finishGesture = (clientX, timeStamp, inputType, pointerId = null, touchId = null) => {
+      if (!gesture || gesture.inputType !== inputType) return;
+      if (inputType === "pointer" && pointerId !== gesture.pointerId) return;
+      if (inputType === "touch" && touchId !== gesture.touchId) return;
+      const { sidebar, backdrop, content } = getElements();
+      if (!sidebar) return;
+      const elapsed = Math.max(1, timeStamp - gesture.startedAt);
+      const velocity = (clientX - gesture.startX) / elapsed;
+      const progress = clamp(gesture.progress);
+      const shouldOpen = gesture.open
+        ? progress > SWIPE_THRESHOLD || velocity > SWIPE_VELOCITY
+        : progress > 1 - SWIPE_THRESHOLD && velocity > -SWIPE_VELOCITY;
+
+      sidebar.classList.remove("is-dragging");
+      backdrop?.classList.remove("is-dragging");
+      content?.classList.remove("is-dragging");
+      gesture = null;
+      setSidebarOpen(shouldOpen);
+      window.setTimeout(completeTransition, 460);
+    };
+
+    const moveGesture = (clientX, event, inputType, pointerId = null, touchId = null) => {
+      if (!gesture || gesture.inputType !== inputType) return;
+      if (inputType === "pointer" && pointerId !== gesture.pointerId) return;
+      if (inputType === "touch" && touchId !== gesture.touchId) return;
+      const { sidebar } = getElements();
+      if (!sidebar) return;
+      const size = sidebar.getBoundingClientRect().width;
+      const distance = isMobile() ? Math.min(MOBILE_RANGE, size) : size;
+      const delta = clientX - gesture.startX;
+      gesture.progress = gesture.open ? clamp(1 + delta / distance) : clamp(delta / distance);
+      updateSidebar(gesture.progress, size, -distance);
+      event.preventDefault();
+    };
+
+    document.addEventListener("pointerdown", (event) => {
+      lastPointerTime = event.timeStamp;
+      if (gesture || !beginGesture(event.clientX, event.timeStamp, "pointer", event.target, event.pointerId, null, event.pointerType)) return;
+    });
+
+    document.addEventListener("pointermove", (event) => {
+      moveGesture(event.clientX, event, "pointer", event.pointerId);
+    }, { passive: false });
+
+    document.addEventListener("pointerup", (event) => {
+      finishGesture(event.clientX, event.timeStamp, "pointer", event.pointerId);
+    });
+    document.addEventListener("pointercancel", (event) => {
+      finishGesture(event.clientX, event.timeStamp, "pointer", event.pointerId);
+    });
+
+    document.addEventListener("mousedown", (event) => {
+      if (gesture || !beginGesture(event.clientX, event.timeStamp, "mouse", event.target, event.button, null, "mouse")) return;
+    });
+    document.addEventListener("mousemove", (event) => {
+      moveGesture(event.clientX, event, "mouse", event.button);
+    }, { passive: false });
+    document.addEventListener("mouseup", (event) => {
+      finishGesture(event.clientX, event.timeStamp, "mouse", event.button);
+    });
+
+    document.addEventListener("touchstart", (event) => {
+      if (gesture || event.timeStamp - lastPointerTime < 500) return;
+      const touch = event.touches[0];
+      if (!touch) return;
+      beginGesture(touch.clientX, event.timeStamp, "touch", event.target, null, touch.identifier);
+    }, { passive: true });
+
+    document.addEventListener("touchmove", (event) => {
+      if (!gesture || gesture.inputType !== "touch") return;
+      const touch = Array.from(event.touches).find(({ identifier }) => identifier === gesture.touchId);
+      if (touch) moveGesture(touch.clientX, event, "touch", null, touch.identifier);
+    }, { passive: false });
+
+    document.addEventListener("touchend", (event) => {
+      const touch = Array.from(event.changedTouches).find(({ identifier }) => identifier === gesture?.touchId);
+      if (touch) finishGesture(touch.clientX, event.timeStamp, "touch", null, touch.identifier);
+    });
+    document.addEventListener("touchcancel", (event) => {
+      const touch = Array.from(event.changedTouches).find(({ identifier }) => identifier === gesture?.touchId);
+      if (touch) finishGesture(touch.clientX, event.timeStamp, "touch", null, touch.identifier);
+    });
+
+    document.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+      if (target.closest("[data-sidebar-toggle]")) {
+        setSidebarOpen(!getElements().sidebar?.classList.contains("is-open"));
+        return;
+      }
+      if (target.closest(".sidebar-backdrop") || target.closest(".site-sidebar a")) setSidebarOpen(false);
+    });
+
+    document.addEventListener("hy-drawer-prepare", () => {
+      const { sidebar, content } = getElements();
+      sidebar?.style.setProperty("will-change", "transform");
+      content?.style.setProperty("will-change", "opacity");
+    });
+    document.addEventListener("hy-drawer-transitioned", () => {
+      const { sidebar, content } = getElements();
+      sidebar?.style.removeProperty("will-change");
+      content?.style.removeProperty("will-change");
+    });
+  }
+</script>

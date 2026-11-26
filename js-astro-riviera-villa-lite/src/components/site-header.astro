@@ -1,0 +1,255 @@
+---
+import { villa } from '../config/index.ts';
+import { pagePath, useI18n, type LayoutPage } from '../i18n/index.ts';
+import type { Locale } from '../i18n/locales.ts';
+import Icon from './icon.astro';
+import LanguageMenu from './language-menu.astro';
+import LanguageSwitcher from './language-switcher.astro';
+
+interface Props {
+  locale: Locale;
+  page: LayoutPage;
+}
+
+const { locale, page } = Astro.props;
+const { ui, t, money } = useI18n(locale);
+const home = (hash: string) => (page === 'home' ? hash : pagePath(locale, 'home', hash));
+const s = villa.sections;
+
+const links = [
+  s.house && { href: home('#house'), label: t(villa.house.navLabel) },
+  s.gallery && { href: home('#gallery'), label: ui.nav.gallery },
+  s.area && { href: home('#area'), label: t(villa.area.navLabel) },
+  s.rates && { href: home('#rates'), label: ui.nav.rates },
+].filter((l): l is { href: string; label: string } => Boolean(l));
+
+// Below 1024 px the pill floats 12 px inside the hero photo: the header's side padding is the hero's
+// (12 px, 22 px from 640 px) plus 12 px. Change both together.
+const bookHref = home(s.booking ? '#booking' : '#main');
+const fromPrice = Math.min(...villa.rates.seasons.map((x) => x.nightly));
+---
+
+<header
+  data-header
+  data-scrolled={page === 'home' ? 'false' : 'true'}
+  class="site-header pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center px-6 pt-3 sm:px-[34px] lg:px-6"
+>
+  <div
+    class="pill pointer-events-auto flex w-full max-w-[1180px] items-center gap-3 rounded-full bg-surface/95 py-2 pl-4 pr-2 sm:gap-4 sm:pl-5 lg:w-auto lg:gap-[26px] lg:py-[10px] lg:pl-6 lg:pr-3"
+  >
+    <a href={pagePath(locale, 'home')} class="logo mr-auto font-serif text-[clamp(18px,5.6vw,21px)] uppercase leading-none tracking-[0.04em] lg:mr-2 lg:text-[22px]">
+      {villa.property.name}
+    </a>
+    <nav aria-label={ui.nav.mainMenu} class="hidden lg:block">
+      <ul class="flex items-center gap-[26px] text-[14px]">
+        {
+          links.map((l) => (
+            <li>
+              <a href={l.href} class="nav-link">
+                {l.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+    <div class="hidden lg:block">
+      <LanguageMenu locale={locale} page={page} />
+    </div>
+    <a href={bookHref} class="btn btn-accent hidden !px-[18px] !py-[10px] !text-[14px] sm:inline-flex">
+      {ui.nav.book}
+    </a>
+    <button
+      type="button"
+      class="btn btn-ghost !border-line !px-4 !py-[9px] !text-[14px] max-[389px]:!px-[13px] lg:!hidden"
+      data-menu-open
+      aria-haspopup="dialog"
+      aria-controls="site-menu"
+    >
+      <Icon name="menu" size={18} />
+      <span class="max-[389px]:sr-only">{ui.nav.menu}</span>
+    </button>
+  </div>
+</header>
+
+<dialog id="site-menu" class="site-menu" aria-label={ui.nav.mainMenu}>
+  <div class="flex min-h-full flex-col px-6 pb-8 pt-5">
+    <div class="flex items-center justify-between">
+      <span class="font-serif text-[21px] uppercase tracking-[0.04em]">{villa.property.name}</span>
+      <button type="button" class="btn btn-ghost !px-4 !py-[9px] !text-[14px]" data-menu-close>
+        <Icon name="close" size={18} />
+        {ui.nav.close}
+      </button>
+    </div>
+    <nav aria-label={ui.nav.mainMenu} class="mt-12">
+      <ul class="space-y-1">
+        {
+          links.map((l, i) => (
+            <li class="border-b border-line">
+              <a href={l.href} class="flex items-baseline gap-4 py-4 font-serif text-[34px] leading-none" data-menu-link>
+                <span class="num !text-[16px]">{String(i + 1).padStart(2, '0')}</span>
+                {l.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+    <div class="mt-8">
+      <LanguageSwitcher locale={locale} page={page} />
+    </div>
+    <a href={bookHref} class="btn btn-accent mt-auto w-full" data-menu-link>{ui.nav.book}</a>
+  </div>
+</dialog>
+
+{
+  page === 'home' && s.booking && (
+    <a href="#booking" class="mobile-cta lg:hidden" data-mobile-cta data-visible="false" tabindex="-1" aria-hidden="true">
+      <span class="text-[13px] text-muted">
+        {ui.trust.from} <b class="font-semibold text-ink">{money(fromPrice)}</b> {ui.trust.perNight}
+      </span>
+      <span class="btn btn-accent !px-5 !py-[11px] !text-[14px]">{ui.nav.bookShort}</span>
+    </a>
+  )
+}
+
+<script>
+  const header = document.querySelector<HTMLElement>('[data-header]');
+  const menu = document.querySelector<HTMLDialogElement>('#site-menu');
+  const cta = document.querySelector<HTMLElement>('[data-mobile-cta]');
+
+  if (header && header.dataset.scrolled === 'false') {
+    let ticking = false;
+    const update = () => {
+      header.dataset.scrolled = window.scrollY > 24 ? 'true' : 'false';
+      ticking = false;
+    };
+    window.addEventListener(
+      'scroll',
+      () => {
+        if (!ticking) {
+          ticking = true;
+          requestAnimationFrame(update);
+        }
+      },
+      { passive: true },
+    );
+    update();
+  }
+
+  document.querySelector('[data-menu-open]')?.addEventListener('click', () => menu?.showModal());
+  document.querySelector('[data-menu-close]')?.addEventListener('click', () => menu?.close());
+  menu?.addEventListener('click', (event) => {
+    if (event.target === menu) menu.close();
+  });
+  menu?.querySelectorAll('[data-menu-link]').forEach((a) => a.addEventListener('click', () => menu.close()));
+
+  // Mobile "Book" bar: shown once the hero booking bar is out of view, hidden over the booking form.
+  if (cta) {
+    const watched = ['[data-booking-bar]', '#booking']
+      .map((sel) => document.querySelector(sel))
+      .filter((el): el is Element => el !== null);
+    const visible = new Set<Element>();
+    const observer = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (e.isIntersecting) visible.add(e.target);
+        else visible.delete(e.target);
+      }
+      const show = visible.size === 0 && window.scrollY > 200;
+      cta.dataset.visible = String(show);
+      cta.setAttribute('aria-hidden', String(!show));
+      cta.tabIndex = show ? 0 : -1;
+    });
+    watched.forEach((el) => observer.observe(el));
+  }
+</script>
+
+<style>
+  .pill {
+    box-shadow: 0 6px 24px rgb(20 16 12 / 0.08);
+    transition:
+      transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1),
+      box-shadow 260ms ease;
+  }
+
+  @media (min-width: 1024px) {
+    .site-header[data-scrolled='false'] .pill {
+      transform: translateY(32px);
+      box-shadow: none;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .site-header[data-scrolled='false'] .pill {
+      transform: translateY(14px);
+      box-shadow: none;
+    }
+  }
+
+  .nav-link {
+    position: relative;
+    padding-block: 6px;
+  }
+
+  .nav-link::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: currentColor;
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 200ms ease;
+  }
+
+  .nav-link:hover::after {
+    transform: scaleX(1);
+  }
+
+  .site-menu {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    margin: 0;
+    background: var(--rt-bg);
+    color: var(--rt-text);
+  }
+
+  .site-menu::backdrop {
+    background: rgb(20 16 12 / 0.3);
+  }
+
+  .mobile-cta {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 8px 8px 20px;
+    border-radius: 999px;
+    background: var(--rt-surface);
+    box-shadow: 0 12px 36px rgb(20 16 12 / 0.18);
+    transition:
+      transform 260ms ease,
+      opacity 260ms ease;
+  }
+
+  @media (min-width: 1024px) {
+    .mobile-cta {
+      display: none;
+    }
+  }
+
+  .mobile-cta[data-visible='false'] {
+    transform: translateY(140%);
+    opacity: 0;
+    pointer-events: none;
+  }
+</style>

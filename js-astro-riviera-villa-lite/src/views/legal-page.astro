@@ -1,0 +1,74 @@
+---
+/** Legal notice or privacy policy, built from the templates in src/i18n/legal.ts. */
+import { villa } from '../config/index.ts';
+import { frenchSpacing, pagePath, useI18n } from '../i18n/index.ts';
+import { legalTexts } from '../i18n/legal.ts';
+import type { Locale } from '../i18n/locales.ts';
+import BaseLayout from '../layouts/base-layout.astro';
+import { photoCredits } from '../lib/photos.ts';
+
+interface Props {
+  locale: Locale;
+  kind: 'legal' | 'privacy';
+}
+
+const { locale, kind } = Astro.props;
+const { t, bcp47 } = useI18n(locale);
+const texts = legalTexts(locale, villa, t);
+/** Splits a paragraph so web addresses become links; French gets its narrow spaces. */
+const parts = (text: string) =>
+  (locale === 'fr' ? frenchSpacing(text) : text)
+    .split(/(https?:\/\/[^\s]+?)(?=[.,]?(?:\s|$))/)
+    .map((chunk) => ({ chunk, url: /^https?:\/\//.test(chunk) }));
+const title = kind === 'legal' ? texts.legalTitle : texts.privacyTitle;
+const sections = kind === 'legal' ? texts.legalSections : texts.privacySections;
+const updated = new Intl.DateTimeFormat(bcp47, { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${villa.legal.updated}T12:00:00Z`));
+---
+
+<BaseLayout locale={locale} page={kind} title={`${title} · ${villa.property.name}`} description={t(villa.seo.description)}>
+  <article class="wrap pt-40 pb-24">
+    <div class="mx-auto max-w-[760px]">
+      <p class="eyebrow">{villa.property.name}</p>
+      <h1 class="mt-5 text-[clamp(44px,6vw,68px)]">{title}</h1>
+      {
+        sections.map((section) => (
+          <section class="mt-12 border-t border-line pt-8">
+            <h2 class="text-[28px]">{section.heading}</h2>
+            {section.paragraphs.map((p) => (
+              <p class="mt-4 text-[16px] leading-[1.7] text-ink/85">
+                {parts(p).map((part) =>
+                  part.url ? (
+                    <a href={part.chunk} class="link" rel="noopener">
+                      {part.chunk}
+                    </a>
+                  ) : (
+                    part.chunk
+                  ),
+                )}
+              </p>
+            ))}
+          </section>
+        ))
+      }
+      {
+        kind === 'legal' && photoCredits.length > 0 && (
+          <section class="mt-12 border-t border-line pt-8">
+            <h2 class="text-[28px]">{texts.creditsHeading}</h2>
+            <ul class="mt-4 space-y-2 text-[14.5px] leading-[1.6] text-muted" role="list">
+              {photoCredits.map((c) => (
+                <li>
+                  <a href={c.sourceUrl} class="link" rel="noopener" target="_blank">
+                    {c.title ?? c.file}
+                  </a>{' '}
+                  · {c.author} · {c.licenseUrl ? <a href={c.licenseUrl} class="link" rel="noopener" target="_blank">{c.license}</a> : c.license}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )
+      }
+      <p class="mt-14 text-[14px] text-muted">{texts.updated(updated)}</p>
+      <p class="mt-8"><a href={pagePath(locale, 'home')} class="link">← {villa.property.name}</a></p>
+    </div>
+  </article>
+</BaseLayout>

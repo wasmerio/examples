@@ -1,0 +1,228 @@
+---
+import { formEnabled, villa } from '../config/index.ts';
+import { formMarkup } from '../lib/booking-service.ts';
+import { pagePath, useI18n } from '../i18n/index.ts';
+import type { Locale } from '../i18n/locales.ts';
+import Icon from './icon.astro';
+import SectionHeading from './section-heading.astro';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const { ui, t } = useI18n(locale);
+const { contact, booking, property } = villa;
+const max = property.capacity.guests;
+const provider = formEnabled ? booking.provider : 'none';
+
+const config = {
+  provider,
+  key: formEnabled ? booking.key : '',
+  villa: property.name,
+  email: contact.email,
+  whatsapp: contact.whatsapp,
+  capacity: max,
+  seasons: villa.rates.seasons.map((s) => ({ name: t(s.name), minNights: s.minNights, ranges: s.ranges })),
+  labels: {
+    required: ui.form.required,
+    invalidEmail: ui.form.invalidEmail,
+    departureAfterArrival: ui.form.departureAfterArrival,
+    arrivalInPast: ui.form.arrivalInPast,
+    tooManyGuests: ui.form.tooManyGuests(max),
+    minNightsOne: ui.form.minNights(1, '{season}').replace('1', '{n}'),
+    minNightsMany: ui.form.minNights(99, '{season}').replace('99', '{n}'),
+    datesTaken: ui.form.datesTaken,
+    sending: ui.form.sending,
+    submit: ui.form.submit,
+    subject: ui.form.requestSubject(property.name, '{a}', '{d}'),
+    intro: ui.form.requestIntro,
+    arrival: ui.form.arrival,
+    departure: ui.form.departure,
+    adults: ui.form.adults,
+    children: ui.form.children,
+    name: ui.form.name,
+    email: ui.form.email,
+    phone: ui.form.phone,
+    message: ui.form.message,
+    // Label separator: French puts a narrow no-break space before the colon.
+    sep: locale === 'fr' ? '\u202F: ' : ': ',
+  },
+};
+const whatsappHref = contact.whatsapp ? `https://wa.me/${contact.whatsapp}` : undefined;
+// Without JavaScript the form posts straight to the form service; with no service it stays hidden.
+const markup = formMarkup(provider, config.key, ui.form.requestSubject(property.name, '…', '…'), property.name);
+const mailHref = `mailto:${contact.email}`;
+---
+
+<section id="booking" class="border-t border-line bg-sand py-[clamp(88px,11vw,150px)]" aria-labelledby="booking-title">
+  <div class="wrap grid gap-12 lg:grid-cols-12 lg:gap-10">
+    <div class="lg:col-span-5">
+      <SectionHeading
+        id="booking-title"
+        eyebrow={ui.sections.booking.eyebrow}
+        title={ui.sections.booking.title}
+        intro={ui.sections.booking.intro}
+      />
+      <h3 class="mt-10 text-[24px]">{ui.form.perksTitle}</h3>
+      <ol class="mt-4 border-t border-line" role="list">
+        {
+          ui.form.perks.map((perk, i) => (
+            <li class="flex items-baseline gap-4 border-b border-line py-4 text-[15px]">
+              <span class="num !text-[17px]" aria-hidden="true">
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              {perk}
+            </li>
+          ))
+        }
+      </ol>
+      <p class="mt-8 text-[14px] text-muted">{t(contact.responseTime)} · {contact.hostName}</p>
+      <div class="mt-4 flex flex-wrap gap-2">
+        {
+          whatsappHref && (
+            <a href={whatsappHref} class="btn btn-ghost !py-[11px] !text-[14px]" rel="noopener" target="_blank">
+              <Icon name="whatsapp" size={18} />
+              WhatsApp
+            </a>
+          )
+        }
+        <a href={mailHref} class="btn btn-ghost !py-[11px] !text-[14px]">
+          <Icon name="mail" size={18} />
+          {contact.email}
+        </a>
+      </div>
+    </div>
+
+    <div class="lg:col-span-7">
+      <div class="rounded-[24px] bg-surface p-6 sm:p-10" data-booking data-config={JSON.stringify(config)}>
+        <form
+          novalidate
+          data-booking-form
+          method={markup.method}
+          action={markup.action ?? undefined}
+          hidden={markup.action === null}
+          class="grid gap-5 sm:grid-cols-2"
+        >
+          {Object.entries(markup.hidden).map(([name, value]) => <input type="hidden" name={name} value={value} />)}
+          <div>
+            <label for="booking-arrival" class="field-label">{ui.form.arrival}</label>
+            <input id="booking-arrival" name="arrival" type="date" required class="field" aria-describedby="booking-arrival-error" />
+            <p id="booking-arrival-error" class="field-error" hidden></p>
+          </div>
+          <div>
+            <label for="booking-departure" class="field-label">{ui.form.departure}</label>
+            <input id="booking-departure" name="departure" type="date" required class="field" aria-describedby="booking-departure-error" />
+            <p id="booking-departure-error" class="field-error" hidden></p>
+          </div>
+          <div>
+            <label for="booking-adults" class="field-label">{ui.form.adults}</label>
+            <select id="booking-adults" name="adults" class="field">
+              {Array.from({ length: max }, (_, i) => i + 1).map((n) => <option value={n} selected={n === Math.min(2, max)}>{n}</option>)}
+            </select>
+          </div>
+          <div>
+            <label for="booking-children" class="field-label">{ui.form.children}</label>
+            <select id="booking-children" name="children" class="field" aria-describedby="booking-guests-error">
+              {Array.from({ length: max }, (_, i) => i).map((n) => <option value={n}>{n}</option>)}
+            </select>
+          </div>
+          <p id="booking-guests-error" class="field-error sm:col-span-2 -mt-2" hidden></p>
+          <p class="sm:col-span-2 -mt-1 rounded-[12px] bg-accent-soft px-4 py-3 text-[14px]" data-notice aria-live="polite" hidden></p>
+          <div>
+            <label for="booking-name" class="field-label">{ui.form.name}</label>
+            <input id="booking-name" name="name" type="text" autocomplete="name" required class="field" aria-describedby="booking-name-error" />
+            <p id="booking-name-error" class="field-error" hidden></p>
+          </div>
+          <div>
+            <label for="booking-email" class="field-label">{ui.form.email}</label>
+            <input
+              id="booking-email"
+              name="email"
+              type="email"
+              autocomplete="email"
+              inputmode="email"
+              required
+              class="field"
+              aria-describedby="booking-email-error"
+            />
+            <p id="booking-email-error" class="field-error" hidden></p>
+          </div>
+          <div class="sm:col-span-2">
+            <label for="booking-phone" class="field-label">{ui.form.phone} <span class="font-normal">({ui.form.optional})</span></label>
+            <input id="booking-phone" name="phone" type="tel" autocomplete="tel" class="field" />
+          </div>
+          <div class="sm:col-span-2">
+            <label for="booking-message" class="field-label">{ui.form.message} <span class="font-normal">({ui.form.optional})</span></label>
+            <textarea id="booking-message" name="message" rows="4" class="field resize-y" placeholder={ui.form.messagePlaceholder}></textarea>
+          </div>
+          {/* Spam traps (Formspree _gotcha, Web3Forms botcheck): hidden from people, filled in by some robots. */}
+          <div class="hidden" aria-hidden="true">
+            <label>Leave empty <input type="text" name="_gotcha" tabindex="-1" autocomplete="off" /></label>
+            <input type="checkbox" name="botcheck" tabindex="-1" />
+          </div>
+          <div class="flex flex-col gap-4 sm:col-span-2 sm:flex-row sm:items-center sm:justify-between">
+            <button type="submit" class="btn btn-accent w-full sm:w-auto" data-submit>{ui.form.submit}</button>
+            <p class="text-[13px] text-muted sm:max-w-[300px] sm:text-right">
+              {ui.form.privacyNote}{' '}
+              <a href={pagePath(locale, 'privacy')} class="link">{ui.form.privacyLink}</a>
+            </p>
+          </div>
+        </form>
+        {
+          markup.action === null && (
+            <noscript>
+              <p class="text-[16px] leading-[1.6]">{ui.form.noScript}</p>
+              <p class="mt-5 flex flex-wrap gap-3">
+                {whatsappHref && (
+                  <a href={whatsappHref} class="btn btn-accent" rel="noopener" target="_blank">
+                    {ui.form.whatsapp}
+                  </a>
+                )}
+                <a href={mailHref} class="btn btn-ghost">
+                  {ui.form.emailUs}
+                </a>
+              </p>
+            </noscript>
+          )
+        }
+
+        <div data-result hidden tabindex="-1" class="outline-none">
+          <div data-result-success hidden>
+            <p class="flex items-center gap-3 text-accent-ink"><Icon name="check" size={26} /></p>
+            <h3 class="mt-3 text-[34px]">{ui.form.successTitle}</h3>
+            <p class="mt-3 text-[16px] text-muted">{ui.form.successText}</p>
+          </div>
+          <div data-result-fallback hidden>
+            <h3 class="text-[34px]" data-fallback-title data-error-title={ui.form.errorTitle} data-plain-title={ui.form.fallbackTitle}>
+              {ui.form.fallbackTitle}
+            </h3>
+            <p class="mt-3 text-[16px] text-muted" data-fallback-text data-error-text={ui.form.errorText} data-plain-text={ui.form.fallbackText}>
+              {ui.form.fallbackText}
+            </p>
+            <div class="mt-6 flex flex-wrap gap-3">
+              {
+                whatsappHref && (
+                  <a href={whatsappHref} class="btn btn-accent" data-fallback-whatsapp rel="noopener" target="_blank">
+                    <Icon name="whatsapp" size={18} />
+                    {ui.form.whatsapp}
+                  </a>
+                )
+              }
+              <a href={mailHref} class="btn btn-ghost" data-fallback-email>
+                <Icon name="mail" size={18} />
+                {ui.form.emailUs}
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  import { initBookingForm } from '../scripts/booking-form.ts';
+
+  document.querySelectorAll<HTMLElement>('[data-booking]').forEach(initBookingForm);
+</script>

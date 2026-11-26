@@ -1,0 +1,68 @@
+---
+/**
+ * One 404 page for every language: hosts serve it for any unknown address.
+ * A small script shows the block of the language found in the address (/en/..., /it/...).
+ */
+import { villa } from '../config/index.ts';
+import { pagePath, useI18n } from '../i18n/index.ts';
+import BaseLayout from '../layouts/base-layout.astro';
+
+const locale = villa.languages.default;
+const { ui } = useI18n(locale);
+const blocks = villa.languages.active.map((l) => useI18n(l));
+---
+
+<BaseLayout locale={locale} page="notFound" title={`${ui.notFound.title} · ${villa.property.name}`} description={ui.notFound.text} noindex>
+  <section
+    class="wrap flex min-h-[70svh] flex-col items-start justify-center pt-36 pb-24"
+    data-not-found
+    data-active={JSON.stringify(villa.languages.active)}
+    data-default={locale}
+  >
+    {
+      blocks.map((b) => (
+        <div lang={b.bcp47} data-lang-block={b.locale} data-title={`${b.ui.notFound.title} · ${villa.property.name}`} hidden={b.locale !== locale}>
+          <p class="eyebrow">404</p>
+          <h1 class="mt-5 text-[clamp(48px,7vw,84px)]">{b.ui.notFound.title}</h1>
+          <p class="mt-5 max-w-[520px] text-[17px] leading-[1.65] text-muted">{b.ui.notFound.text}</p>
+          <a href={pagePath(b.locale, 'home')} class="btn btn-accent mt-10">
+            {b.ui.notFound.back}
+          </a>
+        </div>
+      ))
+    }
+    {
+      blocks.length > 1 && (
+        <ul class="mt-14 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-6 text-[14.5px]" role="list">
+          {blocks.map((b) => (
+            <li lang={b.bcp47}>
+              <a href={pagePath(b.locale, 'home')} class="link">
+                {b.ui.notFound.back}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+  </section>
+</BaseLayout>
+
+<script>
+  import { isLocale, localeFromPath } from '../i18n/locales.ts';
+
+  const root = document.querySelector<HTMLElement>('[data-not-found]');
+  if (root) {
+    const parsed: unknown = JSON.parse(root.dataset.active ?? '[]');
+    const active = Array.isArray(parsed) ? parsed.filter(isLocale) : [];
+    const fallback = root.dataset.default;
+    const locale = isLocale(fallback) ? localeFromPath(window.location.pathname, active, fallback) : undefined;
+    if (locale) root.querySelectorAll<HTMLElement>('[data-lang-block]').forEach((block) => {
+      const match = block.dataset.langBlock === locale;
+      block.hidden = !match;
+      if (match) {
+        document.documentElement.lang = block.lang;
+        if (block.dataset.title) document.title = block.dataset.title;
+      }
+    });
+  }
+</script>

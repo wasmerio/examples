@@ -1,0 +1,168 @@
+---
+import SearchIcon from "../../assets/search.svg";
+import { config } from "../../consts";
+const isDev = import.meta.env.DEV;
+const basePath = config.base || "";
+---
+
+<div class="w-full max-w-lg">
+  {
+    isDev ? (
+      <fieldset class="fieldset">
+        <legend class="sr-only">Search</legend>
+        <label class="input w-full" for="search-dev">
+          <SearchIcon class="!h-3.5 !w-3.5" />
+          <span class="sr-only">Search</span>
+          <input
+            id="search-dev"
+            type="text"
+            placeholder="Search dev"
+            title="Search"
+            autocapitalize="none"
+            enterkeyhint="search"
+            aria-label="Search"
+            disabled
+          />
+        </label>
+        <span class="text-error">Dev mode — build to enable search</span>
+      </fieldset>
+    ) : (
+      <div>
+        {/* <!-- visible fallback always present so search input is shown even if pagefind assets missing --> */}
+        <fieldset id="search" data-base={basePath} class="fieldset">
+          <legend class="sr-only">Search</legend>
+          <span id="debug-info" class="text-xs opacity-60" />
+
+          {/* <!-- Accessible fallback input shown until Pagefind UI loads --> */}
+          <label class="sr-only" for="pf-fallback">
+            Search
+          </label>
+          <input
+            id="pf-fallback"
+            class="input min-w-full !pl-10"
+            type="search"
+            name="q"
+            placeholder="Search the site"
+            title="Search"
+            autocapitalize="none"
+            enterkeyhint="search"
+            aria-label="Search"
+            aria-describedby="debug-info"
+          />
+        </fieldset>
+      </div>
+    )
+  }
+</div>
+
+<script>
+  document.addEventListener("DOMContentLoaded", async () => {
+    const searchEl = document.getElementById("search");
+    const debugEl = document.getElementById("debug-info");
+    if (!searchEl) return;
+
+    // read base from data attribute to avoid injection/quota issues
+    const basePath = (searchEl.dataset.base || "").replace(/\/$/, "");
+
+    debugEl && (debugEl.textContent = "Checking Pagefind files...");
+
+    try {
+      const pagefindPath = `${basePath}/pagefind`;
+      const js = await fetch(`${pagefindPath}/pagefind.js`);
+      const ui = await fetch(`${pagefindPath}/pagefind-ui.js`);
+      const css = await fetch(`${pagefindPath}/pagefind-ui.css`);
+      debugEl &&
+        (debugEl.textContent = `pagefind.js: ${js.status}, pagefind-ui.js: ${ui.status}, pagefind-ui.css: ${css.status}`);
+      if (!js.ok || !ui.ok)
+        throw new Error("Pagefind files missing — run build + pagefind");
+
+      if (css.ok) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = `${pagefindPath}/pagefind-ui.css`;
+        document.head.appendChild(link);
+      }
+
+      const script = document.createElement("script");
+      script.src = `${pagefindPath}/pagefind-ui.js`;
+      script.async = true;
+      script.onload = () => {
+        // Pagefind exposes PagefindUI globally
+        // @ts-ignore
+        const PagefindUI = window.PagefindUI ?? (window as any).Pagefind;
+        if (!PagefindUI) {
+          debugEl && (debugEl.textContent = "PagefindUI not found after load");
+          return;
+        }
+        // remove fallback input when UI is ready
+        const fb = document.getElementById("pf-fallback");
+        fb && fb.remove();
+
+        // @ts-ignore
+        new PagefindUI({
+          element: "#search",
+          showSubResults: true,
+          showImages: false,
+          bundlePath: `${pagefindPath}/`,
+        });
+        debugEl && (debugEl.textContent = "Search initialized");
+
+        // Apply style overrides after Pagefind UI has initialized.
+        // Use setProperty with priority 'important' because pagefind-ui.css
+        // is loaded after our global CSS and may win otherwise.
+        (function applySearchOverrides() {
+          const applyOnce = (el: Element | null) => {
+            if (el instanceof HTMLElement) {
+              el.style.setProperty(
+                "padding-inline-start",
+                "2.5rem",
+                "important",
+              );
+              el.style.setProperty("padding-inline-end", "4.5rem", "important");
+              return true;
+            }
+            return false;
+          };
+
+          // Try immediate application first
+          if (
+            applyOnce(
+              document.querySelector("#search .pagefind-ui__search-input"),
+            )
+          )
+            return;
+
+          // Fallback: observe DOM for the element and apply when it appears
+          const container = document.getElementById("search") || document.body;
+          const mo = new MutationObserver((mutations, observer) => {
+            if (
+              applyOnce(
+                document.querySelector("#search .pagefind-ui__search-input"),
+              )
+            ) {
+              observer.disconnect();
+            }
+          });
+          mo.observe(container, { childList: true, subtree: true });
+        })();
+      };
+      script.onerror = () =>
+        debugEl && (debugEl.textContent = "Failed to load pagefind-ui.js");
+      document.head.appendChild(script);
+    } catch (err: unknown) {
+      console.error(err);
+      debugEl && (debugEl.textContent = (err as string) || "Search error");
+      // keep fallback visible but mark unavailable
+      const fb = document.getElementById("pf-fallback");
+      if (fb) {
+        (fb as HTMLInputElement).placeholder = "Search unavailable";
+        (fb as HTMLInputElement).disabled = true;
+      }
+    }
+  });
+
+  const el = document.querySelector("#search .pagefind-ui__search-input");
+  if (el instanceof HTMLElement) {
+    el.style.paddingInlineStart = "2.5rem !important";
+  }
+</script>

@@ -1,0 +1,70 @@
+---
+// One post. The byline, the date and the tags are one mono line under the title; the
+// body is the same `.prose` every other page sets its text in.
+import type { GetStaticPaths } from 'astro';
+import { render } from 'astro:content';
+import katexCss from 'katex/dist/katex.min.css?url';
+import Base from '../../layouts/Base.astro';
+import { blog, site, ui } from '../../config';
+import { formatDate, getPosts, isoDate, readingTime, tagSlug } from '../../lib/content';
+
+export const getStaticPaths = (async () => {
+  const posts = await getPosts();
+  return posts.map((entry) => ({ params: { slug: entry.id }, props: { entry } }));
+}) satisfies GetStaticPaths;
+
+const { entry } = Astro.props;
+const { Content, remarkPluginFrontmatter } = await render(entry);
+const { title, description, pubDate, updatedDate, tags, author } = entry.data;
+
+const jsonLd = [
+  {
+    '@type': 'BlogPosting',
+    headline: title,
+    description,
+    datePublished: isoDate(pubDate),
+    ...(updatedDate && { dateModified: isoDate(updatedDate) }),
+    author: { '@type': 'Person', name: author ?? site.author },
+    mainEntityOfPage: new URL(Astro.url.pathname, Astro.site).href,
+  },
+];
+---
+
+<Base title={title} description={description} type="article" jsonLd={jsonLd}>
+  {remarkPluginFrontmatter.hasMath && <link slot="head" rel="stylesheet" href={katexCss} />}
+  <div class="shell">
+    <article class="shell-body pt-14 pb-20 sm:pt-20">
+      <h1 class="text-3xl font-medium tracking-[-0.028em] sm:text-4xl">{title}</h1>
+      <p class="text-faint mt-5 flex flex-wrap gap-x-4 font-mono text-[11px]">
+        <time datetime={isoDate(pubDate)}>{formatDate(pubDate)}</time>
+        {author && <span>{author}</span>}
+        {blog.showReadingTime && <span>{ui.blog.minutes(readingTime(entry.body))}</span>}
+      </p>
+      {updatedDate && (
+        <p class="text-faint mt-1.5 font-mono text-[11px]">
+          {ui.updated} <time datetime={isoDate(updatedDate)}>{formatDate(updatedDate)}</time>
+        </p>
+      )}
+      <div class="prose border-border mt-9 border-t pt-9">
+        <Content />
+      </div>
+
+      <div class="border-border mt-12 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-3 border-t pt-5">
+        {tags.length > 0 && (
+          <ul class="text-faint flex flex-wrap gap-x-4 font-mono text-[11px]">
+            {tags.map((tag) => (
+              <li>
+                <a class="hover:text-foreground no-underline" href={`/blog/tag/${tagSlug(tag)}`}>
+                  {tag}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p class="text-sm">
+          <a href="/blog">{ui.blog.all}</a>
+        </p>
+      </div>
+    </article>
+  </div>
+</Base>

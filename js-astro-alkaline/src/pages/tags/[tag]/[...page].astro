@@ -1,0 +1,59 @@
+---
+// more info about this file: https://docs.astro.build/en/guides/routing/#dynamic-routes
+
+import { SITE, COLLECTION_NAMES_LIST } from "../../../alkaline.config";
+import type { PaginateFunction } from "astro";
+import type { ContentEntryMap } from "astro:content";
+
+import { getCollection } from "astro:content";
+import Posts from "@layouts/Posts.astro";
+
+type Post = {
+  data: {
+    tags?: string[];
+  };
+};
+
+export async function getStaticPaths({
+  paginate,
+}: {
+  paginate: PaginateFunction;
+}) {
+  const posts: Post[] = (
+    await Promise.all(
+      COLLECTION_NAMES_LIST.map(
+        async (collection) =>
+          await getCollection(collection as keyof ContentEntryMap)
+      )
+    )
+  ).flat();
+
+  const uniqueTags = [
+    ...new Set(posts.flatMap((post) => post.data.tags ?? [])),
+  ];
+
+  return uniqueTags.flatMap((tag) => {
+    if (tag === undefined) return [];
+    const filteredPosts = posts.filter(
+      (post) => post.data.tags && post.data.tags.includes(tag)
+    );
+    return paginate(filteredPosts, {
+      params: { tag },
+      pageSize: SITE.postsPerPage,
+      props: { tag },
+    });
+  });
+}
+
+const { page } = Astro.props;
+const { tag } = Astro.params ?? {};
+const posts = page?.data ?? [];
+---
+
+<Posts
+  posts={posts}
+  page={page}
+  subtitle={`Showing all posts for ${tag}`}
+  collectionName={tag}
+  title={tag?.toUpperCase()}
+/>

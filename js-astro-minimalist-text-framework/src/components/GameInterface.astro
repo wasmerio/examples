@@ -1,0 +1,1069 @@
+---
+// src/components/GameInterface.astro - Refactored modular game interface
+import GameHeader from "./GameHeader.astro";
+import SceneDisplay from "./SceneDisplay.astro";
+import ActionPanel from "./ActionPanel.astro";
+import PlayerStats from "./PlayerStats.astro";
+import SaveLoadPanel from "./SaveLoadPanel.astro";
+
+// @ts-ignore - Astro's import.meta.glob API
+const sceneFiles = import.meta.glob("../data/**/*.json", { eager: true });
+const scenesData = {};
+for (const path in sceneFiles) {
+    // @ts-ignore - 解决类型问题
+    const scenes = sceneFiles[path].default;
+    if (scenes && typeof scenes === "object") {
+        Object.assign(scenesData, scenes);
+    }
+}
+
+// 定义游戏开始时的场景 ID
+const initialSceneId = "welcome";
+---
+
+<div id="game-container" class="cyberpunk-theme">
+    <GameHeader />
+    <SceneDisplay />
+    <ActionPanel />
+    <PlayerStats />
+    <SaveLoadPanel />
+</div>
+
+<script define:vars={{ scenesData, initialSceneId }}>
+    // 获取 DOM 元素
+    const sceneNameEl = document.getElementById("scene-name");
+    const sceneDescriptionEl = document.getElementById("scene-description");
+    const sceneExitsEl = document.getElementById("scene-exits");
+    const playerInfoEl = document.getElementById("player-info");
+
+    // 存档相关元素
+    const exportSaveBtn = document.getElementById("export-save");
+    const importSaveBtn = document.getElementById("import-save");
+    const saveLoadArea = document.getElementById("save-load-area");
+    const saveDataTextarea = document.getElementById("save-data");
+    const copySaveBtn = document.getElementById("copy-save");
+    const loadSaveBtn = document.getElementById("load-save");
+    const cancelSaveLoadBtn = document.getElementById("cancel-save-load");
+    const exportFileBtn = document.getElementById("export-file");
+    const importFileInput = document.getElementById("import-file");
+    const importFileBtn = document.getElementById("import-file-btn");
+
+    // 显示玩家信息面板
+    playerInfoEl.style.display = "block";
+
+    // 定义游戏状态对象
+    let gameState = {
+        currentSceneId: initialSceneId,
+        previousSceneId: null, // 用于记录上一个场景，实现回退
+        eventStack: [], // 事件栈，用于处理临时事件
+        justReturnedFromEvent: false, // 标记是否刚从事件返回
+        isReturningFromMessage: false, // 标记是否正在从消息返回
+        time: {
+            hour: 8,
+            minute: 0,
+            day: 1,
+            totalMinutes: 0, // 游戏总时间（分钟）
+        },
+        playerStats: {
+            health: 100,
+            energy: 100,
+            money: 50,
+            inventory: [],
+        },
+        gameFlags: {}, // 存储游戏中的各种标记和状态
+        lastUpdated: new Date().toISOString(),
+    };
+
+    // 更新游戏时间
+    function updateGameTime(minutesToAdd) {
+        gameState.time.totalMinutes += minutesToAdd;
+
+        // 计算新的时间
+        let totalMinutes = gameState.time.totalMinutes;
+        let days = Math.floor(totalMinutes / (24 * 60));
+        let remainingMinutes = totalMinutes % (24 * 60);
+        let hours = Math.floor(remainingMinutes / 60);
+        let minutes = remainingMinutes % 60;
+
+        // 更新时间状态
+        gameState.time.day = days + 1; // 从第1天开始
+        gameState.time.hour = hours;
+        gameState.time.minute = minutes;
+
+        // 更新UI
+        updateTimeDisplay();
+    }
+
+    // 更新时间显示
+    function updateTimeDisplay() {
+        const timeEl = document.getElementById("game-time");
+        if (timeEl) {
+            const { hour, minute, day } = gameState.time;
+            const hourStr = hour.toString().padStart(2, "0");
+            const minuteStr = minute.toString().padStart(2, "0");
+
+            // 更新时间值
+            const timeValue = timeEl.querySelector(".time-value");
+            if (timeValue) {
+                timeValue.textContent = `第${day}天 ${hourStr}:${minuteStr}`;
+            } else {
+                timeEl.textContent = `第${day}天 ${hourStr}:${minuteStr}`;
+            }
+
+            // 根据时间改变显示样式
+            if (hour >= 6 && hour < 18) {
+                timeEl.className = "time-display time-day";
+            } else {
+                timeEl.className = "time-display time-night";
+            }
+        }
+    }
+
+    // 处理行动结果
+    function processResults(results) {
+        if (!results) return;
+
+        // 用于标记是否已经触发了事件或场景切换
+        let hasSceneChange = false;
+
+        // 遍历所有可能的结果
+        for (const result of results) {
+            // 同时检查条件和概率（都满足才会执行）
+            const conditionMet =
+                !result.condition || evaluateCondition(result.condition);
+            const probabilityMet =
+                result.probability === undefined ||
+                Math.random() <= result.probability;
+
+            if (!conditionMet || !probabilityMet) {
+                continue; // 条件或概率不满足，跳过此结果
+            }
+
+            // 处理状态修改
+            if (result.modify) {
+                for (const [key, value] of Object.entries(result.modify)) {
+                    if (key.includes(".")) {
+                        // 处理嵌套属性，如 "playerStats.health"
+                        const parts = key.split(".");
+                        let obj = gameState;
+                        for (let i = 0; i < parts.length - 1; i++) {
+                            if (!obj[parts[i]]) obj[parts[i]] = {};
+                            obj = obj[parts[i]];
+                        }
+                        const lastPart = parts[parts.length - 1];
+                        // 根据操作类型处理值
+                        if (typeof value === "object") {
+                            if (
+                                obj[lastPart] === undefined ||
+                                obj[lastPart] === null ||
+                                isNaN(obj[lastPart])
+                            ) {
+                                obj[lastPart] = 0;
+                            }
+                            if (value.add !== undefined) {
+                                obj[lastPart] += value.add;
+                            } else if (value.subtract !== undefined) {
+                                obj[lastPart] -= value.subtract;
+                            } else if (value.set !== undefined) {
+                                obj[lastPart] = value.set;
+                            } else if (value.multiply !== undefined) {
+                                obj[lastPart] *= value.multiply;
+                            }
+                        } else {
+                            // 直接设置值
+                            obj[lastPart] = value;
+                        }
+                    } else {
+                        // 处理顶层属性
+                        if (typeof value === "object") {
+                            if (value.add !== undefined) {
+                                // 确保目标属性存在且为数字，否则初始化为0
+                                if (
+                                    gameState[key] === undefined ||
+                                    gameState[key] === null ||
+                                    isNaN(gameState[key])
+                                ) {
+                                    gameState[key] = 0;
+                                }
+                                gameState[key] += value.add;
+                            } else if (value.subtract !== undefined) {
+                                // 确保目标属性存在且为数字，否则初始化为0
+                                if (
+                                    gameState[key] === undefined ||
+                                    gameState[key] === null ||
+                                    isNaN(gameState[key])
+                                ) {
+                                    gameState[key] = 0;
+                                }
+                                gameState[key] -= value.subtract;
+                            } else if (value.set !== undefined) {
+                                gameState[key] = value.set;
+                            } else if (value.multiply !== undefined) {
+                                // 确保目标属性存在且为数字，否则初始化为1（乘法的单位元）
+                                if (
+                                    gameState[key] === undefined ||
+                                    gameState[key] === null ||
+                                    isNaN(gameState[key])
+                                ) {
+                                    gameState[key] = 1;
+                                }
+                                gameState[key] *= value.multiply;
+                            }
+                        } else {
+                            gameState[key] = value;
+                        }
+                    }
+                }
+            }
+
+            // 处理时间变化
+            if (result.time) {
+                updateGameTime(result.time);
+            }
+
+            // 处理消息为事件
+            if (result.message) {
+                hasSceneChange = true;
+                // 创建临时事件ID
+                const messageEventId = `auto_message_${Date.now()}`;
+
+                // 创建临时事件场景
+                scenesData[messageEventId] = {
+                    name: "消息",
+                    description: result.message,
+                    isEvent: true,
+                    exits: {
+                        继续: "RETURN", // 使用特殊字符串标记代替action对象
+                    },
+                };
+
+                // 触发该事件
+                setTimeout(() => {
+                    triggerEvent(messageEventId);
+                }, 10);
+                break; // 处理完消息后停止，让事件显示
+            }
+
+            // 处理事件触发
+            if (result.triggerEvent) {
+                hasSceneChange = true;
+                // 创建一个延迟调用，确保前面的处理完成
+                setTimeout(() => {
+                    // 检查是否指定了返回场景
+                    const returnSceneId = result.returnTo || null;
+                    triggerEvent(result.triggerEvent, returnSceneId);
+                }, 10);
+                break; // 停止处理其他结果，事件优先
+            }
+
+            // 处理场景转换
+            if (result.nextScene) {
+                hasSceneChange = true;
+                // 创建一个延迟调用，确保前面的处理完成
+                setTimeout(() => {
+                    // 检查是否为特殊的 RETURN 标记
+                    if (result.nextScene === "RETURN") {
+                        returnFromEvent();
+                    } else {
+                        navigateToScene(result.nextScene);
+                    }
+                }, 10);
+                break; // 停止处理其他结果，场景转换优先
+            }
+        }
+
+        // 如果没有场景变化，更新状态UI
+        if (!hasSceneChange) {
+            updatePlayerStats();
+        }
+    }
+
+    // 显示游戏消息（作为临时事件）
+    function showGameMessage(message) {
+        // 创建临时事件ID
+        const messageEventId = `auto_message_${Date.now()}`;
+
+        // 创建临时事件场景
+        scenesData[messageEventId] = {
+            name: "消息",
+            description: message,
+            isEvent: true,
+            exits: {
+                继续: "RETURN", // 使用特殊字符串标记代替action对象
+            },
+        };
+
+        // 触发事件
+        triggerEvent(messageEventId);
+    }
+
+    // 评估条件
+    function evaluateCondition(condition) {
+        // 简单条件: { "playerStats.health": ">50" }
+        for (const [key, value] of Object.entries(condition)) {
+            const actualValue = getNestedProperty(gameState, key);
+
+            // 处理比较操作符
+            if (typeof value === "string") {
+                const operator =
+                    value.substring(0, 2) === ">=" ||
+                    value.substring(0, 2) === "<=" ||
+                    value.substring(0, 2) === "==" ||
+                    value.substring(0, 2) === "!="
+                        ? value.substring(0, 2)
+                        : value.charAt(0);
+
+                const compareValue = value.substring(
+                    operator.length === 2 ? 2 : 1,
+                );
+                const numericCompareValue = Number(compareValue);
+
+                switch (operator) {
+                    case ">":
+                        return actualValue > numericCompareValue;
+                    case "<":
+                        return actualValue < numericCompareValue;
+                    case ">=":
+                        return actualValue >= numericCompareValue;
+                    case "<=":
+                        return actualValue <= numericCompareValue;
+                    case "==":
+                        return actualValue == compareValue; // 非严格比较，允许字符串
+                    case "!=":
+                        return actualValue != compareValue;
+                    case "!":
+                        return !actualValue; // 检查值是否为假
+                    case "?":
+                        return !!actualValue; // 检查值是否为真
+                    default:
+                        return actualValue === compareValue;
+                }
+            } else if (typeof value === "boolean") {
+                // 直接布尔值比较
+                return !!actualValue === value;
+            } else if (value === null) {
+                // 检查是否为null或undefined
+                return actualValue === null || actualValue === undefined;
+            } else {
+                // 直接值比较
+                return actualValue === value;
+            }
+        }
+
+        return true; // 如果没有条件，默认为真
+    }
+
+    // 获取嵌套属性
+    function getNestedProperty(obj, path) {
+        const parts = path.split(".");
+        let result = obj;
+
+        for (const part of parts) {
+            if (result === null || result === undefined) {
+                return undefined;
+            }
+            result = result[part];
+        }
+
+        return result;
+    }
+
+    // 触发临时事件
+    function triggerEvent(eventId, returnSceneId = null) {
+        // 保存指定的场景或当前场景到事件栈
+        const sceneToSave = returnSceneId || gameState.currentSceneId;
+        gameState.eventStack.push(sceneToSave);
+
+        // 导航到事件场景
+        navigateToScene(eventId);
+    }
+
+    // 从事件返回
+    function returnFromEvent() {
+        if (gameState.eventStack.length > 0) {
+            // 取出上一个场景ID
+            const previousSceneId = gameState.eventStack.pop();
+
+            // 标记为刚从事件返回，避免触发onEnter效果
+            gameState.justReturnedFromEvent = true;
+
+            // 返回到上一个场景
+            navigateToScene(previousSceneId);
+        } else {
+            console.warn("事件栈为空，无法返回");
+        }
+    }
+
+    // 导航到新场景（扩展了原来的renderScene函数）
+    async function navigateToScene(sceneId) {
+        // 保存上一个场景ID
+        gameState.previousSceneId = gameState.currentSceneId;
+
+        // 渲染新场景
+        await renderScene(sceneId);
+    }
+
+    // 渲染场景的函数（更新）
+    async function renderScene(sceneId) {
+        const scene = scenesData[sceneId];
+
+        // 检查场景是否存在
+        if (!scene) {
+            console.error(`错误：找不到场景 ID "${sceneId}"`);
+            sceneNameEl.textContent = "错误";
+            sceneDescriptionEl.textContent = "你迷失在数据的缝隙中...";
+            sceneExitsEl.innerHTML = ""; // 清空旧出口
+            return;
+        }
+
+        // 更新当前场景状态
+        gameState.currentSceneId = sceneId;
+
+        // 保存游戏状态
+        saveGameState(sceneId);
+
+        // 更新场景名称
+        sceneNameEl.textContent = scene.name;
+
+        // 在打字机效果开始前先清空旧的出口按钮
+        sceneExitsEl.innerHTML = "";
+        sceneExitsEl.classList.remove("fade-in"); // 移除旧的动画类
+
+        // 执行打字机效果显示场景描述
+        await typewriterEffect(sceneDescriptionEl, scene.description, 0.01);
+
+        // 处理场景进入时的结果，但如果刚从事件返回则跳过
+        const shouldTriggerOnEnter = !gameState.justReturnedFromEvent;
+
+        // 重置标记
+        gameState.justReturnedFromEvent = false;
+
+        // 只有在不是刚从事件返回时才触发onEnter效果
+        if (shouldTriggerOnEnter && scene.onEnter) {
+            processResults(scene.onEnter);
+        }
+
+        // 添加按钮显示动画类
+        sceneExitsEl.classList.add("fade-in");
+
+        // 创建新的出口按钮
+        if (scene.exits) {
+            // 记录符合显示条件的出口数量
+            let visibleExitCount = 0;
+
+            // 遍历并筛选所有出口
+            for (const [actionText, exitData] of Object.entries(scene.exits)) {
+                // 检查出口条件
+                if (
+                    exitData.condition &&
+                    !evaluateCondition(exitData.condition)
+                ) {
+                    continue; // 条件不满足，跳过此出口
+                }
+
+                // 检查出口概率
+                if (
+                    exitData.probability !== undefined &&
+                    Math.random() > exitData.probability
+                ) {
+                    continue; // 概率未触发，跳过此出口
+                }
+
+                // 创建按钮
+                const button = document.createElement("button");
+                button.textContent = actionText; // 使用 JSON 中定义的动作文本
+                button.className = "action-btn"; // 应用新的按钮样式
+
+                // 使用统一的按钮处理函数
+                renderSceneButton(button, exitData);
+
+                // 添加延迟显示的效果
+                button.style.opacity = "0";
+                button.style.transform = "translateY(10px)";
+
+                sceneExitsEl.appendChild(button);
+                visibleExitCount++;
+
+                // 触发动画
+                setTimeout(() => {
+                    button.style.opacity = "1";
+                    button.style.transform = "translateY(0)";
+                }, 100 * visibleExitCount);
+            }
+
+            // 如果没有可见的出口，显示提示
+            if (visibleExitCount === 0) {
+                sceneExitsEl.innerHTML = '<p class="no-exits">无路可走。</p>';
+            }
+        } else {
+            sceneExitsEl.innerHTML = '<p class="no-exits">无路可走。</p>';
+        }
+
+        // 检查是否有"返回"按钮（从事件返回）
+        // 只有当没有自定义的出口或没有包含"返回"选项时才添加默认返回按钮
+        if (
+            scene.isEvent &&
+            gameState.eventStack.length > 0 &&
+            (!scene.exits ||
+                Object.keys(scene.exits).length === 0 ||
+                (!scene.exits.hasOwnProperty("返回") &&
+                    !Object.values(scene.exits).includes("RETURN")))
+        ) {
+            const returnButton = document.createElement("button");
+            returnButton.textContent = "返回";
+            returnButton.className = "action-btn action-btn-return"; // 使用新的返回按钮样式
+            returnButton.addEventListener("click", () => {
+                returnButton.classList.add("action-btn-clicked");
+                setTimeout(() => {
+                    returnFromEvent();
+                }, 300);
+            });
+
+            sceneExitsEl.appendChild(returnButton);
+        }
+
+        // 更新玩家状态UI
+        updatePlayerStats();
+    }
+
+    // 渲染场景的按钮是否包含特殊动作
+    function renderSceneButton(button, exitData) {
+        // 处理简单格式（直接场景ID）和复杂格式（带结果的对象）
+        if (typeof exitData === "string") {
+            if (exitData === "RETURN") {
+                // 处理特殊返回标记
+                button.className = "action-btn action-btn-return"; // 应用返回按钮样式
+                button.addEventListener("click", () => {
+                    button.classList.add("action-btn-clicked");
+                    setTimeout(() => {
+                        returnFromEvent();
+                    }, 300);
+                });
+            } else {
+                // 简单格式：直接导航到目标场景
+                button.dataset.targetScene = exitData;
+                button.addEventListener("click", handleActionClick);
+            }
+        } else if (exitData.action === "return") {
+            // 特殊处理：使用action标记的返回动作
+            button.className = "action-btn action-btn-return"; // 应用返回按钮样式
+            button.addEventListener("click", () => {
+                button.classList.add("action-btn-clicked");
+                setTimeout(() => {
+                    returnFromEvent();
+                }, 300);
+            });
+        } else if (exitData.onComplete) {
+            // 特殊处理：有onComplete回调函数的结果
+            button.addEventListener("click", () => {
+                button.classList.add("action-btn-clicked");
+                setTimeout(() => {
+                    exitData.onComplete();
+                }, 300);
+            });
+        } else if (
+            exitData.results &&
+            exitData.results.length > 0 &&
+            exitData.results[0].onComplete
+        ) {
+            // 特殊处理：结果数组中有onComplete回调
+            button.addEventListener("click", () => {
+                button.classList.add("action-btn-clicked");
+                setTimeout(() => {
+                    exitData.results[0].onComplete();
+                }, 300);
+            });
+        } else {
+            // 复杂格式：处理带结果的出口
+            button.dataset.actionData = JSON.stringify(exitData);
+            button.addEventListener("click", handleComplexActionClick);
+        }
+    }
+
+    // 处理复杂行动（带结果的行动）
+    function handleComplexActionClick(event) {
+        // 添加按钮点击效果
+        event.target.classList.add("action-btn-clicked");
+
+        try {
+            // 解析行动数据
+            const actionData = JSON.parse(event.target.dataset.actionData);
+
+            // 延迟处理，让按钮动画有时间播放
+            setTimeout(() => {
+                // 处理时间消耗
+                if (actionData.time) {
+                    updateGameTime(actionData.time);
+                }
+
+                // 处理结果
+                if (actionData.results) {
+                    processResults(actionData.results);
+                }
+
+                // 如果没有指定下一个场景，就留在当前场景
+                if (
+                    !actionData.nextScene &&
+                    !actionData.results?.some(
+                        (r) => r.nextScene || r.triggerEvent,
+                    )
+                ) {
+                    updatePlayerStats();
+                }
+            }, 300);
+        } catch (error) {
+            console.error("处理行动时出错:", error);
+        }
+    }
+
+    // 更新玩家状态UI
+    function updatePlayerStats() {
+        // 更新生命值
+        const healthFill = document.querySelector(".progress-fill");
+        const healthText = document.querySelector(".progress-text");
+        if (healthFill && healthText) {
+            const health = gameState.playerStats.health;
+            healthFill.style.width = `${health}%`;
+            healthText.textContent = health;
+
+            // 根据健康值改变颜色
+            if (health > 70) {
+                healthFill.style.background =
+                    "linear-gradient(135deg, #00ff00, #00ffaa)";
+                healthFill.style.boxShadow = "0 0 10px rgba(0, 255, 170, 0.5)";
+            } else if (health > 30) {
+                healthFill.style.background =
+                    "linear-gradient(135deg, #ffff00, #ffaa00)";
+                healthFill.style.boxShadow = "0 0 10px rgba(255, 170, 0, 0.5)";
+            } else {
+                healthFill.style.background =
+                    "linear-gradient(135deg, #ff0000, #ff5500)";
+                healthFill.style.boxShadow = "0 0 10px rgba(255, 85, 0, 0.5)";
+            }
+        }
+
+        // 更新金钱
+        const moneyEl = document.getElementById("player-money");
+        if (moneyEl) {
+            moneyEl.textContent = gameState.playerStats.money;
+        }
+
+        // 更新背包
+        const inventoryEl = document.getElementById("player-inventory");
+        if (inventoryEl) {
+            if (gameState.playerStats.inventory.length > 0) {
+                inventoryEl.textContent =
+                    gameState.playerStats.inventory.join(", ");
+            } else {
+                inventoryEl.textContent = "空";
+            }
+        }
+    }
+
+    // 从本地存储加载游戏状态
+    function loadGameState() {
+        try {
+            const savedState = localStorage.getItem("cyberpunkGameState");
+            if (savedState) {
+                const loadedState = JSON.parse(savedState);
+                gameState = {
+                    ...gameState,
+                    ...loadedState,
+                };
+                return gameState.currentSceneId || initialSceneId;
+            }
+        } catch (error) {
+            console.error("加载游戏状态时出错:", error);
+        }
+        return initialSceneId;
+    }
+
+    // 保存游戏状态到本地存储
+    function saveGameState(sceneId) {
+        try {
+            gameState.currentSceneId = sceneId;
+            gameState.lastUpdated = new Date().toISOString();
+            localStorage.setItem(
+                "cyberpunkGameState",
+                JSON.stringify(gameState),
+            );
+        } catch (error) {
+            console.error("保存游戏状态时出错:", error);
+        }
+    }
+
+    // 将当前游戏状态导出为JSON文本
+    function exportGameState() {
+        try {
+            const exportData = JSON.stringify(gameState, null, 2); // 格式化JSON以便阅读
+            saveDataTextarea.value = exportData;
+            saveLoadArea.style.display = "block";
+        } catch (error) {
+            console.error("导出游戏状态时出错:", error);
+            alert("导出存档失败: " + error.message);
+        }
+    }
+
+    // 从JSON文本导入游戏状态
+    function importGameState(jsonData) {
+        try {
+            const importedState = JSON.parse(jsonData);
+            if (!importedState || !importedState.currentSceneId) {
+                throw new Error("无效的存档数据");
+            }
+
+            // 检查导入数据中的场景ID是否存在
+            if (!scenesData[importedState.currentSceneId]) {
+                throw new Error("存档包含无效的场景ID");
+            }
+
+            // 应用导入的状态
+            gameState = {
+                ...gameState,
+                ...importedState,
+            };
+
+            // 保存到本地存储并刷新场景
+            localStorage.setItem(
+                "cyberpunkGameState",
+                JSON.stringify(gameState),
+            );
+            renderScene(gameState.currentSceneId);
+            saveLoadArea.style.display = "none";
+
+            return true;
+        } catch (error) {
+            console.error("导入游戏状态时出错:", error);
+            alert("导入存档失败: " + error.message);
+            return false;
+        }
+    }
+
+    // 添加Markdown解析函数，将**text**转换为粗体，*text*转换为斜体
+    function parseMarkdown(text) {
+        if (!text) return "";
+
+        // 先处理粗体 (**text**)
+        let parsedText = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
+        // 再处理斜体 (*text*)，但避免匹配已经转换为粗体的内容
+        parsedText = parsedText.replace(/\*([^*<>]*?)\*/g, "<em>$1</em>");
+
+        return parsedText;
+    }
+
+    // 添加打字机效果的函数，支持HTML
+    function typewriterEffect(element, text, speed = 30) {
+        // 解析Markdown标记
+        const parsedText = parseMarkdown(text);
+
+        // 创建一个临时容器来解析HTML
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = parsedText;
+
+        // 获取解析后的纯文本
+        const plainText = tempDiv.textContent || "";
+
+        // 清空元素内容
+        element.innerHTML = "";
+
+        // 使用一个隐藏的span来存储原始HTML
+        const hiddenSpan = document.createElement("span");
+        hiddenSpan.style.display = "none";
+        hiddenSpan.innerHTML = parsedText;
+        element.appendChild(hiddenSpan);
+
+        // 添加一个用于显示打字效果的span
+        const visibleSpan = document.createElement("span");
+        element.appendChild(visibleSpan);
+
+        let i = 0;
+
+        return new Promise((resolve) => {
+            function type() {
+                if (i < plainText.length) {
+                    // 每次添加一个字符，同时更新HTML
+                    visibleSpan.textContent = plainText.substring(0, i + 1);
+
+                    // 更新带格式的HTML
+                    const currentHTML = parsedText.substring(
+                        0,
+                        getHTMLIndex(parsedText, i + 1),
+                    );
+                    visibleSpan.innerHTML = currentHTML;
+
+                    i++;
+                    setTimeout(type, speed);
+                } else {
+                    // 完成后使用完整的格式化HTML
+                    element.innerHTML = parsedText;
+                    resolve();
+                }
+            }
+
+            // 开始打字效果
+            type();
+        });
+    }
+
+    // 辅助函数：根据纯文本索引获取HTML文本中的索引
+    function getHTMLIndex(html, plainTextIndex) {
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = html;
+        const plainText = tempDiv.textContent || "";
+
+        let htmlIndex = 0;
+        let plainIndex = 0;
+
+        // 遍历HTML查找对应位置
+        while (plainIndex < plainTextIndex && htmlIndex < html.length) {
+            if (html[htmlIndex] === "<") {
+                // 跳过整个标签
+                while (htmlIndex < html.length && html[htmlIndex] !== ">") {
+                    htmlIndex++;
+                }
+                if (htmlIndex < html.length) htmlIndex++; // 跳过'>'
+            } else {
+                plainIndex++;
+                htmlIndex++;
+            }
+        }
+
+        return htmlIndex;
+    }
+
+    // 处理玩家动作（点击出口按钮）的函数
+    function handleActionClick(event) {
+        const targetSceneId = event.target.dataset.targetScene;
+        if (targetSceneId) {
+            // 添加按钮点击效果
+            event.target.classList.add("action-btn-clicked");
+
+            // 清除可能存在的返回标志，确保可以正常触发新事件
+            gameState.justReturnedFromEvent = false;
+            gameState.isReturningFromMessage = false;
+
+            // 延迟切换场景，让按钮动画有时间播放
+            setTimeout(() => {
+                navigateToScene(targetSceneId); // 切换到新场景
+            }, 300);
+        } else {
+            console.warn("按钮没有指定目标场景:", event.target.textContent);
+        }
+    }
+
+    // 添加重置游戏按钮功能
+    function addResetButton() {
+        const playerInfoEl = document.getElementById("player-info");
+        const resetButton = document.createElement("button");
+        resetButton.textContent = "重置游戏";
+        resetButton.className = "cyber-btn btn-danger"; // 使用新的按钮样式
+        resetButton.style.width = "100%"; // 按钮占满容器宽度
+        resetButton.style.marginTop = "var(--spacing-md)"; // 添加顶部间距
+        resetButton.style.display = "block"; // 块级元素
+        resetButton.style.textAlign = "center"; // 文本居中
+        resetButton.addEventListener("click", () => {
+            if (confirm("确定要重置游戏吗？所有进度将丢失。")) {
+                localStorage.removeItem("cyberpunkGameState");
+                gameState = {
+                    currentSceneId: initialSceneId,
+                    previousSceneId: null,
+                    eventStack: [],
+                    justReturnedFromEvent: false,
+                    isReturningFromMessage: false,
+                    time: {
+                        hour: 8,
+                        minute: 0,
+                        day: 1,
+                        totalMinutes: 0,
+                    },
+                    playerStats: {
+                        health: 100,
+                        energy: 100,
+                        money: 50,
+                        inventory: [],
+                    },
+                    gameFlags: {},
+                    lastUpdated: new Date().toISOString(),
+                };
+                renderScene(initialSceneId);
+            }
+        });
+        playerInfoEl.appendChild(resetButton);
+    }
+
+    // 将游戏状态导出为文件并下载
+    function exportGameStateToFile() {
+        try {
+            // 创建一个Blob对象，包含格式化的JSON数据
+            const exportData = JSON.stringify(gameState, null, 2);
+            const blob = new Blob([exportData], { type: "application/json" });
+
+            // 创建一个临时下载链接
+            const downloadLink = document.createElement("a");
+            downloadLink.href = URL.createObjectURL(blob);
+
+            // 设置文件名: cyberpunk-save-日期时间.json
+            const date = new Date();
+            const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, "0")}-${date.getDate().toString().padStart(2, "0")}`;
+            const timeStr = `${date.getHours().toString().padStart(2, "0")}-${date.getMinutes().toString().padStart(2, "0")}`;
+            downloadLink.download = `cyberpunk-save-${dateStr}-${timeStr}.json`;
+
+            // 触发下载
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+
+            // 清理
+            document.body.removeChild(downloadLink);
+            URL.revokeObjectURL(downloadLink.href);
+
+            // 提供用户反馈
+            showNotification("存档文件已下载");
+        } catch (error) {
+            console.error("导出存档文件时出错:", error);
+            alert("导出存档文件失败: " + error.message);
+        }
+    }
+
+    // 从上传的文件导入游戏状态
+    function importGameStateFromFile(file) {
+        const reader = new FileReader();
+
+        reader.onload = function (event) {
+            try {
+                const jsonData = event.target.result;
+                const importResult = importGameState(jsonData);
+
+                if (importResult) {
+                    showNotification("存档文件已成功加载");
+                }
+            } catch (error) {
+                console.error("读取存档文件时出错:", error);
+                alert("读取存档文件失败: " + error.message);
+            }
+        };
+
+        reader.onerror = function () {
+            alert("无法读取文件");
+        };
+
+        reader.readAsText(file);
+    }
+
+    // 显示通知信息
+    function showNotification(message) {
+        // 创建通知元素
+        const notification = document.createElement("div");
+        notification.className = "game-notification";
+        notification.textContent = message;
+
+        // 添加到页面
+        document.body.appendChild(notification);
+
+        // 淡入动画
+        setTimeout(() => {
+            notification.classList.add("show");
+        }, 10);
+
+        // 设置自动消失
+        setTimeout(() => {
+            notification.classList.remove("show");
+            setTimeout(() => {
+                if (document.body.contains(notification)) {
+                    document.body.removeChild(notification);
+                }
+            }, 500);
+        }, 3000);
+    }
+
+    // 设置存档管理事件监听器
+    function setupSaveLoadHandlers() {
+        // 导出存档按钮
+        exportSaveBtn.addEventListener("click", () => {
+            exportGameState();
+        });
+
+        // 导入存档按钮
+        importSaveBtn.addEventListener("click", () => {
+            saveDataTextarea.value = "";
+            saveLoadArea.style.display = "block";
+        });
+
+        // 复制按钮
+        copySaveBtn.addEventListener("click", () => {
+            saveDataTextarea.select();
+
+            // 使用现代Clipboard API或fallback
+            if (navigator.clipboard) {
+                navigator.clipboard
+                    .writeText(saveDataTextarea.value)
+                    .then(() => {
+                        const originalText = copySaveBtn.textContent;
+                        copySaveBtn.textContent = "已复制!";
+                        setTimeout(() => {
+                            copySaveBtn.textContent = originalText;
+                        }, 2000);
+                    })
+                    .catch((err) => {
+                        console.error("复制失败:", err);
+                        // Fallback
+                        try {
+                            document.execCommand("copy");
+                            showNotification("已复制到剪贴板");
+                        } catch (fallbackErr) {
+                            console.error("Fallback复制也失败:", fallbackErr);
+                        }
+                    });
+            } else {
+                // Fallback for older browsers
+                try {
+                    document.execCommand("copy");
+                    showNotification("已复制到剪贴板");
+                } catch (err) {
+                    console.error("复制失败:", err);
+                }
+            }
+        });
+
+        // 应用按钮
+        loadSaveBtn.addEventListener("click", () => {
+            const saveData = saveDataTextarea.value.trim();
+            if (saveData) {
+                importGameState(saveData);
+            } else {
+                alert("请先粘贴有效的存档数据");
+            }
+        });
+
+        // 取消按钮
+        cancelSaveLoadBtn.addEventListener("click", () => {
+            saveLoadArea.style.display = "none";
+        });
+
+        // 导出文件按钮
+        exportFileBtn.addEventListener("click", () => {
+            exportGameStateToFile();
+        });
+
+        // 导入文件按钮
+        importFileBtn.addEventListener("click", () => {
+            importFileInput.click();
+        });
+
+        // 文件选择改变时
+        importFileInput.addEventListener("change", (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                importGameStateFromFile(file);
+                // 重置文件输入，允许选择同一个文件
+                importFileInput.value = "";
+            }
+        });
+    }
+
+    // 游戏初始化：从保存的状态加载场景或使用初始场景
+    const savedSceneId = loadGameState();
+    renderScene(savedSceneId);
+    addResetButton();
+    setupSaveLoadHandlers();
+</script>

@@ -1,0 +1,165 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Copyright from '../../components/Copyright.astro';
+import TocNav from '../../components/TocNav.astro';
+import { site } from '../../site.config';
+import { t } from '../../i18n';
+import { absoluteUrl } from '../../utils/paths';
+import {
+  formatDate,
+  getAdjacentPosts,
+  getBlogPosts,
+  postSlug,
+  postUrl,
+  readingTime,
+  tagUrl,
+  type Post,
+} from '../../utils/posts';
+import { render } from 'astro:content';
+
+export async function getStaticPaths() {
+  const allBlogPosts = await getBlogPosts();
+  return allBlogPosts.map((post) => ({
+    params: { slug: postSlug(post) },
+    props: { post, allBlogPosts },
+  }));
+}
+
+interface Props {
+  post: Post;
+  allBlogPosts: Post[];
+}
+
+const { post, allBlogPosts } = Astro.props;
+const { Content, headings } = await render(post);
+const { prev, next } = getAdjacentPosts(allBlogPosts, post);
+const i18n = t(site.language);
+const canonicalUrl = absoluteUrl(`/posts/${postSlug(post)}/`);
+const dateIso = post.data.date.toISOString().split('T')[0];
+const articlePublishedIso = post.data.date.toISOString();
+const tocHeadings = headings.map((h) => ({
+  depth: h.depth,
+  slug: h.slug,
+  text: h.text,
+}));
+const tocFiltered = tocHeadings.filter((h) => h.depth >= 1 && h.depth <= 4);
+const hasToc = tocFiltered.length > 0;
+const tocCount = tocFiltered.length;
+const readTime = readingTime(post.body ?? '', site.language);
+---
+
+<BaseLayout
+  title={post.data.title}
+  description={post.data.summary}
+  pageId="post"
+  canonicalUrl={canonicalUrl}
+  articlePublishedTime={articlePublishedIso}
+>
+  <article class="post-article" itemscope itemtype="https://schema.org/Article">
+    <link itemprop="mainEntityOfPage" href={canonicalUrl} />
+    <meta itemprop="description" content={post.data.summary ?? site.description} />
+    <meta itemprop="author" content={site.author} />
+    <meta itemprop="publisher" content={site.title} />
+
+    <div class="page-header">
+      <h1 itemprop="headline">{post.data.title}</h1>
+      <div class="post-meta">
+        <div class="meta-container">
+          <time class="meta-date" datetime={dateIso} itemprop="datePublished dateModified">
+            {formatDate(post.data.date, site.language)}
+          </time>
+          <span class="meta-reading-time">{i18n.readingTime(readTime)}</span>
+          {post.data.tags.length > 0 && (
+            <div class="meta-tags">
+              <ul class="tags-list">
+                {post.data.tags.map((tag) => (
+                  <li>
+                    <a href={tagUrl(tag)} class="tag-badge">{tag}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {hasToc && (
+        <details class="mobile-toc">
+          <summary>{i18n.toc} ({tocCount})</summary>
+          <nav class="mobile-toc-content" aria-label={i18n.toc}>
+            <TocNav headings={tocHeadings} />
+          </nav>
+        </details>
+      )}
+    </div>
+
+    <div class="post-content" itemprop="articleBody">
+      <Content />
+    </div>
+
+    <Copyright postTitle={post.data.title} canonicalUrl={canonicalUrl} />
+
+    {(prev || next) && (
+      <nav class="post-navigation">
+        {prev ? (
+          <a href={postUrl(prev)} class="nav-link nav-prev">
+            <small>← {i18n.prevPost}</small>
+            <h3>{prev.data.title}</h3>
+          </a>
+        ) : (
+          <div class="nav-link-placeholder" />
+        )}
+        {next ? (
+          <a href={postUrl(next)} class="nav-link nav-next">
+            <small>{i18n.nextPost} →</small>
+            <h3>{next.data.title}</h3>
+          </a>
+        ) : (
+          <div class="nav-link-placeholder" />
+        )}
+      </nav>
+    )}
+  </article>
+
+  {hasToc && (
+    <nav slot="toc" class="toc-area" aria-label={i18n.toc}>
+      <h3>{i18n.toc}</h3>
+      <TocNav headings={tocHeadings} />
+    </nav>
+  )}
+
+  <script is:inline>
+    (function tocScrollSpy() {
+      // Match TOC links in both desktop sidebar and mobile dropdown.
+      const tocLinks = document.querySelectorAll('.toc-area a[href^="#"], .mobile-toc-content a[href^="#"]');
+      const headings = Array.from(
+        document.querySelectorAll('.post-content h2[id], .post-content h3[id], .post-content h4[id]')
+      );
+      if (!tocLinks.length || !headings.length) return;
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          // Pick the heading closest to the viewport top among intersecting ones.
+          const visible = entries.filter((e) => e.isIntersecting).map((e) => e.target);
+          if (visible.length === 0) return;
+          const topmost = visible.reduce((a, b) =>
+            Math.abs(a.getBoundingClientRect().top) < Math.abs(b.getBoundingClientRect().top) ? a : b
+          );
+          const id = topmost.getAttribute('id');
+          if (!id) return;
+          tocLinks.forEach((link) => {
+            link.classList.toggle('active', link.getAttribute('href') === `#${id}`);
+          });
+        },
+        {
+          // Fire when heading enters the top ~30 % of the viewport,
+          // accounting for the sticky header.
+          rootMargin: '-100px 0px -70% 0px',
+          threshold: 0,
+        }
+      );
+
+      headings.forEach((h) => observer.observe(h));
+    })();
+  </script>
+</BaseLayout>

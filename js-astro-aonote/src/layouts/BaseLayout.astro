@@ -1,0 +1,138 @@
+---
+import '../styles/aonote.css';
+import { site } from '../site.config';
+import { siteHref } from '../utils/paths';
+import { t, type Locale } from '../i18n';
+
+interface Props {
+  title: string;
+  description?: string;
+  pageId?: string;
+  canonicalUrl?: string;
+  noindex?: boolean;
+  /** Show visually-hidden h1 in page-header (home, archive, about). */
+  hiddenPageTitle?: boolean;
+  /** ISO date for article Open Graph (post pages). */
+  articlePublishedTime?: string;
+}
+
+const {
+  title,
+  description = site.description,
+  pageId = 'page',
+  canonicalUrl,
+  noindex = false,
+  hiddenPageTitle = false,
+  articlePublishedTime,
+} = Astro.props;
+
+const locale = site.language as Locale;
+const i18n = t(locale);
+const homeHref = siteHref('/');
+const currentPath = Astro.url.pathname;
+const year = new Date().getFullYear();
+
+function normalizePath(pathname: string): string {
+  if (!pathname || pathname === '/') return siteHref('/');
+  return pathname.endsWith('/') ? pathname : `${pathname}/`;
+}
+
+/** Match upstream: prefer `pageId`, then normalized pathname (trailing slash safe). */
+function navCurrent(path: string) {
+  const normalized = path.endsWith('/') ? path : `${path}/`;
+  const href = siteHref(normalized);
+  if (path === '/') return pageId === 'index';
+  if (normalized === '/about/') return pageId === 'about';
+  if (normalized === '/archive/') return pageId === 'archive';
+  if (normalized === '/tags/') return pageId === 'tags';
+  return normalizePath(currentPath) === href;
+}
+---
+
+<!doctype html>
+<html lang={i18n.htmlLang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} - {site.title}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={site.author} />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#00796b" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)" />
+    {noindex ? (
+      <meta name="robots" content="noindex" />
+    ) : (
+      canonicalUrl && <link rel="canonical" href={canonicalUrl} />
+    )}
+    <meta property="og:type" content={pageId === 'post' ? 'article' : 'website'} />
+    <meta property="og:title" content={`${title} - ${site.title}`} />
+    <meta property="og:description" content={description} />
+    <meta property="og:site_name" content={site.title} />
+    {canonicalUrl && <meta property="og:url" content={canonicalUrl} />}
+    {articlePublishedTime && (
+      <>
+        <meta property="article:published_time" content={articlePublishedTime} />
+        <meta property="article:modified_time" content={articlePublishedTime} />
+      </>
+    )}
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={`${title} - ${site.title}`} />
+    <meta name="twitter:description" content={description} />
+    <link rel="alternate" type="application/rss+xml" title={`${site.title} RSS Feed`} href={siteHref('/rss.xml')} />
+    <link rel="alternate" type="application/atom+xml" title={`${site.title} Atom Feed`} href={siteHref('/atom.xml')} />
+  </head>
+  <body class={`page-${pageId}`}>
+    <a href="#main-content" class="skip-link">{i18n.skipToContent}</a>
+
+    <header>
+      <div class="header-inner">
+        <a href={homeHref} class="site-title">{site.title}</a>
+        <nav class="desktop-nav" aria-label={i18n.mainNavigation}>
+          <a href={siteHref('/')} aria-current={navCurrent('/') ? 'page' : undefined}>{i18n.navHome}</a>
+          <a href={siteHref('/archive/')} aria-current={navCurrent('/archive') ? 'page' : undefined}>{i18n.navArchive}</a>
+          <a href={siteHref('/tags/')} aria-current={navCurrent('/tags') ? 'page' : undefined}>{i18n.navTags}</a>
+          <a href={siteHref('/about/')} aria-current={navCurrent('/about') ? 'page' : undefined}>{i18n.navAbout}</a>
+        </nav>
+        <details class="mobile-nav-menu">
+          <summary aria-label={i18n.navMenu}>
+            <span class="visually-hidden">{i18n.navMenu}</span>
+            <span class="hamburger-icon" aria-hidden="true"></span>
+          </summary>
+          <nav class="mobile-nav-links" aria-label={i18n.mainNavigation}>
+            <a href={siteHref('/')} aria-current={navCurrent('/') && pageId === 'index' ? 'page' : undefined}>{i18n.navHome}</a>
+            <a href={siteHref('/archive/')} aria-current={navCurrent('/archive') ? 'page' : undefined}>{i18n.navArchive}</a>
+            <a href={siteHref('/tags/')} aria-current={navCurrent('/tags') ? 'page' : undefined}>{i18n.navTags}</a>
+            <a href={siteHref('/about/')} aria-current={navCurrent('/about') ? 'page' : undefined}>{i18n.navAbout}</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+
+    <main id="main-content">
+      <div class="main-layout">
+        <div class="content-area">
+          {hiddenPageTitle && (
+            <div class="page-header">
+              <h1 class="visually-hidden">{title}</h1>
+            </div>
+          )}
+          <slot />
+        </div>
+        <slot name="toc" />
+      </div>
+    </main>
+
+    <footer>
+      <div class="footer-content">
+        <div class="footer-left">
+          <span class="copyright-info">&copy; {year} {site.author}.</span>
+        </div>
+        <div class="footer-right">
+          <a href={siteHref('/feed/')}>{i18n.rssSubscribe}</a>
+          <a href="#main-content" class="back-to-top">{i18n.backToTop}</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

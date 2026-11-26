@@ -1,0 +1,275 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { getCollection, getEntry } from 'astro:content';
+import Layout from './Layout.astro';
+import SiteNav from '../components/SiteNav.astro';
+import PostCard from '../components/PostCard.astro';
+import FloatingHeader from '../components/FloatingHeader.astro';
+import SubscribeForm from '../components/SubscribeForm.astro';
+import Infinity from '../components/icons/Infinity.astro';
+import { SITE_CONFIG, getAssetUrl, getReadingTime } from '../config';
+
+interface Props {
+  post: CollectionEntry<'posts'>;
+}
+
+const { post } = Astro.props;
+const { title, cover, tags = [], author, date, description, subclass, disqus } = post.data;
+
+// Resolve author using data collection entry reference
+const authorEntry = author ? await getEntry(author) : null;
+const authorData = authorEntry ? authorEntry.data : null;
+const authorKey = authorEntry ? authorEntry.id : '';
+
+// Get all posts for next/prev/related suggestions
+const allPostsUnsorted = await getCollection('posts');
+const allPosts = [...allPostsUnsorted].sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+
+const currentIndex = allPosts.findIndex(p => p.id === post.id);
+const nextPost = currentIndex > 0 ? allPosts[currentIndex - 1] : null;
+const prevPost = currentIndex < allPosts.length - 1 ? allPosts[currentIndex + 1] : null;
+
+// Related posts
+const primaryTag = tags[0];
+const relatedPosts = primaryTag
+  ? allPosts.filter(p => p.id !== post.id && p.data.tags.includes(primaryTag))
+  : [];
+const relatedCount = relatedPosts.length;
+const topRelated = relatedPosts.slice(0, 3);
+
+// Format date
+const formattedDate = new Date(date).toLocaleDateString('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric'
+});
+
+const isDisqusEnabled = disqus !== false && SITE_CONFIG.disqus;
+---
+
+<Layout
+  title={title}
+  description={description}
+  image={cover}
+  type="article"
+  articleDate={date}
+  tags={tags}
+  author={authorData?.name}
+  current="post"
+>
+    <!-- Post Header -->
+    <header class="site-header outer">
+        <div class="inner">
+            <SiteNav current="post" />
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main id="site-main" class="site-main outer" role="main">
+        <div class="inner">
+            <article class={`post-full ${tags.map(t => `tag-${t.toLowerCase().replace(/\s+/g, '-')}`).join(' ')} ${subclass || ''} ${!cover ? 'no-image' : ''}`}>
+                <header class="post-full-header">
+                    <section class="post-full-meta">
+                        <time class="post-full-meta-date" datetime={new Date(date).toISOString().split('T')[0]}>{formattedDate}</time>
+                        {tags.length > 0 && (
+                            <>
+                                <span class="date-divider">/</span>
+                                {tags.map((tag, i) => (
+                                  <>
+                                    <a href={getAssetUrl(`/tag/${tag.toLowerCase().replace(/\s+/g, '-')}/`)}>{tag.toUpperCase()}</a>
+                                    {i < tags.length - 1 && <span>, </span>}
+                                  </>
+                                ))}
+                            </>
+                        )}
+                    </section>
+                    <h1 class="post-full-title">{title}</h1>
+                </header>
+
+                {cover && (
+                    <figure class="post-full-image">
+                        <img 
+                            src={getAssetUrl(cover)} 
+                            alt={title} 
+                            fetchpriority="high" 
+                            loading="eager" 
+                        />
+                    </figure>
+                )}
+
+                <section class="post-full-content">
+                    <div class="kg-card-markdown">
+                        <!-- Render post body -->
+                        <slot />
+                    </div>
+                </section>
+
+                <!-- Email subscribe form at the bottom of the page -->
+                {SITE_CONFIG.subscribers && (
+                    <section class="subscribe-form">
+                        <h3 class="subscribe-form-title">Subscribe to {SITE_CONFIG.title}</h3>
+                        <p>Get the latest posts delivered right to your inbox</p>
+                        <SubscribeForm placeholder="youremail@example.com" />
+                    </section>
+                )}
+
+                <footer class="post-full-footer">
+                    {authorData && (
+                        <section class="author-card">
+                            {authorData.picture && (
+                                <img class="author-profile-image" src={getAssetUrl(authorData.picture)} alt={authorData.name} loading="lazy" />
+                            )}
+                            <section class="author-card-content">
+                                <h4 class="author-card-name"><a href={getAssetUrl(`/author/${authorKey}/`)}>{authorData.name}</a></h4>
+                                {authorData.bio ? (
+                                    <p>{authorData.bio}</p>
+                                ) : (
+                                    <p>Read <a href={getAssetUrl(`/author/${authorKey}/`)}>more posts</a> by this author.</p>
+                                )}
+                            </section>
+                        </section>
+                        <div class="post-full-footer-right">
+                            <a class="author-card-button" href={getAssetUrl(`/author/${authorKey}/`)}>Read More</a>
+                        </div>
+                    )}
+                </footer>
+
+                <!-- Disqus comments -->
+                {isDisqusEnabled && (
+                    <section class="post-full-comments">
+                        <div id="disqus_thread"></div>
+                        <script is:inline define:vars={{
+                          shortname: SITE_CONFIG.disqusShortname,
+                          url: Astro.url.href,
+                          id: post.id,
+                          title: title
+                        }}>
+                            var disqus_config = function () {
+                                this.page.url = url;
+                                this.page.identifier = id;
+                                this.page.title = title;
+                            };
+                            var loadDisqus = function() {
+                                if (window.DISQUS) {
+                                    window.DISQUS.reset({
+                                        reload: true,
+                                        config: disqus_config
+                                    });
+                                } else {
+                                    var d = document, s = d.createElement('script');
+                                    s.src = 'https://' + shortname + '.disqus.com/embed.js';
+                                    s.setAttribute('data-timestamp', +new Date());
+                                    (d.head || d.body).appendChild(s);
+                                }
+                            };
+                            if ('IntersectionObserver' in window) {
+                                var observer = new IntersectionObserver(function(entries, observer) {
+                                    entries.forEach(function(entry) {
+                                        if (entry.isIntersecting) {
+                                            loadDisqus();
+                                            observer.unobserve(entry.target);
+                                        }
+                                    });
+                                }, { rootMargin: '0px 0px 300px 0px' });
+                                var target = document.getElementById('disqus_thread');
+                                if (target) {
+                                    observer.observe(target);
+                                }
+                            } else {
+                                loadDisqus();
+                            }
+                        </script>
+                    </section>
+                )}
+            </article>
+        </div>
+    </main>
+
+    <!-- Links to Previous/Next posts -->
+    <aside class="read-next outer">
+        <div class="inner">
+            <div class="read-next-feed">
+                <!-- Related posts card -->
+                {relatedCount > 0 && primaryTag && (
+                    <article class="read-next-card" style={SITE_CONFIG.cover ? `background-image: url(${getAssetUrl(SITE_CONFIG.cover)})` : cover ? `background-image: url(${getAssetUrl(cover)})` : ''}>
+                        <header class="read-next-card-header">
+                            <small class="read-next-card-header-sitetitle">&mdash; {SITE_CONFIG.title} &mdash;</small>
+                            <h3 class="read-next-card-header-title"><a href={getAssetUrl(`/tag/${primaryTag.toLowerCase().replace(/\s+/g, '-')}/`)}>{primaryTag}</a></h3>
+                        </header>
+                        <div class="read-next-divider">
+                            <Infinity />
+                        </div>
+                        <div class="read-next-card-content">
+                            <ul>
+                                {topRelated.map(p => (
+                                    <li><a href={getAssetUrl(`/${p.id}/`)}>{p.data.title}</a></li>
+                                ))}
+                            </ul>
+                        </div>
+                        <footer class="read-next-card-footer">
+                            <a href={getAssetUrl(`/tag/${primaryTag.toLowerCase().replace(/\s+/g, '-')}/`)}>
+                                See {relatedCount > 1 ? `all ${relatedCount} related posts →` : '1 related post →'}
+                            </a>
+                        </footer>
+                    </article>
+                )}
+
+                <!-- Next/Prev cards -->
+                {nextPost && <PostCard post={nextPost} indexClass="post-card-next" />}
+                {prevPost && <PostCard post={prevPost} indexClass="post-card-previous" />}
+            </div>
+        </div>
+    </aside>
+
+    <!-- Floating Header -->
+    <FloatingHeader title={title} slug={post.id} />
+</Layout>
+
+<script>
+  // Client-side Javascript: Scroll progress and Floating Header
+  document.addEventListener('astro:page-load', () => {
+    const progressBar = document.querySelector('progress') as HTMLProgressElement | null;
+    const header = document.querySelector('.floating-header');
+    const title = document.querySelector('.post-full-title') as HTMLElement | null;
+
+    if (progressBar && header && title) {
+      let ticking = false;
+
+      const update = () => {
+        const trigger = title.getBoundingClientRect().top + window.scrollY;
+        const triggerOffset = title.offsetHeight + 35;
+        const progressMax = document.documentElement.scrollHeight - window.innerHeight;
+
+        // show/hide floating header
+        if (window.scrollY >= trigger + triggerOffset) {
+          header.classList.add('floating-active');
+        } else {
+          header.classList.remove('floating-active');
+        }
+
+        progressBar.setAttribute('max', progressMax.toString());
+        progressBar.setAttribute('value', window.scrollY.toString());
+
+        ticking = false;
+      };
+
+      const onScroll = () => {
+        if (!ticking) {
+          window.requestAnimationFrame(update);
+          ticking = true;
+        }
+      };
+
+      const cleanup = () => {
+        window.removeEventListener('scroll', onScroll);
+        window.removeEventListener('resize', update);
+        document.removeEventListener('astro:before-swap', cleanup);
+      };
+      document.addEventListener('astro:before-swap', cleanup);
+
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', update, { passive: true });
+      update();
+    }
+  });
+</script>

@@ -1,0 +1,125 @@
+---
+import { getCollection, getEntry } from 'astro:content';
+import Layout from '../../../layouts/Layout.astro';
+import SiteNav from '../../../components/SiteNav.astro';
+import PostCard from '../../../components/PostCard.astro';
+import { SITE_CONFIG, getAssetUrl } from '../../../config';
+import Website from '../../../components/icons/Website.astro';
+import Twitter from '../../../components/icons/Twitter.astro';
+import Facebook from '../../../components/icons/Facebook.astro';
+import Rss from '../../../components/icons/Rss.astro';
+
+export async function getStaticPaths({ paginate }: any) {
+  const allPosts = await getCollection('posts');
+  const allAuthors = await getCollection('authors');
+  const paths: any[] = [];
+  
+  for (const authorEntry of allAuthors) {
+    const author = authorEntry.id;
+    const filteredPosts = allPosts.filter(post => post.data.author && post.data.author.id === author);
+    filteredPosts.sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+    
+    const pages = paginate(filteredPosts, { 
+      pageSize: SITE_CONFIG.pageSize,
+      params: { author }
+    });
+    
+    pages.forEach((p: any) => {
+      paths.push({
+        params: { 
+          author, 
+          page: p.params.page === 1 || p.params.page === '1' || !p.params.page ? undefined : `page${p.params.page}`
+        },
+        props: {
+          pageProps: p.props,
+          maxPages: pages.length
+        }
+      });
+    });
+  }
+  
+  return paths;
+}
+
+const { author } = Astro.params;
+const { pageProps, maxPages } = Astro.props;
+const { page } = pageProps;
+
+// Resolve author from data collections
+const authorEntry = author ? await getEntry('authors', author) : null;
+const authorData = authorEntry ? authorEntry.data : null;
+
+if (!authorData) {
+  return Astro.redirect('/404.html');
+}
+
+const totalPosts = page.total;
+const statsText = totalPosts === 0 ? 'No posts' : totalPosts === 1 ? '1 post' : `${totalPosts} posts`;
+
+// Header backgrounds
+const coverImage = authorData.cover ? getAssetUrl(authorData.cover) : null;
+const authorProfileImg = authorData.picture ? getAssetUrl(authorData.picture) : null;
+---
+
+<Layout title={authorData.name} description={authorData.bio} image={coverImage} current="author">
+    <!-- Header -->
+    <header class={`site-header outer ${coverImage ? '' : 'no-cover'}`} style={coverImage ? `background-image: url(${coverImage})` : ''}>
+        <div class="inner">
+            <SiteNav current="author" />
+            <div class="site-header-content">
+                {authorProfileImg && (
+                    <img class="author-profile-image" src={authorProfileImg} alt={authorData.name} />
+                )}
+                <h1 class="site-title">{authorData.name}</h1>
+                {authorData.bio && (
+                    <h2 class="author-bio">{authorData.bio}</h2>
+                )}
+                <div class="author-meta">
+                    {authorData.location && (
+                        <div class="author-location">{authorData.location} <span class="bull">&bull;</span></div>
+                    )}
+                    <div class="author-stats">
+                        {statsText} <span class="bull">&bull;</span>
+                    </div>
+                    {authorData.url && (
+                        <a class="social-link social-link-wb" href={authorData.url_full || (typeof authorData.url === 'string' ? authorData.url : '')} target="_blank" rel="noopener" aria-label="Website">
+                            <Website style="width:16px;height:16px;" />
+                        </a>
+                    )}
+                    {authorData.twitter && (
+                        <a class="social-link social-link-tw" href={`https://twitter.com/${authorData.twitter}`} target="_blank" rel="noopener" aria-label="Twitter">
+                            <Twitter style="width:16px;height:16px;" />
+                        </a>
+                    )}
+                    {authorData.facebook && (
+                        <a class="social-link social-link-fb" href={`https://facebook.com/${authorData.facebook}`} target="_blank" rel="noopener" aria-label="Facebook">
+                            <Facebook style="width:16px;height:16px;" />
+                        </a>
+                    )}
+                    <a class="social-link social-link-rss" href={`https://feedly.com/i/subscription/feed/${new URL(getAssetUrl(`/author/${author}/feed.xml`), Astro.site || 'https://casper.leons.dev/').toString()}`} target="_blank" rel="noopener" aria-label="RSS Feed">
+                        <Rss style="width:16px;height:16px;" />
+                    </a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main id="site-main" class="site-main outer" role="main">
+        <div class="inner">
+            <div class="post-feed" data-max-pages={maxPages} data-base-url={getAssetUrl(`/author/${author}/`)}>
+                {page.data.map((post: any) => (
+                    <PostCard post={post} />
+                ))}
+            </div>
+        </div>
+    </main>
+</Layout>
+
+<script>
+  import { initInfiniteScroll } from '../../../utils/infinite-scroll';
+  document.addEventListener('astro:page-load', () => {
+    initInfiniteScroll('.post-feed');
+  });
+</script>
+

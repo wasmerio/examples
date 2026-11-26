@@ -1,0 +1,205 @@
+---
+import { ArrowUpRight, Check, Copy, Sparkles, X } from "@lucide/astro";
+import { copy as siteCopy } from "$content/copy";
+import { askAiPrompt, providerHref, providers } from "$lib/ai/ask-ai";
+
+type Props = { siteUrl: string; name: string };
+const { siteUrl, name } = Astro.props;
+
+const questions = siteCopy.askAiQuestions.map((q) => ({
+  ...q,
+  ask: q.ask.replaceAll("{name}", name),
+}));
+const selected = questions.find((q) => q.id === "summary") ?? questions[0];
+const prompt = askAiPrompt({ siteUrl, name }, selected);
+
+const copyButton =
+  "inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-[#27272a] text-[#a1a1aa] transition hover:border-[#52525b] hover:text-[#fafafa]";
+---
+
+<dialog
+  id="ask-ai-dialog"
+  aria-labelledby="ask-ai-title"
+  data-site-url={siteUrl}
+  data-name={name}
+  data-questions={JSON.stringify(questions)}
+  class="ask-ai-dialog m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-xl overflow-y-auto rounded-lg border border-[#27272a] bg-[#0a0a0a] p-0 text-[#fafafa] [scrollbar-color:#27272a_transparent] [scrollbar-width:thin] backdrop:bg-black/75 backdrop:backdrop-blur-sm"
+>
+  <div class="p-5 sm:p-6">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 id="ask-ai-title" class="flex items-center gap-2 text-xl font-semibold tracking-tight">
+          <Sparkles class="size-4 text-[#c4b5fd]" />
+          Ask AI about me
+        </h2>
+        <p class="mt-1 text-sm leading-6 text-[#a1a1aa]">
+          Opens your assistant with my portfolio as context. Pick a question, then a tool.
+        </p>
+      </div>
+      <button
+        type="button"
+        class="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-[#a1a1aa] transition hover:bg-[#18181b] hover:text-[#fafafa]"
+        data-close
+        aria-label="Close"
+      >
+        <X class="size-4" />
+      </button>
+    </div>
+
+    <fieldset class="mt-5">
+      <legend class="sr-only">Question</legend>
+      <div class="grid grid-cols-2 gap-1 rounded-lg border border-[#27272a] bg-[#050505] p-1 sm:grid-cols-4">
+        {
+          questions.map((q) => (
+            <label class="cursor-pointer rounded-md px-2 py-2 text-center text-sm font-medium text-[#a1a1aa] transition has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[#52525b] has-checked:bg-[#fafafa] has-checked:text-black not-has-checked:hover:bg-[#18181b] not-has-checked:hover:text-[#fafafa]">
+              <input
+                class="sr-only"
+                type="radio"
+                name="ask-ai-question"
+                value={q.id}
+                checked={q.id === selected.id}
+              />
+              {q.label}
+            </label>
+          ))
+        }
+      </div>
+    </fieldset>
+
+    <label class="mt-4 block" data-posting hidden>
+      <span class="text-xs font-semibold uppercase tracking-[0.14em] text-[#a1a1aa]">Job posting</span>
+      <textarea
+        class="mt-2 block h-28 w-full resize-y rounded-md border border-[#27272a] bg-[#050505] p-3 text-sm leading-6 text-[#e4e4e7] placeholder:text-[#52525b] focus:border-[#52525b] focus:outline-none"
+        placeholder="Paste the job description here"></textarea>
+    </label>
+
+    <div class="mt-4 grid grid-cols-3 gap-2">
+      {
+        providers.map((provider) => (
+          <a
+            class="inline-flex items-center justify-center gap-2 rounded-md bg-[#fafafa] px-3 py-2.5 text-sm font-bold text-black transition hover:bg-[#e4e4e7] aria-disabled:pointer-events-none aria-disabled:opacity-40"
+            href={providerHref(provider.name, prompt)}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-provider={provider.name}
+            data-prefills={String(provider.prefills)}
+          >
+            <svg class="size-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill={provider.color} d={provider.path} />
+            </svg>
+            {provider.name}
+            <ArrowUpRight class="hidden size-3.5 text-[#8b8b94] sm:block" />
+          </a>
+        ))
+      }
+    </div>
+    <p class="mt-2 min-h-4 text-xs text-[#8b8b94]" aria-live="polite" data-status>
+      Gemini can't be prefilled, so its button copies the prompt for you to paste.
+    </p>
+
+    <div class="mt-4 rounded-md border border-[#27272a] bg-[#050505] p-3">
+      <p class="text-xs font-medium text-[#8b8b94]">Using another AI? Copy this prompt.</p>
+      <div class="mt-2 flex items-start gap-3">
+        <p
+          class="min-w-0 flex-1 whitespace-pre-line text-sm leading-6 text-[#a1a1aa] [overflow-wrap:anywhere] line-clamp-4"
+          data-prompt
+        >
+          {prompt}
+        </p>
+        <button type="button" class={copyButton} data-copy="prompt" aria-label="Copy prompt" title="Copy prompt">
+          <Copy class="size-3.5" data-icon="copy" />
+          <Check class="hidden size-3.5 text-emerald-400" data-icon="check" />
+        </button>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  import { askAiPrompt, MAX_LINK_PROMPT, providerHref, type AskAiQuestion } from "$lib/ai/ask-ai";
+  import { copyText } from "$lib/utils/clipboard";
+
+  const dialog = document.querySelector<HTMLDialogElement>("#ask-ai-dialog")!;
+  const site = { siteUrl: dialog.dataset.siteUrl!, name: dialog.dataset.name! };
+  const questions: AskAiQuestion[] = JSON.parse(dialog.dataset.questions!);
+  const postingField = dialog.querySelector<HTMLElement>("[data-posting]")!;
+  const posting = postingField.querySelector("textarea")!;
+  const status = dialog.querySelector<HTMLElement>("[data-status]")!;
+  const promptText = dialog.querySelector<HTMLElement>("[data-prompt]")!;
+  const links = dialog.querySelectorAll<HTMLAnchorElement>("[data-provider]");
+
+  let prompt = "";
+  let copied: string | null = null;
+
+  const selectedQuestion = () => {
+    const id = dialog.querySelector<HTMLInputElement>("input[name=ask-ai-question]:checked")?.value;
+    return questions.find((q) => q.id === id) ?? questions[0];
+  };
+
+  function render() {
+    const question = selectedQuestion();
+    prompt = askAiPrompt(site, question, posting.value);
+    const needsPosting = question.id === "fit" && !posting.value.trim();
+    const tooLongForLink = prompt.length > MAX_LINK_PROMPT;
+
+    postingField.hidden = question.id !== "fit";
+    promptText.textContent = prompt;
+    for (const link of links) {
+      const prefills = link.dataset.prefills === "true";
+      const disabled = needsPosting || (prefills && tooLongForLink);
+      link.href = providerHref(link.dataset.provider!, prompt);
+      link.setAttribute("aria-disabled", String(disabled));
+      if (disabled) link.tabIndex = -1;
+      else link.removeAttribute("tabindex");
+    }
+    status.textContent = needsPosting
+      ? "Paste a job posting first."
+      : copied === "Gemini"
+        ? "Prompt copied. Paste it into Gemini."
+        : tooLongForLink
+          ? "Too long for a link. Copy the prompt below and paste it instead."
+          : "Gemini can't be prefilled, so its button copies the prompt for you to paste.";
+  }
+
+  // Swaps the copy icon for a check while `id` is marked as copied.
+  function showCopied(id: string | null) {
+    copied = id;
+    for (const button of dialog.querySelectorAll<HTMLButtonElement>("[data-copy]")) {
+      const done = button.dataset.copy === id;
+      button.querySelector("[data-icon=copy]")?.classList.toggle("hidden", done);
+      button.querySelector("[data-icon=check]")?.classList.toggle("hidden", !done);
+      const label = done ? "Copied" : "Copy prompt";
+      button.ariaLabel = label;
+      button.title = label;
+    }
+    render();
+  }
+
+  async function copy(id: string, value: string, ms = 1600) {
+    if (!(await copyText(value))) return showCopied(null);
+    showCopied(id);
+    setTimeout(() => {
+      if (copied === id) showCopied(null);
+    }, ms);
+  }
+
+  dialog.addEventListener("change", render);
+  posting.addEventListener("input", render);
+  dialog.addEventListener("click", (event) => {
+    const target = event.target as Element;
+    if (target === dialog) return dialog.close();
+    if (target.closest("[data-close]")) return dialog.close();
+    const button = target.closest<HTMLButtonElement>("[data-copy]");
+    if (button) return copy(button.dataset.copy!, prompt);
+    const link = target.closest<HTMLAnchorElement>("[data-provider]");
+    if (link?.dataset.prefills === "false") copy(link.dataset.provider!, prompt, 8000);
+  });
+
+  for (const trigger of document.querySelectorAll("[data-ask-ai-open]")) {
+    trigger.addEventListener("click", () => dialog.showModal());
+  }
+
+  // <site>/?ask opens the dialog directly, for sharing.
+  if (new URLSearchParams(location.search).has("ask")) dialog.showModal();
+  render();
+</script>

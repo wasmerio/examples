@@ -1,0 +1,207 @@
+---
+import BlogFilters from "../../components/blog/BlogFilters.astro";
+import FeaturedPost from "../../components/blog/FeaturedPost.astro";
+import FeedLinks from "../../components/blog/FeedLinks.astro";
+import PostCard from "../../components/blog/PostCard.astro";
+import Seo from "../../components/blog/Seo.astro";
+import BlogShell from "../../layouts/BlogShell.astro";
+import { copy } from "$content/copy";
+import { site } from "$lib/site";
+import { blogPosts as posts } from "$lib/content/blog";
+import { allProjects, groupByYear } from "$lib/content/blog-filter";
+import { allTags } from "$lib/content/blog-queries";
+
+const tags = allTags();
+const projects = allProjects(posts);
+const description = `${copy.blogDescription} by ${site.name}.`;
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Blog",
+  name: `${site.name}: blog`,
+  description,
+  url: `${site.url}/blog`,
+  author: { "@type": "Person", name: site.name, url: site.url },
+  blogPost: posts.map((post) => ({
+    "@type": "BlogPosting",
+    headline: post.title,
+    url: `${site.url}/blog/${post.slug}`,
+    datePublished: post.published,
+  })),
+};
+
+// Every post is rendered in its year. Unfiltered, the newest one is shown as the
+// featured card instead, so its card in the list starts hidden. The script then
+// turns the topic links into filter chips and mirrors them into ?q=&tag=&project=.
+const featured = posts.length > 1 ? posts[0] : undefined;
+const groups = groupByYear(posts);
+const filterable = posts.map(({ slug, title, description, tags, projects }) => ({
+  slug,
+  title,
+  description,
+  tags,
+  projects,
+}));
+---
+
+<BlogShell page="blog" width="max-w-4xl">
+  <Seo slot="head" title="Blog" description={description} path="/blog" noindex={posts.length === 0} jsonLd={jsonLd} />
+
+  <section class="blog-reveal" data-blog data-posts={JSON.stringify(filterable)}>
+    <h1 class="blog-title text-3xl font-semibold tracking-tight sm:text-5xl">Blog</h1>
+    <p class="mt-4 max-w-3xl text-lg leading-8 text-[#a1a1aa]">{description}</p>
+    <FeedLinks origin={site.url} />
+
+    {featured && <BlogFilters tags={tags} projects={projects} />}
+    {
+      tags.length > 0 && (
+        <ul class="mt-6 flex flex-wrap gap-2" aria-label="Topics" data-topic-links>
+          {tags.map(({ tag, slug, count }) => (
+            <li>
+              <a
+                class="rounded-md border border-[#27272a] bg-[#111111] px-2.5 py-1 text-xs font-semibold text-[#d4d4d8] transition hover:border-[#52525b]"
+                href={`/tags/${slug}`}
+              >
+                {tag} <span class="text-[#8a8a93]">{count}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )
+    }
+
+    <div class="mt-10 grid gap-10">
+      {featured && <FeaturedPost post={featured} />}
+      {
+        groups.map((group) => (
+          <section
+            aria-labelledby={`year-${group.year}`}
+            data-year
+            hidden={group.posts.every((post) => post === featured)}
+          >
+            <h2
+              id={`year-${group.year}`}
+              class="mb-4 text-sm font-semibold uppercase tracking-[0.14em] text-[#8a8a93]"
+            >
+              {group.year}
+            </h2>
+            <div class="grid gap-4 md:grid-cols-2">
+              {group.posts.map((post) => (
+                <PostCard post={post} level={3} stacked hidden={post === featured} />
+              ))}
+            </div>
+          </section>
+        ))
+      }
+      <div
+        class="rounded-lg border border-[#27272a] bg-[#0a0a0a] p-6 text-[#a1a1aa]"
+        data-empty
+        hidden={posts.length > 0}
+      >
+        <span data-empty-text>No posts yet.</span>
+        <button
+          type="button"
+          class="font-medium text-accent underline underline-offset-4"
+          data-clear-filters
+          hidden>Clear the filters</button
+        >
+      </div>
+    </div>
+  </section>
+</BlogShell>
+
+<script>
+  import { filterPosts, isFiltering, type PostFilter } from "$lib/content/blog-filter";
+  import type { BlogPost } from "$lib/types/portfolio";
+
+  const root = document.querySelector<HTMLElement>("[data-blog]")!;
+  const controls = root.querySelector<HTMLElement>("[data-blog-filters]");
+
+  if (controls) {
+    const posts: BlogPost[] = JSON.parse(root.dataset.posts!);
+    const search = controls.querySelector<HTMLInputElement>("#blog-search")!;
+    const chips = controls.querySelector<HTMLElement>("#blog-filter-chips")!;
+    const toggle = controls.querySelector<HTMLButtonElement>("[data-toggle-chips]")!;
+    const activeCount = controls.querySelector<HTMLElement>("[data-active-count]")!;
+    const status = controls.querySelector<HTMLElement>("[data-filter-status]")!;
+    const empty = root.querySelector<HTMLElement>("[data-empty]")!;
+    const featured = root.querySelector<HTMLElement>("[data-featured]");
+
+    const params = new URLSearchParams(location.search);
+    const tagSlugs = [...controls.querySelectorAll<HTMLElement>("[data-tag]")].map((el) => el.dataset.tag);
+    const projectNames = [...controls.querySelectorAll<HTMLElement>("[data-project]")].map((el) => el.dataset.project);
+    let filter: PostFilter = {
+      q: params.get("q") ?? "",
+      tag: tagSlugs.includes(params.get("tag") ?? "") ? params.get("tag")! : "",
+      project: projectNames.includes(params.get("project") ?? "") ? params.get("project")! : "",
+    };
+
+    function render() {
+      const filtering = isFiltering(filter);
+      const matches = new Set(filterPosts(posts, filter).map((post) => post.slug));
+
+      search.value = filter.q;
+      for (const chip of controls!.querySelectorAll<HTMLElement>("[data-tag]")) {
+        chip.ariaPressed = String(filter.tag === chip.dataset.tag);
+      }
+      for (const chip of controls!.querySelectorAll<HTMLElement>("[data-project]")) {
+        chip.ariaPressed = String(filter.project === chip.dataset.project);
+      }
+      const active = (filter.tag ? 1 : 0) + (filter.project ? 1 : 0);
+      activeCount.hidden = !active;
+      activeCount.textContent = String(active);
+
+      // Unfiltered, the newest post shows as the featured card, not in its year.
+      if (featured) featured.hidden = filtering;
+      for (const card of root.querySelectorAll<HTMLElement>("[data-year] [data-slug]")) {
+        card.hidden = filtering ? !matches.has(card.dataset.slug!) : card.dataset.slug === posts[0].slug;
+      }
+      for (const year of root.querySelectorAll<HTMLElement>("[data-year]")) {
+        year.hidden = !year.querySelector("[data-slug]:not([hidden])");
+      }
+
+      empty.hidden = !filtering || matches.size > 0;
+      empty.querySelector("[data-empty-text]")!.textContent = filtering ? "No posts match." : "No posts yet.";
+      for (const button of root.querySelectorAll<HTMLElement>("[data-clear-filters]")) button.hidden = !filtering;
+      status.className = filtering
+        ? "flex min-h-6 items-center justify-between gap-3 text-sm text-[#a1a1aa]"
+        : "sr-only";
+      status.querySelector("p")!.textContent = filtering
+        ? `Showing ${matches.size} of ${posts.length} ${posts.length === 1 ? "post" : "posts"}`
+        : "";
+
+      const query = new URLSearchParams();
+      if (filter.q.trim()) query.set("q", filter.q.trim());
+      if (filter.tag) query.set("tag", filter.tag);
+      if (filter.project) query.set("project", filter.project);
+      const search_ = query.toString();
+      history.replaceState(history.state, "", search_ ? `?${search_}` : location.pathname);
+    }
+
+    search.addEventListener("input", () => {
+      filter = { ...filter, q: search.value };
+      render();
+    });
+    toggle.addEventListener("click", () => {
+      const open = toggle.ariaExpanded !== "true";
+      toggle.ariaExpanded = String(open);
+      chips.classList.toggle("hidden", !open);
+      chips.classList.toggle("grid", open);
+    });
+    root.addEventListener("click", (event) => {
+      const target = (event.target as Element).closest<HTMLElement>("[data-tag], [data-project], [data-clear-filters]");
+      if (!target) return;
+      if (target.dataset.tag !== undefined) {
+        filter = { ...filter, tag: filter.tag === target.dataset.tag ? "" : target.dataset.tag };
+      } else if (target.dataset.project !== undefined) {
+        filter = { ...filter, project: filter.project === target.dataset.project ? "" : target.dataset.project };
+      } else {
+        filter = { q: "", tag: "", project: "" };
+      }
+      render();
+    });
+
+    root.querySelector<HTMLElement>("[data-topic-links]")?.remove();
+    controls.hidden = false;
+    render();
+  }
+</script>

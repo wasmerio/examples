@@ -1,0 +1,269 @@
+---
+import AskAiButton from "../components/AskAiButton.astro";
+import AskAiDialog from "../components/AskAiDialog.astro";
+import BlogSection from "../components/BlogSection.astro";
+import ExperienceSection from "../components/ExperienceSection.astro";
+import HeroSidebar from "../components/HeroSidebar.astro";
+import JsonLd from "../components/JsonLd.astro";
+import ProjectsSection from "../components/ProjectsSection.astro";
+import SelectedWorkSection from "../components/SelectedWorkSection.astro";
+import SkillsSection from "../components/SkillsSection.astro";
+import Base from "../layouts/Base.astro";
+import { site } from "$lib/site";
+import { experience } from "$content/experience";
+import { githubProjects as projects } from "$content/github-projects";
+import { careerStartDate, profile } from "$content/profile";
+import { selectedWork } from "$content/selected-work";
+import { skillGroups } from "$content/skills";
+import { blogPosts } from "$lib/content/blog";
+import { formatExperience } from "$lib/utils/experience";
+
+const primarySkillNames = Array.from(new Set(skillGroups.flatMap((group) => group.featured)));
+const allSkillNames = Array.from(
+  new Set([...primarySkillNames, ...skillGroups.flatMap((group) => group.more)]),
+);
+const skillSummary = {
+  primary: primarySkillNames,
+  secondary: allSkillNames.filter((skill) => !primarySkillNames.includes(skill)),
+  total: allSkillNames.length,
+};
+
+const posts = site.features.blog ? blogPosts : [];
+const hasBlog = site.features.blog && posts.length > 0;
+const experienceText = formatExperience(careerStartDate, new Date());
+
+const canonicalUrl = `${site.url}/`;
+const socialImageUrl = `${site.url}${site.image.path}`;
+const profileImageUrl = `${site.url}${site.profileImage.path}`;
+const sameAsLinks = profile.links
+  .filter((link) => link.href.startsWith("http"))
+  .map((link) => link.href);
+const allSkills = [...skillSummary.primary, ...skillSummary.secondary];
+const latestProjectDate =
+  projects
+    .map((project) => project.updated)
+    .filter((updated) => updated && /^\d{4}-\d{2}-\d{2}$/.test(updated))
+    .sort()
+    .at(-1) ?? site.modifiedDate;
+const dateModified =
+  latestProjectDate > site.modifiedDate ? latestProjectDate : site.modifiedDate;
+
+const projectSchemaItems = projects.map((project, index) => ({
+  "@type": "ListItem",
+  position: index + 1,
+  item: {
+    "@type": project.href.includes("github.com") ? "SoftwareSourceCode" : "SoftwareApplication",
+    name: project.name,
+    description: project.description,
+    url: project.href,
+    ...(project.language && { programmingLanguage: project.language }),
+    keywords: project.topics,
+    ...(project.image
+      ? {
+          image: {
+            "@type": "ImageObject",
+            url: `${site.url}${project.image.src}`,
+            width: project.image.width,
+            height: project.image.height,
+            caption: project.image.alt,
+          },
+        }
+      : {}),
+    ...(project.href.includes("github.com")
+      ? { codeRepository: project.href }
+      : { applicationCategory: "DeveloperApplication" }),
+    author: { "@id": `${canonicalUrl}#person` },
+  },
+}));
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Person",
+      "@id": `${canonicalUrl}#person`,
+      name: profile.name,
+      givenName: profile.givenName,
+      familyName: profile.familyName,
+      url: canonicalUrl,
+      image: {
+        "@type": "ImageObject",
+        "@id": `${canonicalUrl}#profile-image`,
+        url: profileImageUrl,
+        width: site.profileImage.width,
+        height: site.profileImage.height,
+        caption: site.profileImage.alt,
+      },
+      jobTitle: profile.role,
+      email: profile.email,
+      description: site.shortDescription,
+      knowsAbout: allSkills,
+      sameAs: sameAsLinks,
+      knowsLanguage: [site.language],
+      hasOccupation: {
+        "@type": "Occupation",
+        name: profile.role,
+        skills: allSkills.join(", "),
+        ...(profile.location && {
+          occupationLocation: { "@type": "Place", name: profile.location },
+        }),
+      },
+      worksFor: { "@type": "Organization", name: profile.company },
+    },
+    {
+      "@type": "WebSite",
+      "@id": `${canonicalUrl}#website`,
+      name: site.name,
+      url: canonicalUrl,
+      inLanguage: site.language,
+      description: site.description,
+      image: socialImageUrl,
+      publisher: { "@id": `${canonicalUrl}#person` },
+    },
+    {
+      "@type": ["WebPage", "ProfilePage"],
+      "@id": `${canonicalUrl}#profile-page`,
+      name: site.title,
+      url: canonicalUrl,
+      inLanguage: site.language,
+      description: site.description,
+      datePublished: site.publishedDate,
+      dateModified,
+      isPartOf: { "@id": `${canonicalUrl}#website` },
+      primaryImageOfPage: {
+        "@type": "ImageObject",
+        url: socialImageUrl,
+        width: site.image.width,
+        height: site.image.height,
+        caption: site.image.alt,
+      },
+      mainEntity: { "@id": `${canonicalUrl}#person` },
+      breadcrumb: { "@id": `${canonicalUrl}#breadcrumb` },
+    },
+    {
+      "@type": "BreadcrumbList",
+      "@id": `${canonicalUrl}#breadcrumb`,
+      itemListElement: [{ "@type": "ListItem", position: 1, name: profile.name, item: canonicalUrl }],
+    },
+    {
+      "@type": "ItemList",
+      "@id": `${canonicalUrl}#selected-projects`,
+      name: `Selected projects by ${profile.name}`,
+      itemListElement: projectSchemaItems,
+    },
+  ],
+};
+---
+
+<Base>
+  <Fragment slot="head">
+    <title>{site.title}</title>
+    <meta name="description" content={site.description} />
+    <meta name="author" content={profile.name} />
+    <meta name="keywords" content={site.keywords.join(", ")} />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="googlebot" content="index, follow, max-image-preview:large" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="application-name" content={site.name} />
+    <meta name="apple-mobile-web-app-title" content={site.name} />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="canonical" href={canonicalUrl} />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    {
+      hasBlog && (
+        <link rel="alternate" type="application/rss+xml" title={`${site.name} blog`} href="/rss.xml" />
+      )
+    }
+    <link rel="me" href={`mailto:${profile.email}`} />
+    {sameAsLinks.map((href) => <link rel="me" href={href} />)}
+    <meta property="og:title" content={site.title} />
+    <meta property="og:description" content={site.description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:site_name" content={site.name} />
+    <meta property="og:locale" content={site.locale} />
+    <meta property="og:updated_time" content={dateModified} />
+    <meta property="og:image" content={socialImageUrl} />
+    <meta property="og:image:secure_url" content={socialImageUrl} />
+    <meta property="og:image:type" content={site.image.type} />
+    <meta property="og:image:width" content={String(site.image.width)} />
+    <meta property="og:image:height" content={String(site.image.height)} />
+    <meta property="og:image:alt" content={site.image.alt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    {
+      site.twitterHandle && (
+        <>
+          <meta name="twitter:site" content={site.twitterHandle} />
+          <meta name="twitter:creator" content={site.twitterHandle} />
+        </>
+      )
+    }
+    <meta name="twitter:title" content={site.title} />
+    <meta name="twitter:description" content={site.description} />
+    <meta name="twitter:image" content={socialImageUrl} />
+    <meta name="twitter:image:alt" content={site.image.alt} />
+    <meta name="twitter:image:width" content={String(site.image.width)} />
+    <meta name="twitter:image:height" content={String(site.image.height)} />
+    <meta name="theme-color" content={site.themeColor} />
+    <meta name="color-scheme" content="dark" />
+    <JsonLd data={jsonLd} />
+    {
+      site.analyticsToken && (
+        <script
+          is:inline
+          defer
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon={JSON.stringify({ token: site.analyticsToken })}
+        />
+      )
+    }
+  </Fragment>
+
+  <div class="min-h-screen bg-[#000000] text-[#fafafa]">
+    <header
+      class="sticky top-0 z-40 border-b border-[#27272a] bg-[#000000]/88 backdrop-blur-xl lg:hidden"
+    >
+      <div class="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-3 px-4">
+        <a class="font-semibold tracking-tight" href="#top">{profile.name}</a>
+        <div class="flex items-center gap-3">
+          {
+            hasBlog && (
+              <a class="text-sm font-semibold text-[#d4d4d8] transition hover:text-[#fafafa]" href="/blog">
+                Blog
+              </a>
+            )
+          }
+          {site.features.askAi && <AskAiButton class="px-3 py-2 text-sm! font-bold" />}
+        </div>
+      </div>
+    </header>
+
+    <main id="top" class="grid min-h-screen lg:grid-cols-[minmax(20rem,34vw)_minmax(0,1fr)]">
+      <HeroSidebar
+        profile={profile}
+        experienceText={experienceText}
+        askAi={site.features.askAi}
+        hasBlog={hasBlog}
+        openToWorkText={site.features.openToWork ? site.openToWorkText : undefined}
+      />
+
+      <section class="min-w-0">
+        <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-10 lg:py-10 xl:px-14">
+          <SelectedWorkSection work={selectedWork} />
+          <ExperienceSection experience={experience} />
+          <ProjectsSection projects={projects} />
+          <SkillsSection skills={skillSummary} />
+          {hasBlog && <BlogSection posts={posts} />}
+        </div>
+      </section>
+    </main>
+
+    {
+      site.features.askAi && (
+        <AskAiDialog siteUrl={site.url} name={profile.name} />
+      )
+    }
+  </div>
+</Base>

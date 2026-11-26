@@ -1,0 +1,226 @@
+---
+import { ArrowLeft, ArrowRight } from "@lucide/astro";
+import type { GetStaticPaths } from "astro";
+import AskSelection from "../../components/blog/AskSelection.astro";
+import AuthorNote from "../../components/blog/AuthorNote.astro";
+import BlogFigure from "../../components/blog/BlogFigure.astro";
+import BuiltWith from "../../components/blog/BuiltWith.astro";
+import PostActions from "../../components/blog/PostActions.astro";
+import PostCard from "../../components/blog/PostCard.astro";
+import ReadingProgress from "../../components/blog/ReadingProgress.astro";
+import Seo from "../../components/blog/Seo.astro";
+import TableOfContents from "../../components/blog/TableOfContents.astro";
+import BlogShell from "../../layouts/BlogShell.astro";
+import { githubProjects } from "$content/github-projects";
+import { site } from "$lib/site";
+import { postMarkdownUrl, postUrl } from "$lib/content/agent-markdown";
+import { blogEntries, type BlogEntry } from "$lib/content/blog";
+import { adjacentPosts, relatedPosts, tagSlug } from "$lib/content/blog-queries";
+import { splitFigures } from "$lib/content/figures";
+import { renderMarkdown } from "$lib/content/markdown";
+import { formatDate } from "$lib/utils/date";
+
+export const getStaticPaths = (() =>
+  blogEntries.map((entry) => ({ params: { slug: entry.slug }, props: { entry } }))) satisfies GetStaticPaths;
+
+type Props = { entry: BlogEntry };
+const { body, ...post } = Astro.props.entry;
+const { html, toc } = await renderMarkdown(body);
+const segments = splitFigures(html);
+
+const projects = post.projects.map((name) => {
+  const project = githubProjects.find((candidate) => candidate.name.toLowerCase() === name.toLowerCase());
+  if (!project) {
+    throw new Error(`Post "${post.slug}" lists unknown project "${name}".`);
+  }
+  return project;
+});
+const related = relatedPosts(post);
+const { newer, older } = adjacentPosts(post.slug);
+
+const path = `/blog/${post.slug}`;
+const image = `${site.url}${path}/og.png`;
+const pageUrl = postUrl(post.slug);
+const jsonLd = [
+  {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "@id": `${pageUrl}#post`,
+    headline: post.title,
+    description: post.description,
+    datePublished: post.published,
+    dateModified: post.updated ?? post.published,
+    url: pageUrl,
+    mainEntityOfPage: { "@type": "WebPage", "@id": pageUrl },
+    image: { "@type": "ImageObject", url: image, width: 1200, height: 630 },
+    keywords: post.tags.join(", "),
+    inLanguage: site.language,
+    timeRequired: `PT${post.readingMinutes}M`,
+    isPartOf: { "@type": "Blog", "@id": `${site.url}/blog`, name: `${site.name}: blog` },
+    author: { "@type": "Person", name: site.name, url: site.url },
+    publisher: { "@type": "Person", name: site.name, url: site.url },
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: site.name, item: site.url },
+      { "@type": "ListItem", position: 2, name: "Blog", item: `${site.url}/blog` },
+      { "@type": "ListItem", position: 3, name: post.title, item: pageUrl },
+    ],
+  },
+];
+---
+
+<BlogShell width="max-w-5xl">
+  <Seo
+    slot="head"
+    title={post.title}
+    description={post.description}
+    path={path}
+    image={image}
+    imageAlt={post.title}
+    type="article"
+    published={post.published}
+    updated={post.updated}
+    tags={post.tags}
+    jsonLd={jsonLd}
+  >
+    <link rel="alternate" type="text/markdown" href={`${path}.md`} title="This post as markdown" />
+  </Seo>
+
+  <Fragment slot="before">
+    <ReadingProgress />
+    <p class="sr-only" role="status" data-prompt-status></p>
+    <AskSelection root="[data-post-body]" post={{ title: post.title, url: pageUrl }} />
+  </Fragment>
+
+  <div class="xl:grid xl:grid-cols-[minmax(0,48rem)_14rem] xl:gap-14">
+    <article class="blog-reveal min-w-0">
+      <p class="text-sm text-[#a1a1aa]">
+        <time datetime={post.published}>{formatDate(post.published)}</time> · {post.readingMinutes} min read{
+          post.updated && (
+            <>
+              {" "}· Updated <time datetime={post.updated}>{formatDate(post.updated)}</time>
+            </>
+          )
+        }
+      </p>
+      <h1 class="blog-title mt-3 text-3xl font-semibold leading-tight tracking-tight sm:text-5xl">
+        {post.title}
+      </h1>
+      <p class="mt-4 text-lg leading-8 text-[#a1a1aa]">{post.description}</p>
+      {
+        post.tags.length > 0 && (
+          <ul class="mt-5 flex flex-wrap gap-2">
+            {post.tags.map((tag) => (
+              <li>
+                <a
+                  class="rounded-md border border-[#27272a] bg-[#111111] px-2 py-1 text-xs font-semibold text-[#d4d4d8] transition hover:border-[#52525b]"
+                  href={`/tags/${tagSlug(tag)}`}
+                >
+                  {tag}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+
+      <div class="mt-6">
+        <PostActions title={post.title} markdownPath={`${path}.md`} markdownUrl={postMarkdownUrl(post.slug)} />
+      </div>
+
+      <div class="mt-8 xl:hidden"><TableOfContents items={toc} variant="inline" /></div>
+
+      <div class="prose-post mt-10" data-post-body>
+        {
+          segments.map((segment) =>
+            segment.type === "html" ? <Fragment set:html={segment.html} /> : <BlogFigure id={segment.id} />,
+          )
+        }
+      </div>
+
+      {projects.length > 0 && <BuiltWith projects={projects} />}
+
+      <AuthorNote />
+
+      {
+        (newer || older) && (
+          <nav class="mt-16 grid gap-3 sm:grid-cols-2" aria-label="More posts">
+            {newer ? (
+              <a
+                class="rounded-lg border border-[#27272a] bg-[#0a0a0a] p-4 transition hover:border-[#52525b]"
+                href={`/blog/${newer.slug}`}
+              >
+                <span class="flex items-center gap-1.5 text-xs text-[#a1a1aa]">
+                  <ArrowLeft class="size-3.5" /> Newer
+                </span>
+                <span class="mt-1 block font-semibold">{newer.title}</span>
+              </a>
+            ) : (
+              <span />
+            )}
+            {older && (
+              <a
+                class="rounded-lg border border-[#27272a] bg-[#0a0a0a] p-4 text-right transition hover:border-[#52525b] sm:col-start-2"
+                href={`/blog/${older.slug}`}
+              >
+                <span class="flex items-center justify-end gap-1.5 text-xs text-[#a1a1aa]">
+                  Older <ArrowRight class="size-3.5" />
+                </span>
+                <span class="mt-1 block font-semibold">{older.title}</span>
+              </a>
+            )}
+          </nav>
+        )
+      }
+
+      {
+        related.length > 0 && (
+          <section class="mt-14">
+            <h2 class="mb-4 text-lg font-semibold">Related posts</h2>
+            <div class="grid gap-4">
+              {related.map((post) => (
+                <PostCard post={post} level={3} />
+              ))}
+            </div>
+          </section>
+        )
+      }
+    </article>
+
+    <aside class="hidden xl:block">
+      <div class="sticky top-8">
+        <TableOfContents items={toc} variant="sidebar" />
+      </div>
+    </aside>
+  </div>
+</BlogShell>
+
+<script>
+  import { initCodeGroups } from "rehype-code-group/client";
+  import "rehype-code-group/styles.css";
+  import { copyText } from "$lib/utils/clipboard";
+
+  const body = document.querySelector<HTMLElement>("[data-post-body]");
+  const status = document.querySelector<HTMLElement>("[data-prompt-status]");
+  if (body) {
+    // Code-group tabs and the copy buttons in ```prompt boxes are plain HTML
+    // from the markdown renderer.
+    initCodeGroups(body);
+    body.addEventListener("click", async (event) => {
+      const button = (event.target as Element).closest<HTMLButtonElement>("[data-prompt-copy]");
+      const prompt = button?.closest(".prompt-box")?.querySelector(".prompt-text")?.textContent;
+      if (!button || !prompt) return;
+      if (await copyText(prompt)) {
+        button.textContent = "Copied";
+        if (status) status.textContent = "Prompt copied to clipboard";
+        setTimeout(() => {
+          button.textContent = "Copy";
+          if (status) status.textContent = "";
+        }, 1600);
+      }
+    });
+  }
+</script>

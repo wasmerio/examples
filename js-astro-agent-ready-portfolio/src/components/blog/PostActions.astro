@@ -1,0 +1,61 @@
+---
+import { Check, Copy } from "@lucide/astro";
+import { aiTargets, chatUrl, postPrompt } from "$lib/ai/links";
+
+type Props = { title: string; markdownPath: string; markdownUrl: string };
+const { title, markdownPath, markdownUrl } = Astro.props;
+const prompt = postPrompt({ title, markdownUrl });
+---
+
+<div class="post-actions" role="group" aria-label="Read this post with AI">
+  <span class="post-actions-label" aria-hidden="true">Read with</span>
+  {
+    aiTargets.map((target) => (
+      <a
+        class="post-action"
+        href={chatUrl(target.id, prompt)}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`Open post in ${target.label} (new tab)`}
+      >
+        <svg viewBox="0 0 24 24" class="size-3.5" aria-hidden="true">
+          <path fill="currentColor" d={target.path} />
+        </svg>
+        {target.label}
+      </a>
+    ))
+  }
+  <button type="button" class="post-action" aria-label="Copy this post as markdown" data-copy-markdown={markdownPath}>
+    <span class="contents" data-state="idle"><Copy class="size-3.5" aria-hidden="true" /> Markdown</span>
+    <span class="contents" data-state="done" hidden><Check class="size-3.5" aria-hidden="true" /> Copied</span>
+    <span class="contents" data-state="failed" hidden>Copy failed</span>
+  </button>
+  <span class="sr-only" role="status" data-copy-markdown-status></span>
+</div>
+
+<script>
+  import { copyText } from "$lib/utils/clipboard";
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy-markdown]")) {
+    const status = button.parentElement!.querySelector<HTMLElement>("[data-copy-markdown-status]")!;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const show = (state: "idle" | "done" | "failed") => {
+      for (const span of button.querySelectorAll<HTMLElement>("[data-state]")) {
+        span.hidden = span.dataset.state !== state;
+      }
+      status.textContent = state === "done" ? "Post copied as markdown" : state === "failed" ? "Could not copy" : "";
+    };
+    button.addEventListener("click", async () => {
+      let copied = false;
+      try {
+        const response = await fetch(button.dataset.copyMarkdown!);
+        copied = response.ok && (await copyText(await response.text()));
+      } catch {
+        copied = false;
+      }
+      show(copied ? "done" : "failed");
+      clearTimeout(timer);
+      timer = setTimeout(() => show("idle"), 2000);
+    });
+  }
+</script>

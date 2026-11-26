@@ -1,0 +1,120 @@
+---
+import '../../css/base.css';
+import { getCollection} from 'astro:content';
+import { Image } from 'astro:assets';
+
+import PhotoSwipeScript from '../../components/PhotoSwipeScript.astro';
+import { SITE_CONF } from '../../config';
+
+const color = SITE_CONF.themeColor || "#60a5ff";
+
+export async function getStaticPaths() {
+  const posts = await getCollection('log');
+  return posts.map((entry) => ({
+    params: { slug: entry.id },
+    props: { entry },
+  }));
+}
+
+const { entry } = Astro.props;
+
+// 1. Markdownのディレクトリパスを正確に取得
+// entry.id が "001log/index.md" なら、 "001log" というフォルダ名を取得
+const currentDir = entry.id.split('/')[0]; 
+
+// 2. globの対象を、その特定のディレクトリ内のみに限定する
+const allImages = import.meta.glob<{ default: ImageMetadata }>('../../content/log/**/*.{png,jpg,jpeg,webp}');
+
+// 3. パスに現在のディレクトリ名が含まれているかチェック
+const dirImages = Object.entries(allImages)
+  .filter(([path]) => path.includes(`/content/log/${currentDir}/`))
+  .map(([_, resolver]) => resolver);
+
+const images = (await Promise.all(dirImages.map(async (res) => (await res())?.default)))
+  .filter(img => img && img.src);
+
+const ogImage = SITE_CONF.ogImage || '/og-demo.jpg';
+const base = Astro.site ?? Astro.url;
+const absoluteOgImage = new URL(ogImage, base);
+---
+
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" href="/favicon.ico" />
+		<meta name="generator" content={Astro.generator} />
+        <meta property="og:title" content={SITE_CONF.siteTitle} />
+		<meta property="og:description" content={SITE_CONF.description} />
+		<meta property="og:image" content={absoluteOgImage} />
+		<meta property="og:url" content={Astro.site} />
+		<meta property="og:type" content="article" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<title>Log</title>
+    </head>
+    <body>
+        <style define:vars={{ color }}>
+			html {
+				background-color: var(--color);
+			}
+
+            .work-post .post-tags {
+                margin: 15px 0;
+            }
+
+            .work-post .post-tags li {
+                background-color:var(--color);
+                font-size: 14px;
+                margin: 0;
+                padding: 10px;
+                border-radius: 12px;
+                color: #fff;
+            }
+
+            .nav {
+	            display: flex;
+	            justify-content: center;
+	            align-items: center;
+	            list-style: none;
+            }
+
+            .nav li {
+	            margin: 0 10px;
+            }
+		</style>
+        <div class="wrapper">
+            <div class="work-post">
+                <h3 class="h3-a">PostDate：{entry.data.date.toLocaleDateString()}</h3>
+                    <ul class="post-tags">
+                        {entry.data.tags.map(tag => (
+                            <li>{tag}</li>
+                        ))}
+                    </ul>
+                <div class="work-post-main" id="my-gallery">
+                    {images.map((img) => (
+                        <div class="post-item"><a href={img.src} data-pswp-width={img.width} data-pswp-height={img.height} target="_blank"><Image src={img} alt="postImage"/></a></div>
+                    ))}
+                </div>
+                <div class="post-footer">
+                    <a href="/">Home</a>
+                </div>
+            </div>
+        </div>
+    <PhotoSwipeScript />
+    <script>
+        import MiniMasonry from 'minimasonry';
+
+        window.addEventListener('load', () => {
+            const masonry = new MiniMasonry({
+            container: '.work-post-main', 
+            baseWidth: 300,
+            gutter: 20,
+            surroundingGutter: true,
+            minify: true, 
+            });
+        });
+    </script>
+    </body>
+</html>

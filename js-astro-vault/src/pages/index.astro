@@ -1,0 +1,132 @@
+---
+import { getCollection} from 'astro:content';
+import { Image } from 'astro:assets';
+import Sns from '../components/Sns.astro';
+import CreditLink from '../components/CreditLink.astro';
+import '../css/base.css';
+import { SITE_CONF } from '../config';
+const currentYear = new Date().getFullYear();
+
+const color = SITE_CONF.themeColor || "#60a5ff";
+
+//投稿を取得し、最新順にソート
+const allWorks = (await getCollection('log'))
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf())
+  .map(async (work) => {
+    // work.id が "001log/index.md" と仮定すると currentDir は "001log"
+    const currentDir = work.id.split('/')[0];
+    const allImages = import.meta.glob<{ default: ImageMetadata }>('/src/content/log/**/*.{png,jpg,jpeg,webp}');
+
+    // 修正: 判定条件を、パスの末尾や構造を考慮したより確実なものに
+    const dirImages = Object.entries(allImages)
+      .filter(([path]) => {
+          // path は "/src/content/log/001log/001.png" のような形式
+          // これが "/content/log/001log/" を含んでいるか確認
+          return path.includes(`/content/log/${currentDir}/`);
+      });
+    return {
+      ...work,
+      imageCount: dirImages.length
+    };
+  });
+
+const worksWithCount = await Promise.all(allWorks);
+  
+//投稿のタグを全て取得
+const allTags = worksWithCount.map((work) => work.data.tags).flat() || [];
+
+//タグの重複分をセットし、タグ数をカウント
+const uniqueTags = [...new Set(allTags)].sort();
+const tagsWithCount = uniqueTags.map((tag) => {
+  const count = allTags.filter((t) => t === tag).length;
+  return { name: tag, count: count };
+});
+
+const ogImage = SITE_CONF.ogImage || '/og-demo.jpg';
+const base = Astro.site ?? Astro.url;
+const absoluteOgImage = new URL(ogImage, base);
+
+
+---
+
+<!DOCTYPE html>
+<html lang="ja">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" href="/favicon.ico" />
+		<meta name="generator" content={Astro.generator} />
+		<meta property="og:title" content={SITE_CONF.siteTitle} />
+		<meta property="og:description" content={SITE_CONF.description} />
+		<meta property="og:image" content={absoluteOgImage} />
+		<meta property="og:url" content={Astro.site} />
+		<meta property="og:type" content="website" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<title>{SITE_CONF.siteTitle}</title>
+	</head>
+	<body>
+		<style define:vars={{ color }}>
+			html {
+				background-color: var(--color);
+			}
+
+			.tags li{
+				background-color: var(--color);
+				font-size: 13px;
+				margin: 0;
+				padding: 10px;
+				border-radius: 12px;
+			}
+		</style>
+		<div class="wrapper">
+			<div class="header">
+				<img src={SITE_CONF.header} alt="ヘッダー画像">
+				<h1 id="site-title">{SITE_CONF.siteTitle}</h1>
+			</div>
+			<div class="main">
+				<div class="prof">
+					<img src={SITE_CONF.author.icon} alt="アイコン画像" class="icon">
+					<div>
+						<h1 class="author">{SITE_CONF.author.name}</h1>
+						<p>{SITE_CONF.author.introduction}</p>
+						<Sns />
+					</div>
+				</div>
+				<div class="log">
+					<h2 class="section-title">Log</h2>
+					<div class="log-container">
+						{worksWithCount.length === 0 ? (
+        					<div class="empty-state"><h2>No Posts Yet</h2></div>
+    					) : (
+        				worksWithCount.map(work => (
+            				<div class="work-item">
+                				<a class="btn" href={`/log/${work.id}`}>
+                    				<Image src={work.data.cover} alt="サムネイル画像"/>
+                    					<span class="image-count">{work.imageCount}</span>
+                				</a>
+            				</div>
+        				))
+    				)}
+				</div>
+				</div>
+				<div class="tags">
+					<h2 class="section-title">Tags</h2>
+						{allTags.length > 0 ? (
+							<ul>
+								{tagsWithCount.map((tag) => (
+									<li><a class="tag" href={`/log/tags/${tag.name}`}>{tag.name} <span class="count">({tag.count})</span></a></li>
+								))}
+							</ul>
+						) : (
+							<div class="empty-state"><h2>No Tags Yet</h2></div>
+                		)}
+				</div>
+				<div class="footer">
+					<p>© {currentYear} {SITE_CONF.author.name}.</p>
+				</div>
+				<CreditLink />
+			</div>
+		</div>
+	</body>
+</html>

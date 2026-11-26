@@ -1,0 +1,101 @@
+---
+import "medium-zoom/dist/style.css";
+import { Icon } from "astro-icon/components";
+---
+
+<div class="fixed top-0 z-10 h-1 w-full bg-skin-fill">
+  <div class="h-1 w-0 bg-skin-accent" id="scroll-progress-bar"></div>
+</div>
+
+<Icon name="tabler:external-link" class="hidden" aria-hidden="true" />
+
+<script is:inline type="module">
+  await import("/pagefind/pagefind-highlight.js");
+  new PagefindHighlight({ highlightParam: "highlight" });
+</script>
+
+<script>
+  import mediumZoom from "medium-zoom/dist/pure";
+  import { attach, detach } from "@/utils/useDom";
+
+  const selector = "#article img";
+
+  const zoom = mediumZoom(selector, {
+    margin: 24,
+    background: "rgb(var(--color-fill) / .9)",
+  });
+
+  function updateScrollProgress() {
+    const scrollProgressBar = document.getElementById("scroll-progress-bar");
+    if (scrollProgressBar) {
+      const winScroll =
+        document.body.scrollTop || document.documentElement.scrollTop;
+      const height =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      const scrolled = (winScroll / height) * 100;
+      scrollProgressBar.style.width = scrolled + "%";
+    }
+  }
+
+  function addHeadingLinks() {
+    document
+      .querySelectorAll<HTMLHeadingElement>("#article :is(h2, h3, h4, h5, h6)")
+      .forEach(heading => {
+        heading.classList.add("group");
+        const link = document.createElement("a");
+        link.innerText = "#";
+        link.className = "heading-link hidden group-hover:inline-block ml-2";
+        link.href = "#" + heading.id;
+        link.ariaHidden = "true";
+        heading.appendChild(link);
+      });
+  }
+
+  function attachCopyButtons() {
+    const copyButtonLabel = "Copy";
+
+    document
+      .querySelectorAll<HTMLPreElement>("#article pre")
+      .forEach(codeBlock => {
+        const wrapper = document.createElement("div");
+        wrapper.style.position = "relative";
+
+        const copyButton = document.createElement("button");
+        copyButton.className =
+          "copy-code absolute right-3 -top-3 rounded bg-skin-card px-2 py-1 text-xs leading-4 text-skin-base font-medium";
+        copyButton.innerHTML = copyButtonLabel;
+        copyButton.type = "button";
+        codeBlock.appendChild(copyButton);
+
+        // wrap codebock with relative parent element
+        codeBlock?.parentNode?.insertBefore(wrapper, codeBlock);
+        wrapper.appendChild(codeBlock);
+
+        copyButton.addEventListener("click", async () => {
+          await copyCode(codeBlock, copyButton);
+        });
+      });
+
+    async function copyCode(block: HTMLPreElement, button: HTMLButtonElement) {
+      const text = block.querySelector("code")?.innerText;
+
+      await navigator.clipboard.writeText(text ?? "");
+
+      // visual feedback that task is completed
+      button.innerText = "Copied";
+
+      setTimeout(() => {
+        button.innerText = copyButtonLabel;
+      }, 700);
+    }
+  }
+
+  document.addEventListener("scroll", updateScrollProgress);
+  detach(() => zoom.detach());
+  attach(() => {
+    zoom.attach(selector);
+    addHeadingLinks();
+    attachCopyButtons();
+  });
+</script>

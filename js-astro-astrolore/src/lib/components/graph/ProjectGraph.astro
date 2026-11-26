@@ -1,0 +1,42 @@
+---
+import { type CollectionEntry } from "astro:content";
+import ForceGraph from "./force-graph.svelte";
+import type { GraphNode } from "./graph";
+import { slugFromId } from "$lib/content-utils";
+import { buildArticleMap } from "$lib/astro-content-utils";
+import { cn } from "$lib/utils";
+
+type Props = {
+    project: CollectionEntry<"projects">;
+    articles: CollectionEntry<"articles">[];
+    class: string;
+};
+const { project, articles, class: className }: Props = Astro.props;
+
+const articleMap = buildArticleMap(articles);
+const { links } = await buildArticleGraph(articles, articleMap);
+
+const degree = new Map<string, number>();
+for (const link of links) {
+    degree.set(link.source, (degree.get(link.source) ?? 0) + 1);
+    degree.set(link.target, (degree.get(link.target) ?? 0) + 1);
+}
+
+const nodes: GraphNode[] = articles.map((a) => ({
+    id: a.id,
+    title: a.data.title,
+    href: `/${a.id}`,
+    radius: 6 + Math.sqrt(degree.get(a.id) ?? 0) * 2,
+    fill:
+        (project.data.pinned?.includes(slugFromId(a.id)) ?? false)
+            ? "var(--primary)"
+            : "var(--muted-foreground)",
+}));
+---
+
+<ForceGraph
+    {nodes}
+    {links}
+    class={cn("w-full aspect-square bg-muted rounded-md", className)}
+    client:idle
+/>

@@ -1,0 +1,193 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "../../layouts/Layout.astro";
+import { type ContentCounts, type Crumb } from "$lib/content-utils";
+import { getProjectCollections } from "$lib/astro-content-utils";
+import { buildArticleMap, getAbstract } from "$lib/astro-content-utils";
+import ProjectPinnedArticle from "$lib/components/project-pinned-article.svelte";
+import ProjectShortcut from "$lib/components/project-shortcut.svelte";
+import {
+    MapIcon,
+    ScrollIcon,
+    NewspaperIcon,
+    StickyNoteIcon,
+    TimelineIcon,
+    DicesIcon,
+    LibraryBigIcon,
+    OrigamiIcon,
+} from "@lucide/svelte";
+import { getTranslations } from "$lib/i18n";
+
+export async function getStaticPaths() {
+    const projects = await getCollection("projects");
+    const allArticles = await getCollection("articles");
+    const articleMap = buildArticleMap(allArticles);
+
+    return Promise.all(
+        projects.map(async (project) => {
+            const {
+                categories,
+                articles,
+                maps,
+                timelines,
+                documents,
+                handouts,
+                tables,
+                statblocks,
+            } = await getProjectCollections(project);
+
+            const pinnedArticles = await Promise.all(
+                (project.data.pinned ?? []).map(async (slug) => {
+                    const article = articleMap.get(`${project.id}/${slug}`);
+                    if (!article)
+                        throw `No article found in project ${project.id} with slug ${slug}`;
+                    const abstract = await getAbstract(article);
+                    return { article, abstract };
+                }),
+            );
+
+            const counts: ContentCounts = {
+                categories: categories.length,
+                articles: articles.length,
+                maps: maps.length,
+                timelines: timelines.length,
+                documents: documents.length,
+                handouts: handouts.length,
+                tables: tables.length,
+                statblocks: statblocks.length,
+            };
+
+            return {
+                params: { project: project.id },
+                props: {
+                    project,
+                    pinnedArticles,
+                    counts,
+                },
+            };
+        }),
+    );
+}
+
+const { project, pinnedArticles, counts } = Astro.props;
+const translations = getTranslations(project.data.language);
+
+const crumbs: Crumb[] = [
+    {
+        label: project.data.title,
+        href: `/${project.id}`,
+    },
+];
+---
+
+<Layout title={project.data.title} {crumbs} {project}>
+    <div>
+        <h1 class="mb-8 text-4xl font-bold tracking-tight lg:text-5xl">
+            {project.data.title}
+        </h1>
+        {
+            project.data.description && (
+                <p class="text-muted-foreground">{project.data.description}</p>
+            )
+        }
+    </div>
+
+    <div class="flex flex-col space-x-8 lg:flex-row">
+        <div class="w-full lg:basis-3/5">
+            {
+                pinnedArticles.length > 0 && (
+                    <section class="mt-8">
+                        <span class="text-muted-foreground mb-3 text-xs font-semibold tracking-wider uppercase">
+                            {translations.common.pinned}
+                        </span>
+                        <div class="mt-2 flex flex-col gap-4">
+                            {pinnedArticles.map(({ article, abstract }) => (
+                                <ProjectPinnedArticle {article} {abstract} />
+                            ))}
+                        </div>
+                    </section>
+                )
+            }
+        </div>
+
+        <div class="w-full lg:basis-2/5">
+            {
+                (counts.categories > 0 ||
+                    counts.articles > 0 ||
+                    counts.maps > 0 ||
+                    counts.timelines > 0 ||
+                    counts.documents > 0) && (
+                    <section class="mt-8">
+                        <span class="text-muted-foreground mb-3 text-xs font-semibold tracking-wider uppercase">
+                            {translations.common.codex}
+                        </span>
+                        <div class="mt-2 flex flex-row flex-wrap gap-2">
+                            <ProjectShortcut
+                                label={translations.common.categories}
+                                href={`/${project.id}/categories`}
+                                count={counts.categories}
+                                Icon={LibraryBigIcon}
+                            />
+                            <ProjectShortcut
+                                label={translations.common.articles}
+                                href={`/${project.id}/articles`}
+                                count={counts.articles}
+                                Icon={NewspaperIcon}
+                            />
+                            <ProjectShortcut
+                                label={translations.common.maps}
+                                href={`/${project.id}/maps`}
+                                count={counts.maps}
+                                Icon={MapIcon}
+                            />
+                            <ProjectShortcut
+                                label={translations.common.timelines}
+                                href={`/${project.id}/timelines`}
+                                count={counts.timelines}
+                                Icon={TimelineIcon}
+                            />
+                            <ProjectShortcut
+                                label={translations.common.documents}
+                                href={`/${project.id}/documents`}
+                                count={counts.documents}
+                                Icon={ScrollIcon}
+                            />
+                        </div>
+                    </section>
+                )
+            }
+
+            {
+                (counts.handouts > 0 ||
+                    counts.tables > 0 ||
+                    counts.statblocks > 0) && (
+                    <section class="mt-4">
+                        <span class="text-muted-foreground mb-3 text-xs font-semibold tracking-wider uppercase">
+                            {translations.common.binder}
+                        </span>
+                        <div class="mt-2 flex flex-row flex-wrap gap-2">
+                            <ProjectShortcut
+                                label={translations.common.handouts}
+                                href={`/${project.id}/handouts`}
+                                count={counts.handouts}
+                                Icon={StickyNoteIcon}
+                            />
+                            <ProjectShortcut
+                                label={translations.common.tables}
+                                href={`/${project.id}/tables`}
+                                count={counts.tables}
+                                Icon={DicesIcon}
+                            />
+                            <ProjectShortcut
+                                label={translations.common.statblocks}
+                                href={`/${project.id}/statblocks`}
+                                count={counts.statblocks}
+                                Icon={OrigamiIcon}
+                            />
+                        </div>
+                    </section>
+                )
+            }
+        </div>
+    </div>
+</Layout>

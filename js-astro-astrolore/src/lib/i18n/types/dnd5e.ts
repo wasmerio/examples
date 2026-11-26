@@ -1,0 +1,66 @@
+export interface Dnd5eTranslations {
+    armorClass: string;
+    hitPoints: string;
+    speed: string;
+    savingThrows: string;
+    skills: string;
+    damageVulnerabilities: string;
+    damageResistances: string;
+    damageImmunities: string;
+    conditionImmunities: string;
+    senses: string;
+    languages: string;
+    challenge: string;
+    actions: string;
+    bonusActions: string;
+    reactions: string;
+    legendaryActions: string;
+    lairActions: string;
+    costs: string;
+    actionsWord: string;
+    spellSaveDC: string;
+    toHitWithSpellAttacks: string;
+    atWill: string;
+    perDaySuffix: string;
+    each: string;
+    cantripsAtWill: string;
+    slot: string;
+    slots: string;
+    spellLevels: string[];
+    sizes: {
+        tiny: string;
+        small: string;
+        medium: string;
+        large: string;
+        huge: string;
+        gargantuan: string;
+    };
+    abilities: {
+        strength: string;
+        dexterity: string;
+        constitution: string;
+        intelligence: string;
+        wisdom: string;
+        charisma: string;
+    };
+    skillNames: {
+        athletics: string;
+        acrobatics: string;
+        sleightOfHand: string;
+        stealth: string;
+        arcana: string;
+        history: string;
+        investigation: string;
+        nature: string;
+        religion: string;
+        animalHandling: string;
+        insight: string;
+        medicine: string;
+        perception: string;
+        survival: string;
+        deception: string;
+        intimidation: string;
+        performance: string;
+        persuasion: string;
+    };
+}

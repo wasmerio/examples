@@ -1,0 +1,71 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "../../layouts/Layout.astro";
+import PaginatedHandoutsSearch from "$lib/components/paginated-handouts-search.svelte";
+import PageTitle from "$lib/components/PageTitle.astro";
+import { isURL, projectFromId, type Crumb } from "$lib/content-utils";
+import { getTranslations } from "$lib/i18n";
+
+export async function getStaticPaths() {
+    const projects = await getCollection("projects");
+
+    return projects.map((project) => ({
+        params: {
+            project: project.id,
+        },
+        props: {
+            project: project,
+        },
+    }));
+}
+
+const { project } = Astro.props;
+
+const files = import.meta.glob<string>("/src/content/*/handouts/**/*", {
+    query: "?url",
+    import: "default",
+    eager: true,
+});
+const handouts = (
+    await getCollection("handouts", (h) => {
+        return projectFromId(h.id) == project.id;
+    })
+).map((handout) => {
+    let url = handout.data.file;
+    if (!isURL(handout.data.file)) {
+        url =
+            files[
+                `/src/content/${project.id}/handouts/${url.replace("./", "")}`
+            ];
+    }
+    return {
+        ...handout,
+        url,
+    };
+});
+
+const translations = getTranslations(project.data.language);
+const crumbs: Crumb[] = [
+    {
+        label: project.data.title,
+        href: `/${project.id}`,
+    },
+    {
+        label: translations.common.handouts,
+        href: `/${project.id}/handouts`,
+    },
+];
+---
+
+<Layout
+    title={`${project.data.title} - ${translations.common.handouts}`}
+    {crumbs}
+    {project}
+>
+    <PageTitle>{translations.common.handouts}</PageTitle>
+    <PaginatedHandoutsSearch
+        {handouts}
+        placeholder={translations.search.placeholder}
+        client:idle
+    />
+</Layout>

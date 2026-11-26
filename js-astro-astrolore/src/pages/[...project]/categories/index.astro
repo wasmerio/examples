@@ -1,0 +1,109 @@
+---
+import { getCollection, render } from "astro:content";
+import Layout from "../../../layouts/Layout.astro";
+import { slugFromId, type Crumb } from "$lib/content-utils";
+import { getProjectCollection } from "$lib/astro-content-utils";
+import { getTranslations } from "$lib/i18n";
+import * as Item from "$lib/components/ui/item/index.js";
+import * as Empty from "$lib/components/ui/empty/index.js";
+import PageTitle from "$lib/components/PageTitle.astro";
+import { LibraryBigIcon } from "@lucide/svelte";
+
+export async function getStaticPaths() {
+    const projects = await getCollection("projects");
+
+    return projects.map((project) => ({
+        params: {
+            project: project.id,
+        },
+        props: {
+            project,
+        },
+    }));
+}
+
+const { project } = Astro.props;
+
+const articles = await getProjectCollection(project.id, "articles");
+const categories = await Promise.all(
+    (await getProjectCollection(project.id, "categories")).map(
+        async (category) => {
+            const slug = slugFromId(category.id);
+            const articleCount = articles.filter(
+                (article) => article.data.category === slug,
+            ).length;
+
+            const { remarkPluginFrontmatter } = await render(category);
+            const description = remarkPluginFrontmatter.abstract;
+
+            return {
+                id: category.id,
+                title: category.data.title,
+                href: `/${category.id}`,
+                articleCount,
+                description,
+            };
+        },
+    ),
+);
+categories.sort((a, b) => a.title.localeCompare(b.title));
+
+const translations = getTranslations(project.data.language);
+const crumbs: Crumb[] = [
+    {
+        label: project.data.title,
+        href: `/${project.id}`,
+    },
+    {
+        label: translations.common.categories,
+        href: `/${project.id}/categories`,
+    },
+];
+---
+
+<Layout
+    title={`${project.data.title} - ${translations.common.categories}`}
+    {crumbs}
+    {project}
+>
+    <PageTitle>{translations.common.categories}</PageTitle>
+
+    {
+        categories.length > 0 ? (
+            <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {categories.map((category) => (
+                    <a href={category.href} class="group/card block">
+                        <Item.Root variant="outline" class="">
+                            <Item.Header>
+                                <Item.Title>{category.title}</Item.Title>
+                                <Item.Description>
+                                    {category.articleCount}{" "}
+                                    {category.articleCount === 1
+                                        ? translations.common.article.toLocaleLowerCase()
+                                        : translations.common.articles.toLocaleLowerCase()}
+                                </Item.Description>
+                            </Item.Header>
+                            {category.description && (
+                                <Item.Content class="text-muted-foreground line-clamp-3">
+                                    {category.description}
+                                </Item.Content>
+                            )}
+                        </Item.Root>
+                    </a>
+                ))}
+            </div>
+        ) : (
+            <Empty.Root>
+                <Empty.Header>
+                    <Empty.Media variant="icon">
+                        <LibraryBigIcon />
+                    </Empty.Media>
+                    <Empty.Title>{translations.common.categories}</Empty.Title>
+                    <Empty.Description>
+                        {translations.search.noResults}
+                    </Empty.Description>
+                </Empty.Header>
+            </Empty.Root>
+        )
+    }
+</Layout>

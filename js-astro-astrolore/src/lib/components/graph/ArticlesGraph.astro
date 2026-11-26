@@ -1,0 +1,89 @@
+---
+import { type CollectionEntry } from "astro:content";
+import ForceGraph from "./force-graph.svelte";
+import type { GraphNode, GraphLink } from "./graph";
+import {
+    projectFromId,
+    slugFromId,
+    collectFrontmatterRefs,
+} from "$lib/content-utils";
+import { buildArticleMap } from "$lib/astro-content-utils";
+import { render } from "astro:content";
+import { cn } from "$lib/utils";
+
+type Props = {
+    project: CollectionEntry<"projects">;
+    articles: CollectionEntry<"articles">[];
+    categories: CollectionEntry<"categories">[];
+    class: string;
+};
+const { project, articles, categories, class: className }: Props = Astro.props;
+
+const articleMap = buildArticleMap(articles);
+
+// Build articles graph
+const links: GraphLink[] = [];
+
+await Promise.all(
+    articles.map(async (article) => {
+        const projectId = projectFromId(article.id);
+        const { remarkPluginFrontmatter } = await render(article);
+        const outgoingLinks: string[] =
+            remarkPluginFrontmatter.outgoingLinks ?? [];
+        const frontmatterRefs = collectFrontmatterRefs(article.data.meta);
+        const targets = new Set(
+            [...outgoingLinks, ...frontmatterRefs]
+                .map((slug) => articleMap.get(`${projectId}/${slug}`))
+                .filter(
+                    (target): target is CollectionEntry<"articles"> =>
+                        !!target && target.id !== article.id,
+                ),
+        );
+
+        for (const target of targets) {
+            links.push({ source: article.id, target: target.id });
+        }
+
+        if (article.data.category) {
+            links.push({
+                source: article.id,
+                target: `${projectId}/categories/${article.data.category}`,
+            });
+        }
+    }),
+);
+
+const degree = new Map<string, number>();
+for (const link of links) {
+    degree.set(link.source, (degree.get(link.source) ?? 0) + 1);
+    degree.set(link.target, (degree.get(link.target) ?? 0) + 1);
+}
+
+const articleNodes: GraphNode[] = articles.map((a) => ({
+    id: a.id,
+    title: a.data.title,
+    href: `/${a.id}`,
+    radius: 6 + Math.sqrt(degree.get(a.id) ?? 0) * 2,
+    fill:
+        (project.data.pinned?.includes(slugFromId(a.id)) ?? false)
+            ? "var(--primary)"
+            : "var(--muted-foreground)",
+}));
+
+const categoryNodes: GraphNode[] = categories.map((c) => ({
+    id: c.id,
+    title: c.data.title,
+    href: `/${c.id}`,
+    radius: 6 + Math.sqrt(degree.get(c.id) ?? 0) * 2,
+    fill: "var(--destructive)",
+}));
+
+const nodes: GraphNode[] = [...articleNodes, ...categoryNodes];
+---
+
+<ForceGraph
+    {nodes}
+    {links}
+    class={cn("w-full h-full bg-muted", className)}
+    client:idle
+/>

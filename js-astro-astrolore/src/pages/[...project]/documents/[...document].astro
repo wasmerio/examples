@@ -1,0 +1,95 @@
+---
+import { getCollection, render } from "astro:content";
+import ContentLayout from "../../../layouts/ContentLayout.astro";
+import { slugFromId, stripLink, isLink, type Crumb } from "$lib/content-utils";
+import Document from "$lib/components/content/Document.astro";
+import ContentHeading from "$lib/components/ContentHeading.astro";
+import { buildArticleMap, getProjectFromId } from "$lib/astro-content-utils";
+import { getTranslations } from "$lib/i18n";
+
+export async function getStaticPaths() {
+    const documents = await getCollection("documents");
+    const articles = await getCollection("articles");
+
+    const articleMap = buildArticleMap(articles);
+
+    return Promise.all(
+        documents.map(async (document) => {
+            const documentSlug = slugFromId(document.id);
+            const project = await getProjectFromId(document.id);
+
+            const author =
+                document.data.author && isLink(document.data.author)
+                    ? articleMap.get(
+                          `${project.id}/${stripLink(document.data.author)}`,
+                      )
+                    : null;
+
+            return {
+                params: {
+                    project: project.id,
+                    document: documentSlug,
+                },
+                props: {
+                    project: project,
+                    document: document,
+                    author: author,
+                },
+            };
+        }),
+    );
+}
+
+const { project, document, author } = Astro.props;
+const { Content } = await render(document);
+const slug = slugFromId(document.id);
+
+const translations = getTranslations(project.data.language);
+const crumbs: Crumb[] = [
+    {
+        label: project.data.title,
+        href: `/${project.id}`,
+    },
+    {
+        label: translations.common.documents,
+        href: `/${project.id}/documents`,
+    },
+    {
+        label: document.data.title,
+        href: `/${document.id}`,
+    },
+];
+---
+
+<ContentLayout
+    title=`${project.data.title} - ${document.data.title}`
+    {crumbs}
+    {project}
+>
+    <ContentHeading slot="heading" id={slug}>
+        {document.data.title}
+        <div slot="data">
+            {
+                document.data.author && (
+                    <span class="text-sm">
+                        <span class="text-foreground/80 font-semibold">
+                            Author:
+                        </span>
+                        {author ? (
+                            <a
+                                href={`/${author.id}`}
+                                class="text-primary/80 hover:underline"
+                            >
+                                {author.data.title}
+                            </a>
+                        ) : (
+                            <span>{document.data.author}</span>
+                        )}
+                    </span>
+                )
+            }
+        </div>
+    </ContentHeading>
+
+    <Document {Content} />
+</ContentLayout>

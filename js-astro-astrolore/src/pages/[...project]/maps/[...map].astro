@@ -1,0 +1,73 @@
+---
+import { getCollection } from "astro:content";
+import { slugFromId, getImageSrc, type Crumb } from "$lib/content-utils";
+import MapImage from "$lib/components/map-image/map-image.svelte";
+import ContentLayout from "../../../layouts/ContentLayout.astro";
+import ContentHeading from "$lib/components/ContentHeading.astro";
+import { getProjectFromId } from "$lib/astro-content-utils";
+import { getTranslations } from "$lib/i18n";
+
+export async function getStaticPaths() {
+    const maps = await getCollection("maps");
+
+    return Promise.all(
+        maps.map(async (map) => {
+            const mapSlug = slugFromId(map.id);
+            const project = await getProjectFromId(map.id);
+
+            return {
+                params: {
+                    project: project.id,
+                    map: mapSlug,
+                },
+                props: {
+                    project: project,
+                    map: map,
+                },
+            };
+        }),
+    );
+}
+
+const { project, map } = Astro.props;
+const slug = slugFromId(map.id);
+
+const translations = getTranslations(project.data.language);
+const crumbs: Crumb[] = [
+    {
+        label: project.data.title,
+        href: `/${project.id}`,
+    },
+    {
+        label: translations.common.maps,
+        href: `/${project.id}/maps`,
+    },
+    {
+        label: map.data.name ?? translations.common.map,
+        href: `/${map.id}`,
+    },
+];
+---
+
+<ContentLayout
+    project={project}
+    title={`${project.data.title} - ${map.data.name ?? translations.common.map}`}
+    {crumbs}
+    needsLeaflet
+>
+    {
+        map.data.name && (
+            <ContentHeading slot="heading" id={slug}>
+                {map.data.name}
+                <span slot="data">{map.data.description}</span>
+            </ContentHeading>
+        )
+    }
+
+    <MapImage
+        projectId={project.id}
+        id={slug}
+        src={getImageSrc(map.data.image)}
+        markers={JSON.stringify(map.data.markers)}
+    />
+</ContentLayout>

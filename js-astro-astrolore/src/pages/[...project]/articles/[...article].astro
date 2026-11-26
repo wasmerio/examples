@@ -1,0 +1,202 @@
+---
+import { getCollection, type CollectionEntry } from "astro:content";
+import ContentLayout from "../../../layouts/ContentLayout.astro";
+import {
+    slugFromId,
+    projectFromId,
+    pushOrSet,
+    type Crumb,
+} from "$lib/content-utils";
+import { getEntry, render } from "astro:content";
+import Article from "$lib/components/content/Article.astro";
+import ContentHeading from "$lib/components/ContentHeading.astro";
+import * as Card from "$lib/components/ui/card/index.js";
+import PaginatedArticles from "$lib/components/paginated-articles.svelte";
+import ArticleMeta from "$lib/components/article-meta/ArticleMeta.astro";
+import {
+    buildArticleMap,
+    buildBacklinkIndex,
+    getProjectFromId,
+} from "$lib/astro-content-utils";
+import { getTranslations } from "$lib/i18n";
+
+export async function getStaticPaths() {
+    const articles = await getCollection("articles");
+
+    const articleMap = buildArticleMap(articles);
+    const backlinkIndex = await buildBacklinkIndex(articles, articleMap);
+
+    const childrenOf = new Map<string, CollectionEntry<"articles">[]>();
+    for (const article of articles) {
+        if (!article.data.parent) continue;
+        const key = `${projectFromId(article.id)}/${article.data.parent}`;
+        pushOrSet(childrenOf, key, article);
+    }
+
+    const ofProject = new Map<string, CollectionEntry<"articles">[]>();
+    for (const article of articles) {
+        pushOrSet(ofProject, projectFromId(article.id), article);
+    }
+
+    return Promise.all(
+        articles.map(async (article) => {
+            const articleSlug = slugFromId(article.id);
+            const project = await getProjectFromId(article.id);
+
+            const childrenArticles = childrenOf.get(
+                `${project.id}/${articleSlug}`,
+            );
+            const parentArticle = article.data.parent
+                ? articleMap.get(`${project.id}/${article.data.parent}`)
+                : undefined;
+            const backlinkArticles = backlinkIndex.get(article.id) ?? [];
+
+            const category = article.data.category
+                ? await getEntry(
+                      "categories",
+                      `${project.id}/categories/${article.data.category}`,
+                  )
+                : undefined;
+            if (article.data.category && !category) {
+                throw `No category with id '${project.id}/categories/${article.data.category}'`;
+            }
+
+            return {
+                params: {
+                    project: project.id,
+                    article: articleSlug,
+                },
+                props: {
+                    project: project,
+                    category: category,
+                    articles: ofProject.get(project.id) ?? [],
+                    article: article,
+                    childrenArticles: childrenArticles ?? [],
+                    parentArticle: parentArticle,
+                    backlinkArticles: backlinkArticles,
+                },
+            };
+        }),
+    );
+}
+
+const {
+    project,
+    category,
+    article,
+    articles,
+    childrenArticles,
+    parentArticle,
+    backlinkArticles,
+} = Astro.props;
+const { Content, remarkPluginFrontmatter } = await render(article);
+const needsLeaflet = !!remarkPluginFrontmatter.hasMap;
+
+const slug = slugFromId(article.id);
+
+const translations = getTranslations(project.data.language);
+const crumbs: Crumb[] = [
+    {
+        label: project.data.title,
+        href: `/${project.id}`,
+    },
+    {
+        label: translations.common.articles,
+        href: `/${project.id}/articles`,
+    },
+    {
+        label: article.data.title,
+        href: `/${article.id}`,
+    },
+];
+---
+
+<ContentLayout
+    title={`${project.data.title} - ${article.data.title}`}
+    {crumbs}
+    {project}
+    {needsLeaflet}
+>
+    <ContentHeading slot="heading" id={slug}>
+        {article.data.title}
+        <div slot="data" class="flex space-x-2">
+            {
+                category && (
+                    <span class="text-sm">
+                        <span class="text-foreground/80 font-semibold">
+                            {translations.common.category}:{" "}
+                        </span>
+                        <a
+                            href={`/${category.id}`}
+                            class="text-primary/80 hover:underline"
+                        >
+                            {category.data.title}
+                        </a>
+                    </span>
+                )
+            }
+            {
+                parentArticle && (
+                    <span class="text-sm">
+                        <span class="text-foreground/80 font-semibold">
+                            {translations.common.parent}:{" "}
+                        </span>
+                        <a
+                            href={`/${parentArticle.id}`}
+                            class="text-primary/80 hover:underline"
+                        >
+                            {parentArticle.data.title}
+                        </a>
+                    </span>
+                )
+            }
+        </div>
+    </ContentHeading>
+
+    {
+        article.data.meta?.type && (
+            <div class="mb-4 w-full lg:float-right lg:max-w-[360px] lg:pl-4">
+                <ArticleMeta {project} {articles} {article} />
+            </div>
+        )
+    }
+
+    <Article {Content} />
+
+    <div class="mt-12 flex w-full flex-col gap-6">
+        {
+            childrenArticles.length > 0 && (
+                <Card.Root class="lg:clear-right">
+                    <Card.Header>
+                        <Card.Title>Articles</Card.Title>
+                    </Card.Header>
+                    <Card.Content>
+                        <PaginatedArticles
+                            {project}
+                            articles={childrenArticles}
+                            client:idle
+                        />
+                    </Card.Content>
+                </Card.Root>
+            )
+        }
+        {
+            backlinkArticles.length > 0 && (
+                <Card.Root class="lg:clear-right">
+                    <Card.Header>
+                        <Card.Title>
+                            {translations.common.referencedIn}
+                        </Card.Title>
+                    </Card.Header>
+                    <Card.Content>
+                        <PaginatedArticles
+                            {project}
+                            articles={backlinkArticles}
+                            client:idle
+                        />
+                    </Card.Content>
+                </Card.Root>
+            )
+        }
+    </div>
+</ContentLayout>

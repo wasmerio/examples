@@ -1,0 +1,101 @@
+---
+import { getCollection } from "astro:content";
+import ContentLayout from "../../../layouts/ContentLayout.astro";
+import { slugFromId, type Crumb } from "$lib/content-utils";
+import { render } from "astro:content";
+import Article from "$lib/components/content/Article.astro";
+import ContentHeading from "$lib/components/ContentHeading.astro";
+import * as Card from "$lib/components/ui/card/index.js";
+import PaginatedArticles from "$lib/components/paginated-articles.svelte";
+import { getProjectFromId } from "$lib/astro-content-utils";
+import { getTranslations } from "$lib/i18n";
+
+export async function getStaticPaths() {
+    const categories = await getCollection("categories");
+
+    return Promise.all(
+        categories.map(async (category) => {
+            const categorySlug = slugFromId(category.id);
+            const project = await getProjectFromId(category.id);
+
+            const categoryArticles = await getCollection(
+                "articles",
+                (article) => {
+                    return article.data.category === categorySlug;
+                },
+            );
+
+            return {
+                params: {
+                    project: project.id,
+                    category: categorySlug,
+                },
+                props: {
+                    project: project,
+                    category: category,
+                    categoryArticles: categoryArticles,
+                },
+            };
+        }),
+    );
+}
+
+const { project, category, categoryArticles } = Astro.props;
+const { Content } = await render(category);
+const slug = slugFromId(category.id);
+
+const translations = getTranslations(project.data.language);
+const crumbs: Crumb[] = [
+    {
+        label: project.data.title,
+        href: `/${project.id}`,
+    },
+    {
+        label: project.data.title,
+        href: `/${project.id}/categories`,
+    },
+    {
+        label: category.data.title,
+        href: `/${category.id}`,
+    },
+];
+---
+
+<ContentLayout
+    title={`${project.data.title} - ${category.data.title}`}
+    {crumbs}
+    {project}
+>
+    <ContentHeading slot="heading" id={slug}>
+        {category.data.title}
+        <div slot="data">
+            <span class="text-sm">
+                {categoryArticles.length}{" "}
+                {
+                    categoryArticles.length === 1
+                        ? translations.common.article.toLocaleLowerCase()
+                        : translations.common.articles.toLocaleLowerCase()
+                }
+            </span>
+        </div>
+    </ContentHeading>
+
+    <Article {Content} />
+
+    {
+        categoryArticles.length > 0 && (
+            <Card.Root class="mt-8">
+                <Card.Header>
+                    <Card.Title>{translations.common.articles}</Card.Title>
+                </Card.Header>
+                <Card.Content>
+                    <PaginatedArticles
+                        {project}
+                        articles={categoryArticles}
+                        client:idle
+                    />
+                </Card.Content>
+            </Card.Root>
+        )
+    }
+</ContentLayout>

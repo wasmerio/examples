@@ -1,0 +1,151 @@
+---
+import "../styles/global.css";
+import AppLayout from "$lib/components/app-layout.svelte";
+import { getCollection } from "astro:content";
+import {
+    type CollectionItem,
+    type ContentCounts,
+    type Crumb,
+} from "$lib/content-utils";
+import { getProjectCollections } from "$lib/astro-content-utils";
+import type { CollectionEntry } from "astro:content";
+import { getTranslations } from "$lib/i18n";
+import { cn } from "$lib/utils";
+
+type Props = {
+    title: string;
+    crumbs: Crumb[];
+    project?: CollectionEntry<"projects">;
+    needsLeaflet?: boolean;
+    fullScreen?: boolean;
+};
+const { title, crumbs, project, needsLeaflet, fullScreen }: Props = Astro.props;
+
+const pathname = Astro.url.pathname;
+
+const projects = await getCollection("projects");
+const {
+    categories,
+    articles,
+    maps,
+    timelines,
+    documents,
+    handouts,
+    tables,
+    statblocks,
+} = await getProjectCollections(project);
+
+const categoryItems: CollectionItem[] = categories.map((c) => ({
+    id: c.id,
+    label: c.data.title,
+}));
+const articleItems: CollectionItem[] = articles.map((a) => ({
+    id: a.id,
+    label: a.data.title,
+}));
+const timelineItems: CollectionItem[] = timelines.map((t) => ({
+    id: t.id,
+    label: t.data.name ?? t.id,
+}));
+const mapItems: CollectionItem[] = maps.map((m) => ({
+    id: m.id,
+    label: m.data.name ?? m.id,
+}));
+const documentItems: CollectionItem[] = documents.map((d) => ({
+    id: d.id,
+    label: d.data.title,
+}));
+
+const counts: ContentCounts = {
+    categories: categories.length,
+    articles: articles.length,
+    maps: maps.length,
+    timelines: timelines.length,
+    documents: documents.length,
+    handouts: handouts.length,
+    tables: tables.length,
+    statblocks: statblocks.length,
+};
+
+const translations = getTranslations(project?.data.language);
+---
+
+<script is:inline>
+    const isBrowser = typeof localStorage !== "undefined";
+    const getThemePreference = () => {
+        if (isBrowser && localStorage.getItem("theme")) {
+            return localStorage.getItem("theme");
+        }
+        return window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+    };
+    const isDark = getThemePreference() === "dark";
+    document.documentElement.classList[isDark ? "add" : "remove"]("dark");
+
+    if (isBrowser) {
+        const observer = new MutationObserver(() => {
+            const isDark = document.documentElement.classList.contains("dark");
+            localStorage.setItem("theme", isDark ? "dark" : "light");
+        });
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ["class"],
+        });
+    }
+</script>
+
+<html lang={project?.data.language ?? "en"}>
+    <head>
+        <meta charset="utf-8" />
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="icon" href="/favicon.ico" />
+
+        {
+            needsLeaflet && (
+                <>
+                    <link
+                        rel="stylesheet"
+                        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+                        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+                        crossorigin=""
+                    />
+                    <script
+                        is:inline
+                        src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+                        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+                        crossorigin=""
+                    />
+                    <script src="../lib/components/map-image/map-image.js" />
+                </>
+            )
+        }
+
+        <meta name="viewport" content="width=device-width" />
+        <meta name="generator" content={Astro.generator} />
+        <title>{title}</title>
+    </head>
+
+    <body>
+        <AppLayout
+            {project}
+            {projects}
+            categories={categoryItems}
+            articles={articleItems}
+            maps={mapItems}
+            timelines={timelineItems}
+            documents={documentItems}
+            {counts}
+            {crumbs}
+            {pathname}
+            {translations}
+            client:idle
+        >
+            <div
+                class={fullScreen ? "h-[calc(100dvh-45px)]" : "container my-8"}
+            >
+                <slot />
+            </div>
+        </AppLayout>
+    </body>
+</html>

@@ -1,0 +1,232 @@
+---
+import { Image } from 'astro:assets';
+import { getCollection, render } from 'astro:content';
+import Breadcrumbs from '@/components/layout/Breadcrumbs.astro';
+import Card from '@/components/docs/Card.astro';
+import { mdxComponents } from '@/components/docs/mdx-components';
+import Icon from '@/components/ui/Icon.astro';
+import { siteConfig } from '@/config/site';
+import DocsLayout from '@/layouts/DocsLayout.astro';
+import {
+  docsCategoryDataMap,
+  docsParentMap,
+  formatDate,
+  getCategoryHref,
+  getCleanDocSlug,
+  getDocHref,
+  getEditUrl,
+  getOrderedDocsForCategory,
+  getPublicDocs,
+  getReadingTime,
+  type DocsCategorySlug,
+} from '@/lib/docs';
+
+export async function getStaticPaths() {
+  const publicDocs = getPublicDocs(await getCollection('docs'));
+
+  return publicDocs.map((doc) => ({
+    params: {
+      parent: docsCategoryDataMap[doc.data.category].parent,
+      category: doc.data.category,
+      slug: getCleanDocSlug(doc.id),
+    },
+    props: { doc },
+  }));
+}
+
+const { doc } = Astro.props;
+const publicDocs = getPublicDocs(await getCollection('docs'));
+const { Content, headings } = await render(doc);
+const category = docsCategoryDataMap[doc.data.category as DocsCategorySlug];
+const parent = docsParentMap[category.parent];
+const orderedCategoryDocs = getOrderedDocsForCategory(publicDocs, doc.data.category);
+const currentDocIndex = orderedCategoryDocs.findIndex((entry) => entry.id === doc.id);
+const previousDoc = currentDocIndex > 0 ? orderedCategoryDocs[currentDocIndex - 1] : undefined;
+const nextDoc = currentDocIndex >= 0 ? orderedCategoryDocs[currentDocIndex + 1] : undefined;
+const tocHeadings = headings.filter((heading) => heading.depth >= 2 && heading.depth <= 3);
+const editUrl = getEditUrl(doc);
+const readingTime = getReadingTime(doc.body);
+const pageUrl = new URL(getDocHref(doc), siteConfig.siteUrl).toString();
+const pageMarkdown = [`# ${doc.data.title}`, doc.data.description && `> ${doc.data.description}`, doc.body?.trim()]
+  .filter(Boolean)
+  .join('\n\n');
+const pageMarkdownJson = JSON.stringify(pageMarkdown).replace(/</g, '\\u003c');
+
+const articlePagefindAttributes = doc.data.hideFromSearch
+  ? { 'data-pagefind-ignore': 'all' }
+  : { 'data-pagefind-body': true, 'data-pagefind-meta': `category:${category.name}` };
+
+const structuredData = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'TechArticle',
+    headline: doc.data.title,
+    description: doc.data.description,
+    url: pageUrl,
+    ...(doc.data.updatedAt && { dateModified: doc.data.updatedAt.toISOString() }),
+    ...(doc.data.author && { author: { '@type': 'Organization', name: doc.data.author } }),
+    publisher: { '@type': 'Organization', name: siteConfig.name },
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { name: parent.name, href: `/${parent.slug}` },
+      { name: category.name, href: getCategoryHref(category.slug) },
+      { name: doc.data.title, href: getDocHref(doc) },
+    ].map((item, index) => ({
+      '@type': 'ListItem',
+      position: index + 1,
+      name: item.name,
+      item: new URL(item.href, siteConfig.siteUrl).toString(),
+    })),
+  },
+];
+---
+
+<DocsLayout
+  title={`${doc.data.title} - ${category.name}`}
+  description={doc.data.description}
+  type="article"
+  updatedAt={doc.data.updatedAt}
+  parent={parent}
+  headings={tocHeadings}
+  editUrl={editUrl}
+  structuredData={structuredData}
+>
+  <Breadcrumbs
+    items={[
+      { label: parent.name, href: `/${parent.slug}` },
+      { label: category.name, href: getCategoryHref(category.slug) },
+      { label: doc.data.title },
+    ]}
+  />
+
+  <article class="docs-article mt-6" {...articlePagefindAttributes}>
+    <header class="border-b border-line pb-8">
+      <p class="eyebrow !text-accent-ink" data-pagefind-ignore>
+        {category.name}
+      </p>
+      <h1 class="mt-3 text-[2.15rem] leading-[1.15] font-bold tracking-[-0.035em] text-balance md:text-[2.6rem]">
+        {doc.data.title}
+      </h1>
+      {doc.data.description && (
+        <p class="mt-4 max-w-2xl text-[1.075rem] leading-relaxed text-pretty text-muted">{doc.data.description}</p>
+      )}
+      <div class="docs-meta mt-6" data-pagefind-ignore>
+        <span class="docs-meta-item">
+          <Icon name="clock" class="size-[0.9rem]" />
+          {readingTime} min read
+        </span>
+        {doc.data.updatedAt && (
+          <span class="docs-meta-item">
+            <Icon name="calendar" class="size-[0.9rem]" />
+            Updated <time datetime={doc.data.updatedAt.toISOString()}>{formatDate(doc.data.updatedAt)}</time>
+          </span>
+        )}
+        {doc.data.status === 'deprecated' && <span class="docs-badge docs-badge-warning not-prose">Deprecated</span>}
+        <button type="button" class="copy-page sm:ml-auto" data-copy-page>
+          <Icon name="copy" class="icon-copy size-[0.85rem]" />
+          <Icon name="check" class="icon-check size-[0.85rem]" />
+          <span data-copy-page-label>Copy page</span>
+        </button>
+      </div>
+    </header>
+
+    {doc.data.heroImage && (
+      <div class="mt-8 overflow-hidden rounded-2xl border border-line bg-sunken">
+        <Image
+          src={doc.data.heroImage}
+          alt=""
+          class="h-auto w-full"
+          widths={[900, 1400]}
+          sizes="(min-width: 1024px) 800px, 100vw"
+          loading="eager"
+        />
+      </div>
+    )}
+
+    {(doc.data.author || doc.data.status || doc.data.tags.length > 0) && (
+      <div class="sr-only" data-pagefind-ignore>
+        {doc.data.author && (
+          <span data-pagefind-filter={`author:${doc.data.author}`} data-pagefind-meta={`author:${doc.data.author}`}>
+            {doc.data.author}
+          </span>
+        )}
+        {doc.data.status && (
+          <span data-pagefind-filter={`status:${doc.data.status}`} data-pagefind-meta={`status:${doc.data.status}`}>
+            {doc.data.status}
+          </span>
+        )}
+        {doc.data.tags.map((tag) => (
+          <span data-pagefind-filter={`tag:${tag}`}>{tag}</span>
+        ))}
+      </div>
+    )}
+
+    <div class="prose mt-8">
+      <Content components={mdxComponents} />
+    </div>
+
+    {doc.data.relatedLinks.length > 0 && (
+      <section class="mt-14" data-pagefind-ignore>
+        <h2 class="text-base font-semibold">Continue with</h2>
+        <div class="docs-card-grid mt-4">
+          {doc.data.relatedLinks.map((link) => (
+            <Card href={link.href} title={link.title} description={link.description} eyebrow={link.eyebrow} />
+          ))}
+        </div>
+      </section>
+    )}
+
+    {(previousDoc || nextDoc) && (
+      <nav class="mt-14 grid gap-4 sm:grid-cols-2" aria-label="Article navigation" data-pagefind-ignore>
+        {previousDoc ? (
+          <a href={getDocHref(previousDoc)} class="docs-article-pagination-link">
+            <span class="docs-article-pagination-label">
+              <Icon name="arrow-left" class="docs-article-pagination-icon" />
+              Previous
+            </span>
+            <span class="docs-article-pagination-title">{previousDoc.data.title}</span>
+          </a>
+        ) : (
+          <div class="hidden sm:block" />
+        )}
+        {nextDoc && (
+          <a href={getDocHref(nextDoc)} class="docs-article-pagination-link docs-article-pagination-link-next">
+            <span class="docs-article-pagination-label">
+              Next
+              <Icon name="arrow-right" class="docs-article-pagination-icon" />
+            </span>
+            <span class="docs-article-pagination-title">{nextDoc.data.title}</span>
+          </a>
+        )}
+      </nav>
+    )}
+
+    <footer
+      class="mt-10 flex flex-col gap-3 border-t border-line pt-6 text-sm text-muted sm:flex-row sm:items-center sm:justify-between"
+      data-pagefind-ignore
+    >
+      {doc.data.updatedAt ? (
+        <p>
+          Last updated <time datetime={doc.data.updatedAt.toISOString()}>{formatDate(doc.data.updatedAt)}</time>
+        </p>
+      ) : (
+        <span />
+      )}
+      {editUrl && (
+        <a href={editUrl} class="docs-toc-footer-link" target="_blank" rel="noreferrer">
+          <Icon name="pencil-line" class="size-[0.9rem]" />
+          Edit this page
+        </a>
+      )}
+    </footer>
+  </article>
+
+  <script is:inline type="application/json" id="page-markdown" set:html={pageMarkdownJson} />
+</DocsLayout>
+
+<script>
+  import '../../../scripts/article-enhancements';
+</script>

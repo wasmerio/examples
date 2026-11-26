@@ -1,0 +1,87 @@
+---
+import Icon from '@/components/ui/Icon.astro';
+
+interface Item {
+  title: string;
+  href: string;
+  description?: string;
+}
+
+interface Props {
+  items: Item[];
+  pageSize?: number;
+}
+
+const { items, pageSize = 8 } = Astro.props;
+---
+
+<div class="paginated-article-list" data-pagination-root data-pagination-page-size={pageSize}>
+  <div class="panel overflow-hidden">
+    {items.map((item, index) => (
+      <a href={item.href} class="row-link group" data-page-item>
+        <span class="w-6 shrink-0 font-mono text-xs text-faint">{String(index + 1).padStart(2, '0')}</span>
+        <span class="min-w-0 flex-1">
+          <span class="block font-semibold text-ink transition-colors group-hover:text-accent-ink">{item.title}</span>
+          {item.description && (
+            <span class="mt-1 line-clamp-2 block text-sm leading-6 text-muted">{item.description}</span>
+          )}
+        </span>
+        <Icon name="arrow-right" class="row-link-arrow size-4" />
+      </a>
+    ))}
+  </div>
+
+  <div class="pagination-controls mt-6 hidden items-center gap-2" data-pagination-controls></div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-pagination-root]').forEach((root) => {
+    const pageSize = Number(root.dataset.paginationPageSize ?? '8');
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[data-page-item]'));
+    const controls = root.querySelector<HTMLElement>('[data-pagination-controls]');
+
+    if (!controls || items.length <= pageSize) return;
+
+    const pageCount = Math.ceil(items.length / pageSize);
+    let currentPage = 1;
+
+    const makeButton = (
+      label: string,
+      page: number,
+      options: { active?: boolean; disabled?: boolean; ariaLabel?: string } = {},
+    ) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = options.active ? 'pagination-button is-active' : 'pagination-button';
+      button.textContent = label;
+      button.disabled = Boolean(options.disabled);
+      if (options.ariaLabel) button.setAttribute('aria-label', options.ariaLabel);
+      if (options.active) button.setAttribute('aria-current', 'page');
+      button.addEventListener('click', () => {
+        currentPage = page;
+        renderPage();
+      });
+      return button;
+    };
+
+    const renderPage = () => {
+      items.forEach((item, index) => {
+        item.hidden = Math.floor(index / pageSize) + 1 !== currentPage;
+      });
+
+      controls.classList.remove('hidden');
+      controls.replaceChildren(
+        makeButton('Prev', currentPage - 1, { disabled: currentPage === 1 }),
+        ...Array.from({ length: pageCount }, (_, index) =>
+          makeButton(String(index + 1), index + 1, {
+            active: index + 1 === currentPage,
+            ariaLabel: `Go to page ${index + 1}`,
+          }),
+        ),
+        makeButton('Next', currentPage + 1, { disabled: currentPage === pageCount }),
+      );
+    };
+
+    renderPage();
+  });
+</script>

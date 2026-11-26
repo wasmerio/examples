@@ -1,0 +1,68 @@
+---
+import { getCollection } from 'astro:content';
+import { siteConfig } from '../config/site';
+import { getDocHref, getPublicDocs } from '../lib/docs';
+
+type RedirectEntry = {
+  redirect: string;
+  destination: string;
+};
+
+const normalizePath = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return withLeadingSlash === '/' ? withLeadingSlash : withLeadingSlash.replace(/\/+$/, '');
+};
+
+export async function getStaticPaths() {
+  const allDocs = await getCollection('docs');
+  const publicDocs = getPublicDocs(allDocs);
+  const redirects = new Map<string, RedirectEntry>();
+
+  publicDocs.forEach((doc) => {
+    const destination = getDocHref(doc);
+
+    doc.data.redirectFrom.forEach((rawRedirect) => {
+      const redirect = normalizePath(rawRedirect);
+      if (!redirect || redirect === destination) return;
+
+      redirects.set(redirect, {
+        redirect,
+        destination,
+      });
+    });
+  });
+
+  return Array.from(redirects.values()).map(({ redirect, destination }) => ({
+    params: {
+      redirect: redirect.replace(/^\//, ''),
+    },
+    props: {
+      destination,
+    },
+  }));
+}
+
+const { destination } = Astro.props;
+---
+
+<!doctype html>
+<html lang={siteConfig.language}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <meta http-equiv="refresh" content={`0;url=${destination}`} />
+    <link rel="canonical" href={destination} />
+    <title>Redirecting...</title>
+    <script is:inline define:vars={{ destination }}>
+      window.location.replace(destination);
+    </script>
+  </head>
+  <body>
+    <p>
+      Redirecting to <a href={destination}>{destination}</a>.
+    </p>
+  </body>
+</html>

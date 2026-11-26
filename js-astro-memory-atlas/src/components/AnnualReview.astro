@@ -1,0 +1,141 @@
+---
+import OptimizedImage from './OptimizedImage.astro';
+import LocalizedText from './LocalizedText.astro';
+import { memories } from '../data/memories.js';
+import { annualRecapByYear } from '../data/annual-recaps.js';
+import { getMemoryYears } from '../lib/memory-years.js';
+import { COPY } from '../i18n/copy.js';
+
+const siteBase = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/`;
+const yearsByMemory = new Map();
+const unassigned = [];
+for (const memory of memories) {
+  const years = getMemoryYears(memory.date);
+  if (!years.length) {
+    unassigned.push(memory);
+    continue;
+  }
+  for (const year of years) {
+    const items = yearsByMemory.get(year) ?? [];
+    items.push(memory);
+    yearsByMemory.set(year, items);
+  }
+}
+const years = [...yearsByMemory.keys()].sort((a, b) => b - a);
+const memoryById = new Map(memories.map((memory) => [memory.id, memory]));
+for (const recap of annualRecapByYear.values()) {
+  for (const highlight of recap.highlights) {
+    if (highlight.memoryId && !memoryById.has(highlight.memoryId)) {
+      throw new Error(`Annual highlight "${highlight.id}" references missing memory "${highlight.memoryId}".`);
+    }
+  }
+}
+const annualGroups = years.map((year) => {
+  const recap = annualRecapByYear.get(year);
+  const highlights = (recap?.highlights ?? []).map((highlight) => ({ ...highlight, memory: highlight.memoryId ? memoryById.get(highlight.memoryId) : null }));
+  const highlightedIds = new Set(highlights.flatMap(({ memory }) => memory ? [memory.id] : []));
+  return { year, recap, highlights, memories: yearsByMemory.get(year), additionalMemories: yearsByMemory.get(year).filter((memory) => !highlightedIds.has(memory.id)) };
+});
+---
+<main class="annual-page" id="main-content" tabindex="-1">
+  <header class="annual-intro">
+    <p class="annual-kicker"><LocalizedText value={COPY['annual.kicker']} /></p>
+    <h1><LocalizedText value={COPY['annual.title']} /></h1>
+    <p><LocalizedText value={COPY['annual.intro']} /></p>
+  </header>
+
+  <nav class="annual-year-nav" aria-label={COPY['annual.jump'].en} data-locale-aria-label-zh={COPY['annual.jump'].zh} data-locale-aria-label-en={COPY['annual.jump'].en}>
+    {years.map((year) => <a href={`#annual-${year}`} aria-current={year === years[0] ? 'location' : undefined}>{year}</a>)}
+  </nav>
+
+  <div class="annual-years">
+    {annualGroups.map(({ year, recap, highlights, additionalMemories }) => (
+      <section class="annual-year" id={`annual-${year}`} aria-labelledby={`annual-title-${year}`}>
+        <header class="annual-year-heading">
+          <p><LocalizedText value={COPY['annual.yearKicker']} values={{ year }} /></p>
+          <h2 id={`annual-title-${year}`}>{year}</h2>
+          {recap && <h3><LocalizedText value={recap.theme} /></h3>}
+          {!recap && <p class="annual-year-note"><LocalizedText value={COPY['annual.yearNote']} /></p>}
+        </header>
+
+        {highlights.length > 0 && (
+          <div class="annual-highlights" aria-label={`Highlights from ${year}`} data-locale-aria-label-zh={`${year} 年重点回忆`} data-locale-aria-label-en={`Highlights from ${year}`}>
+            {highlights.map(({ title, note, memory }) => (
+              memory ? (
+                <a class="annual-highlight annual-highlight--photo" href={`${siteBase}album/#memory-${memory.id}`}>
+                  <OptimizedImage variant="card" src={`./assets/images/${memory.image}`} alt={memory.alt} loading="lazy" decoding="async" />
+                  <span class="annual-highlight-copy"><time>{memory.date}</time><strong><LocalizedText value={title ?? memory.title} /></strong><span><LocalizedText value={note ?? memory.description} /></span></span>
+                </a>
+              ) : (
+                <article class="annual-highlight annual-highlight--note">
+                  <span class="annual-highlight-year">{year}</span>
+                  <strong><LocalizedText value={title} /></strong>
+                  {note && <span><LocalizedText value={note} /></span>}
+                </article>
+              )
+            ))}
+          </div>
+        )}
+
+        {additionalMemories.length > 0 && (
+          <div class="annual-gallery" aria-label={`More photos from ${year}`} data-locale-aria-label-zh={`${year} 年的其他相册照片`} data-locale-aria-label-en={`More photos from ${year}`}>
+            {additionalMemories.map((memory) => (
+              <a class="annual-photo" href={`${siteBase}album/#memory-${memory.id}`}>
+                <OptimizedImage variant="card" src={`./assets/images/${memory.image}`} alt={memory.alt} loading="lazy" decoding="async" />
+                <span class="annual-photo-caption"><time>{memory.date}</time><strong><LocalizedText value={memory.title} /></strong></span>
+              </a>
+            ))}
+          </div>
+        )}
+      </section>
+    ))}
+  </div>
+
+  {unassigned.length > 0 && (
+    <section class="annual-unassigned" aria-labelledby="annual-unassigned-title">
+      <h2 id="annual-unassigned-title"><LocalizedText value={COPY['annual.unassignedTitle']} /></h2>
+      <p><LocalizedText value={COPY['annual.unassignedIntro']} /></p>
+      <div class="annual-gallery">
+        {unassigned.map((memory) => (
+          <a class="annual-photo" href={`${siteBase}album/#memory-${memory.id}`}>
+            <OptimizedImage variant="card" src={`./assets/images/${memory.image}`} alt={memory.alt} loading="lazy" decoding="async" />
+            <span class="annual-photo-caption"><time>{memory.date}</time><strong><LocalizedText value={memory.title} /></strong></span>
+          </a>
+        ))}
+      </div>
+    </section>
+  )}
+</main>
+
+<script>
+  const yearNav = document.querySelector('.annual-year-nav');
+  const yearSections = [...document.querySelectorAll('.annual-year')];
+  const yearLinks = [...document.querySelectorAll('.annual-year-nav a')];
+
+  if (yearNav && yearSections.length && yearLinks.length) {
+    let frame = 0;
+    const updateCurrentYear = () => {
+      frame = 0;
+      const navTop = yearNav.getBoundingClientRect().top;
+      const activationLine = Math.max(navTop, 96) + yearNav.getBoundingClientRect().height + 18;
+      let activeSection = yearSections[0];
+
+      for (const section of yearSections) {
+        if (section.getBoundingClientRect().top <= activationLine) activeSection = section;
+      }
+
+      for (const link of yearLinks) {
+        if (link.hash === `#${activeSection.id}`) link.setAttribute('aria-current', 'location');
+        else link.removeAttribute('aria-current');
+      }
+    };
+    const scheduleUpdate = () => {
+      if (!frame) frame = requestAnimationFrame(updateCurrentYear);
+    };
+
+    window.addEventListener('scroll', scheduleUpdate, { passive: true });
+    window.addEventListener('resize', scheduleUpdate);
+    window.addEventListener('hashchange', scheduleUpdate);
+    updateCurrentYear();
+  }
+</script>

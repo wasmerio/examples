@@ -1,0 +1,299 @@
+---
+import { getCollection, render } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Container from '../../components/Container.astro';
+import Glow from '../../components/Glow.astro';
+import Avatar from '../../components/blog/Avatar.astro';
+import TagPill from '../../components/blog/TagPill.astro';
+
+export async function getStaticPaths() {
+  const posts = (await getCollection('blog', ({ data }) => !data.draft)).sort(
+    (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+  );
+
+  return posts.map((post, i) => ({
+    params: { slug: post.id },
+    props: {
+      post,
+      newer: posts[i - 1] ?? null,
+      older: posts[i + 1] ?? null,
+    },
+  }));
+}
+
+const { post, newer, older } = Astro.props;
+const { Content } = await render(post);
+const { title, description, pubDate, author, authorRole, tags } = post.data;
+
+const formattedDate = pubDate.toLocaleDateString('en-US', {
+  month: 'long',
+  day: 'numeric',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+const words = post.body?.split(/\s+/).filter(Boolean).length ?? 0;
+const readingTime = Math.max(1, Math.round(words / 220));
+---
+
+<BaseLayout title={`${title} — Vega blog`} description={description}>
+  <article class="relative overflow-hidden">
+    <Glow class="left-1/2 top-[-260px] h-[420px] w-[720px] -translate-x-1/2 opacity-70" />
+
+    <Container class="relative pb-20 pt-12 sm:pb-28 sm:pt-16">
+      <div class="mx-auto max-w-2xl">
+        <a
+          href="/blog/"
+          class="group inline-flex items-center gap-1.5 text-sm text-fg-2 transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brand"
+        >
+          <span aria-hidden="true" class="transition-transform duration-200 group-hover:-translate-x-0.5"
+            >←</span
+          >
+          Back to blog
+        </a>
+
+        <header class="mt-8">
+          {
+            tags.length > 0 && (
+              <div class="flex flex-wrap items-center gap-2">
+                {tags.map((tag) => (
+                  <TagPill>{tag}</TagPill>
+                ))}
+              </div>
+            )
+          }
+
+          <h1 class="mt-5 text-balance text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
+            {title}
+          </h1>
+
+          <p class="mt-4 text-pretty text-lg leading-relaxed text-fg-2">{description}</p>
+
+          <div
+            class="mt-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-4 border-y border-line py-4"
+          >
+            <div class="flex items-center gap-3">
+              <Avatar name={author} size="md" />
+              <div class="text-[13px] leading-tight">
+                <p class="font-medium text-fg">{author}</p>
+                {authorRole && <p class="mt-0.5 text-fg-3">{authorRole}</p>}
+              </div>
+            </div>
+            <p class="text-[13px] text-fg-3">
+              <time datetime={pubDate.toISOString()}>{formattedDate}</time>
+              <span aria-hidden="true"> · </span>{readingTime} min read
+            </p>
+          </div>
+        </header>
+
+        <div class="prose mt-10">
+          <Content />
+        </div>
+
+        {
+          (older || newer) && (
+            <nav aria-label="More posts" class="mt-16 grid gap-4 border-t border-line pt-10 sm:grid-cols-2">
+              {older ? (
+                <a
+                  href={`/blog/${older.id}/`}
+                  class="group rounded-xl border border-line bg-panel p-5 transition-colors duration-200 hover:border-line-2 hover:bg-panel-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                >
+                  <p class="font-mono text-[11px] uppercase tracking-widest text-fg-3">
+                    <span aria-hidden="true">←</span> Older
+                  </p>
+                  <p class="mt-2.5 text-balance text-sm font-medium leading-snug text-fg-2 transition-colors group-hover:text-fg">
+                    {older.data.title}
+                  </p>
+                </a>
+              ) : (
+                <span class="hidden sm:block" aria-hidden="true" />
+              )}
+              {newer && (
+                <a
+                  href={`/blog/${newer.id}/`}
+                  class="group rounded-xl border border-line bg-panel p-5 text-right transition-colors duration-200 hover:border-line-2 hover:bg-panel-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                >
+                  <p class="font-mono text-[11px] uppercase tracking-widest text-fg-3">
+                    Newer <span aria-hidden="true">→</span>
+                  </p>
+                  <p class="mt-2.5 text-balance text-sm font-medium leading-snug text-fg-2 transition-colors group-hover:text-fg">
+                    {newer.data.title}
+                  </p>
+                </a>
+              )}
+            </nav>
+          )
+        }
+      </div>
+    </Container>
+  </article>
+</BaseLayout>
+
+<style is:global>
+  /* ───────────────────────────────────────────────────────────
+     Hand-styled article typography (no Typography plugin).
+     Scoped under .prose; markdown output is unscoped HTML,
+     so these rules live in a global block.
+     ─────────────────────────────────────────────────────────── */
+
+  .prose {
+    color: var(--color-fg-2);
+    font-size: 1.0625rem;
+    line-height: 1.8;
+  }
+
+  .prose > * + * {
+    margin-top: 1.25em;
+  }
+
+  .prose h2,
+  .prose h3 {
+    color: var(--color-fg);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+    scroll-margin-top: 5rem;
+  }
+
+  .prose h2 {
+    font-size: 1.375rem;
+    line-height: 1.35;
+    margin-top: 2.25em;
+  }
+
+  .prose h3 {
+    font-size: 1.125rem;
+    line-height: 1.4;
+    margin-top: 1.75em;
+  }
+
+  .prose h2 + *,
+  .prose h3 + * {
+    margin-top: 0.875em;
+  }
+
+  .prose strong {
+    color: var(--color-fg);
+    font-weight: 600;
+  }
+
+  .prose a {
+    color: var(--color-fg);
+    text-decoration: underline;
+    text-decoration-color: rgb(255 255 255 / 0.25);
+    text-underline-offset: 3px;
+    transition: text-decoration-color 150ms ease;
+  }
+
+  .prose a:hover {
+    text-decoration-color: var(--color-accent);
+  }
+
+  /* Inline code */
+  .prose :not(pre) > code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    color: var(--color-fg);
+    background: rgb(255 255 255 / 0.06);
+    border: 1px solid var(--color-line);
+    border-radius: 0.375rem;
+    padding: 0.125rem 0.375rem;
+    /* Keep the pill closed (border + padding on every fragment)
+       when the code wraps across lines. */
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+
+  /* Fenced code blocks — glass panel treatment, matching the hero
+     code panel (src/components/home/Hero.astro). Markdown fences
+     render through Astro's built-in Shiki (theme set in
+     astro.config.mjs); `background` is !important to win over the
+     global `.astro-code { background-color: transparent !important }`. */
+  .prose pre {
+    background: rgb(255 255 255 / 0.03) !important;
+    border: 1px solid var(--color-line);
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
+    overflow-x: auto;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .prose pre code {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    padding: 0;
+    font-size: 0.8125rem;
+    line-height: 1.7;
+    color: inherit;
+  }
+
+  /* Lists (preflight strips list styles; restore them) */
+  .prose ul,
+  .prose ol {
+    padding-left: 1.5rem;
+  }
+
+  .prose ul {
+    list-style-type: disc;
+  }
+
+  .prose ol {
+    list-style-type: decimal;
+  }
+
+  .prose li {
+    margin-top: 0.5em;
+    padding-left: 0.25rem;
+  }
+
+  .prose li::marker {
+    color: var(--color-fg-3);
+  }
+
+  .prose blockquote {
+    border-left: 2px solid var(--color-brand);
+    padding-left: 1.25rem;
+    color: var(--color-fg-2);
+    font-style: italic;
+  }
+
+  .prose blockquote strong {
+    font-style: normal;
+  }
+
+  .prose hr {
+    border: 0;
+    border-top: 1px solid var(--color-line);
+    margin-top: 2.5em;
+    margin-bottom: 2.5em;
+  }
+
+  /* Tables */
+  .prose table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9375rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .prose th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--color-fg);
+    border-bottom: 1px solid var(--color-line-2);
+    padding: 0.5rem 1.25rem 0.5rem 0;
+  }
+
+  .prose td {
+    border-bottom: 1px solid var(--color-line);
+    padding: 0.5rem 1.25rem 0.5rem 0;
+    color: var(--color-fg-2);
+  }
+
+  .prose th:last-child,
+  .prose td:last-child {
+    padding-right: 0;
+  }
+</style>

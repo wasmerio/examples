@@ -1,0 +1,190 @@
+---
+/**
+ * Cart drawer, rendered once per page from SiteHeader.
+ *
+ * The cart itself only stores `{ slug, quantity }` in localStorage, so this
+ * component ships a small catalogue snapshot — name, price, meta, thumbnail —
+ * that the panel reads when it repaints. Thumbnails are generated through the
+ * Astro image pipeline at build time, so the drawer stays on optimized WebP
+ * without needing an <Image> per line.
+ *
+ * Opening and closing is delegated from BaseLayout, which owns focus, the
+ * scroll lock and the Escape handler. This file owns the markup and repaint.
+ */
+import { getImage } from "astro:assets";
+import { siteConfig } from "@/config/site";
+import { getProducts } from "@/data/products";
+
+const products = await getProducts();
+
+const lines = await Promise.all(
+  products.map(async (product) => {
+    const thumb = await getImage({
+      src: product.images[0],
+      width: 176,
+      height: 176,
+      format: "webp",
+    });
+
+    return {
+      slug: product.slug,
+      name: product.name,
+      price: product.price,
+      meta: `${product.material} · ${product.finish}`,
+      href: `/products/${product.slug}`,
+      image: thumb.src,
+    };
+  }),
+);
+
+const drawerData = { ...siteConfig.commerce, products: lines };
+---
+
+<div class="cart-drawer" data-cart-drawer hidden>
+  <div class="cart-backdrop" data-cart-backdrop></div>
+
+  <!-- A plain div, not <aside>: role="dialog" is not permitted on an element
+       whose implicit role is already complementary. -->
+  <div
+    id="cart-drawer-panel"
+    class="cart-panel"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="cart-drawer-heading"
+    data-cart-panel
+  >
+    <div class="cart-panel-head">
+      <h2 id="cart-drawer-heading" class="text-[0.9375rem] font-semibold uppercase tracking-[-0.01em]">
+        Cart <span class="mono text-[0.6875rem] font-normal text-muted" data-cart-count>00</span>
+      </h2>
+      <button
+        type="button"
+        class="-mr-2 inline-flex size-10 items-center justify-center transition-colors hover:text-accent"
+        data-cart-close
+      >
+        <span class="sr-only">Close cart</span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true">
+          <path d="M5 5l14 14"></path>
+          <path d="M19 5L5 19"></path>
+        </svg>
+      </button>
+    </div>
+
+    <div class="cart-panel-body">
+      <ul data-cart-lines></ul>
+
+      <div class="py-14 text-center" data-cart-drawer-empty>
+        <p class="type-body text-[0.9375rem]">Nothing selected yet.</p>
+        <a href="/catalog" class="btn btn-outline mt-6 w-full" data-cart-close>Browse the catalogue</a>
+      </div>
+    </div>
+
+    <div class="cart-panel-foot" data-cart-drawer-foot hidden>
+      <div class="flex items-baseline justify-between gap-4">
+        <span class="label">Subtotal</span>
+        <span class="mono text-lg" data-cart-drawer-subtotal>$0</span>
+      </div>
+      <p class="mono mt-2 text-[0.625rem] uppercase tracking-[0.05em] text-muted">
+        Delivery calculated at checkout
+      </p>
+      <a href="/cart" class="btn btn-primary mt-5 w-full">Checkout</a>
+      <button type="button" class="link link-mono mx-auto mt-4 block text-muted" data-cart-close>
+        Continue browsing
+      </button>
+    </div>
+  </div>
+</div>
+
+<script is:inline type="application/json" id="cart-drawer-data" set:html={JSON.stringify(drawerData)}></script>
+
+<script is:inline>
+  (() => {
+    const drawer = document.querySelector("[data-cart-drawer]");
+    if (!drawer) return;
+
+    const data = JSON.parse(document.getElementById("cart-drawer-data").textContent);
+    const bySlug = new Map(data.products.map((product) => [product.slug, product]));
+    const money = (value) =>
+      new Intl.NumberFormat(data.locale, {
+        style: "currency",
+        currency: data.currency,
+        maximumFractionDigits: 0,
+      }).format(value);
+
+    const list = drawer.querySelector("[data-cart-lines]");
+    const empty = drawer.querySelector("[data-cart-drawer-empty]");
+    const foot = drawer.querySelector("[data-cart-drawer-foot]");
+    const subtotal = drawer.querySelector("[data-cart-drawer-subtotal]");
+
+    function render() {
+      const rows = window.AtelierCart.read()
+        .map((item) => ({ item, product: bySlug.get(item.slug) }))
+        .filter((row) => row.product);
+
+      empty.hidden = rows.length > 0;
+      foot.hidden = rows.length === 0;
+      subtotal.textContent = money(
+        rows.reduce((total, row) => total + row.product.price * row.item.quantity, 0),
+      );
+
+      list.replaceChildren();
+
+      for (const { item, product } of rows) {
+        const line = document.createElement("li");
+        line.className = "cart-line";
+        line.innerHTML = `
+          <a class="block" tabindex="-1" aria-hidden="true"><img alt="" width="72" height="72" loading="lazy" /></a>
+          <div class="flex min-w-0 flex-col gap-3">
+            <div class="flex justify-between gap-3">
+              <div class="min-w-0">
+                <a class="link block truncate text-[0.9375rem] font-medium" data-line-name></a>
+                <p class="mono mt-1 truncate text-[0.625rem] uppercase tracking-[0.05em] text-muted" data-line-meta></p>
+              </div>
+              <span class="mono shrink-0 text-[0.8125rem]" data-line-price></span>
+            </div>
+            <div class="flex items-center justify-between gap-3">
+              <div class="qty qty-sm">
+                <button type="button" data-line-decrease>&minus;</button>
+                <output data-line-quantity></output>
+                <button type="button" data-line-increase>+</button>
+              </div>
+              <button type="button" class="link link-mono text-muted" data-line-remove>Remove</button>
+            </div>
+          </div>`;
+
+        const image = line.querySelector("img");
+        image.src = product.image;
+        line.querySelector("a").href = product.href;
+
+        const name = line.querySelector("[data-line-name]");
+        name.textContent = product.name;
+        name.href = product.href;
+
+        line.querySelector("[data-line-meta]").textContent = product.meta;
+        line.querySelector("[data-line-price]").textContent = money(product.price * item.quantity);
+        line.querySelector("[data-line-quantity]").textContent = String(item.quantity);
+
+        const decrease = line.querySelector("[data-line-decrease]");
+        decrease.setAttribute("aria-label", `Decrease ${product.name} quantity`);
+        decrease.addEventListener("click", () =>
+          window.AtelierCart.setQuantity(item.slug, item.quantity - 1),
+        );
+
+        const increase = line.querySelector("[data-line-increase]");
+        increase.setAttribute("aria-label", `Increase ${product.name} quantity`);
+        increase.addEventListener("click", () =>
+          window.AtelierCart.setQuantity(item.slug, item.quantity + 1),
+        );
+
+        const remove = line.querySelector("[data-line-remove]");
+        remove.setAttribute("aria-label", `Remove ${product.name} from cart`);
+        remove.addEventListener("click", () => window.AtelierCart.remove(item.slug));
+
+        list.appendChild(line);
+      }
+    }
+
+    document.addEventListener("atelier-cart-change", render);
+    render();
+  })();
+</script>

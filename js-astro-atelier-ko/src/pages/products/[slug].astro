@@ -1,0 +1,257 @@
+---
+import { Image } from "astro:assets";
+import ProductCard from "@/components/ProductCard.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { siteConfig, pageTitle } from "@/config/site";
+import { formatPrice, getProducts, getRelated, type Product } from "@/data/products";
+
+export async function getStaticPaths() {
+  const products = await getProducts();
+  return products.map((product) => ({
+    params: { slug: product.slug },
+    props: { product, related: getRelated(products, product.slug) },
+  }));
+}
+
+interface Props {
+  product: Product;
+  related: Product[];
+}
+
+const { product, related } = Astro.props;
+
+const origin = Astro.site ?? new URL(Astro.url.origin);
+const productUrl = new URL(`/products/${product.slug}`, origin).href;
+
+const specs = [
+  ["Material", product.material],
+  ["Dimensions", product.dimensions],
+  ["Finish", product.finish],
+  ["Lead time", product.leadTime],
+];
+
+const productSchema = {
+  "@context": "https://schema.org",
+  "@type": "Product",
+  name: product.name,
+  description: product.description,
+  image: product.images.map((image) => new URL(image.src, origin).href),
+  brand: { "@type": "Brand", name: siteConfig.name },
+  material: product.material,
+  url: productUrl,
+  offers: {
+    "@type": "Offer",
+    priceCurrency: siteConfig.commerce.currency,
+    price: product.price,
+    availability: "https://schema.org/PreOrder",
+    url: productUrl,
+  },
+};
+
+const breadcrumbSchema = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "Catalogue", item: new URL("/catalog", origin).href },
+    { "@type": "ListItem", position: 2, name: product.name, item: productUrl },
+  ],
+};
+---
+
+<BaseLayout
+  title={pageTitle(product.name)}
+  description={product.description.slice(0, 155)}
+  image={product.images[0]}
+>
+  <main id="main-content" class="shell">
+    <nav class="mono flex gap-2 py-6 text-[0.6875rem] uppercase tracking-[0.05em] text-muted" aria-label="Breadcrumb">
+      <a href="/catalog" class="link">Catalogue</a>
+      <span aria-hidden="true">/</span>
+      <span class="text-ink" aria-current="page">{product.name}</span>
+    </nav>
+
+    <div class="grid items-start gap-x-12 gap-y-10 border-t border-line pt-8 lg:grid-cols-12">
+      {/* ------------------------------------------------------------ Gallery */}
+      <section class="lg:col-span-7" aria-label={`${product.name} images`} data-product-gallery>
+        <div class="relative overflow-hidden bg-surface">
+          {
+            product.images.map((image, index) => (
+              <div class:list={["gallery-panel", index !== 0 && "is-hidden"]} data-gallery-panel={index}>
+                <Image
+                  src={image}
+                  alt={`${product.name} — view ${index + 1} of ${product.images.length}`}
+                  width={1440}
+                  height={1800}
+                  format="webp"
+                  loading={index === 0 ? "eager" : "lazy"}
+                  decoding={index === 0 ? "sync" : "async"}
+                  class="aspect-[4/5] w-full object-cover"
+                />
+              </div>
+            ))
+          }
+        </div>
+
+        <div class="mt-3 grid grid-cols-3 gap-3" role="group" aria-label="Choose an image">
+          {
+            product.images.map((image, index) => (
+              <button
+                type="button"
+                class="gallery-thumb overflow-hidden bg-surface"
+                data-gallery-thumb={index}
+                aria-label={`Show view ${index + 1}`}
+                aria-pressed={index === 0 ? "true" : "false"}
+              >
+                <Image
+                  src={image}
+                  alt=""
+                  width={360}
+                  height={360}
+                  format="webp"
+                  loading="lazy"
+                  class="aspect-square w-full object-cover"
+                />
+              </button>
+            ))
+          }
+        </div>
+      </section>
+
+      {/* --------------------------------------------------------- Buy column */}
+      <div class="lg:sticky lg:top-28 lg:col-span-5">
+        <p class="label">{product.collection}</p>
+        <h1 class="type-h2 mt-5">{product.name}</h1>
+        <p class="mono mt-5 text-xl">{formatPrice(product.price)}</p>
+
+        <p class="type-body mt-8 max-w-[46ch]">{product.description}</p>
+
+        <dl class="mono mt-10 border-t border-line text-[0.8125rem]">
+          {
+            specs.map(([term, value]) => (
+              <div class="flex justify-between gap-6 border-b border-line py-3">
+                <dt class="text-muted">{term}</dt>
+                <dd class="text-right">{value}</dd>
+              </div>
+            ))
+          }
+        </dl>
+
+        <div class="mt-10 flex flex-wrap items-stretch gap-3">
+          <div class="qty" data-quantity>
+            <button type="button" data-quantity-decrease aria-label="Decrease quantity" disabled>−</button>
+            <output data-quantity-value aria-live="polite" aria-label="Quantity">1</output>
+            <button type="button" data-quantity-increase aria-label="Increase quantity">+</button>
+          </div>
+          <button
+            type="button"
+            class="btn btn-primary flex-1"
+            data-add-to-cart={product.slug}
+            data-add-quantity="1"
+          >
+            Add to cart
+          </button>
+        </div>
+
+        <p class="mono mt-5 text-[0.6875rem] uppercase leading-relaxed tracking-[0.05em] text-muted">
+          Free white-glove delivery in the EU · worldwide on request
+        </p>
+      </div>
+    </div>
+
+    {/* ------------------------------------------------------------- Related */}
+    <section class="mt-32 md:mt-44">
+      <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-t border-line pt-8" data-reveal>
+        <h2 class="type-h2 max-w-[16ch]">Pieces that sit well together</h2>
+        <a href="/catalog" class="link link-mono pb-1.5 text-muted">All six pieces</a>
+      </div>
+
+      <div class="mt-12 grid gap-x-8 gap-y-14 md:mt-14 md:grid-cols-3">
+        {
+          related.map((item, index) => (
+            <ProductCard product={item} headingLevel="h3" revealDelay={index * 110} />
+          ))
+        }
+      </div>
+    </section>
+  </main>
+
+  <style>
+    .gallery-panel.is-hidden {
+      display: none;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .gallery-panel:not(.is-hidden) {
+        animation: panel-in 600ms var(--ease-out-expo) both;
+      }
+
+      @keyframes panel-in {
+        from {
+          opacity: 0;
+          transform: scale(1.015);
+        }
+      }
+    }
+
+    .gallery-thumb {
+      box-shadow: inset 0 0 0 1px var(--line);
+      transition: box-shadow 260ms ease;
+    }
+
+    .gallery-thumb:hover {
+      box-shadow: inset 0 0 0 1px var(--line-strong);
+    }
+
+    .gallery-thumb[aria-pressed="true"] {
+      box-shadow: inset 0 0 0 2px var(--accent);
+    }
+  </style>
+
+  <script is:inline type="application/ld+json" set:html={JSON.stringify(productSchema)}></script>
+  <script is:inline type="application/ld+json" set:html={JSON.stringify(breadcrumbSchema)}></script>
+
+  <script is:inline>
+    (() => {
+      const gallery = document.querySelector("[data-product-gallery]");
+      if (gallery) {
+        const panels = Array.from(gallery.querySelectorAll("[data-gallery-panel]"));
+        const thumbs = Array.from(gallery.querySelectorAll("[data-gallery-thumb]"));
+
+        thumbs.forEach((thumb) => {
+          thumb.addEventListener("click", () => {
+            const active = thumb.dataset.galleryThumb;
+            panels.forEach((panel) => panel.classList.toggle("is-hidden", panel.dataset.galleryPanel !== active));
+            thumbs.forEach((button) => {
+              button.setAttribute("aria-pressed", String(button === thumb));
+            });
+          });
+        });
+      }
+
+      // Quantity stepper. The chosen value rides on the add-to-cart button as
+      // `data-add-quantity`; the delegated handler in BaseLayout reads it, adds
+      // the line and opens the drawer, so there is no add logic on this page.
+      const stepper = document.querySelector("[data-quantity]");
+      const addButton = document.querySelector("[data-add-to-cart]");
+      if (!stepper || !addButton) return;
+
+      const output = stepper.querySelector("[data-quantity-value]");
+      const decrease = stepper.querySelector("[data-quantity-decrease]");
+      const increase = stepper.querySelector("[data-quantity-increase]");
+      const MAX = 99;
+      let quantity = 1;
+
+      function setQuantity(next) {
+        quantity = Math.min(MAX, Math.max(1, next));
+        output.textContent = String(quantity);
+        addButton.dataset.addQuantity = String(quantity);
+        decrease.disabled = quantity === 1;
+        increase.disabled = quantity === MAX;
+      }
+
+      decrease.addEventListener("click", () => setQuantity(quantity - 1));
+      increase.addEventListener("click", () => setQuantity(quantity + 1));
+      document.addEventListener("atelier-cart-change", () => setQuantity(1));
+    })();
+  </script>
+</BaseLayout>

@@ -1,0 +1,280 @@
+---
+import "../styles.css";
+import archivoLatin from "@/assets/fonts/archivo-latin-wght-normal.woff2?url";
+import SiteFooter from "@/components/SiteFooter.astro";
+import SiteHeader from "@/components/SiteHeader.astro";
+import { siteConfig } from "@/config/site";
+
+interface Props {
+  /** Full <title> for the page. Should be unique per route. */
+  title?: string;
+  /** Meta description and social description. Keep under ~160 characters. */
+  description?: string;
+  /** Social share image. Accepts an imported asset or an absolute-from-root path. */
+  image?: ImageMetadata | string;
+  /** Excludes the page from search indexes (cart, 404, previews). */
+  noindex?: boolean;
+  includeHeader?: boolean;
+  includeFooter?: boolean;
+}
+
+const {
+  title = siteConfig.defaultTitle,
+  description = siteConfig.description,
+  image,
+  noindex = false,
+  includeHeader = true,
+  includeFooter = true,
+} = Astro.props;
+
+const origin = Astro.site ?? Astro.url.origin;
+const canonicalUrl = new URL(Astro.url.pathname, origin);
+
+// Pages that supply their own artwork win; everything else falls back to the
+// designed share card in public/. Dimensions are emitted either way so social
+// previews reserve the right space instead of reflowing.
+const social =
+  image === undefined
+    ? siteConfig.socialImage
+    : typeof image === "string"
+      ? { src: image, width: undefined, height: undefined, alt: undefined }
+      : { src: image.src, width: image.width, height: image.height, alt: undefined };
+
+const ogImage = new URL(social.src, origin).href;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={siteConfig.name} />
+    <meta name="theme-color" content={siteConfig.themeColor} />
+    <link rel="canonical" href={canonicalUrl.href} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    {noindex && <meta name="robots" content="noindex,nofollow" />}
+
+    <link rel="preload" href={archivoLatin} as="font" type="font/woff2" crossorigin />
+
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:site_name" content={siteConfig.name} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalUrl.href} />
+    <meta property="og:image" content={ogImage} />
+    {social.width && <meta property="og:image:width" content={String(social.width)} />}
+    {social.height && <meta property="og:image:height" content={String(social.height)} />}
+    {social.alt && <meta property="og:image:alt" content={social.alt} />}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    {social.alt && <meta name="twitter:image:alt" content={social.alt} />}
+
+    <script is:inline>
+      // Opt in to scroll motion before first paint, so revealed elements are
+      // never briefly visible. Without this flag every [data-reveal] target
+      // renders in its final state.
+      if (
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches === false &&
+        "IntersectionObserver" in window
+      ) {
+        document.documentElement.dataset.motion = "on";
+      }
+    </script>
+
+    <script is:inline>
+      (() => {
+        const storageKey = "atelier-ko-cart";
+
+        function readCart() {
+          try {
+            return JSON.parse(window.localStorage.getItem(storageKey) || "[]");
+          } catch {
+            return [];
+          }
+        }
+
+        function writeCart(items) {
+          window.localStorage.setItem(storageKey, JSON.stringify(items));
+          document.dispatchEvent(new CustomEvent("atelier-cart-change", { detail: items }));
+        }
+
+        function count(items = readCart()) {
+          return items.reduce((total, item) => total + Number(item.quantity || 0), 0);
+        }
+
+        function updateBadges() {
+          const total = count();
+          document.querySelectorAll("[data-cart-count]").forEach((node) => {
+            node.textContent = String(total).padStart(2, "0");
+          });
+          document.querySelectorAll("[data-cart-label]").forEach((node) => {
+            node.setAttribute("aria-label", `Cart, ${total} ${total === 1 ? "item" : "items"}`);
+          });
+        }
+
+        window.AtelierCart = {
+          read: readCart,
+          write: writeCart,
+          count,
+          add(slug, quantity = 1) {
+            const items = readCart();
+            const existing = items.find((item) => item.slug === slug);
+            if (existing) {
+              existing.quantity += quantity;
+              writeCart(items);
+              return;
+            }
+            writeCart([...items, { slug, quantity }]);
+          },
+          remove(slug) {
+            writeCart(readCart().filter((item) => item.slug !== slug));
+          },
+          setQuantity(slug, quantity) {
+            if (quantity <= 0) {
+              this.remove(slug);
+              return;
+            }
+            writeCart(readCart().map((item) => (item.slug === slug ? { ...item, quantity } : item)));
+          },
+          updateBadges,
+        };
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", updateBadges);
+        } else {
+          updateBadges();
+        }
+        window.addEventListener("storage", updateBadges);
+        document.addEventListener("atelier-cart-change", updateBadges);
+      })();
+    </script>
+  </head>
+  <body>
+    <a
+      href="#main-content"
+      class="btn btn-primary sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100]"
+    >
+      Skip to content
+    </a>
+    {includeHeader && <SiteHeader currentPath={Astro.url.pathname} />}
+    <slot />
+    {includeFooter && <SiteFooter />}
+
+    <script is:inline>
+      // Cart drawer. The panel lives once in the header, so open/close is
+      // delegated from the document. Any element with `data-cart-toggle` opens
+      // it and any `data-cart-close` closes it, which means pages never wire up
+      // their own handlers. Without JavaScript the header cart stays an
+      // ordinary link to /cart and this never runs.
+      (() => {
+        const drawer = document.querySelector("[data-cart-drawer]");
+        if (!drawer) return;
+
+        const panel = drawer.querySelector("[data-cart-panel]");
+        const focusableSelector =
+          "a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex='-1'])";
+        let lastFocused = null;
+
+        function setOpen(open) {
+          drawer.hidden = !open;
+          document.documentElement.style.overflow = open ? "hidden" : "";
+          document.querySelectorAll("[data-cart-toggle]").forEach((toggle) => {
+            toggle.setAttribute("aria-expanded", String(open));
+          });
+
+          if (open) {
+            lastFocused = document.activeElement;
+            panel.querySelector("[data-cart-close]")?.focus({ preventScroll: true });
+          } else if (lastFocused) {
+            lastFocused.focus({ preventScroll: true });
+          }
+        }
+
+        window.AtelierCart.openDrawer = () => setOpen(true);
+
+        document.addEventListener("click", (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          if (!target) return;
+
+          if (target.closest("[data-cart-toggle]")) {
+            event.preventDefault();
+            setOpen(drawer.hidden);
+          } else if (target.closest("[data-cart-close]") || target.matches("[data-cart-backdrop]")) {
+            setOpen(false);
+          }
+        });
+
+        // Any control with `data-add-to-cart` adds its product and opens the
+        // panel, so the drawer is the confirmation rather than a label swap.
+        document.addEventListener("click", (event) => {
+          const button = event.target instanceof Element && event.target.closest("[data-add-to-cart]");
+          if (!button) return;
+
+          const quantity = Number(button.dataset.addQuantity || 1);
+          window.AtelierCart.add(button.dataset.addToCart, Math.max(1, quantity));
+          setOpen(true);
+        });
+
+        document.addEventListener("keydown", (event) => {
+          if (drawer.hidden) return;
+
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setOpen(false);
+            return;
+          }
+
+          if (event.key !== "Tab") return;
+
+          const focusable = Array.from(panel.querySelectorAll(focusableSelector)).filter(
+            (node) => node.offsetParent !== null,
+          );
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (!first || !last) return;
+
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        });
+      })();
+    </script>
+
+    <script is:inline>
+      // Scroll reveals. Each target unobserves itself after firing once, so the
+      // observer costs nothing after the first pass down the page.
+      (() => {
+        if (document.documentElement.dataset.motion !== "on") return;
+
+        const observer = new IntersectionObserver(
+          (entries) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              entry.target.classList.add("is-in");
+              observer.unobserve(entry.target);
+            }
+          },
+          { rootMargin: "0px 0px -8% 0px", threshold: 0 },
+        );
+
+        const observeAll = () => {
+          document.querySelectorAll("[data-reveal]:not(.is-in)").forEach((node) => observer.observe(node));
+        };
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", observeAll);
+        } else {
+          observeAll();
+        }
+      })();
+    </script>
+  </body>
+</html>

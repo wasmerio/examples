@@ -1,0 +1,153 @@
+---
+import ProductCard from "@/components/ProductCard.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { siteConfig, pageTitle } from "@/config/site";
+import { getProductFilters, getProducts } from "@/data/products";
+
+const products = await getProducts();
+const { categories, materials } = getProductFilters(products);
+---
+
+<BaseLayout
+  title={pageTitle("The Catalogue")}
+  description={`Browse every piece in the ${siteConfig.name} catalogue. Filter by category and material — solid oak, ash, walnut. Hand-built to order.`}
+>
+  <main id="main-content">
+    <section class="shell pb-12 pt-12 md:pb-16 md:pt-20">
+      <h1 class="type-h1 hero-in max-w-[12ch]">Every piece, made to order</h1>
+      <p class="type-lead hero-in mt-8 max-w-[52ch]" style="--reveal-delay:120ms">
+        Six pieces, three materials. Filter to find what fits your room — then we begin by selecting the board.
+      </p>
+    </section>
+
+    <div class="shell pb-32">
+      <section class="border-t border-line pb-10 pt-7" aria-label="Filter and sort the catalogue">
+        <div class="flex flex-col gap-7 lg:flex-row lg:items-start lg:justify-between">
+          <div class="space-y-5">
+            <div data-filter-group="category">
+              <p class="label mb-2.5" id="filter-category">Category</p>
+              <div class="flex flex-wrap items-center gap-2" role="group" aria-labelledby="filter-category">
+                <button class="chip" type="button" data-filter-value="all" aria-pressed="true">All pieces</button>
+                {
+                  categories.map((category) => (
+                    <button class="chip" type="button" data-filter-value={category} aria-pressed="false">
+                      {category}
+                    </button>
+                  ))
+                }
+              </div>
+            </div>
+
+            <div data-filter-group="material">
+              <p class="label mb-2.5" id="filter-material">Material</p>
+              <div class="flex flex-wrap items-center gap-2" role="group" aria-labelledby="filter-material">
+                <button class="chip" type="button" data-filter-value="all" aria-pressed="true">All materials</button>
+                {
+                  materials.map((material) => (
+                    <button class="chip" type="button" data-filter-value={material} aria-pressed="false">
+                      {material}
+                    </button>
+                  ))
+                }
+              </div>
+            </div>
+          </div>
+
+          <div class="shrink-0">
+            <label class="label mb-2.5 block" for="catalog-sort">Sort by</label>
+            <select id="catalog-sort" class="field mono w-full text-[0.8125rem] lg:w-52" data-catalog-sort>
+              <option value="featured">Featured</option>
+              <option value="price-asc">Price — low to high</option>
+              <option value="price-desc">Price — high to low</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <p class="mono border-t border-line py-4 text-[0.6875rem] uppercase tracking-[0.05em] text-muted" aria-live="polite">
+        <span data-catalog-count>{String(products.length).padStart(2, "0")}</span>&#32;<span
+          data-catalog-count-label>pieces</span
+        >&#32;shown
+      </p>
+
+      <p class="type-h3 hidden py-32 text-center text-muted" data-catalog-empty>
+        No pieces match that combination.
+      </p>
+
+      <ul class="grid grid-cols-1 gap-x-8 gap-y-16 md:grid-cols-2 lg:grid-cols-3" data-catalog-grid>
+        {
+          products.map((product, index) => (
+            <li
+              data-catalog-item
+              data-category={product.category}
+              data-material={product.material}
+              data-price={product.price}
+              data-index={index}
+            >
+              <ProductCard
+                product={product}
+                eager={index < 3}
+                index={index}
+                revealDelay={(index % 3) * 110}
+              />
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </main>
+
+  <script is:inline>
+    (() => {
+      const grid = document.querySelector("[data-catalog-grid]");
+      const items = Array.from(document.querySelectorAll("[data-catalog-item]"));
+      const countNode = document.querySelector("[data-catalog-count]");
+      const countLabel = document.querySelector("[data-catalog-count-label]");
+      const empty = document.querySelector("[data-catalog-empty]");
+      const sort = document.querySelector("[data-catalog-sort]");
+      const filters = { category: "all", material: "all" };
+
+      if (!grid || !sort) return;
+
+      function applyFilters() {
+        const visible = items.filter(
+          (item) =>
+            (filters.category === "all" || item.dataset.category === filters.category) &&
+            (filters.material === "all" || item.dataset.material === filters.material),
+        );
+
+        visible.sort((a, b) => {
+          if (sort.value === "price-asc") return Number(a.dataset.price) - Number(b.dataset.price);
+          if (sort.value === "price-desc") return Number(b.dataset.price) - Number(a.dataset.price);
+          return Number(a.dataset.index) - Number(b.dataset.index);
+        });
+
+        items.forEach((item) => (item.hidden = true));
+        visible.forEach((item) => {
+          item.hidden = false;
+          grid.appendChild(item);
+        });
+
+        countNode.textContent = String(visible.length).padStart(2, "0");
+        countLabel.textContent = visible.length === 1 ? "piece" : "pieces";
+        empty.classList.toggle("hidden", visible.length > 0);
+        grid.classList.toggle("hidden", visible.length === 0);
+      }
+
+      document.querySelectorAll("[data-filter-group]").forEach((group) => {
+        group.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-filter-value]");
+          if (!button) return;
+
+          filters[group.dataset.filterGroup] = button.dataset.filterValue;
+          group.querySelectorAll("button").forEach((chip) => {
+            chip.setAttribute("aria-pressed", String(chip === button));
+          });
+          applyFilters();
+        });
+      });
+
+      sort.addEventListener("change", applyFilters);
+    })();
+  </script>
+</BaseLayout>

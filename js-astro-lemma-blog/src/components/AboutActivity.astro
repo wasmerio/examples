@@ -1,0 +1,152 @@
+---
+// A year of GitHub contributions as a heatmap, as on github.com: a column per
+// week (Sunday first), shaded by GitHub's own level of each day. A day's count
+// shows in a floating card on hover, on touch (sliding a finger moves it from
+// day to day), or with the arrow keys once the grid has focus. Narrow pages
+// show the last 26 or 17 weeks (global.css).
+import type { Calendar } from '../../plugins/github.mjs';
+import { formatDate, formatMonth, numberLocale } from '../scripts/dates';
+import { ui, type Lang } from '../i18n';
+
+interface Props {
+  lang: Lang;
+  calendar: Calendar;
+}
+const { lang, calendar } = Astro.props;
+const t = ui[lang];
+
+// Blank days before the first one, back to its Sunday; the last week ends at its last day.
+const blanks = new Date(`${calendar.days[0].date}T00:00:00Z`).getUTCDay();
+const days = [...Array(blanks).fill(undefined), ...calendar.days];
+const weeks = Array.from({ length: Math.ceil(days.length / 7) }, (_, w) => {
+  const week = days.slice(w * 7, w * 7 + 7);
+  // A month's name over the week that holds its 1st, except the first column.
+  const first = week.find((d) => d?.date.endsWith('-01'));
+  return { month: w > 0 && first ? formatMonth(first.date, lang) : undefined, week };
+});
+const total = calendar.days.reduce((n, d) => n + d.count, 0);
+const summary = t.activityTotal[total === 1 ? 0 : 1].replace('{n}', total.toLocaleString(numberLocale(lang)));
+// A calendar more than two days old says how old it is: a copy cached days
+// ago (GitHub unreachable at build), or a page built days ago. The build
+// checks the first, the browser the second (the script below).
+const last = calendar.days.at(-1)!.date;
+const asOf = ` · ${t.activityAsOf.replace('{date}', formatDate(last, lang))}`;
+const old = Date.now() - Date.parse(`${last}T00:00:00Z`) > 2 * 864e5;
+const label = (old: boolean) => `${summary}${old ? asOf : ''}. ${t.activityKeys}.`;
+---
+
+<figure class="about-activity" data-lang={lang} data-day={JSON.stringify(t.activityDay)} data-last={last}>
+  <div class="activity-grid" style={`--all-weeks: ${weeks.length}`} tabindex="0" role="group" aria-label={label(old)} data-old-label={label(true)}>
+    {
+      weeks.map(({ month, week }) => (
+        <div class="activity-week">
+          <span class="activity-month" aria-hidden="true">
+            {month}
+          </span>
+          {week.map((d) => (d ? <i class={`level-${d.level}`} data-date={d.date} data-count={d.count} /> : <i class="activity-blank" />))}
+        </div>
+      ))
+    }
+  </div>
+  <div class="activity-tip" role="status"></div>
+  <figcaption>
+    <a href={`https://github.com/${calendar.user}`}>{summary}<span class="activity-as-of" hidden={!old}>{asOf}</span></a>
+    <span class="activity-legend" aria-hidden="true">
+      {t.less}
+      <i class="level-0"></i><i class="level-1"></i><i class="level-2"></i><i class="level-3"></i><i class="level-4"></i>
+      {t.more}
+    </span>
+  </figcaption>
+</figure>
+
+<script>
+  import { formatDate, numberLocale, type Lang } from '../scripts/dates';
+
+  for (const figure of document.querySelectorAll<HTMLElement>('.about-activity')) {
+    const grid = figure.querySelector<HTMLElement>('.activity-grid')!;
+    const tip = figure.querySelector<HTMLElement>('.activity-tip')!;
+    const lang = figure.dataset.lang as Lang;
+    const forms: string[] = JSON.parse(figure.dataset.day!);
+    // Built more than two days after its last day: say how old it is.
+    if (Date.now() - Date.parse(`${figure.dataset.last}T00:00:00Z`) > 2 * 864e5) {
+      figure.querySelector<HTMLElement>('.activity-as-of')!.hidden = false;
+      grid.setAttribute('aria-label', grid.dataset.oldLabel!);
+    }
+    // Days in the shown weeks only (narrow pages hide the older ones), oldest first.
+    const shown = () => [...grid.querySelectorAll<HTMLElement>('i[data-date]')].filter((cell) => cell.offsetParent);
+    let current: HTMLElement | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const show = (cell: HTMLElement) => {
+      current?.classList.remove('is-current');
+      current = cell;
+      cell.classList.add('is-current');
+      const n = Number(cell.dataset.count);
+      tip.textContent = forms[Math.min(n, 2)].replace('{n}', n.toLocaleString(numberLocale(lang))).replace('{date}', formatDate(cell.dataset.date!, lang));
+      // Above the day, centred on it, and kept inside the figure.
+      const box = figure.getBoundingClientRect();
+      const day = cell.getBoundingClientRect();
+      const left = day.left - box.left + day.width / 2 - tip.offsetWidth / 2;
+      tip.style.left = `${Math.max(0, Math.min(left, box.width - tip.offsetWidth))}px`;
+      tip.style.top = `${day.top - box.top - tip.offsetHeight - 6}px`;
+      tip.classList.add('is-open');
+    };
+    const hide = () => {
+      clearTimeout(timer);
+      tip.classList.remove('is-open');
+      current?.classList.remove('is-current');
+      current = undefined;
+    };
+    // The shown day nearest a point: days are 10px or so, smaller than a finger.
+    const nearest = (x: number, y: number) => {
+      let best: HTMLElement | undefined;
+      let distance = Infinity;
+      for (const cell of shown()) {
+        const r = cell.getBoundingClientRect();
+        const d = (r.left + r.width / 2 - x) ** 2 + (r.top + r.height / 2 - y) ** 2;
+        if (d < distance) [best, distance] = [cell, d];
+      }
+      return best;
+    };
+
+    // Mouse: after a 200ms rest on a day, then from day to day at once.
+    grid.addEventListener('pointerover', (event) => {
+      if (event.pointerType !== 'mouse') return;
+      const cell = (event.target as Element).closest<HTMLElement>('i[data-date]');
+      clearTimeout(timer);
+      if (!cell) return;
+      if (tip.classList.contains('is-open')) show(cell);
+      else timer = setTimeout(() => show(cell), 200);
+    });
+    grid.addEventListener('pointerleave', (event) => {
+      // A grid focused from the keyboard keeps its day; a click's focus does not.
+      if (event.pointerType === 'mouse' && !grid.matches(':focus-visible')) hide();
+    });
+    // Touch and pen: the day nearest the finger, following it sideways (the
+    // page still scrolls up and down); a touch elsewhere closes it.
+    const touch = (event: PointerEvent) => {
+      if (event.pointerType === 'mouse' || (event.type === 'pointermove' && !event.buttons)) return;
+      const cell = nearest(event.clientX, event.clientY);
+      if (cell && cell !== current) show(cell);
+    };
+    grid.addEventListener('pointerdown', touch);
+    grid.addEventListener('pointermove', touch);
+    document.addEventListener('pointerdown', (event) => {
+      if (event.pointerType !== 'mouse' && !grid.contains(event.target as Node)) hide();
+    });
+    // Keyboard: the grid takes focus at the last day; ↑ ↓ move a day, ← → a week.
+    grid.addEventListener('focus', () => {
+      if (grid.matches(':focus-visible')) show(current ?? shown().at(-1)!);
+    });
+    grid.addEventListener('blur', hide);
+    grid.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') return hide();
+      const step = { ArrowUp: -1, ArrowDown: 1, ArrowLeft: -7, ArrowRight: 7 }[event.key];
+      if (!step) return;
+      event.preventDefault();
+      const days = shown();
+      const next = current ? days[days.indexOf(current) + step] : days.at(-1);
+      if (next) show(next);
+    });
+  }
+</script>

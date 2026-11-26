@@ -1,0 +1,142 @@
+---
+import { getEntry, render, type CollectionEntry } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import Toc from './Toc.astro';
+import CiteThis from './CiteThis.astro';
+import Sidenotes from './Sidenotes.astro';
+import Previews from './Previews.astro';
+import FigureZoom from './FigureZoom.astro';
+import { OG_IMAGE, SITE, aboutUrl, formatDate, hasAbout, langOf, otherLang, postUrl, prefix, slugOf, tagUrl, ui } from '../i18n';
+
+interface Props {
+  post: CollectionEntry<'posts'>;
+}
+const { post } = Astro.props;
+const lang = langOf(post);
+const t = ui[lang];
+const { Content, remarkPluginFrontmatter } = await render(post);
+const translation = await getEntry('posts', `${slugOf(post)}/${otherLang(lang)}`);
+// The dev server previews drafts, so there a draft translation is linked too.
+const alternate = translation && (import.meta.env.DEV || !translation.data.draft) ? postUrl(translation) : undefined;
+const { title, description, date, updated, tags, ai } = post.data;
+const { readingMinutes = 1, sections = 0 } = remarkPluginFrontmatter;
+// Structured data for search engines (schema.org BlogPosting). The author's
+// page is the about page when there is one.
+const site = (path: string) => new URL(path, Astro.site).href;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: title,
+  description,
+  datePublished: date.toISOString(),
+  dateModified: (updated ?? date).toISOString(),
+  inLanguage: lang === 'zh' ? 'zh-CN' : 'en',
+  url: site(postUrl(post)),
+  mainEntityOfPage: site(postUrl(post)),
+  image: site(OG_IMAGE.path),
+  keywords: tags,
+  author: {
+    '@type': 'Person',
+    name: SITE.author,
+    url: site((await hasAbout(lang)) ? aboutUrl(lang) : `${prefix(lang)}/`),
+    sameAs: [`https://github.com/${SITE.github}`],
+  },
+};
+---
+
+<Base lang={lang} title={title} description={description} alternate={alternate} published={date} updated={updated}>
+  {/* < is escaped, so no text in the data can end the script element. */}
+  <script slot="head" type="application/ld+json" is:inline set:html={JSON.stringify(jsonLd).replaceAll('<', '\\u003c')} />
+  <Toc toc={remarkPluginFrontmatter.toc ?? []} label={t.toc} />
+  <article class="post" data-pagefind-body data-copy={t.copy} data-copied={t.copied} data-zoom={t.zoom} data-notes={t.notes} data-jump={t.jump}>
+    <header class="post-header">
+      <h1 data-pagefind-meta="title">{title}</h1>
+      <p class="post-meta" data-pagefind-ignore>
+        <span class="post-facts">
+          <time datetime={date.toISOString()} data-pagefind-meta="date">{formatDate(date, lang)}</time>
+          {updated && <span>{t.updated} <time datetime={updated.toISOString()}>{formatDate(updated, lang)}</time></span>}
+          <span>{t.readingTime(readingMinutes)}</span>
+          {sections > 0 && <span>{t.sectionCount(sections)}</span>}
+        </span>
+        {
+          ai && (
+            <span class="ai-badge">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9.94 15.5a2 2 0 0 0-1.44-1.44l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.13a.5.5 0 0 1 .96 0l1.58 6.13a2 2 0 0 0 1.44 1.44l6.13 1.58a.5.5 0 0 1 0 .96l-6.13 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.13a.5.5 0 0 1-.96 0z" />
+              </svg>
+              <span aria-hidden="true">AI</span>
+              <span class="sr-only">{t.aiWritten}</span>
+            </span>
+          )
+        }
+        {alternate && <a href={alternate} hreflang={otherLang(lang)} lang={otherLang(lang)}>{t.readIn}</a>}
+      </p>
+      <p class="abstract">
+        <strong data-pagefind-ignore>{t.abstract}.</strong> <span data-pagefind-meta="description">{description}</span>
+      </p>
+      {
+        tags.length > 0 && (
+          <p class="keywords">
+            <span class="keywords-label" data-pagefind-ignore>{t.keywords}:</span>{' '}
+            {tags.map((tag, i) => (
+              <>
+                {i > 0 && ', '}
+                <a href={tagUrl(lang, tag)} data-pagefind-filter="tag">{tag}</a>
+              </>
+            ))}
+          </p>
+        )
+      }
+    </header>
+    <div class="prose">
+      <Content />
+    </div>
+    <CiteThis post={post} lang={lang} />
+  </article>
+  <Sidenotes />
+  <Previews />
+  <FigureZoom />
+</Base>
+
+<script>
+  import { copyButtons } from '../scripts/copy-button';
+
+  // Copy buttons: one on every code block, plus the BibTeX block. Each copies
+  // the <pre> right before it.
+  const article = document.querySelector<HTMLElement>('article.post')!;
+  for (const pre of article.querySelectorAll<HTMLElement>('.prose pre.astro-code')) {
+    const block = document.createElement('div');
+    block.className = 'code-block';
+    pre.replaceWith(block);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'copy-button';
+    button.setAttribute('aria-live', 'polite');
+    button.textContent = article.dataset.copy!;
+    block.append(pre, button);
+  }
+  copyButtons(article, '.copy-button', article.dataset.copied!);
+
+  // Mark sideways-scrolling blocks with the side(s) that have more content.
+  // Overflowing blocks also take keyboard focus, so they can be scrolled
+  // without a pointer (Shiki already makes its code blocks focusable).
+  const mark = (el: HTMLElement) => {
+    const rest = el.scrollWidth - el.clientWidth;
+    const left = el.scrollLeft > 1;
+    const right = el.scrollLeft < rest - 1;
+    const more = rest <= 1 ? '' : left && right ? 'both' : left ? 'left' : right ? 'right' : '';
+    if (more) el.dataset.more = more;
+    else delete el.dataset.more;
+    if (el.classList.contains('astro-code')) return;
+    if (rest > 1) el.tabIndex = 0;
+    else el.removeAttribute('tabindex');
+  };
+  const resize = new ResizeObserver((entries) => entries.forEach((e) => mark(e.target as HTMLElement)));
+  const blocks = [...document.querySelectorAll<HTMLElement>('.prose mjx-container[display], .prose .table-wrap, .prose .tikz, .prose pre, .cite-bibtex pre')];
+  for (const el of blocks) {
+    el.addEventListener('scroll', () => mark(el), { passive: true });
+    resize.observe(el);
+  }
+  // Web fonts change the text width but not always the block's size.
+  document.fonts.ready.then(() => blocks.forEach(mark));
+</script>

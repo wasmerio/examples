@@ -1,0 +1,294 @@
+---
+// Site search: a panel over the page, opened by the header button, `/` or
+// Cmd/Ctrl+K. It searches the Pagefind index of the posts (plugins/search.mjs),
+// loaded on first open; a combobox with a list of results, each linked to the
+// section that matches best.
+import { ui, type Lang } from '../i18n';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = ui[lang];
+const strings = {
+  hint: t.searchHint,
+  loading: t.searchLoading,
+  none: t.searchNone,
+  count: t.searchCount,
+  noPosts: t.searchNoPosts,
+  noIndex: t.searchNoIndex,
+  error: t.searchError,
+};
+---
+
+<dialog class="search" aria-label={t.search} data-strings={JSON.stringify(strings)}>
+  <div class="search-field">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.4-4.4" /></svg>
+    <input
+      type="text"
+      role="combobox"
+      aria-label={t.search}
+      aria-expanded="false"
+      aria-controls="search-results"
+      aria-autocomplete="list"
+      placeholder={t.searchPlaceholder}
+      autocomplete="off"
+      autocapitalize="off"
+      spellcheck="false"
+      enterkeyhint="search"
+      autofocus
+    />
+    <!-- Touch screens have no Escape key; outside the panel may be under the keyboard. -->
+    <button class="search-close" type="button">{t.searchClose}</button>
+  </div>
+  <ul id="search-results" class="search-results" role="listbox" aria-label={t.searchResults} hidden></ul>
+  <p class="search-status" role="status">
+    <span class="search-message">{t.searchHint}</span>
+    <span class="search-keys">{t.searchKeys}</span>
+  </p>
+</dialog>
+
+<script>
+  type SubResult = { title: string; url: string; excerpt: string; locations: number[]; weighted_locations?: { balanced_score: number }[] };
+  type Data = { url: string; excerpt: string; meta: Record<string, string>; sub_results: SubResult[] };
+  type Pagefind = {
+    options(options: object): Promise<void>;
+    debouncedSearch(query: string, options?: object, ms?: number): Promise<{ results: { data(): Promise<Data> }[] } | null>;
+  };
+  type State = 'hint' | 'loading' | 'none' | 'noPosts' | 'noIndex' | 'error';
+
+  const BASE = '/pagefind/';
+  const MAX = 8;
+  const dialog = document.querySelector<HTMLDialogElement>('dialog.search')!;
+  const input = dialog.querySelector('input')!;
+  const list = dialog.querySelector<HTMLUListElement>('.search-results')!;
+  const status = dialog.querySelector<HTMLElement>('.search-status')!;
+  const message = status.querySelector<HTMLElement>('.search-message')!;
+  const strings: Record<State, string> & { count: [string, string] } = JSON.parse(dialog.dataset.strings!);
+
+  // The index, or why there is none. Loaded on first open, so pages that
+  // never search download nothing.
+  let engine: Promise<Pagefind | State> | undefined;
+  const load = () =>
+    (engine ??= (async (): Promise<Pagefind | State> => {
+      const entry = await fetch(`${BASE}pagefind-entry.json`).catch(() => undefined);
+      // The dev server serves the index of the last build, if any.
+      if (!entry?.ok) return import.meta.env.DEV ? 'noIndex' : 'error';
+      // Pagefind searches another language's index when the page's own is
+      // missing (no published posts in this language).
+      const lang = document.documentElement.lang.toLowerCase();
+      const { languages } = await entry.json();
+      if (!Object.keys(languages).some((l) => l === lang || l === lang.split('-')[0])) return 'noPosts';
+      // Not bundled: the file exists only after a build.
+      const pagefind: Pagefind = await import(/* @vite-ignore */ `${BASE}pagefind.js`);
+      await pagefind.options({ excerptLength: 24 });
+      return pagefind;
+    })().catch(() => 'error' as const));
+
+  let options: HTMLAnchorElement[] = [];
+  let active = -1;
+
+  function show(state: State | number) {
+    const count = typeof state === 'number';
+    // With results on screen the status is for screen readers only.
+    status.classList.toggle('sr-only', count && state > 0);
+    status.dataset.state = count ? 'results' : state;
+    message.textContent = count ? (state > 0 ? strings.count[state === 1 ? 0 : 1].replace('{n}', String(state)) : strings.none) : strings[state];
+  }
+
+  function select(i: number) {
+    options[active]?.setAttribute('aria-selected', 'false');
+    active = i;
+    const option = options[i];
+    if (!option) return input.removeAttribute('aria-activedescendant');
+    option.setAttribute('aria-selected', 'true');
+    input.setAttribute('aria-activedescendant', option.id);
+    option.scrollIntoView({ block: 'nearest' });
+  }
+
+  // The part of the page that matches best: a section (its heading's anchor)
+  // or the page itself.
+  const best = (data: Data) => {
+    const score = (s: SubResult) => s.weighted_locations?.reduce((sum, w) => sum + w.balanced_score, 0) ?? s.locations.length;
+    return [...data.sub_results].sort((a, b) => score(b) - score(a))[0];
+  };
+
+  function render(results: Data[]) {
+    options = results.map((data, i) => {
+      const sub = best(data);
+      // The notes' heading is hidden where notes stand in the margin: link
+      // a match in a note to the page.
+      const section = sub?.url.includes('#') && !sub.url.endsWith('#footnote-label') ? sub : undefined;
+      const a = document.createElement('a');
+      a.className = 'search-result';
+      a.id = `search-result-${i}`;
+      a.href = section?.url ?? data.url;
+      a.tabIndex = -1;
+      a.setAttribute('role', 'option');
+      a.setAttribute('aria-selected', 'false');
+      const title = document.createElement('span');
+      title.className = 'search-title';
+      title.textContent = data.meta.title ?? data.url;
+      const meta = document.createElement('span');
+      meta.className = 'search-meta';
+      for (const text of [data.meta.date, section?.title]) {
+        if (!text) continue;
+        const part = document.createElement('span');
+        part.textContent = text;
+        meta.append(part);
+      }
+      // Pagefind's excerpt is escaped text with <mark> around the matches.
+      // Formulas are not searchable: inline ones show as "…" (plugins/search.mjs)
+      // and display ones leave no text, so an excerpt may start with the
+      // punctuation after one.
+      const excerpt = document.createElement('span');
+      excerpt.className = 'search-excerpt';
+      excerpt.innerHTML = (sub?.excerpt || data.excerpt).replace(/^[\s.,;:]+/, '');
+      a.append(title, meta, excerpt);
+      const li = document.createElement('li');
+      li.setAttribute('role', 'none');
+      li.append(a);
+      return a;
+    });
+    list.replaceChildren(...options.map((a) => a.parentElement!));
+    list.hidden = options.length === 0;
+    input.setAttribute('aria-expanded', String(options.length > 0));
+    active = -1;
+    select(options.length ? 0 : -1);
+  }
+
+  // Each search supersedes the ones before it.
+  let latest = 0;
+  let searching = Promise.resolve();
+  const search = () => (searching = find());
+  async function find() {
+    const run = ++latest;
+    const query = input.value.trim();
+    // "Searching" only when it takes long enough to notice (the first load).
+    const slow = setTimeout(() => run === latest && show('loading'), 300);
+    const pagefind = await load();
+    try {
+      if (run !== latest) return;
+      if (typeof pagefind === 'string') {
+        // A failed load is tried again on the next search, and so is a dev
+        // server with no index yet: a build may write one meanwhile.
+        if (pagefind === 'error' || pagefind === 'noIndex') engine = undefined;
+        render([]);
+        return show(pagefind);
+      }
+      if (!query) {
+        render([]);
+        return show('hint');
+      }
+      const found = await pagefind.debouncedSearch(query, {}, 120);
+      if (!found || run !== latest) return;
+      const results = await Promise.all(found.results.slice(0, MAX).map((r) => r.data()));
+      if (run !== latest) return;
+      render(results);
+      show(results.length);
+    } finally {
+      clearTimeout(slow);
+    }
+  }
+
+  // Closing plays the panel's exit animation first (data-closing in
+  // global.css). A result that is followed closes at once instead: focus
+  // goes back to the search button on close, and a late close would scroll
+  // the page back up to it after the jump.
+  let closing = 0;
+  function dismiss() {
+    if (!dialog.open || dialog.dataset.closing !== undefined) return;
+    const run = ++closing;
+    dialog.dataset.closing = '';
+    // The panel's and its backdrop's animations only (their target is the dialog).
+    const exits = dialog.getAnimations({ subtree: true }).filter((a) => (a.effect as KeyframeEffect | null)?.target === dialog);
+    Promise.allSettled(exits.map((a) => a.finished)).then(() => {
+      if (run === closing) closeNow();
+    });
+  }
+  function closeNow() {
+    closing++;
+    delete dialog.dataset.closing;
+    dialog.close();
+  }
+
+  function open() {
+    // Opened again while it closes: stay open.
+    if (dialog.dataset.closing !== undefined) {
+      closing++;
+      delete dialog.dataset.closing;
+    }
+    if (!dialog.open) dialog.showModal();
+    // The last query stays; typing replaces it.
+    input.select();
+    search();
+  }
+
+  const go = (i: number) => {
+    const option = options[i];
+    if (!option || !dialog.open) return;
+    closeNow();
+    option.click();
+  };
+
+  // Chinese is typed through an input method: search the text it commits,
+  // not the pinyin on the way there.
+  input.addEventListener('input', (event) => (event as InputEvent).isComposing || search());
+  input.addEventListener('compositionend', search);
+  input.addEventListener('keydown', (event) => {
+    // keyCode 229: Safari ends a composition before its keydown, so only this flags it.
+    if (event.isComposing || event.keyCode === 229) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!options.length) return;
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      select((active + step + options.length) % options.length);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      // Right after typing, the list still shows the previous query: wait for
+      // the results of what was typed, unless more typing follows.
+      const run = latest;
+      searching.then(() => run === latest && go(active));
+    }
+  });
+  // Escape closes with the animation; Escape that cancels an input method's
+  // text does not close the panel at all.
+  dialog.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    if (!event.isComposing) dismiss();
+  });
+  list.addEventListener('pointermove', (event) => {
+    const i = options.indexOf((event.target as Element).closest<HTMLAnchorElement>('.search-result')!);
+    if (i >= 0 && i !== active) select(i);
+  });
+  // A result on this page (another section) only moves the page.
+  list.addEventListener('click', (event) => (event.target as Element).closest('.search-result') && closeNow());
+
+  // A click outside the panel closes it. The backdrop is part of the
+  // dialog element, so compare with the panel's box; a press that starts
+  // inside (selecting text) does not count.
+  let pressedOutside = false;
+  const outside = (event: MouseEvent) => {
+    const r = dialog.getBoundingClientRect();
+    return event.target === dialog && (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom);
+  };
+  dialog.addEventListener('pointerdown', (event) => (pressedOutside = outside(event)));
+  dialog.addEventListener('click', (event) => pressedOutside && outside(event) && dismiss());
+
+  dialog.querySelector('.search-close')!.addEventListener('click', dismiss);
+  document.querySelector('.search-button')?.addEventListener('click', open);
+  const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || target.matches('input, textarea, select'));
+  addEventListener('keydown', (event) => {
+    if (event.isComposing || event.defaultPrevented) return;
+    const mod = event.metaKey || event.ctrlKey;
+    if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      if (dialog.open && dialog.dataset.closing === undefined) dismiss();
+      else open();
+    } else if (event.key === '/' && !mod && !event.altKey && !dialog.open && !typing(event.target)) {
+      event.preventDefault();
+      open();
+    }
+  });
+</script>

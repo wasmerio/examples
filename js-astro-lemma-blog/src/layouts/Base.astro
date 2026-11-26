@@ -1,0 +1,151 @@
+---
+// Fonts and design tokens (colors, font stacks, layout) come from
+// lemma.config.mjs through plugins/lemma-theme.mjs.
+import 'virtual:lemma/fonts';
+import 'virtual:lemma/tokens.css';
+// The CJK fonts are a stylesheet of their own: the link below.
+import cjkFonts from 'virtual:lemma/cjk-fonts.css?url';
+import '../styles/mathjax.css';
+import '../styles/global.css';
+import { Image } from 'astro:assets';
+import Search from '../components/Search.astro';
+import type { ImageMetadata } from 'astro';
+import lemma from '../../lemma.config.mjs';
+import { SITE, OG_IMAGE, ui, prefix, otherLang, aboutUrl, hasAbout, type Lang } from '../i18n';
+
+interface Props {
+  lang: Lang;
+  title?: string;
+  description?: string;
+  /** URL of this page in the other language, if one exists. */
+  alternate?: string;
+  /** Publication date, for posts (Open Graph type "article"). */
+  published?: Date;
+  /** Last significant update, for posts. */
+  updated?: Date;
+  /** Keep the page out of search results (the 404 page): no canonical URL. */
+  noindex?: boolean;
+}
+
+const { lang, title, description = ui[lang].description, alternate, published, updated, noindex } = Astro.props;
+const t = ui[lang];
+const pageTitle = title ? `${title} · ${SITE.title}` : SITE.title;
+const other = otherLang(lang);
+const switchTo = alternate ?? `${prefix(other)}/`;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+// The avatar named in the config, as an optimizable image.
+const images = import.meta.glob<{ default: ImageMetadata }>('/src/assets/**/*.{jpg,jpeg,png,webp,avif}', { eager: true });
+const avatar = images[`/${lemma.site.avatar}`]?.default;
+if (!avatar) throw new Error(`lemma.config.mjs: site.avatar ${lemma.site.avatar} is not an image under src/assets/`);
+const { icons } = lemma.site;
+const locale = { zh: 'zh_CN', en: 'en_US' };
+const about = (await hasAbout(lang)) && aboutUrl(lang);
+const current = (href: string) => (Astro.url.pathname.replace(/\/?$/, '/') === href ? 'page' : undefined);
+---
+
+<!doctype html>
+<html lang={lang === 'zh' ? 'zh-CN' : 'en'}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={description} />
+    {noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
+    <meta property="og:type" content={published ? 'article' : 'website'} />
+    <meta property="og:site_name" content={SITE.title} />
+    <meta property="og:title" content={title ?? SITE.title} />
+    <meta property="og:description" content={description} />
+    {!noindex && <meta property="og:url" content={canonical} />}
+    <meta property="og:image" content={new URL(OG_IMAGE.path, Astro.site).href} />
+    <meta property="og:image:width" content={String(OG_IMAGE.width)} />
+    <meta property="og:image:height" content={String(OG_IMAGE.height)} />
+    <meta property="og:locale" content={locale[lang]} />
+    {alternate && <meta property="og:locale:alternate" content={locale[other]} />}
+    {published && <meta property="article:published_time" content={published.toISOString()} />}
+    {updated && <meta property="article:modified_time" content={updated.toISOString()} />}
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href={icons.favicon} sizes="16x16 32x32 48x48" />
+    <link rel="icon" type="image/png" href={icons.png192} sizes="192x192" />
+    <link rel="apple-touch-icon" href={icons.appleTouch} />
+    <link rel="alternate" type="application/rss+xml" title={SITE.title} href={`${prefix(lang)}/rss.xml`} />
+    {alternate && <link rel="alternate" hreflang={lang === 'zh' ? 'zh-CN' : 'en'} href={canonical} />}
+    {alternate && <link rel="alternate" hreflang={other === 'zh' ? 'zh-CN' : 'en'} href={new URL(alternate, Astro.site).href} />}
+    <meta name="color-scheme" content="light dark" />
+    {/* Page-specific head elements, such as a post's JSON-LD. */}
+    <slot name="head" />
+    <link rel="stylesheet" href={cjkFonts} />
+    <script is:inline>
+      // Runs before paint, so the page never flashes the wrong theme.
+      (() => {
+        // Storage can be blocked (privacy settings); then follow the OS.
+        const stored = () => {
+          try {
+            return localStorage.getItem('theme');
+          } catch {
+            return null;
+          }
+        };
+        const media = matchMedia('(prefers-color-scheme: dark)');
+        const apply = (dark) => (document.documentElement.dataset.theme = dark ? 'dark' : 'light');
+        const theme = stored();
+        apply(theme ? theme === 'dark' : media.matches);
+        media.addEventListener('change', (e) => !stored() && apply(e.matches));
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">{t.skipToContent}</a>
+    <header class="site-header">
+      <a class="wordmark" href={`${prefix(lang)}/`}>
+        <Image class="wordmark-avatar" src={avatar} alt="" width={32} height={32} layout="fixed" loading="eager" />
+        <span class="wordmark-name">{SITE.title}</span>
+      </a>
+      <nav>
+        <div class="nav-links">
+          <a href={`${prefix(lang)}/`}>{t.posts}</a>
+          {about && <a href={about} aria-current={current(about)}>{t.about}</a>}
+        </div>
+        <div class="nav-icons">
+          {/* Named in the language it leads to, as the link text used to be. */}
+          <a class="icon-button" href={switchTo} hreflang={other} lang={other} aria-label={other === 'en' ? 'English' : '中文'} title={other === 'en' ? 'English' : '中文'}>
+            <svg class="icon-lang" viewBox="-2.6 -2.6 29.2 29.2" aria-hidden="true"><path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" /><path d="m22 22-5-10-5 10" /><path d="M14 18h6" /></svg>
+          </a>
+          <button class="icon-button search-button" type="button" aria-label={t.search} title={`${t.search} (/)`} aria-haspopup="dialog" aria-keyshortcuts="/ Control+K Meta+K">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="m20 20-4.4-4.4" /></svg>
+          </button>
+          <button class="icon-button theme-toggle" type="button" aria-label={t.toggleTheme} title={t.toggleTheme}>
+            <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></svg>
+            <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z" /></svg>
+          </button>
+        </div>
+      </nav>
+    </header>
+    <main id="main" tabindex="-1">
+      <slot />
+    </main>
+    <footer class="site-footer">
+      <span>© {new Date().getFullYear()} {SITE.title}</span>
+      <nav class="footer-links" aria-label={t.links}>
+        {/* With an about page, its contact links stand in for these. */}
+        {!about && <a href={`mailto:${SITE.email}`}>{t.email}</a>}
+        {!about && <a href={`https://github.com/${SITE.github}`}>GitHub</a>}
+        <a href={`${prefix(lang)}/rss.xml`}>{t.rss}</a>
+      </nav>
+    </footer>
+    <Search lang={lang} />
+    <script>
+      const toggle = document.querySelector<HTMLButtonElement>('.theme-toggle');
+      const pressed = () => toggle?.setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'dark'));
+      pressed();
+      // The theme also follows the OS (head script), so watch the attribute itself.
+      new MutationObserver(pressed).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+      toggle?.addEventListener('click', () => {
+        const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        try {
+          localStorage.setItem('theme', next);
+        } catch {}
+      });
+    </script>
+  </body>
+</html>

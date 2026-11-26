@@ -1,0 +1,248 @@
+---
+// Figure zoom: the image of a figure can widen past the measure to the
+// window, in the flow of the text: nothing floats over the page. A click,
+// Enter or Space on the image widens it, again (or Escape) puts it back.
+// Raster images stop at their own pixels, vector ones at three times their
+// size; on phones the widened image is twice the column and scrolls
+// sideways. Only figures with one image, and only where it would grow.
+//
+// The motion is a FLIP: the image moves by transform alone, from where it
+// was to where it ends, while the height of its box (and so the text below)
+// changes on the same curve.
+---
+
+<script>
+  const article = document.querySelector<HTMLElement>('article.post')!;
+  const prose = article.querySelector<HTMLElement>('.prose')!;
+  const label = article.dataset.zoom!;
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+  const EASE = [0.2, 0, 0, 1] as const;
+  const OPEN = 380;
+  const CLOSE = 300;
+  // A figure widens only if that makes its image this much larger.
+  const GAIN = 1.15;
+
+  // cubic-bezier(x1, y1, x2, y2) as a function, for the scroll that runs
+  // beside the animations.
+  const bezier = (x1: number, y1: number, x2: number, y2: number) => {
+    const at = (a: number, b: number, t: number) => 3 * a * t * (1 - t) ** 2 + 3 * b * t * t * (1 - t) + t ** 3;
+    return (x: number) => {
+      let lo = 0;
+      let hi = 1;
+      for (let i = 0; i < 24; i++) {
+        const mid = (lo + hi) / 2;
+        if (at(x1, x2, mid) < x) lo = mid;
+        else hi = mid;
+      }
+      return at(y1, y2, (lo + hi) / 2);
+    };
+  };
+  const ease = bezier(...EASE);
+
+  type Figure = { box: HTMLElement; img: HTMLImageElement; button?: HTMLButtonElement; w: number; vector: boolean; busy?: boolean };
+
+  // Figures with a single image. Astro gives the image's own width; an SVG
+  // shows in the largest srcset candidate's URL as f=svg.
+  const figures: Figure[] = [...prose.querySelectorAll<HTMLElement>('.figure-media')].flatMap((box) => {
+    const imgs = box.querySelectorAll('img');
+    if (imgs.length !== 1 || box.querySelector('video, a')) return [];
+    const img = imgs[0];
+    const w = Number(img.getAttribute('width')) || img.naturalWidth;
+    const vector = /f=svg|\.svg(\?|$)/i.test(decodeURIComponent(img.currentSrc || img.src));
+    return w ? [{ box, img, w, vector }] : [];
+  });
+
+  // The widened geometry: box width, image width, and the box's left margin
+  // that centres it in the window.
+  function geometry({ box, w, vector }: Figure) {
+    const column = box.parentElement!.getBoundingClientRect();
+    const margin = innerWidth < 600 ? 8 : 24;
+    const room = innerWidth - 2 * margin;
+    const most = vector ? 3 * w : w;
+    const image = Math.min(most, room >= column.width * 1.3 ? Math.min(room, 1600) : column.width * 2);
+    const width = Math.min(image, room);
+    return { width, image, margin: innerWidth / 2 - width / 2 - column.left, column: column.width };
+  }
+
+  // Overflowing boxes fade on the side that has more (as in PostPage.astro).
+  function mark(box: HTMLElement) {
+    const rest = box.scrollWidth - box.clientWidth;
+    const left = box.scrollLeft > 1;
+    const right = box.scrollLeft < rest - 1;
+    const more = rest <= 1 ? '' : left && right ? 'both' : left ? 'left' : right ? 'right' : '';
+    if (more) box.dataset.more = more;
+    else delete box.dataset.more;
+  }
+
+  function setWide(f: Figure, g = geometry(f)) {
+    f.box.dataset.wide = '';
+    f.box.style.width = `${g.width}px`;
+    f.box.style.marginLeft = `${g.margin}px`;
+    f.img.style.width = `${g.image}px`;
+    f.box.scrollLeft = (f.box.scrollWidth - f.box.clientWidth) / 2;
+    mark(f.box);
+    f.button!.setAttribute('aria-pressed', 'true');
+  }
+
+  function setNarrow(f: Figure) {
+    delete f.box.dataset.wide;
+    delete f.box.dataset.more;
+    f.box.style.width = f.box.style.marginLeft = f.img.style.width = '';
+    f.button!.setAttribute('aria-pressed', 'false');
+  }
+
+  // The TOC steps aside while a widened figure is on screen; it would run
+  // through the TOC's margin.
+  const toc = document.querySelector<HTMLElement>('.toc');
+  const onScreen = new Set<Element>();
+  const seen = new IntersectionObserver((entries) => {
+    for (const e of entries) e.isIntersecting ? onScreen.add(e.target) : onScreen.delete(e.target);
+    toc?.classList.toggle('is-covered', onScreen.size > 0);
+  });
+  function release(box: HTMLElement) {
+    seen.unobserve(box);
+    onScreen.delete(box);
+    toc?.classList.toggle('is-covered', onScreen.size > 0);
+  }
+
+  // Sidenotes beside a widened figure would be under it: they fade out, and
+  // back when it narrows. Called in the final layout, before the sidenotes
+  // follow it: `grow` is how much taller the box got, and notes whose
+  // reference is below the box are about to move down that much.
+  function cover(grow = 0) {
+    const wide = figures.filter((f) => f.box.hasAttribute('data-wide') || f.busy);
+    for (const note of document.querySelectorAll<HTMLElement>('.sidenote')) {
+      const r = note.getBoundingClientRect();
+      const ref = prose.querySelector(`[aria-details="${CSS.escape(note.id)}"]`)?.getBoundingClientRect();
+      const covered = wide.some(({ box }) => {
+        const b = box.getBoundingClientRect();
+        const shift = ref && ref.top > b.bottom ? grow : 0;
+        return r.top + shift < b.bottom && r.bottom + shift > b.top && b.right > r.left;
+      });
+      note.classList.toggle('is-covered', covered);
+    }
+  }
+
+  // Each time the sidenotes lay out again (the text moved), check them again.
+  const column = document.querySelector('.sidenotes');
+  if (column) {
+    const recheck = () => (figures.some((f) => f.box.hasAttribute('data-wide') || f.busy) || column.querySelector('.is-covered')) && cover();
+    new MutationObserver(recheck).observe(column, { subtree: true, attributeFilter: ['style'] });
+  }
+
+  async function toggle(f: Figure) {
+    if (f.busy) return;
+    const { box, img } = f;
+    const opening = !box.hasAttribute('data-wide');
+    // The largest srcset candidate, before the image grows.
+    if (opening && !f.vector) img.sizes = `${f.w}px`;
+    const g = geometry(f);
+
+    // First: the image as it is now (scrolled, if wide). Last: as it ends.
+    const first = img.getBoundingClientRect();
+    const h0 = box.getBoundingClientRect().height;
+    if (opening) setWide(f, g);
+    else setNarrow(f);
+    const last = img.getBoundingClientRect();
+    const h1 = box.getBoundingClientRect().height;
+    if (opening) {
+      seen.observe(box);
+      cover(h1 - h0);
+    }
+
+    if (reduced.matches) {
+      if (!opening) release(box);
+      return;
+    }
+
+    // The animation runs in the widened box, clipped at its sides only (clip
+    // is not a scroll container, so nothing scrolls back); the image is laid
+    // out at its widened size, centred, and moved by transform alone.
+    f.busy = true;
+    box.classList.add('is-zooming');
+    box.style.width = `${g.width}px`;
+    box.style.marginLeft = `${g.margin}px`;
+    box.style.height = `${h0}px`;
+    img.style.width = `${g.image}px`;
+    f.button!.style.marginLeft = `${Math.min(0, (g.width - g.image) / 2)}px`;
+    const laid = img.getBoundingClientRect();
+    const at = (r: DOMRect) => `translate(${r.left - laid.left}px, ${r.top - laid.top}px) scale(${r.width / laid.width})`;
+    const options: KeyframeAnimationOptions = { duration: opening ? OPEN : CLOSE, easing: `cubic-bezier(${EASE})`, fill: 'forwards' };
+    const animations = [img.animate([{ transform: at(first) }, { transform: at(last) }], options), box.animate([{ height: `${h0}px` }, { height: `${h1}px` }], options)];
+
+    // Opening near the bottom of the window scrolls, on the same curve, so
+    // the figure and its caption come into view (never past its top).
+    if (opening) {
+      const r = (box.closest('figure') ?? box).getBoundingClientRect();
+      const dy = Math.max(0, Math.min(r.bottom + h1 - h0 - (innerHeight - 24), r.top - 24));
+      const y0 = scrollY;
+      const t0 = performance.now();
+      const step = () => {
+        const p = Math.min(1, (performance.now() - t0) / OPEN);
+        scrollTo(scrollX, y0 + dy * ease(p));
+        if (p < 1 && f.busy) requestAnimationFrame(step);
+      };
+      if (dy > 0) requestAnimationFrame(step);
+    }
+
+    await Promise.all(animations.map((a) => a.finished));
+    // Back to the final layout, which looks like the last frame.
+    box.classList.remove('is-zooming');
+    box.style.height = f.button!.style.marginLeft = '';
+    if (opening) setWide(f, g);
+    else setNarrow(f);
+    animations.forEach((a) => a.cancel());
+    f.busy = false;
+    if (!opening) release(box);
+    cover();
+  }
+
+  // An image that would grow sits in a toggle button; one that would not
+  // (a small image, or a column as wide as the window) stays as it is.
+  function setup() {
+    for (const f of figures) {
+      if (f.busy) continue;
+      if (f.box.hasAttribute('data-wide')) {
+        setWide(f);
+        continue;
+      }
+      const grows = geometry(f).image > f.img.getBoundingClientRect().width * GAIN;
+      if (grows && !f.button) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'zoom';
+        button.setAttribute('aria-pressed', 'false');
+        button.setAttribute('aria-label', f.img.alt ? `${label}: ${f.img.alt}` : label);
+        button.addEventListener('click', () => toggle(f));
+        f.box.onscroll = () => mark(f.box);
+        f.img.replaceWith(button);
+        button.append(f.img);
+        f.button = button;
+      } else if (!grows && f.button) {
+        f.button.replaceWith(f.img);
+        f.button = undefined;
+      }
+    }
+  }
+  setup();
+  // Only a change of width matters; phones also resize the height as their
+  // address bar hides, and that must not move a panned image.
+  let queued = false;
+  let width = innerWidth;
+  addEventListener('resize', () => {
+    if (queued || innerWidth === width) return;
+    width = innerWidth;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      setup();
+      cover();
+    });
+  });
+
+  // Escape narrows every widened figure, unless a dialog (search) is open.
+  addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return;
+    for (const f of figures) if (f.box.hasAttribute('data-wide')) toggle(f);
+  });
+</script>

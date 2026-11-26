@@ -1,0 +1,81 @@
+---
+// All tags as a book index: Chinese tags by pinyin and Latin tags by letter
+// in one sequence, under their initials; each entry opens in place to list
+// its posts.
+import { pinyin } from 'pinyin-pro';
+import Base from '../layouts/Base.astro';
+import { formatDate, getTags, otherLang, postUrl, tagsUrl, ui, type Lang } from '../i18n';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = ui[lang];
+
+// Sort key: pinyin without tones for Chinese (word-level, so 调和 is tiao he),
+// Latin without accents; "粘性解" -> "nianxingjie", "Monge–Ampère" -> "monge–ampere".
+const sortKey = (name: string) =>
+  pinyin(name, { toneType: 'none', type: 'array', nonZh: 'consecutive', v: true })
+    .join('')
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase();
+
+const tags = (await getTags(lang))
+  .map((tag) => ({ ...tag, key: sortKey(tag.name) }))
+  .sort((a, b) => a.key.localeCompare(b.key, 'en'));
+const groups: { letter: string; id: string; tags: typeof tags }[] = [];
+for (const tag of tags) {
+  const letter = /^[a-z]/.test(tag.key) ? tag.key[0].toUpperCase() : '#';
+  if (groups.at(-1)?.letter !== letter) groups.push({ letter, id: `tags-${letter === '#' ? 'other' : letter.toLowerCase()}`, tags: [] });
+  groups.at(-1)!.tags.push(tag);
+}
+// A jump line helps only once the index runs past a screen or so.
+const jumpLine = groups.length >= 8;
+---
+
+<Base lang={lang} title={t.tags} alternate={tagsUrl(otherLang(lang))}>
+  <h1 class="page-title">{t.tags}</h1>
+  {
+    tags.length === 0 ? (
+      <p class="empty">{t.noPosts}</p>
+    ) : (
+      <>
+        {jumpLine && (
+          <nav class="index-letters" aria-label={t.tags}>
+            {groups.map((g) => (
+              <a href={`#${g.id}`}>{g.letter}</a>
+            ))}
+          </nav>
+        )}
+        <div class="tag-index">
+          {groups.map((g) => (
+            <section id={g.id} aria-labelledby={`${g.id}-h`}>
+              <h2 id={`${g.id}-h`}>{g.letter}</h2>
+              {g.tags.map((tag) => (
+                <details class="index-entry">
+                  <summary>
+                    <span class="index-name">{tag.name}</span>
+                    <span class="index-leader" aria-hidden="true" />
+                    <span class="tag-count" aria-hidden="true">
+                      {tag.posts.length}
+                    </span>
+                    <span class="sr-only">{t.postCount(tag.posts.length)}</span>
+                  </summary>
+                  <ul>
+                    {tag.posts.map((post) => (
+                      <li>
+                        <a href={postUrl(post)}>{post.data.title}</a>
+                        <time datetime={post.data.date.toISOString()}>{formatDate(post.data.date, lang)}</time>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ))}
+            </section>
+          ))}
+        </div>
+      </>
+    )
+  }
+</Base>

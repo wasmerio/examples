@@ -1,0 +1,178 @@
+---
+// Link previews: hovering (or focusing, or on touch screens tapping) a
+// citation, \ref, \eqref, or a footnote reference with no sidenote beside it
+// shows the target in a card: the reference entry, theorem, figure, table,
+// equation, note, or a section's title and first paragraph. One level only:
+// links in the card can be followed but do not open cards of their own.
+---
+
+<script>
+  import { displayCopy } from '../scripts/copy';
+
+  const article = document.querySelector<HTMLElement>('article.post')!;
+  const prose = article.querySelector<HTMLElement>('.prose')!;
+  const touch = matchMedia('(hover: none)');
+  const LINKS = 'a.xref, a[data-footnote-ref], a[href^="#mjx-eqn"]';
+
+  const card = document.createElement('div');
+  card.className = 'preview-card';
+  // A visual aid: the link itself is what assistive technology reads.
+  card.setAttribute('aria-hidden', 'true');
+  const body = document.createElement('div');
+  body.className = 'preview-body prose';
+  const jump = document.createElement('a');
+  jump.className = 'preview-jump';
+  jump.tabIndex = -1;
+  jump.textContent = article.dataset.jump!;
+  card.append(body, jump);
+  document.body.append(card);
+
+  let current: Element | undefined;
+  let openTimer: ReturnType<typeof setTimeout> | undefined;
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const hrefOf = (a: Element) => a.getAttribute('href') ?? a.getAttribute('xlink:href') ?? '';
+
+  // The links that preview: in the article text, not in a card, and footnote
+  // references only where no sidenote stands beside them (a note cited twice
+  // stands beside its first reference only).
+  function previewLink(node: EventTarget | null) {
+    const a = node instanceof Element ? node.closest(LINKS) : null;
+    if (!a || !prose.contains(a) || a.closest('.sidenotes')) return null;
+    if (a.matches('[data-footnote-ref][data-sidenote]') && article.classList.contains('has-sidenotes')) return null;
+    return a;
+  }
+
+  // What the card shows for a link, or nothing if the target is missing.
+  function preview(a: Element) {
+    // Footnote ids stay percent-encoded (a label such as [^注]); other ids are
+    // found by their decoded form, as the browser does.
+    const frag = hrefOf(a).slice(1);
+    const target = document.getElementById(frag) ?? document.getElementById(decodeURIComponent(frag));
+    if (!target) return null;
+    // A list entry (reference or note) is numbered by its list: say the number.
+    if (target.matches('li')) {
+      const item = displayCopy(target);
+      const label = document.createElement('span');
+      label.className = 'preview-label';
+      label.textContent = a.matches('[data-footnote-ref]') ? `${a.textContent}` : `[${a.textContent}]`;
+      (item.querySelector('p') ?? item).prepend(label, ' ');
+      return [...item.childNodes];
+    }
+    // A section: its title and first paragraph, as in the TOC.
+    if (target.matches('h2, h3')) {
+      const parts: Node[] = [displayCopy(target)];
+      for (let next = target.nextElementSibling; next && !next.matches('h2, h3'); next = next.nextElementSibling) {
+        if (next.matches('p')) {
+          parts.push(displayCopy(next));
+          break;
+        }
+      }
+      return parts;
+    }
+    // An equation label sits deep in MathJax's SVG: show the whole formula.
+    const whole = target.closest('mjx-container') ?? target;
+    const copy = displayCopy(whole);
+    // Figures show their image and caption; a video does not play in a card.
+    for (const video of copy.querySelectorAll('video')) video.remove();
+    for (const img of copy.querySelectorAll('img')) img.loading = 'eager';
+    // A widened figure (FigureZoom.astro) shows at its normal size.
+    for (const el of copy.querySelectorAll('[data-wide], [data-wide] *')) el.removeAttribute('style');
+    for (const el of copy.querySelectorAll('[data-wide]')) {
+      el.removeAttribute('data-wide');
+      el.removeAttribute('data-more');
+    }
+    return [copy];
+  }
+
+  function place(a: Element) {
+    const margin = 8;
+    const link = a.getBoundingClientRect();
+    const { offsetWidth: w, offsetHeight: h } = card;
+    // Below the link, or above it if only that fits; never past the sides.
+    const below = link.bottom + margin;
+    const top = below + h > innerHeight - margin && link.top - margin - h > margin ? link.top - margin - h : below;
+    // If neither fits (a short screen), keep the whole card, and its jump
+    // link, on screen.
+    const y = Math.max(margin, Math.min(top, innerHeight - margin - h));
+    const left = Math.min(Math.max(link.left + link.width / 2 - w / 2, margin), innerWidth - w - margin);
+    card.style.top = `${y}px`;
+    card.style.left = `${left}px`;
+  }
+
+  // Whether the card is open for the link (not if its target is missing).
+  function open(a: Element) {
+    clearTimeout(closeTimer);
+    if (current === a) return true;
+    const parts = preview(a);
+    if (!parts) return false;
+    current = a;
+    body.replaceChildren(...parts);
+    jump.href = hrefOf(a);
+    card.classList.add('is-measuring');
+    // Long content is cut off with a fade; then, and on touch screens, the
+    // card offers to go to the target.
+    card.classList.toggle('is-clipped', body.scrollHeight > body.clientHeight + 1);
+    card.classList.toggle('has-jump', touch.matches || card.classList.contains('is-clipped'));
+    place(a);
+    card.classList.remove('is-measuring');
+    card.classList.add('is-open');
+    return true;
+  }
+
+  function close() {
+    clearTimeout(openTimer);
+    current = undefined;
+    card.classList.remove('is-open');
+  }
+
+  const closeSoon = () => {
+    clearTimeout(openTimer);
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(close, 150);
+  };
+
+  // Pointer: open after a short rest on the link, so passing over it does
+  // nothing; stay open while the pointer moves into the card.
+  prose.addEventListener('mouseover', (event) => {
+    if (touch.matches) return;
+    const a = previewLink(event.target);
+    if (!a) return;
+    clearTimeout(closeTimer);
+    clearTimeout(openTimer);
+    openTimer = setTimeout(() => open(a), current ? 0 : 200);
+  });
+  prose.addEventListener('mouseout', (event) => {
+    if (touch.matches) return;
+    const a = previewLink(event.target);
+    if (a && !a.contains(event.relatedTarget as Node)) closeSoon();
+  });
+  card.addEventListener('mouseenter', () => clearTimeout(closeTimer));
+  card.addEventListener('mouseleave', () => touch.matches || closeSoon());
+
+  // Keyboard: open on focus, close on blur or Escape. (A tap focuses the
+  // link too; that is left to the click handler below.)
+  prose.addEventListener('focusin', (event) => {
+    const a = previewLink(event.target);
+    if (a?.matches(':focus-visible')) open(a);
+  });
+  prose.addEventListener('focusout', (event) => previewLink(event.target) && closeSoon());
+  addEventListener('keydown', (event) => event.key === 'Escape' && close());
+
+  // Touch: the first tap opens the card, a second tap on the same link
+  // follows it; a link with nothing to preview is followed at once. Capture
+  // phase, so other handlers (the TOC, sidenotes) see the cancelled click.
+  document.addEventListener(
+    'click',
+    (event) => {
+      if (!touch.matches) return;
+      const a = previewLink(event.target);
+      if (a && a !== current && open(a)) event.preventDefault();
+      else if (!card.contains(event.target as Node)) close();
+    },
+    true,
+  );
+  jump.addEventListener('click', close);
+  addEventListener('scroll', () => current && close(), { passive: true });
+  addEventListener('resize', () => current && close());
+</script>

@@ -1,0 +1,267 @@
+---
+// Minimap-style table of contents, after ChatGPT's: one tick per heading in
+// the left margin. Hovering or focusing a tick shows a card for that section
+// only (its title and the start of its first paragraph); clicking jumps there.
+// Wide screens only.
+interface Props {
+  toc: { depth: number; slug: string; html: string; label: string; excerpt: string }[];
+  label: string;
+}
+const { toc, label } = Astro.props;
+---
+
+{
+  toc.length >= 2 && (
+    <nav class="toc" aria-label={label}>
+      <ol>
+        {toc.map((h) => (
+          <li data-depth={h.depth} data-slug={h.slug}>
+            <a href={`#${h.slug}`} aria-label={h.label}>
+              <span class="toc-tick" />
+            </a>
+            <div class="toc-card" aria-hidden="true">
+              <span class="toc-card-title" set:html={h.html} />
+              {h.excerpt && <span class="toc-card-text" set:html={h.excerpt} />}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  )
+}
+
+<script>
+  // Highlight the last heading that has scrolled past the top fifth of the viewport.
+  const nav = document.querySelector<HTMLElement>('.toc');
+  if (nav) {
+    const items = [...nav.querySelectorAll<HTMLElement>('li')];
+    const headings = items
+      .map((li) => li.dataset.slug!)
+      .map((slug) => document.getElementById(slug))
+      .filter((h): h is HTMLElement => h !== null);
+    let active: string | undefined;
+    let pinned: string | undefined;
+    // Where the jump to the pinned heading landed; any other scroll releases it.
+    let pinnedAt: number | undefined;
+    let queued = false;
+    // A heading becomes current at the scroll position where it reaches the
+    // top fifth of the viewport. Near the end of the page the last headings
+    // may never get there, so every heading that would become current in the
+    // last half screen of scrolling (or never) is spread evenly over that
+    // stretch instead: each still becomes current in order, the last one at
+    // the very bottom.
+    const update = () => {
+      queued = false;
+      if (pinned && pinnedAt !== undefined && Math.abs(scrollY - pinnedAt) > 4) pinned = undefined;
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const tail = Math.min(innerHeight / 2, max);
+      const start = max - tail;
+      const at = headings.map((h) => h.getBoundingClientRect().top + scrollY - innerHeight / 5);
+      const late = at.findIndex((a) => a > start);
+      if (late >= 0) {
+        const k = at.length - late;
+        for (let i = late; i < at.length; i++) at[i] = start + (tail * (i - late + 1)) / k;
+      }
+      const i = at.findLastIndex((a) => a <= scrollY + 1);
+      const current = (pinned && document.getElementById(pinned)) || headings[Math.max(i, 0)];
+      if (current?.id === active) return;
+      active = current?.id;
+      for (const li of items) li.toggleAttribute('data-active', li.dataset.slug === active);
+    };
+    const schedule = () => queued || ((queued = true), requestAnimationFrame(update));
+    addEventListener('scroll', schedule, { passive: true });
+    addEventListener('resize', schedule);
+    // After following a link to a heading (TOC entry or \ref), keep that
+    // heading current even if the page cannot scroll it to the top; the
+    // reader's own next scroll (wheel, touch, scroll keys, scrollbar, script)
+    // releases it.
+    const pin = (id: string | undefined) => {
+      pinned = id;
+      pinnedAt = undefined;
+      schedule();
+      if (!id) return;
+      // The jump to the heading is instant; record where it landed. Back and
+      // Forward restore the old scroll position instead, so keep the pin only
+      // if the heading is at the top (or on screen at the end of the page).
+      requestAnimationFrame(() => {
+        if (pinned !== id) return;
+        const top = document.getElementById(id)!.getBoundingClientRect().top;
+        const end = scrollY >= document.documentElement.scrollHeight - innerHeight - 4;
+        if (Math.abs(top) <= 4 || (end && top > 0 && top < innerHeight)) pinnedAt = scrollY;
+        else pin(undefined);
+      });
+    };
+    const isHeading = (id: string | undefined) => !!id && headings.some((h) => h.id === id);
+    document.addEventListener('click', (event) => {
+      // A link preview on a touch screen cancels the click: no jump, no pin.
+      if (event.defaultPrevented) return;
+      const href = (event.target as Element).closest?.('a[href^="#"]')?.getAttribute('href');
+      const id = href ? decodeURIComponent(href.slice(1)) : undefined;
+      if (isHeading(id)) pin(id);
+    });
+    // Back/Forward between headings: pin the heading in the new URL, if any.
+    addEventListener('hashchange', () => {
+      const id = decodeURIComponent(location.hash.slice(1));
+      pin(isHeading(id) ? id : undefined);
+    });
+    const release = () => pinned && ((pinned = undefined), schedule());
+    for (const type of ['wheel', 'touchmove']) addEventListener(type, release, { passive: true });
+    const scrollKeys = ['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '];
+    addEventListener('keydown', (event) => scrollKeys.includes(event.key) && release());
+    // Escape hides the card of the focused tick, until focus or the pointer
+    // moves on.
+    nav.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') (event.target as Element).closest('li')?.setAttribute('data-dismissed', '');
+    });
+    nav.addEventListener('focusout', (event) => (event.target as Element).closest('li')?.removeAttribute('data-dismissed'));
+    nav.addEventListener('mouseleave', () => items.forEach((li) => li.removeAttribute('data-dismissed')));
+    update();
+  }
+</script>
+
+<style>
+  .toc {
+    display: none;
+  }
+
+  @media (min-width: 72rem) {
+    .toc {
+      display: block;
+      position: fixed;
+      top: 50%;
+      left: max(1.5rem, calc(50vw - var(--measure) / 2 - 9rem));
+      transform: translateY(-50%);
+      z-index: 10;
+      font-family: var(--font-sans);
+    }
+  }
+
+  /* On pages with sidenotes the text shifts left (global.css); the TOC follows it. */
+  @media (min-width: 75rem) {
+    :global(body:has(.footnotes)) .toc {
+      left: max(1.5rem, min(50vw - var(--measure) / 2 - 9rem, 100vw - var(--measure) - 28rem));
+    }
+  }
+
+  ol {
+    max-height: 70vh;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    position: relative;
+  }
+
+  /* Each link is a full-width row, so moving along the ticks never leaves a
+     gap between hover targets. */
+  a {
+    display: flex;
+    align-items: center;
+    width: 2.75rem;
+    height: 0.75rem;
+  }
+
+  /* Ticks: 2px bars, shorter for deeper headings; full length when current. */
+  .toc-tick {
+    width: 1.75rem;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--rule);
+    transform: scaleX(0.714);
+    transform-origin: left;
+    transition: background-color 0.2s, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  li[data-depth='3'] .toc-tick {
+    transform: scaleX(0.429);
+  }
+
+  li[data-active] .toc-tick {
+    background: var(--text);
+    transform: none;
+  }
+
+  li:hover .toc-tick,
+  a:focus-visible .toc-tick {
+    background: var(--muted);
+  }
+
+  a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 0;
+    border-radius: 2px;
+  }
+
+  /* The card for one section, beside its tick. Shown on hover or focus;
+     it is a preview only, so the pointer passes through it. */
+  .toc-card {
+    position: absolute;
+    top: 50%;
+    left: 3.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    width: 19rem;
+    padding: 0.75rem 1rem;
+    border-radius: 14px;
+    background: var(--raised);
+    box-shadow: var(--shadow-raised);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-0.25rem, -50%);
+    transition: opacity 0.12s, transform 0.12s;
+  }
+
+  li:hover .toc-card,
+  li:focus-within .toc-card {
+    opacity: 1;
+    transform: translate(0, -50%);
+    transition: opacity 0.16s cubic-bezier(0.16, 1, 0.3, 1), transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  li[data-dismissed] .toc-card {
+    opacity: 0;
+    transform: translate(-0.25rem, -50%);
+  }
+
+  .toc-card-title {
+    overflow: hidden;
+    color: var(--text);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    line-height: 1.45;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toc-card-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    color: var(--muted);
+    font-family: var(--font-serif);
+    font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  /* Formulas in the preview follow the text size. */
+  .toc-card :global(mjx-container) {
+    font-size: 95%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .toc-card,
+    li:hover .toc-card,
+    li:focus-within .toc-card {
+      transform: translate(0, -50%);
+      transition: opacity 0.12s;
+    }
+
+    .toc-tick {
+      transition: background-color 0.2s;
+    }
+  }
+</style>

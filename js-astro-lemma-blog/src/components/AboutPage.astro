@@ -1,0 +1,305 @@
+---
+// A CV-like profile: name, tagline, links and a short bio, then the GitHub
+// activity, then the other blocks in the order of the frontmatter: dated
+// entries, papers, and the blocks named by `kind:` (now, facts, stack,
+// projects, posts). All content comes from the about folder
+// (plugins/about.mjs); this file only lays it out.
+import { getEntry, render } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import AboutActivity from './AboutActivity.astro';
+import AboutEntry from './AboutEntry.astro';
+import AboutNow from './AboutNow.astro';
+import { SITE, aboutUrl, formatDate, getPosts, hasAbout, otherLang, postUrl, ui, type Lang } from '../i18n';
+import { numberLocale } from '../scripts/dates';
+import { resolveHref } from '../../plugins/about.mjs';
+import { contributions, stars, type Calendar } from '../../plugins/github.mjs';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const t = ui[lang];
+const entry = (await getEntry('about', lang))!;
+const { Content } = await render(entry);
+const { title, name, tagline, links, sections } = entry.data;
+const other = otherLang(lang);
+const alternate = (await hasAbout(other)) ? aboutUrl(other) : undefined;
+
+// Names compared without case, accents, spaces or punctuation, and in either
+// order for a "Family, Given" form: "Qiao, Lin" also matches "Lin Qiao*".
+const nameKey = (s: string) =>
+  s
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, '');
+const self = new Set(
+  (entry.data.self ?? [SITE.authorBibtex]).flatMap((n) => {
+    const [family, given] = n.split(',', 2);
+    return given === undefined ? [nameKey(n)] : [nameKey(n), nameKey(`${given} ${family}`)];
+  }),
+);
+
+// Links from the frontmatter, files in the about folder resolved.
+const resolved = (links: { label: string; href: string }[]) => links.map((l) => ({ label: l.label, href: resolveHref(l.href) }));
+
+// arXiv ids and DOIs may be written bare or as URLs.
+const arxivUrl = (id: string) => (/^https?:/.test(id) ? id : `https://arxiv.org/abs/${id.replace(/^arxiv:/i, '')}`);
+const doiUrl = (id: string) => (/^https?:/.test(id) ? id : `https://doi.org/${id.replace(/^doi:/i, '')}`);
+
+// Sections in order, empty ones left out. Publications go newest first
+// (undated last, YAML order within a year), and a year is shown on the first
+// entry of that year only. A selectedOnly section without a list draws on
+// the papers of the others.
+const papers = sections.flatMap((s) => (s.kind === 'publications' && s.publications) || []);
+const rows = (list: typeof papers) =>
+  list.map((p, i) => {
+    const links = [
+      ...(p.pdf ? [{ label: 'PDF', href: resolveHref(p.pdf) }] : []),
+      ...(p.arxiv ? [{ label: 'arXiv', href: arxivUrl(p.arxiv) }] : []),
+      ...(p.doi ? [{ label: 'DOI', href: doiUrl(p.doi) }] : []),
+      ...resolved(p.links),
+    ];
+    return {
+      ...p,
+      when: p.year !== list[i - 1]?.year ? p.year?.toString() : undefined,
+      href: p.url ? resolveHref(p.url) : links[0]?.href,
+      authors: p.authors.map((name) => ({ name, self: self.has(nameKey(name)) })),
+      links,
+    };
+  });
+// Every section becomes a block; items and papers become a list of entries.
+// An empty list or a posts block without posts is left out. Activity blocks
+// come first, wherever they are written; the others keep their order. GitHub
+// data comes fresh in a build; the dev server reuses a recent copy.
+const refresh = import.meta.env.PROD;
+type Section = (typeof sections)[number];
+type Item = Extract<Section, { kind: 'items' }>['items'][number];
+type Entries = { kind: 'entries'; heading: string; items: Item[]; pubs: ReturnType<typeof rows> };
+type Activity = Extract<Section, { kind: 'activity' }> & { calendar: Calendar };
+type RecentPosts = Extract<Section, { kind: 'posts' }> & { posts: Awaited<ReturnType<typeof getPosts>> };
+type Block = Exclude<Section, { kind: 'items' | 'publications' | 'activity' | 'posts' }> | Entries | Activity | RecentPosts;
+const blocks = (
+  await Promise.all(
+    sections.map(async (s): Promise<Block[]> => {
+      if (s.kind === 'items') return s.items.length ? [{ kind: 'entries', heading: s.heading, items: s.items, pubs: [] }] : [];
+      if (s.kind === 'publications') {
+        const own = s.publications ?? (s.selectedOnly ? papers : []);
+        const pubs = rows((s.selectedOnly ? own.filter((p) => p.selected) : own).toSorted((a, b) => (b.year ?? 0) - (a.year ?? 0)));
+        return pubs.length ? [{ kind: 'entries', heading: s.heading, items: [], pubs }] : [];
+      }
+      if (s.kind === 'activity') {
+        const user = s.github ?? SITE.github;
+        const calendar = user ? await contributions(user, { refresh }) : undefined;
+        if (calendar) return [{ ...s, calendar }];
+        // A build must not quietly drop the block; the dev server shows the page without it.
+        const why = user ? `no GitHub contributions of ${user}: none could be fetched (see the warning above) and none are cached` : 'an activity block needs `github:` or site.links.github';
+        if (import.meta.env.PROD) throw new Error(`[about] ${lang}.md: ${why}. Build with network, or remove the block.`);
+        console.warn(`[about] ${lang}.md: ${why}; the block is left out.`);
+        return [];
+      }
+      if (s.kind === 'projects') {
+        // No stars (0) show as none: the GitHub icon alone.
+        const projects = await Promise.all(s.projects.map(async (p) => ({ ...p, stars: (p.stars ?? (p.repo ? await stars(p.repo, { refresh }) : undefined)) || undefined })));
+        return [{ ...s, projects }];
+      }
+      if (s.kind === 'posts') {
+        const posts = (await getPosts(lang)).slice(0, s.limit);
+        return posts.length ? [{ ...s, posts }] : [];
+      }
+      return [s];
+    }),
+  )
+)
+  .flat()
+  .toSorted((a, b) => Number(b.kind === 'activity') - Number(a.kind === 'activity'));
+const repoName = (href: string) => href.replace(/^https?:\/\/(www\.)?github\.com\//i, '').replace(/\/$/, '');
+// In the 6rem date column, a Chinese post date is written as entries write
+// theirs (2026-10-10); 2026 年 10 月 10 日 would take two lines.
+const postDate = (date: Date) => (lang === 'zh' ? date.toISOString().slice(0, 10) : formatDate(date, lang));
+
+// Links under the name show where they lead: an email address, a GitHub user
+// name, otherwise the label; the icon says what kind of link it is.
+const ICONS = {
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/>',
+  github:
+    '<path class="fill" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.6 9.6 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
+  arrow: '<path d="M7 17 17 7M8 7h9v9"/>',
+};
+// A project's repository button: its stars, or the GitHub icon alone.
+const starsText = (n: number) => t.stars[n === 1 ? 0 : 1].replace('{n}', n.toLocaleString(numberLocale(lang)));
+const contact = (l: { label: string; href: string }) => {
+  if (l.href.startsWith('mailto:')) return { icon: ICONS.mail, text: l.href.slice(7).split('?')[0] };
+  const user = l.href.match(/^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/?$/i)?.[1];
+  if (user) return { icon: ICONS.github, text: user };
+  return { icon: resolveHref(l.href) === l.href ? ICONS.link : ICONS.file, text: l.label };
+};
+
+const HAN = /\p{Script=Han}/u;
+// For paper: an address in place of its label (chengrui.dev/about/cv.pdf).
+const printed = (href: string) =>
+  href.startsWith('mailto:')
+    ? href.slice(7)
+    : new URL(resolveHref(href), Astro.site).href.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+---
+
+<Base lang={lang} title={title} description={tagline} alternate={alternate}>
+  <article class="about" data-copied={t.copied}>
+    <header class="about-header">
+      <h1>{name}</h1>
+      {tagline && <p class="about-tagline">{tagline}</p>}
+      {
+        links.length > 0 && (
+          <ul class="about-links">
+            {links.map((l) => {
+              const c = contact(l);
+              return (
+                <li>
+                  <a href={resolveHref(l.href)} aria-label={c.text === l.label ? undefined : `${l.label}: ${c.text}`}>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" set:html={c.icon} />
+                    <span class="link-label">{c.text}</span>
+                    <span class="link-print">{printed(l.href)}</span>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        )
+      }
+    </header>
+    <div class="prose about-bio">
+      <Content />
+    </div>
+    {
+      blocks.map((s) => (
+        <section class="about-section" data-kind={s.kind}>
+          {s.heading && <h2>{s.heading}</h2>}
+          {s.kind === 'now' && <AboutNow lang={lang} text={s.text} updated={s.updated} place={s.place} timezone={s.timezone} />}
+          {s.kind === 'facts' && (
+            <dl class="facts">
+              {s.facts.map((f) => (
+                <div>
+                  <dt>{f.label}</dt>
+                  <dd>{f.href ? <a href={resolveHref(f.href)}>{f.value}</a> : f.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {s.kind === 'activity' && <AboutActivity lang={lang} calendar={s.calendar} />}
+          {s.kind === 'stack' && (
+            <dl class="facts">
+              {s.groups.map((g) => (
+                <div>
+                  <dt>{g.label}</dt>
+                  <dd>
+                    <ul class="stack-tags">
+                      {g.tags.map((tag) => (
+                        <li>{tag}</li>
+                      ))}
+                    </ul>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {s.kind === 'projects' && (
+            <ul class="items">
+              {s.projects.map((p) => (
+                <li class="item">
+                  <div class="item-content">
+                    <p class="item-title">
+                      {p.href || p.repo ? <a href={resolveHref((p.href ?? p.repo)!)}>{p.title}</a> : p.title}
+                      {p.when && <span class="item-when">{p.when}</span>}
+                    </p>
+                    {p.note && <p class="item-description">{p.note}</p>}
+                  </div>
+                  {(p.repo || p.href || p.links.length > 0) && (
+                    <ul class="item-actions">
+                      {p.repo && (
+                        <li>
+                          <a href={p.repo} class:list={{ 'icon-only': p.stars === undefined }} aria-label={[`GitHub: ${repoName(p.repo)}`, p.stars !== undefined && starsText(p.stars)].filter(Boolean).join(', ')}>
+                            {p.stars?.toLocaleString(numberLocale(lang))}
+                            <svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.github} />
+                          </a>
+                        </li>
+                      )}
+                      {p.links.map((l) => (
+                        <li>
+                          <a href={resolveHref(l.href)}>{l.label}</a>
+                        </li>
+                      ))}
+                      {p.href && p.repo && (
+                        <li>
+                          <a href={resolveHref(p.href)} class="icon-only" aria-label={`${t.site}: ${p.title}`}>
+                            <svg viewBox="0 0 24 24" aria-hidden="true" set:html={ICONS.arrow} />
+                          </a>
+                        </li>
+                      )}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {s.kind === 'posts' && (
+            <ul class="entries">
+              {s.posts.map((p) => (
+                <AboutEntry when={postDate(p.data.date)} datetime={p.data.date.toISOString()} title={p.data.title} href={postUrl(p)}>
+                  <p class="entry-subtitle">{p.data.description}</p>
+                </AboutEntry>
+              ))}
+            </ul>
+          )}
+          {s.kind === 'entries' && (
+            <ul class="entries">
+              {s.items.map((item) => (
+                <AboutEntry when={item.when} title={item.title} href={item.href && resolveHref(item.href)} links={resolved(item.links)}>
+                  {item.subtitle && <p class="entry-subtitle">{item.subtitle}</p>}
+                  {item.note && <p class="entry-note">{item.note}</p>}
+                </AboutEntry>
+              ))}
+              {s.pubs.map((p) => (
+                <AboutEntry when={p.when} title={p.title} href={p.href} links={p.links}>
+                  {p.authors.length > 0 && (
+                    <p class="pub-authors">
+                      {p.authors.map((a, i) => (
+                        <>
+                          {i > 0 && ', '}
+                          {a.self ? <strong>{a.name}</strong> : a.name}
+                        </>
+                      ))}
+                    </p>
+                  )}
+                  {(p.venue || p.note) && (
+                    <p class="entry-subtitle">
+                      {p.venue && <cite lang={HAN.test(p.venue) ? 'zh' : 'en'}>{p.venue}</cite>}
+                      {p.venue && p.note && '. '}
+                      {p.note}
+                    </p>
+                  )}
+                  {p.bibtex && (
+                    <li slot="links" class="bibtex">
+                      <pre hidden>{p.bibtex.trim()}</pre>
+                      <button class="bibtex-copy" type="button" aria-live="polite">
+                        <span class="sr-only">{t.copy} </span>BibTeX
+                      </button>
+                    </li>
+                  )}
+                </AboutEntry>
+              ))}
+            </ul>
+          )}
+        </section>
+      ))
+    }
+  </article>
+</Base>
+
+<script>
+  import { copyButtons } from '../scripts/copy-button';
+
+  const about = document.querySelector<HTMLElement>('article.about')!;
+  copyButtons(about, '.bibtex-copy', about.dataset.copied!);
+</script>

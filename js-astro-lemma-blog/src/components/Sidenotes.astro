@@ -1,0 +1,105 @@
+---
+// Sidenotes: where the screen has room, each footnote is shown in the right
+// margin beside its first reference, and the list at the end is hidden.
+// Elsewhere the list stays, and the reference shows the note in a preview
+// card (Previews.astro). Written as ordinary footnotes: text[^1] / [^1]: note.
+---
+
+<script>
+  import { baselineMark, displayCopy } from '../scripts/copy';
+
+  // Wide enough for the column of notes (see global.css, "Sidenotes").
+  const wide = matchMedia('(min-width: 75rem)');
+  const article = document.querySelector<HTMLElement>('article.post')!;
+  const prose = article.querySelector<HTMLElement>('.prose')!;
+  const items = [...prose.querySelectorAll<HTMLLIElement>('.footnotes li[id]')];
+
+  const column = document.createElement('div');
+  column.className = 'sidenotes';
+  column.setAttribute('role', 'group');
+  column.setAttribute('aria-label', article.dataset.notes!);
+
+  // Each note beside the first reference to it (a note can be cited twice).
+  const notes = items.flatMap((li) => {
+    const ref = prose.querySelector<HTMLElement>(`a[data-footnote-ref][href="#${CSS.escape(li.id)}"]`);
+    const sup = ref?.closest('sup');
+    if (!ref || !sup) return [];
+    const note = document.createElement('div');
+    note.className = 'sidenote';
+    note.setAttribute('role', 'note');
+    // The list is hidden beside the notes: links in a note must take focus,
+    // and every reference points to the note (a reference moves focus to it).
+    note.id = `side-${li.id}`;
+    note.tabIndex = -1;
+    note.append(...displayCopy(li, { focusable: true }).childNodes);
+    for (const a of prose.querySelectorAll(`a[data-footnote-ref][href="#${CSS.escape(li.id)}"]`)) a.setAttribute('aria-details', note.id);
+    // The reference the note stands beside (it needs no preview card).
+    ref.dataset.sidenote = '';
+    const num = document.createElement('span');
+    num.className = 'sidenote-num';
+    num.textContent = ref.textContent;
+    const first = note.querySelector('p') ?? note;
+    const noteMark = baselineMark();
+    first.prepend(noteMark, num);
+    const refMark = baselineMark();
+    sup.after(refMark);
+    column.append(note);
+    return [{ li, ref, sup, note, refMark, noteMark }];
+  });
+
+  if (notes.length) {
+    prose.append(column);
+    const layout = () => {
+      article.classList.toggle('has-sidenotes', wide.matches);
+      if (!wide.matches) return;
+      const gap = parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.75;
+      const origin = column.getBoundingClientRect().top;
+      let bottom = -Infinity;
+      // The first line of a note on the same baseline as its reference;
+      // a note that would overlap the one above goes below it instead.
+      for (const { note, refMark, noteMark } of notes) {
+        note.style.top = '0px';
+        const lead = noteMark.getBoundingClientRect().bottom - note.getBoundingClientRect().top;
+        const top = Math.max(refMark.getBoundingClientRect().bottom - origin - lead, bottom + gap);
+        note.style.top = `${top}px`;
+        bottom = top + note.offsetHeight;
+      }
+    };
+    let queued = false;
+    const schedule = () => queued || ((queued = true), requestAnimationFrame(() => ((queued = false), layout())));
+    wide.addEventListener('change', schedule);
+    // Text reflow (fonts, images, window size) moves the references.
+    new ResizeObserver(schedule).observe(prose);
+    document.fonts.ready.then(schedule);
+    layout();
+
+    // A reference and its note light up together.
+    const link = (event: Event, on: boolean) => {
+      const target = event.target as Element;
+      const pair = notes.find((n) => n.sup.contains(target) || n.note.contains(target));
+      pair?.sup.classList.toggle('is-linked', on);
+      pair?.note.classList.toggle('is-linked', on);
+    };
+    prose.addEventListener('mouseover', (event) => link(event, true));
+    prose.addEventListener('mouseout', (event) => link(event, false));
+    prose.addEventListener('focusin', (event) => link(event, true));
+    prose.addEventListener('focusout', (event) => link(event, false));
+    // A reference goes to its note, not to the hidden list. The note beside
+    // it takes focus only from the keyboard (so Tab reaches its links); a
+    // later reference to the same note scrolls to it. A link preview on a
+    // touch screen cancels the click first: then nothing happens.
+    prose.addEventListener('click', (event) => {
+      if (event.defaultPrevented || !article.classList.contains('has-sidenotes')) return;
+      const a = (event.target as Element).closest('a[data-footnote-ref]');
+      const pair = a && notes.find((n) => a.getAttribute('href') === `#${n.li.id}`);
+      if (!pair) return;
+      event.preventDefault();
+      if (a !== pair.ref || event.detail === 0) pair.note.focus({ preventScroll: a === pair.ref });
+    });
+    // Escape in a note goes back to its reference.
+    column.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || !article.classList.contains('has-sidenotes')) return;
+      notes.find((n) => n.note.contains(event.target as Node))?.ref.focus();
+    });
+  }
+</script>

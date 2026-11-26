@@ -1,0 +1,58 @@
+---
+// The mark beside the home formula or tagline (lemma.config.mjs,
+// site.intro.curve): a comet of dots running along a math curve
+// (src/scripts/curves.ts). The page renders the first frame; the script runs
+// it while it is on screen. With reduced motion, or without JavaScript, the
+// first frame stays.
+import { CURVES, DOTS, breath, dot, tracks, type CurveName } from '../scripts/curves';
+
+interface Props {
+  curve: CurveName;
+}
+const { curve } = Astro.props;
+const c = CURVES[curve];
+const s = breath(0);
+---
+
+<svg class="tagline-curve" viewBox="0 0 100 100" aria-hidden="true" data-curve={curve}>
+  <g>
+    {tracks(c, s).map((d, i) => <path d={d} class:list={{ 'tagline-level': i > 0 }} />)}
+    {Array.from({ length: DOTS }, (_, i) => <circle {...dot(c, 0, s, i)} />)}
+  </g>
+</svg>
+
+<script>
+  import { CURVES, breath, dot, rotation, tracks, type CurveName } from '../scripts/curves';
+
+  const svg = document.querySelector<SVGSVGElement>('.tagline-curve');
+  if (svg && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const curve = CURVES[svg.dataset.curve as CurveName];
+    const group = svg.querySelector('g')!;
+    const paths = [...svg.querySelectorAll('path')];
+    const dots = [...svg.querySelectorAll('circle')];
+    // Seconds of animation shown so far; the clock stops while off screen.
+    let time = 0;
+    let last: number | undefined;
+    let frame = 0;
+    const draw = (now: number) => {
+      time += last === undefined ? 0 : Math.min(now - last, 100) / 1000;
+      last = now;
+      const s = breath(time);
+      group.setAttribute('transform', `rotate(${rotation(curve, time).toFixed(2)} 50 50)`);
+      tracks(curve, s).forEach((d, i) => paths[i].setAttribute('d', d));
+      dots.forEach((circle, i) => {
+        const { cx, cy, r, opacity } = dot(curve, time, s, i);
+        circle.setAttribute('cx', cx.toFixed(2));
+        circle.setAttribute('cy', cy.toFixed(2));
+        circle.setAttribute('r', r.toFixed(2));
+        circle.setAttribute('opacity', opacity.toFixed(3));
+      });
+      frame = requestAnimationFrame(draw);
+    };
+    new IntersectionObserver(([entry]) => {
+      cancelAnimationFrame(frame);
+      last = undefined;
+      if (entry.isIntersecting) frame = requestAnimationFrame(draw);
+    }).observe(svg);
+  }
+</script>

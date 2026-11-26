@@ -1,0 +1,99 @@
+---
+import '../styles/app.css';
+import { getCollection } from 'astro:content';
+import { SITE_TITLE, SITE_DESCRIPTION } from '../consts';
+
+interface Props {
+  title?: string;
+  description?: string;
+  noindex?: boolean;
+}
+
+const { title, description, noindex = false } = Astro.props;
+const pageTitle = title ? `${title} — ${SITE_TITLE}` : SITE_TITLE;
+const pageDesc = description || SITE_DESCRIPTION;
+const canonical = new URL(Astro.url.pathname, Astro.site ?? Astro.url);
+const base = import.meta.env.BASE_URL;
+
+/** Join onto the base path without ever producing a double slash. */
+const href = (p: string) => `${base}/${p}`.replace(/\/+/g, '/');
+
+// About, privacy, terms — whatever this directory has. Sorted the way the
+// admin ordered them, so the static build matches the PHP site's footer.
+const pages = (await getCollection('pages'))
+  .sort((a, b) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title));
+const footerPages = pages.filter((p) => p.data.inFooter);
+---
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{pageTitle}</title>
+  <meta name="description" content={pageDesc} />
+  <link rel="canonical" href={canonical} />
+  {noindex && <meta name="robots" content="noindex, follow" />}
+  <meta property="og:site_name" content={SITE_TITLE} />
+  <meta property="og:title" content={pageTitle} />
+  <meta property="og:description" content={pageDesc} />
+  <meta property="og:type" content="website" />
+  <link rel="sitemap" href={`${base}sitemap-index.xml`.replace(/\/+/g, '/')} />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href={base}>{SITE_TITLE}</a>
+
+    <!-- Same markup as the PHP and WordPress editions, so all three look
+         identical. <details> keeps it working with no JavaScript at all. -->
+    <details class="menu" id="c00d-menu">
+      <summary class="menu-button" aria-label="Menu" title="Menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="icon-burger"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="icon-close"><path d="M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7l1.4-1.4L10.6 10.6l6.3-6.3z"/></svg>
+      </summary>
+      <div class="menu-panel">
+        <form class="menu-search" role="search" method="get" action={href('search')}>
+          <input type="search" name="q" placeholder="Search the directory…" aria-label="Search" />
+          <button type="submit">Search</button>
+        </form>
+        <nav class="menu-links">
+          <a href={base}>Home</a>
+          {pages.map((p) => <a href={href(p.data.slug)}>{p.data.title}</a>)}
+        </nav>
+      </div>
+    </details>
+  </div>
+</header>
+
+<main class="wrap">
+  <slot />
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    {footerPages.length > 0 && (
+      <nav class="footer-links">
+        {footerPages.map((p) => <a href={href(p.data.slug)}>{p.data.title}</a>)}
+      </nav>
+    )}
+    <p>&copy; {new Date().getFullYear()} {SITE_TITLE}</p>
+  </div>
+</footer>
+
+<script>
+  /* Progressive enhancement only — the menu opens and closes without this.
+     Adds click-outside and Escape-to-close, matching the PHP edition. */
+  const menu = document.getElementById('c00d-menu') as HTMLDetailsElement | null;
+  if (menu) {
+    document.addEventListener('click', (e) => {
+      if (menu.open && !menu.contains(e.target as Node)) menu.open = false;
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && menu.open) menu.open = false;
+    });
+  }
+</script>
+
+</body>
+</html>

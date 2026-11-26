@@ -1,0 +1,103 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+
+/*
+ * Search runs in the browser.
+ *
+ * A static site has no server to query, so the whole index ships as JSON and
+ * the filtering happens client-side. That is fine at this size — a few hundred
+ * listings is a handful of kilobytes — and it keeps the page cacheable. Past a
+ * few thousand, move search to the API.
+ */
+const listings = await getCollection('listings');
+const index = listings.map((l) => ({
+  name: l.data.name,
+  slug: l.data.slug,
+  description: l.data.description,
+  rating: l.data.rating,
+  favicon: l.data.favicon,
+}));
+
+const base = import.meta.env.BASE_URL;
+---
+<BaseLayout title="Search" noindex={true}>
+  <div class="page-head">
+    <h1>Search</h1>
+    <form class="page-search" role="search" id="search-form">
+      <label class="screen-reader-text" for="sq">Search</label>
+      <input id="sq" type="search" name="q" placeholder="Search…" autocomplete="off" />
+      <button type="submit">Search</button>
+    </form>
+    <p class="page-head-desc" id="search-count" aria-live="polite"></p>
+  </div>
+
+  <section class="category-box category-box--wide">
+    <div class="category-sites" id="search-results">
+      <p class="category-description">Type to search.</p>
+    </div>
+  </section>
+
+  <script is:inline define:vars={{ index, base }}>
+    (function () {
+      const form = document.getElementById('search-form');
+      const input = document.getElementById('sq');
+      const results = document.getElementById('search-results');
+      const count = document.getElementById('search-count');
+
+      // Prefill from ?q= so the header form can link straight here.
+      const initial = new URLSearchParams(location.search).get('q') || '';
+      if (initial) input.value = initial;
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, (c) => (
+          { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+        ));
+      }
+
+      function render(term) {
+        const q = term.trim().toLowerCase();
+
+        if (!q) {
+          results.innerHTML = '<p class="category-description">Type to search.</p>';
+          count.textContent = '';
+          return;
+        }
+
+        const hits = index.filter((i) =>
+          i.name.toLowerCase().includes(q) || (i.description || '').toLowerCase().includes(q)
+        );
+
+        count.textContent = hits.length === 1 ? '1 result' : hits.length + ' results';
+
+        if (!hits.length) {
+          results.innerHTML = '<p class="category-description">Nothing matched that search.</p>';
+          return;
+        }
+
+        results.innerHTML = hits.map((i) => {
+          const initialLetter = escapeHtml(i.name.slice(0, 1).toUpperCase());
+          const icon = i.favicon
+            ? '<img src="' + escapeHtml(i.favicon) + '" alt="" class="site-favicon" width="24" height="24" loading="lazy">'
+            : '<span class="site-favicon site-favicon--placeholder" aria-hidden="true">' + initialLetter + '</span>';
+
+          let rating = '';
+          if (i.rating !== null && i.rating !== undefined) {
+            const parts = Number(i.rating).toFixed(1).split('.');
+            rating = '<span class="rating-text"><span class="rating-score-value">' + parts[0] +
+                     '<span class="dot">.</span><span class="decimal">' + parts[1] + '</span></span></span>';
+          }
+
+          return '<div class="site-item"><a class="site-name-link" href="' +
+                 escapeHtml((base + 'l/' + i.slug).replace(/\/+/g, '/')) +
+                 '"><div class="left">' + icon + '<span class="site-name">' +
+                 escapeHtml(i.name) + '</span></div>' + rating + '</a></div>';
+        }).join('');
+      }
+
+      form.addEventListener('submit', (e) => { e.preventDefault(); render(input.value); });
+      input.addEventListener('input', () => render(input.value));
+      if (initial) render(initial);
+    })();
+  </script>
+</BaseLayout>

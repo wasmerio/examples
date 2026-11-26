@@ -1,0 +1,66 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Rating from '../../components/Rating.astro';
+import { COUNT_CLICKS } from '../../consts';
+
+export async function getStaticPaths() {
+  const listings = await getCollection('listings');
+  const categories = await getCollection('categories');
+
+  return listings.map((listing) => ({
+    params: { slug: listing.data.slug },
+    props: {
+      listing,
+      category: categories.find((c) => c.data.slug === listing.data.category) ?? null,
+    },
+  }));
+}
+
+const { listing, category } = Astro.props;
+const d = listing.data;
+const base = import.meta.env.BASE_URL;
+
+const host = (() => {
+  try { return new URL(d.url).host.replace(/^www\./, ''); } catch { return d.url; }
+})();
+
+const visitHref = COUNT_CLICKS
+  ? `${import.meta.env.DIRECTORY_API?.replace(/\/+$/, '')}/visit/${d.slug}`
+  : d.url;
+
+const jsonld = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: d.name,
+  url: d.url,
+  ...(d.description ? { description: d.description } : {}),
+};
+---
+<BaseLayout title={d.name} description={d.description}>
+  <nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href={base}>Home</a>
+    {category && <><span>/</span><a href={`${base}c/${category.data.slug}`.replace(/\/+/g, '/')}>{category.data.name}</a></>}
+    <span>/</span>{d.name}
+  </nav>
+
+  <article class="listing-detail">
+    <div class="listing-head">
+      {d.favicon && <img class="listing-favicon" src={d.favicon} alt="" width="48" height="48" decoding="async" />}
+      <h1>{d.name}</h1>
+      <Rating rating={d.rating} />
+      {d.featured && <span class="badge-featured">Featured</span>}
+    </div>
+
+    {d.description && <p class="page-head-desc">{d.description}</p>}
+
+    <p class="listing-actions">
+      <a class="btn-primary" href={visitHref} target="_blank" rel="nofollow noopener">
+        Visit {host}
+        <svg class="arrow" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M13.2 5.6 11.8 7l4 4H4v2h11.8l-4 4 1.4 1.4L19.6 12z"/></svg>
+      </a>
+    </p>
+  </article>
+
+  <script type="application/ld+json" set:html={JSON.stringify(jsonld)} />
+</BaseLayout>

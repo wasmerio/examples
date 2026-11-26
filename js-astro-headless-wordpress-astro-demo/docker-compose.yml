@@ -1,0 +1,52 @@
+name: rkx-headless-journal-wp
+
+services:
+  rkx-hj-db:
+    image: mariadb:lts
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${WP_DB_NAME:-rkx_headless_journal}
+      MARIADB_USER: ${WP_DB_USER:-rkx_journal_user}
+      MARIADB_PASSWORD: ${WP_DB_PASSWORD:-rkx_journal_local_pass}
+      MARIADB_ROOT_PASSWORD: ${WP_DB_ROOT_PASSWORD:-rkx_journal_root_pass}
+    volumes:
+      - rkx_hj_db_data:/var/lib/mysql
+    networks:
+      - rkx_hj_network
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+
+  rkx-hj-wordpress:
+    image: wordpress:php8.3-apache
+    restart: unless-stopped
+    depends_on:
+      rkx-hj-db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${WORDPRESS_PORT:-8088}:80"
+    environment:
+      WORDPRESS_DB_HOST: rkx-hj-db:3306
+      WORDPRESS_DB_NAME: ${WP_DB_NAME:-rkx_headless_journal}
+      WORDPRESS_DB_USER: ${WP_DB_USER:-rkx_journal_user}
+      WORDPRESS_DB_PASSWORD: ${WP_DB_PASSWORD:-rkx_journal_local_pass}
+      WORDPRESS_TABLE_PREFIX: ${WP_TABLE_PREFIX:-wp_}
+      WORDPRESS_DEBUG: ${WP_DEBUG:-0}
+    volumes:
+      - rkx_hj_wp_content:/var/www/html
+    networks:
+      - rkx_hj_network
+
+volumes:
+  rkx_hj_db_data:
+    name: rkx_headless_journal_db_data
+  rkx_hj_wp_content:
+    name: rkx_headless_journal_wp_content
+
+networks:
+  rkx_hj_network:
+    name: rkx_headless_journal_network
+    driver: bridge
+

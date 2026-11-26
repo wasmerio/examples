@@ -1,0 +1,118 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ArticleCard from '../../components/ArticleCard.astro';
+import { getCategories, getCategoryBySlug, getArticles } from '../../lib/content';
+import type { Category, Article } from '../../lib/types';
+
+export async function getStaticPaths() {
+  const categories = await getCategories();
+
+  const paths = await Promise.all(
+    categories.map(async (catSummary) => {
+      const category = (await getCategoryBySlug(catSummary.slug)) ?? catSummary;
+      const result = await getArticles({ categorySlug: category.slug, pageSize: 20 });
+      return {
+        params: { slug: category.slug },
+        props: {
+          category,
+          articles: result.items,
+          total: result.total,
+        },
+      };
+    })
+  );
+
+  return paths;
+}
+
+interface Props {
+  category: Category;
+  articles: Article[];
+  total: number;
+}
+
+const { category, articles, total } = Astro.props;
+const allCategories = await getCategories();
+---
+
+<BaseLayout
+  title={`${category.name} — The Headless Journal`}
+  description={category.description}
+>
+  <div class="py-8 sm:py-12 lg:py-16">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10 sm:space-y-12">
+      <!-- Breadcrumb -->
+      <nav class="flex items-center gap-2 text-xs font-semibold text-stone-500" aria-label="Breadcrumb">
+        <a href="/" class="hover:text-stone-900 transition-colors">Home</a>
+        <span>/</span>
+        <a href="/blog" class="hover:text-stone-900 transition-colors">Blog</a>
+        <span>/</span>
+        <span class="text-stone-900">Category</span>
+      </nav>
+
+      <!-- Category Hero Banner -->
+      <div class="border-b border-stone-200 pb-8">
+        <div class="max-w-3xl">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 mb-4 border border-indigo-200">
+            <span>Topic Archive</span>
+            <span>•</span>
+            <span>{total} {total === 1 ? 'Article' : 'Articles'}</span>
+          </div>
+
+          <h1 class="font-editorial-serif text-3xl sm:text-4xl md:text-5xl font-extrabold text-stone-900 tracking-tight">
+            {category.name}
+          </h1>
+
+          <p class="font-editorial-serif italic text-base sm:text-lg text-stone-600 mt-3 leading-relaxed">
+            {category.description}
+          </p>
+        </div>
+
+        <!-- Sibling Categories Navigation -->
+        <div class="mt-8 pt-6 border-t border-stone-100 flex flex-wrap items-center gap-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-stone-400 mr-2">All Topics:</span>
+          <a
+            href="/blog"
+            class="px-3 py-1 rounded-full text-xs font-semibold bg-white border border-stone-200 text-stone-700 hover:border-stone-400 hover:bg-stone-50 transition-colors"
+          >
+            All Articles
+          </a>
+          {allCategories.map((cat) => {
+            const isCurrent = cat.slug === category.slug;
+            return (
+              <a
+                href={`/category/${cat.slug}`}
+                class:list={[
+                  'px-3 py-1 rounded-full text-xs font-semibold transition-colors',
+                  isCurrent
+                    ? 'bg-stone-900 text-white shadow-xs'
+                    : 'bg-white border border-stone-200 text-stone-700 hover:border-stone-400 hover:bg-stone-50',
+                ]}
+                aria-current={isCurrent ? 'page' : undefined}
+              >
+                {cat.name} ({cat.count})
+              </a>
+            );
+          })}
+        </div>
+      </div>
+
+      <!-- Articles Grid -->
+      {articles.length > 0 ? (
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+          {articles.map((article) => (
+            <ArticleCard article={article} />
+          ))}
+        </div>
+      ) : (
+        <div class="text-center py-16 bg-white border border-stone-200 rounded-2xl">
+          <p class="font-editorial-serif text-lg text-stone-600">No articles published under this topic yet.</p>
+          <a href="/blog" class="mt-4 inline-block text-xs font-bold text-indigo-600 hover:underline">
+            Return to All Articles →
+          </a>
+        </div>
+      )}
+    </div>
+  </div>
+</BaseLayout>
+

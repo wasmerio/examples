@@ -1,0 +1,302 @@
+---
+// src/pages/image/[title].astro
+import { Image } from 'astro:assets';
+import Layout from '../../layouts/Layout.astro';
+import { getCollection } from 'astro:content';
+import path from 'path';
+import { categoriesOf, formatCategories } from '../../utils/categories';
+
+export async function getStaticPaths() {
+  const RELATED_LIMIT = 8;
+  const collection = await getCollection('gallery');
+  const images = collection.map((a) => ({ ...a.data, id: a.id }));
+
+  return images.map((image) => {
+    const imageCats = categoriesOf(image);
+    const related = images
+      .filter((img) => img.id !== image.id)
+      .map((img) => {
+        const otherCats = new Set(categoriesOf(img));
+        const score = imageCats.filter((cat) => otherCats.has(cat)).length;
+        return { img, score };
+      })
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.img.title.localeCompare(b.img.title);
+      })
+      .slice(0, RELATED_LIMIT)
+      .map(({ img }) => img);
+
+    return {
+      params: { title: image.id },
+      props: { image, related },
+    };
+  });
+}
+
+const { image, related } = Astro.props;
+const { BASE_URL } = import.meta.env;
+const categoryLabel = formatCategories(image);
+
+const largeUrl = new URL(image.src, 'https://images.unsplash.com');
+largeUrl.searchParams.set('w', '2400');
+largeUrl.searchParams.set('q', '80');
+largeUrl.searchParams.set('fit', 'max');
+largeUrl.searchParams.delete('h');
+largeUrl.searchParams.delete('crop');
+const largeSrc = largeUrl.toString();
+---
+
+<Layout title={`${image.title} — Frame Shift`}>
+  <div class="container mx-auto px-6 py-16">
+    <a
+      href={BASE_URL}
+      class="mb-12 inline-flex items-center font-light text-muted transition-colors duration-300 hover:text-accent"
+    >
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        class="h-5 w-5 mr-1"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+      >
+        <path
+          fill-rule="evenodd"
+          d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+          clip-rule="evenodd"></path>
+      </svg>
+      Back to Gallery
+    </a>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-12 items-start">
+      <div
+        class="lg:col-span-2 overflow-hidden rounded-lg max-h-[85vh] flex items-center justify-center bg-transparent"
+        transition:name={`image-${image.id}`}
+      >
+        <button
+          type="button"
+          class="zoom-trigger"
+          popovertarget="image-zoom"
+          aria-label={`View larger: ${image.title}`}
+        >
+          <Image
+            src={image.src}
+            alt={image.alt}
+            width="800"
+            height="800"
+            class="w-auto h-auto object-contain max-h-[85vh] max-w-full"
+            loading="eager"
+          />
+        </button>
+      </div>
+
+      <div class="lg:col-span-1 py-4 lg:sticky lg:top-8">
+        <h1
+          class="text-3xl font-light tracking-wide mb-2 text-ink"
+        >
+          {image.title}
+        </h1>
+
+        <h2
+          class="text-lg font-light mb-8 text-muted tracking-wide"
+        >
+          {categoryLabel}
+        </h2>
+
+        <div class="mb-8">
+          <p
+            class="text-ink leading-relaxed font-light"
+          >
+            {image.description}
+          </p>
+        </div>
+
+        <div class="space-y-4 text-sm">
+          <div class="flex">
+            <span class="font-medium w-28 text-muted"
+              >Categories:</span
+            >
+            <span class="text-ink/80 font-light"
+              >{categoryLabel}</span
+            >
+          </div>
+
+          <div class="flex">
+            <span class="font-medium w-28 text-muted"
+              >Date:</span
+            >
+            <span class="text-ink/80 font-light"
+              >{
+                new Date(image.date).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                })
+              }</span
+            >
+          </div>
+
+          <div class="flex">
+            <span class="font-medium w-28 text-muted"
+              >Photo by:</span
+            >
+            {
+              image.photographerLink ? (
+                <a
+                  href={image.photographerLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-ink/80 hover:text-ink transition-colors duration-300 font-light"
+                >
+                  {image.photographer}
+                </a>
+              ) : (
+                <span class="text-ink/80 font-light">
+                  {image.photographer}
+                </span>
+              )
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {
+      related.length > 0 && (
+        <div class="mt-16">
+          <h2 class="text-2xl font-light tracking-wide mb-8 text-ink">
+            Related Images
+          </h2>
+          <div class="masonry-container columns-1 sm:columns-2 md:columns-3 lg:columns-4 gap-6 space-y-6">
+            {related.map((image, i) => (
+              <div class="masonry-item break-inside-avoid mb-6">
+                <a
+                  href={path.join(BASE_URL, 'image', image.id)}
+                  class="group block overflow-hidden rounded-sm transition-all duration-300 relative"
+                  transition:name={`image-${image.id}`}
+                >
+                  <div class="overflow-hidden relative">
+                    <Image
+                      src={image.src}
+                      alt={image.alt}
+                      loading={i < 5 ? 'eager' : 'lazy'}
+                      width="800"
+                      height="800"
+                      class="w-full h-auto object-cover transition-transform duration-500 group-hover:scale-102"
+                    />
+                    <div class="absolute inset-0 bg-black opacity-0 group-hover:opacity-40 transition-opacity duration-300 flex items-center justify-center pointer-events-none">
+                      <div class="text-white text-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-4">
+                        <h3 class="text-lg font-medium mb-1">{image.title}</h3>
+                        <p class="text-sm font-light tracking-wide opacity-90">
+                          {formatCategories(image)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </a>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+  </div>
+</Layout>
+
+<div id="image-zoom" popover class="zoom-popover">
+  <button
+    type="button"
+    class="zoom-backdrop"
+    popovertarget="image-zoom"
+    popovertargetaction="hide"
+    aria-label="Close larger image"
+  >
+    <img src={largeSrc} alt={image.alt} />
+  </button>
+</div>
+
+<style>
+  .zoom-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: zoom-in;
+    max-width: 100%;
+  }
+
+  .zoom-popover {
+    box-sizing: border-box;
+    inset: 0;
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    background: rgba(12, 10, 9, 0.94);
+    opacity: 0;
+    transform: scale(0.98);
+    transition:
+      opacity 280ms ease,
+      transform 280ms ease,
+      overlay 280ms allow-discrete,
+      display 280ms allow-discrete;
+  }
+
+  .zoom-popover:popover-open {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  @starting-style {
+    .zoom-popover:popover-open {
+      opacity: 0;
+      transform: scale(0.98);
+    }
+  }
+
+  .zoom-popover::backdrop {
+    background: rgb(12 10 9 / 0);
+    transition:
+      background 280ms ease,
+      overlay 280ms allow-discrete,
+      display 280ms allow-discrete;
+  }
+
+  .zoom-popover:popover-open::backdrop {
+    background: rgb(12 10 9 / 0.72);
+  }
+
+  @starting-style {
+    .zoom-popover:popover-open::backdrop {
+      background: rgb(12 10 9 / 0);
+    }
+  }
+
+  .zoom-backdrop {
+    box-sizing: border-box;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    padding: clamp(1rem, 4vw, 2.5rem);
+    border: 0;
+    background: transparent;
+    cursor: zoom-out;
+  }
+
+  .zoom-backdrop img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: calc(100dvh - 2 * clamp(1rem, 4vw, 2.5rem));
+    object-fit: contain;
+  }
+</style>
+

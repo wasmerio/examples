@@ -1,0 +1,96 @@
+---
+import { site } from '../data/site';
+---
+<section id="faq" class="mx-auto max-w-6xl px-5 py-16">
+	<div class="grid gap-10 md:grid-cols-[1fr_1.2fr]">
+		<div>
+			<h2 class="font-display text-3xl font-bold tracking-tight">Questions</h2>
+			<p class="mt-2 text-ink-soft">The usual ones are answered on the right. Anything else: ask the page.</p>
+
+			<ask-page class="mt-6 block rounded-none border border-line bg-white p-5">
+				<form class="flex gap-2" data-ask-form>
+					<label class="sr-only" for="ask-input">Your question</label>
+					<input id="ask-input" name="q" type="text" maxlength="300" required autocomplete="off" placeholder="Can I bill one client in GBP and another in USD?" class="min-w-0 flex-1 rounded-none border border-line bg-paper px-3 py-2 text-[15px] focus:border-glass" />
+					<button type="submit" data-ask-submit class="rounded-none bg-glass px-4 py-2 text-sm font-semibold text-white hover:bg-glass-deep disabled:opacity-60">Ask</button>
+				</form>
+				<p class="mt-3 min-h-5 text-sm text-ink-soft" data-ask-status aria-live="polite"></p>
+				<p class="hidden whitespace-pre-wrap border-l-2 border-glass pl-4 leading-relaxed" data-ask-answer></p>
+				<p class="mt-3 hidden text-xs text-ink-soft" data-ask-foot>Answered from this page only. <button type="button" class="underline underline-offset-2" data-ask-reset>Start over</button></p>
+			</ask-page>
+		</div>
+		<dl class="divide-y divide-line">
+			{site.faq.map((f) => (
+				<div class="py-4">
+					<dt class="font-display text-lg font-semibold">{f.q}</dt>
+					<dd class="mt-1 leading-relaxed text-ink-soft">{f.a}</dd>
+				</div>
+			))}
+		</dl>
+	</div>
+</section>
+
+<script>
+	import { loadOneTag, describe } from '../scripts/onetag';
+
+	// "Ask the page": the question and the page's own text go to the model; follow-ups keep the thread.
+	class AskPage extends HTMLElement {
+		history: { role: 'user' | 'assistant'; content: string }[] = [];
+		constructor() {
+			super();
+			const form = this.querySelector<HTMLFormElement>('[data-ask-form]')!;
+			const input = form.querySelector('input')!;
+			const status = this.querySelector<HTMLElement>('[data-ask-status]')!;
+			const answer = this.querySelector<HTMLElement>('[data-ask-answer]')!;
+			const foot = this.querySelector<HTMLElement>('[data-ask-foot]')!;
+			const submit = this.querySelector<HTMLButtonElement>('[data-ask-submit]')!;
+			form.addEventListener('submit', async (e) => {
+				e.preventDefault();
+				const q = input.value.trim();
+				if (!q) return;
+				input.value = '';
+				submit.disabled = true;
+				status.textContent = 'Reading the page…';
+				answer.textContent = '';
+				answer.classList.remove('hidden');
+				let started = false;
+				try {
+					const onetag = await loadOneTag();
+					const text: string = await onetag.ask(q + '\n\n(Reply in the same language as the question above.)', document.querySelector('main'), {
+						system:
+							'You answer visitors\' questions about the product described on this page, using only the page. ' +
+							'When the page covers the question, answer directly and stop. Only when it does not, say so in one sentence. ' +
+							'Plain text, under 100 words, no headings or lists.',
+						history: this.history,
+						maxTokens: 250,
+						stream: (d: string) => {
+							if (!started) {
+								started = true;
+								status.textContent = '';
+							}
+							answer.textContent += d;
+						},
+					});
+					status.textContent = '';
+					this.history.push({ role: 'user', content: q }, { role: 'assistant', content: text });
+					if (this.history.length > 8) this.history = this.history.slice(-8);
+					input.placeholder = 'Ask a follow-up';
+					foot.classList.remove('hidden');
+				} catch (err) {
+					status.textContent = describe(err);
+				} finally {
+					submit.disabled = false;
+				}
+			});
+			this.querySelector('[data-ask-reset]')!.addEventListener('click', () => {
+				this.history = [];
+				answer.textContent = '';
+				answer.classList.add('hidden');
+				foot.classList.add('hidden');
+				status.textContent = '';
+				input.placeholder = 'Can I bill one client in GBP and another in USD?';
+				input.focus();
+			});
+		}
+	}
+	customElements.define('ask-page', AskPage);
+</script>

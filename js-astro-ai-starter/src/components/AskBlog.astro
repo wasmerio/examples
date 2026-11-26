@@ -1,0 +1,128 @@
+---
+// "Ask the blog": a dialog in the header. Retrieval uses the Pagefind index this build already makes;
+// the top pages go to OneTag AI with the question, and the answer lists the pages it used.
+import { site } from '../config';
+const name = site.name;
+---
+
+<ask-blog data-name={name}>
+	<button class="icon-button ask-open" type="button" aria-label="Ask the blog" aria-keyshortcuts="Control+/" title="Ask the blog (Ctrl+/)">
+		<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /><path d="M19 17l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" /></svg>
+	</button>
+	<dialog class="ai-dialog" aria-label="Ask the blog">
+		<div class="panel-head"><span>Ask {name}</span><button type="button" class="ask-close icon-button" aria-label="Close">×</button></div>
+		<div class="panel-body">
+			<form class="row ask-form">
+				<input type="text" name="q" autocomplete="off" maxlength="400" placeholder="Ask anything these posts cover" required />
+				<button type="submit" class="primary">Ask</button>
+			</form>
+			<p class="status ask-status" aria-live="polite"></p>
+			<div class="ai-thread ask-thread" hidden>
+				<p class="ai-out ask-answer"></p>
+				<p class="ai-src ask-sources"></p>
+				<p class="ai-foot"><span>Answers come only from posts on this site.</span><button type="button" class="ask-reset">Start over</button></p>
+			</div>
+		</div>
+	</dialog>
+</ask-blog>
+
+<style>
+	ask-blog { display: inline-flex; }
+	.panel-head .icon-button { width: 28px; height: 28px; font-size: 18px; line-height: 1; }
+</style>
+
+<script>
+	import { ask, hasKey, errorText } from '../scripts/ai';
+
+	const STOP = new Set('a an and are as at be by can could do does for from how i if in into is it its me my of on or our should site that the their there these this to use using we what when where which who why will with you your blog post posts'.split(' '));
+	const MAX_CONTEXT = 20000, PER_PAGE = 6000, TOP_PAGES = 5;
+
+	function keywords(q: string): string[] {
+		const words = (q.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu) || []).filter((w) => w.length > 1 && !STOP.has(w));
+		const unique = [...new Set(words)].sort((a, b) => b.length - a.length).slice(0, 6);
+		return unique.length ? unique : [q];
+	}
+
+	type Page = { title: string; url: string; text: string };
+
+	class AskBlog extends HTMLElement {
+		dialog!: HTMLDialogElement; input!: HTMLInputElement; status!: HTMLElement; thread!: HTMLElement; answer!: HTMLElement; sources!: HTMLElement; submit!: HTMLButtonElement;
+		history: { role: 'user' | 'assistant'; content: string }[] = [];
+		pagefind: any = null; busy = false;
+		base = document.documentElement.dataset.base || '/';
+
+		connectedCallback() {
+			this.dialog = this.querySelector('dialog')!; this.input = this.querySelector('input')!; this.status = this.querySelector('.ask-status')!;
+			this.thread = this.querySelector('.ask-thread')!; this.answer = this.querySelector('.ask-answer')!; this.sources = this.querySelector('.ask-sources')!; this.submit = this.querySelector('button[type=submit]')!;
+			this.querySelector('.ask-open')!.addEventListener('click', () => this.open());
+			this.querySelector('.ask-close')!.addEventListener('click', () => this.dialog.close());
+			this.querySelector('.ask-reset')!.addEventListener('click', () => this.reset());
+			this.querySelector('form')!.addEventListener('submit', (e) => { e.preventDefault(); this.run(); });
+			this.dialog.addEventListener('click', (e) => { if (e.target === this.dialog) this.dialog.close(); });
+			document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === '/') { e.preventDefault(); this.open(); } });
+		}
+		open() { this.dialog.showModal(); this.input.focus(); if (!hasKey()) this.status.textContent = errorText({ code: 'no_key' }); }
+		reset() { this.history = []; this.thread.hidden = true; this.answer.textContent = ''; this.sources.textContent = ''; this.status.textContent = ''; this.input.value = ''; this.input.focus(); }
+
+		async loadPagefind() {
+			if (this.pagefind) return this.pagefind;
+			try {
+				const mod = await import(/* @vite-ignore */ this.base + 'pagefind/pagefind.js');
+				await mod.init?.();
+				this.pagefind = mod;
+			} catch (e) { this.pagefind = null; }
+			return this.pagefind;
+		}
+
+		async retrieve(q: string): Promise<Page[]> {
+			const pf = await this.loadPagefind();
+			if (pf) {
+				const scores = new Map<string, { r: any; score: number }>();
+				for (const kw of keywords(q)) {
+					const res = await pf.search(kw);
+					res.results.slice(0, 10).forEach((r: any, i: number) => {
+						const cur = scores.get(r.id) || { r, score: 0 };
+						cur.score += 10 - i; scores.set(r.id, cur);
+					});
+				}
+				const top = [...scores.values()].sort((a, b) => b.score - a.score).slice(0, TOP_PAGES);
+				const pages: Page[] = [];
+				for (const t of top) {
+					const d = await t.r.data();
+					pages.push({ title: d.meta?.title || d.url, url: d.url, text: (d.content || '').slice(0, PER_PAGE) });
+				}
+				if (pages.length) return pages;
+			}
+			// No index (dev) or nothing matched: fall back to the whole site if it fits, else the index page.
+			for (const f of ['llms-full.txt', 'llms.txt']) {
+				try {
+					const t = await (await fetch(this.base + f)).text();
+					if (t.length <= MAX_CONTEXT || f === 'llms.txt') return [{ title: this.dataset.name || 'This site', url: this.base, text: t.slice(0, MAX_CONTEXT) }];
+				} catch (e) {}
+			}
+			return [];
+		}
+
+		async run() {
+			const q = this.input.value.trim();
+			if (!q || this.busy) return;
+			if (!hasKey()) { this.status.textContent = errorText({ code: 'no_key' }); return; }
+			this.busy = true; this.submit.disabled = true; this.status.textContent = 'Looking through the posts…';
+			this.thread.hidden = false; this.answer.textContent = ''; this.sources.textContent = '';
+			try {
+				const pages = await this.retrieve(q);
+				let budget = MAX_CONTEXT; const parts: string[] = [];
+				for (const p of pages) { const chunk = `## ${p.title}\nURL: ${p.url}\n${p.text}`.slice(0, budget); if (!chunk) break; parts.push(chunk); budget -= chunk.length; }
+				this.status.textContent = 'Writing…';
+				const system = `You are the help desk for the blog "${this.dataset.name}". Answer only from the posts provided. When they cover the question, answer directly and stop. Only when they do not, say so in one sentence and name the closest post. Plain text, under 150 words, no headings. Answer in the language of the question.`;
+				const text = await ask(q, parts.join('\n\n'), { system, history: this.history.slice(-4), maxTokens: 400, stream: (d: string) => { this.answer.textContent += d; } });
+				this.history.push({ role: 'user', content: q }, { role: 'assistant', content: text });
+				this.sources.innerHTML = pages.length ? 'From: ' + pages.map((p) => `<a href="${p.url}">${p.title}</a>`).join('') : '';
+				this.status.textContent = ''; this.input.value = ''; this.input.placeholder = 'Ask a follow-up';
+			} catch (e: any) {
+				this.status.textContent = errorText(e);
+			} finally { this.busy = false; this.submit.disabled = false; }
+		}
+	}
+	customElements.define('ask-blog', AskBlog);
+</script>

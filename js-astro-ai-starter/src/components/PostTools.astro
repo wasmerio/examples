@@ -1,0 +1,130 @@
+---
+// The row of AI buttons under a post title: TL;DR, Translate, Plain English, Ask the author.
+import { site } from '../config';
+interface Props { tldr: boolean; translate: boolean; askAuthor: boolean; title: string }
+const { tldr, translate, askAuthor, title } = Astro.props;
+const langs = site.ai.languages;
+---
+
+<post-tools class="article-tools" data-title={title} data-persona={site.author.persona} data-author={site.author.name} data-ai-ui>
+	<div class="bar small">
+		{tldr && <button type="button" data-act="tldr">TL;DR</button>}
+		<button type="button" data-act="plain">Plain English</button>
+		{askAuthor && <button type="button" data-act="ask">Ask the author</button>}
+		<button type="button" data-act="share">Share draft</button>
+	</div>
+	{translate && (
+		<label class="translate" style="margin:0;display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14px">
+			<span>Translate</span>
+			<select data-translate aria-label="Translate this post" style="height:36px;width:auto;font-size:14px">
+				<option value="">Original</option>
+				{langs.map((l) => <option value={l.code}>{l.label}</option>)}
+			</select>
+		</label>
+	)}
+	<span class="status tool-status" style="margin:0" aria-live="polite"></span>
+
+	<div class="panel tool-panel" hidden data-ai-ui style="flex-basis:100%;margin-top:12px">
+		<div class="panel-head"><span class="tool-title"></span><button type="button" class="icon-button tool-close" aria-label="Close" style="width:28px;height:28px">×</button></div>
+		<div class="panel-body">
+			<p class="ai-out tool-out"></p>
+			<form class="row tool-form" hidden>
+				<input type="text" name="q" autocomplete="off" maxlength="400" placeholder="Ask about this post" required />
+				<button type="submit" class="primary">Ask</button>
+			</form>
+			<div class="tool-share" hidden>
+				<div class="tabs"><button type="button" data-fmt="x" aria-selected="true">Post for X</button><button type="button" data-fmt="thread">Thread</button><button type="button" data-fmt="linkedin">LinkedIn</button></div>
+				<textarea class="share-out" rows="6" readonly></textarea>
+				<p style="margin:12px 0 0"><button type="button" class="button secondary small share-copy">Copy</button></p>
+			</div>
+			<p class="ai-foot"><span class="tool-note"></span><button type="button" class="tool-reset" hidden>Start over</button></p>
+		</div>
+	</div>
+</post-tools>
+
+<script>
+	import { ask, hasKey, errorText, cached, hashText, rewriteBlocks, restoreBlocks, copyText } from '../scripts/ai';
+
+	class PostTools extends HTMLElement {
+		article!: HTMLElement; panel!: HTMLElement; out!: HTMLElement; title!: HTMLElement; form!: HTMLFormElement; share!: HTMLElement; status!: HTMLElement; note!: HTMLElement; reset!: HTMLButtonElement;
+		history: { role: 'user' | 'assistant'; content: string }[] = [];
+		mode = ''; fmt = 'x'; busy = false; shareText: Record<string, string> = {};
+
+		connectedCallback() {
+			this.article = document.querySelector<HTMLElement>('article .prose')!;
+			this.panel = this.querySelector('.tool-panel')!; this.out = this.querySelector('.tool-out')!; this.title = this.querySelector('.tool-title')!;
+			this.form = this.querySelector('.tool-form')!; this.share = this.querySelector('.tool-share')!; this.status = this.querySelector('.tool-status')!; this.note = this.querySelector('.tool-note')!; this.reset = this.querySelector('.tool-reset')!;
+			this.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) => b.addEventListener('click', () => this.act(b.dataset.act!)));
+			this.querySelector('.tool-close')!.addEventListener('click', () => (this.panel.hidden = true));
+			this.reset.addEventListener('click', () => { this.history = []; this.out.textContent = ''; });
+			this.form.addEventListener('submit', (e) => { e.preventDefault(); this.askAuthor(); });
+			this.querySelector<HTMLSelectElement>('[data-translate]')?.addEventListener('change', (e) => this.translate((e.target as HTMLSelectElement).value));
+			this.querySelectorAll<HTMLButtonElement>('[data-fmt]').forEach((b) => b.addEventListener('click', () => { this.querySelectorAll('[data-fmt]').forEach((x) => x.setAttribute('aria-selected', 'false')); b.setAttribute('aria-selected', 'true'); this.fmt = b.dataset.fmt!; this.renderShare(); }));
+			this.querySelector('.share-copy')!.addEventListener('click', (e) => copyText(this.querySelector<HTMLTextAreaElement>('.share-out')!.value, e.currentTarget as HTMLElement));
+		}
+		text() { return (this.article.dataset.original ? new DOMParser().parseFromString(this.article.dataset.original, 'text/html').body.innerText : this.article.innerText).trim(); }
+		show(mode: string, label: string) {
+			this.mode = mode; this.panel.hidden = false; this.title.textContent = label; this.out.textContent = '';
+			this.form.hidden = mode !== 'ask'; this.share.hidden = mode !== 'share'; this.reset.hidden = mode !== 'ask';
+			this.note.textContent = mode === 'ask' ? `Written from this post only, in ${this.dataset.author}'s voice.` : mode === 'tldr' ? 'Three sentences from the post, nothing added.' : '';
+		}
+		guard(): boolean { if (!hasKey()) { this.status.textContent = errorText({ code: 'no_key' }); this.status.className = 'status tool-status error'; return false; } this.status.textContent = ''; return true; }
+		fail(e: any) { this.status.textContent = errorText(e); this.status.className = 'status tool-status error'; }
+
+		async act(a: string) {
+			if (a === 'tldr') return this.tldr();
+			if (a === 'plain') return this.plain();
+			if (a === 'ask') { this.show('ask', 'Ask the author'); this.form.querySelector('input')!.focus(); return; }
+			if (a === 'share') return this.shareDraft();
+		}
+		async tldr() {
+			if (!this.guard()) return;
+			this.show('tldr', 'TL;DR');
+			const text = this.text(); const key = 'tldr:' + hashText(text);
+			try {
+				const res = await cached(key, () => ask('Summarize this post in exactly three sentences for someone deciding whether to read it. Plain text, no headings, no bullets, keep the caveats.', text, { maxTokens: 200, stream: (d: string) => { this.out.textContent += d; } }));
+				this.out.textContent = res;
+			} catch (e) { this.fail(e); }
+		}
+		async plain() {
+			if (!this.guard()) return;
+			if (this.article.dataset.rewritten === 'plain') { restoreBlocks(this.article); delete this.article.dataset.rewritten; this.status.textContent = ''; return; }
+			this.status.className = 'status tool-status'; this.status.textContent = 'Rewriting…';
+			try {
+				if (this.article.dataset.rewritten) restoreBlocks(this.article);
+				await rewriteBlocks(this.article, 'Rewrite each block in plain English: short sentences, common words, same facts, same order. Do not add explanations or drop details.', (d, t) => { this.status.textContent = `Rewriting… ${d}/${t}`; });
+				this.article.dataset.rewritten = 'plain'; this.status.textContent = 'Plain English version. Press the button again for the original.';
+			} catch (e) { this.fail(e); }
+		}
+		async translate(code: string) {
+			if (!code) { restoreBlocks(this.article); delete this.article.dataset.rewritten; this.status.textContent = ''; return; }
+			if (!this.guard()) return;
+			this.status.className = 'status tool-status'; this.status.textContent = 'Translating…';
+			try {
+				if (this.article.dataset.rewritten) restoreBlocks(this.article);
+				await rewriteBlocks(this.article, `Translate each block into the language with BCP 47 code "${code}". Natural, faithful, same register. Keep names, numbers and code untranslated.`, (d, t) => { this.status.textContent = `Translating… ${d}/${t}`; });
+				this.article.dataset.rewritten = 'translate'; this.status.textContent = 'Translated in place. Choose "Original" to go back.';
+			} catch (e) { this.fail(e); }
+		}
+		async askAuthor() {
+			const input = this.form.querySelector('input')!; const q = input.value.trim();
+			if (!q || this.busy || !this.guard()) return;
+			this.busy = true; const prev = this.out.textContent; this.out.textContent = (prev ? prev + '\n\n' : '') + 'You: ' + q + '\n' + this.dataset.author + ': ';
+			try {
+				const text = await ask(q, this.text(), { system: this.dataset.persona, history: this.history.slice(-4), maxTokens: 300, stream: (d: string) => { this.out.textContent += d; } });
+				this.history.push({ role: 'user', content: q }, { role: 'assistant', content: text }); input.value = ''; input.placeholder = 'Ask a follow-up';
+			} catch (e) { this.fail(e); } finally { this.busy = false; }
+		}
+		async shareDraft() {
+			if (!this.guard()) return;
+			this.show('share', 'Share draft');
+			const text = this.text(); const url = location.href; const key = 'share:' + hashText(text);
+			try {
+				const res = await cached(key, () => ask(`Write three ways to share this post, as JSON {"x": string, "thread": string, "linkedin": string}. "x": one post under 260 characters, plain, no hashtags, ends with the URL ${url}. "thread": 4 to 6 short posts separated by blank lines, numbered, first one hooks, last one has the URL. "linkedin": 80 to 120 words, no emoji, URL at the end. Written in the author's voice, first person, no hype words.`, text, { json: true, maxTokens: 900 }));
+				this.shareText = res || {}; this.renderShare();
+			} catch (e) { this.fail(e); }
+		}
+		renderShare() { this.querySelector<HTMLTextAreaElement>('.share-out')!.value = this.shareText[this.fmt] || ''; }
+	}
+	customElements.define('post-tools', PostTools);
+</script>

@@ -1,0 +1,46 @@
+---
+// Select any passage in the article and an Explain button appears next to it.
+---
+
+<explain-selection data-ai-ui>
+	<button type="button" class="button small explain-btn" hidden>Explain</button>
+	<div class="panel explain-pop" hidden>
+		<div class="panel-head"><span>Explain</span><button type="button" class="icon-button explain-close" aria-label="Close" style="width:28px;height:28px">×</button></div>
+		<div class="panel-body"><p class="ai-out explain-out"></p><p class="status explain-status" style="margin:0"></p></div>
+	</div>
+</explain-selection>
+
+<style>
+	.explain-btn, .explain-pop { position: absolute; z-index: 20; }
+	.explain-pop { width: min(420px, calc(100vw - 24px)); }
+</style>
+
+<script>
+	import { ask, hasKey, errorText } from '../scripts/ai';
+	class ExplainSelection extends HTMLElement {
+		btn!: HTMLButtonElement; pop!: HTMLElement; out!: HTMLElement; status!: HTMLElement; sel = ''; ctx = '';
+		connectedCallback() {
+			this.btn = this.querySelector('.explain-btn')!; this.pop = this.querySelector('.explain-pop')!; this.out = this.querySelector('.explain-out')!; this.status = this.querySelector('.explain-status')!;
+			document.addEventListener('selectionchange', () => this.onSelect());
+			this.btn.addEventListener('mousedown', (e) => e.preventDefault());
+			this.btn.addEventListener('click', () => this.explain());
+			this.querySelector('.explain-close')!.addEventListener('click', () => (this.pop.hidden = true));
+		}
+		onSelect() {
+			const s = document.getSelection(); const text = s?.toString().trim() || '';
+			const article = document.querySelector('article .prose');
+			if (!s || !text || text.length < 3 || text.length > 600 || !article || !article.contains(s.anchorNode)) { this.btn.hidden = true; return; }
+			const r = s.getRangeAt(0).getBoundingClientRect();
+			this.sel = text; this.ctx = (s.anchorNode?.parentElement?.closest('p, li, h2, h3, blockquote')?.textContent || '').slice(0, 1200);
+			this.btn.style.left = Math.max(12, r.left + scrollX) + 'px'; this.btn.style.top = r.bottom + scrollY + 6 + 'px'; this.btn.hidden = false;
+		}
+		async explain() {
+			this.btn.hidden = true; this.pop.style.left = this.btn.style.left; this.pop.style.top = this.btn.style.top; this.pop.hidden = false; this.out.textContent = ''; this.status.textContent = '';
+			if (!hasKey()) { this.status.textContent = errorText({ code: 'no_key' }); return; }
+			try {
+				await ask(`Explain the selected passage for a reader of this post: what it means and why it matters here. Two or three sentences, plain text. Selected: "${this.sel}"`, 'Surrounding paragraph:\n' + this.ctx, { maxTokens: 160, stream: (d: string) => { this.out.textContent += d; } });
+			} catch (e) { this.status.textContent = errorText(e); }
+		}
+	}
+	customElements.define('explain-selection', ExplainSelection);
+</script>

@@ -1,0 +1,38 @@
+---
+// After a post: three posts to read next, chosen from llms.txt by what this post was about, each with a reason.
+interface Props { current: string }
+const { current } = Astro.props;
+---
+
+<read-next class="aside-box" data-current={current} data-ai-ui>
+	<h3>Read next</h3>
+	<p class="note" style="margin:0 0 12px">Three posts that follow on from this one, picked from the whole blog with a reason each.</p>
+	<button type="button" class="button secondary small rn-go">Pick three for me</button>
+	<ul class="squares rn-list" hidden style="margin:12px 0 0"></ul>
+	<p class="status rn-status" style="margin:0"></p>
+</read-next>
+
+<script>
+	import { ask, hasKey, errorText, cached, hashText } from '../scripts/ai';
+	class ReadNext extends HTMLElement {
+		connectedCallback() {
+			const btn = this.querySelector<HTMLButtonElement>('.rn-go')!, list = this.querySelector<HTMLElement>('.rn-list')!, status = this.querySelector<HTMLElement>('.rn-status')!;
+			const base = document.documentElement.dataset.base || '/';
+			btn.addEventListener('click', async () => {
+				if (!hasKey()) { status.textContent = errorText({ code: 'no_key' }); return; }
+				btn.disabled = true; status.textContent = 'Reading the index…';
+				try {
+					const index = await (await fetch(base + 'llms.txt')).text();
+					const article = document.querySelector<HTMLElement>('article .prose')!; const text = article.innerText.slice(0, 6000);
+					const res = await cached('next:' + hashText(this.dataset.current + text.slice(0, 500)), () => ask(
+						`Here is a blog's index of posts and the text of the post the reader just finished (URL path ${this.dataset.current}). Pick the three best posts to read next, not the current one. Return JSON {"picks":[{"title":string,"url":string,"why":string}]} with URLs copied exactly from the index and "why" one short sentence that refers to something in the finished post.`,
+						{ index, finished_post: text }, { json: true, maxTokens: 400 }));
+					const picks = (res?.picks || []).filter((p: any) => p?.url && !String(p.url).includes(this.dataset.current!)).slice(0, 3);
+					list.innerHTML = picks.map((p: any) => `<li><a href="${p.url}">${p.title}</a><br><span class="note">${p.why}</span></li>`).join('');
+					list.hidden = !picks.length; status.textContent = picks.length ? '' : 'Nothing else to suggest yet.'; btn.hidden = true;
+				} catch (e) { status.textContent = errorText(e); btn.disabled = false; }
+			});
+		}
+	}
+	customElements.define('read-next', ReadNext);
+</script>

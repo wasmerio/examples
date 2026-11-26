@@ -1,0 +1,40 @@
+---
+// Every code block in the article gets an "Explain this code" button; the explanation appears under it.
+---
+
+<code-explain data-ai-ui hidden></code-explain>
+
+<style is:global>
+	.code-wrap { position: relative; margin: 0 0 24px; }
+	.code-wrap pre { margin: 0; }
+	.code-wrap .code-btn { position: absolute; top: 8px; right: 8px; height: 28px; padding: 0 10px; font: 600 12px/1 var(--sans); color: var(--code-fg); background: transparent; border: 1px solid rgba(232, 237, 247, 0.4); cursor: pointer; }
+	.code-wrap .code-btn:hover { border-color: var(--code-fg); }
+	.code-wrap .code-out { padding: 12px 24px; border: 1px solid var(--line-strong); border-top: 0; font-size: 15px; line-height: 24px; white-space: pre-wrap; background: var(--paper); }
+	.code-wrap .code-out:empty { display: none; }
+</style>
+
+<script>
+	import { ask, hasKey, errorText, cached, hashText } from '../scripts/ai';
+	class CodeExplain extends HTMLElement {
+		connectedCallback() {
+			for (const pre of document.querySelectorAll<HTMLElement>('article .prose pre')) {
+				if (pre.closest('.code-wrap')) continue;
+				const wrap = document.createElement('div'); wrap.className = 'code-wrap'; pre.replaceWith(wrap); wrap.appendChild(pre);
+				const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'code-btn'; btn.textContent = 'Explain this code';
+				const out = document.createElement('div'); out.className = 'code-out';
+				wrap.append(btn, out);
+				btn.addEventListener('click', async () => {
+					if (out.textContent) { out.textContent = ''; btn.textContent = 'Explain this code'; return; }
+					if (!hasKey()) { out.textContent = errorText({ code: 'no_key' }); return; }
+					btn.disabled = true; btn.textContent = 'Explaining…';
+					const code = pre.innerText; const lang = (pre.getAttribute('data-language') || pre.className.match(/language-(\w+)/)?.[1] || '').trim();
+					try {
+						const res = await cached('code:' + hashText(code), () => ask(`Explain this ${lang || ''} code block for a reader of the post: what it does, line by line where it helps, and anything they must change before using it. Under 120 words, plain text.`, code, { maxTokens: 220, stream: (d: string) => { out.textContent += d; } }));
+						out.textContent = res; btn.textContent = 'Hide';
+					} catch (e) { out.textContent = errorText(e); btn.textContent = 'Explain this code'; } finally { btn.disabled = false; }
+				});
+			}
+		}
+	}
+	customElements.define('code-explain', CodeExplain);
+</script>

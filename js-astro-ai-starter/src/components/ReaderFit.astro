@@ -1,0 +1,46 @@
+---
+// Home page panel: the reader says what they work on; the blog picks three posts for them.
+import { site } from '../config';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<reader-fit class="panel" data-ai-ui>
+	<div class="panel-head"><span>Find your three posts</span><span class="tag">AI</span></div>
+	<div class="panel-body">
+		<form class="fit-form">
+			<label for="fit-in">What do you work on?</label>
+			<div class="row">
+				<input id="fit-in" type="text" name="about" maxlength="200" placeholder="e.g. a Hugo blog I want to add search to" required />
+				<button type="submit" class="primary">Pick</button>
+			</div>
+			<p class="note" style="margin:12px 0 0">Reads the list of posts and picks three for you, with a reason each. No sign-up.</p>
+		</form>
+		<ul class="squares fit-list" hidden style="margin:18px 0 0"></ul>
+		<p class="status fit-status" style="margin:12px 0 0"></p>
+	</div>
+	<div class="panel-foot"><span>Follow along:</span><b><a href={`${base}/rss.xml`}>RSS</a></b><span>·</span><b><a href={site.author.links.github}>GitHub</a></b></div>
+</reader-fit>
+
+<script>
+	import { ask, hasKey, errorText } from '../scripts/ai';
+	class ReaderFit extends HTMLElement {
+		connectedCallback() {
+			const form = this.querySelector('form')!, list = this.querySelector<HTMLElement>('.fit-list')!, status = this.querySelector<HTMLElement>('.fit-status')!, btn = form.querySelector('button')!;
+			const base = document.documentElement.dataset.base || '/';
+			form.addEventListener('submit', async (e) => {
+				e.preventDefault();
+				const about = (form.elements.namedItem('about') as HTMLInputElement).value.trim(); if (!about) return;
+				if (!hasKey()) { status.textContent = errorText({ code: 'no_key' }); status.className = 'status fit-status error'; return; }
+				btn.disabled = true; status.className = 'status fit-status'; status.textContent = 'Reading the posts…';
+				try {
+					const index = await (await fetch(base + 'llms.txt')).text();
+					const res = await ask(`A reader says what they work on. From this blog's index, pick the three posts most useful to them. Return JSON {"picks":[{"title":string,"url":string,"why":string}],"note":string}. URLs copied exactly from the index; "why" one sentence that mentions the reader's situation; "note" one sentence if nothing fits well, else empty.`, { reader: about, index }, { json: true, maxTokens: 400 });
+					const picks = (res?.picks || []).slice(0, 3);
+					list.innerHTML = picks.map((p: any) => `<li><a href="${p.url}">${p.title}</a><br><span class="note">${p.why}</span></li>`).join('');
+					list.hidden = !picks.length; status.textContent = res?.note || '';
+				} catch (err) { status.textContent = errorText(err); status.className = 'status fit-status error'; } finally { btn.disabled = false; }
+			});
+		}
+	}
+	customElements.define('reader-fit', ReaderFit);
+</script>

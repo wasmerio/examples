@@ -1,0 +1,46 @@
+---
+// "Test yourself": three questions written from the post, answers hidden until asked for.
+---
+
+<post-quiz class="aside-box" data-ai-ui>
+	<h3>Test yourself</h3>
+	<p class="note" style="margin:0 0 12px">Three questions written from this post. Answers stay hidden until you want them.</p>
+	<button type="button" class="button secondary small quiz-go">Start</button>
+	<ol class="quiz-list" hidden style="margin:12px 0 0;padding-left:20px"></ol>
+	<p class="status quiz-status" style="margin:0"></p>
+</post-quiz>
+
+<style>
+	.quiz-list li { margin: 0 0 18px; font-size: 15px; line-height: 24px; }
+	.quiz-list .opts { margin: 6px 0; padding-left: 0; list-style: none; }
+	.quiz-list .opts button { display: block; width: 100%; text-align: left; padding: 6px 12px; margin: 0 0 6px; background: var(--paper); border: 1px solid var(--line); cursor: pointer; }
+	.quiz-list .opts button[data-state='right'] { border-color: var(--ok); color: var(--ok); }
+	.quiz-list .opts button[data-state='wrong'] { border-color: var(--error); color: var(--error); }
+	.quiz-list .why { color: var(--muted); }
+</style>
+
+<script>
+	import { ask, hasKey, errorText, cached, hashText } from '../scripts/ai';
+	class PostQuiz extends HTMLElement {
+		connectedCallback() {
+			const btn = this.querySelector<HTMLButtonElement>('.quiz-go')!, list = this.querySelector<HTMLElement>('.quiz-list')!, status = this.querySelector<HTMLElement>('.quiz-status')!;
+			btn.addEventListener('click', async () => {
+				if (!hasKey()) { status.textContent = errorText({ code: 'no_key' }); return; }
+				btn.disabled = true; status.textContent = 'Writing questions…';
+				const text = document.querySelector<HTMLElement>('article .prose')!.innerText;
+				try {
+					const res = await cached('quiz:' + hashText(text), () => ask('Write three multiple-choice questions that check whether someone understood this post. Return JSON {"questions":[{"q":string,"options":[string,string,string,string],"answer":number,"why":string}]} where answer is the 0-based index of the correct option and why is one sentence from the post.', text, { json: true, maxTokens: 700 }));
+					const qs = res?.questions || [];
+					list.innerHTML = qs.map((q: any, i: number) => `<li><strong>${q.q}</strong><ul class="opts">${(q.options || []).map((o: string, j: number) => `<li><button type="button" data-q="${i}" data-j="${j}">${o}</button></li>`).join('')}</ul><p class="why" hidden>${q.why || ''}</p></li>`).join('');
+					list.hidden = false; status.textContent = ''; btn.hidden = true;
+					list.querySelectorAll<HTMLButtonElement>('button[data-q]').forEach((b) => b.addEventListener('click', () => {
+						const q = qs[Number(b.dataset.q)]; const li = b.closest('li.quiz-item, ol > li')!;
+						li.querySelectorAll<HTMLButtonElement>('button[data-q]').forEach((x) => { x.dataset.state = Number(x.dataset.j) === q.answer ? 'right' : x === b ? 'wrong' : ''; x.disabled = true; });
+						li.querySelector<HTMLElement>('.why')!.hidden = false;
+					}));
+				} catch (e) { status.textContent = errorText(e); btn.disabled = false; }
+			});
+		}
+	}
+	customElements.define('post-quiz', PostQuiz);
+</script>

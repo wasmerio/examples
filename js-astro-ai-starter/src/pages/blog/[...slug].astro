@@ -1,0 +1,51 @@
+---
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import PostTools from '../../components/PostTools.astro';
+import ExplainSelection from '../../components/ExplainSelection.astro';
+import CodeExplain from '../../components/CodeExplain.astro';
+import ReadNext from '../../components/ReadNext.astro';
+import Quiz from '../../components/Quiz.astro';
+import { getPosts, formatDate, readingTime, tagSlug } from '../../lib/posts';
+
+export async function getStaticPaths() {
+	const posts = await getPosts();
+	return posts.map((post, i) => ({ params: { slug: post.id }, props: { post, prev: posts[i + 1], next: posts[i - 1] } }));
+}
+const { post, prev, next } = Astro.props;
+const { Content } = await render(post);
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const ai = { tldr: true, askAuthor: true, translate: true, quiz: false, readNext: true, ...post.data.ai };
+const path = `${base}/blog/${post.id}/`;
+---
+
+<Base title={post.data.title} description={post.data.description} type="article" narrow>
+	<article data-pagefind-body>
+		<header class="article-head">
+			<h1>{post.data.title}</h1>
+			<p class="lead" style="margin:0 0 12px">{post.data.description}</p>
+			<div class="meta">
+				<time datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
+				{post.data.updated && <span>updated {formatDate(post.data.updated)}</span>}
+				<span>{readingTime(post.body)} min read</span>
+				<span class="tags">{post.data.tags.map((t) => <a class="tag" href={`${base}/tags/${tagSlug(t)}/`} style="margin-right:6px">{t}</a>)}</span>
+			</div>
+			<PostTools tldr={ai.tldr} translate={ai.translate} askAuthor={ai.askAuthor} title={post.data.title} />
+		</header>
+		{post.data.takeaways && (
+			<aside class="aside-box no-translate" data-pagefind-ignore>
+				<h3>Key takeaways</h3>
+				<ul>{post.data.takeaways.map((t) => <li>{t}</li>)}</ul>
+			</aside>
+		)}
+		<div class="prose"><Content /></div>
+	</article>
+	<CodeExplain />
+	<ExplainSelection />
+	{ai.quiz && <Quiz />}
+	{ai.readNext && <ReadNext current={path} />}
+	<nav class="cells" style="--cols:2;margin:36px 0 48px" aria-label="More posts">
+		<div>{prev ? <><span class="note">Older</span><h3><a href={`${base}/blog/${prev.id}/`}>{prev.data.title}</a></h3></> : <span class="note">This is the oldest post.</span>}</div>
+		<div>{next ? <><span class="note">Newer</span><h3><a href={`${base}/blog/${next.id}/`}>{next.data.title}</a></h3></> : <span class="note">This is the newest post.</span>}</div>
+	</nav>
+</Base>

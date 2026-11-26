@@ -1,0 +1,296 @@
+---
+interface Props {
+    slug: string;
+}
+
+const { slug } = Astro.props;
+---
+
+<section
+    id="comments-section"
+    class="py-10 border-t border-slate-200 dark:border-[#224249] mt-10"
+    data-slug={slug}
+>
+    <h3
+        class="text-2xl font-bold text-slate-900 dark:text-white mb-8 flex items-center gap-2"
+    >
+        Comments <span
+            id="total-comments"
+            class="text-sm font-normal text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full"
+            >0</span
+        >
+    </h3>
+
+    <!-- Comment Form -->
+    <div id="comment-form-container" class="mb-10 hidden">
+        <form id="comment-form" class="space-y-4">
+            <div id="guest-name-container" class="mb-4 hidden">
+                <input
+                    type="text"
+                    id="guest-name-input"
+                    class="w-full bg-slate-50 dark:bg-[#162a2f] text-slate-900 dark:text-white px-4 py-3 rounded-xl border border-slate-200 dark:border-transparent focus:border-primary/50 focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-slate-400"
+                    placeholder="Your Name"
+                />
+            </div>
+            <textarea
+                id="comment-input"
+                class="w-full bg-slate-50 dark:bg-[#162a2f] text-slate-900 dark:text-white px-4 py-3 rounded-xl border border-slate-200 dark:border-transparent focus:border-primary/50 focus:ring-2 focus:ring-primary/20 outline-none transition-all placeholder:text-slate-400 min-h-[120px] resize-y"
+                placeholder="Write a comment..."
+                required></textarea>
+            <div class="flex justify-end">
+                <button
+                    type="submit"
+                    class="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-6 rounded-lg shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all text-sm"
+                >
+                    Post Comment
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div id="login-to-comment" class="mb-10 hidden">
+        <div
+            class="bg-slate-50 dark:bg-[#162a2f] p-6 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-center"
+        >
+            <p class="text-slate-500 mb-4">Please login to leave a comment.</p>
+            <a
+                href="/login"
+                class="inline-block bg-white dark:bg-transparent border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-lg text-sm font-medium hover:border-primary hover:text-primary transition-colors"
+            >
+                Login
+            </a>
+        </div>
+    </div>
+
+    <!-- Comments List -->
+    <div id="comments-list" class="space-y-6">
+        <!-- Comments will be injected here -->
+        <div class="text-center py-10 text-slate-500 animate-pulse">
+            Loading comments...
+        </div>
+    </div>
+</section>
+
+<script>
+    import { supabase } from "../lib/supabase";
+
+    const commentsList = document.getElementById("comments-list");
+    const commentFormContainer = document.getElementById(
+        "comment-form-container",
+    );
+    const loginToComment = document.getElementById("login-to-comment");
+    const commentForm = document.getElementById(
+        "comment-form",
+    ) as HTMLFormElement | null;
+    const commentInput = document.getElementById(
+        "comment-input",
+    ) as HTMLTextAreaElement | null;
+    const guestNameContainer = document.getElementById("guest-name-container");
+    const guestNameInput = document.getElementById(
+        "guest-name-input",
+    ) as HTMLInputElement | null;
+    const totalComments = document.getElementById("total-comments");
+    const slug = document.getElementById("comments-section")?.dataset.slug;
+
+    let user: any = null;
+    let userRole: string | null = null;
+
+    async function init() {
+        if (!slug) {
+            console.error("No slug found for comments section");
+            return;
+        }
+        // Check Auth
+        const {
+            data: { session },
+        } = await supabase.auth.getSession();
+        user = session?.user || null;
+
+        if (user) {
+            // Fetch User Role from profiles
+            const { data: profile, error } = await supabase
+                .from("profiles")
+                .select("role")
+                .eq("id", user.id)
+                .single();
+
+            if (error && error.code !== "PGRST116") {
+                console.error("Error fetching profile:", error);
+            }
+
+            userRole = profile?.role || "user";
+        }
+
+        // Show/Hide guest name field
+        if (user) {
+            guestNameContainer?.classList.add("hidden");
+            if (guestNameInput) guestNameInput.required = false;
+        } else {
+            guestNameContainer?.classList.remove("hidden");
+            if (guestNameInput) guestNameInput.required = true;
+        }
+
+        commentFormContainer?.classList.remove("hidden");
+        loginToComment?.classList.add("hidden");
+
+        fetchComments();
+    }
+
+    async function fetchComments() {
+        if (!slug) return;
+        const { data, error, count } = await supabase
+            .from("comments")
+            .select("*", { count: "exact" })
+            .eq("post_slug", slug)
+            .order("created_at", { ascending: false });
+
+        if (error) {
+            console.error("Error fetching comments:", error);
+            if (commentsList) {
+                commentsList.innerHTML =
+                    '<p class="text-red-500 text-center">Error loading comments.</p>';
+            }
+            return;
+        }
+
+        if (totalComments) totalComments.textContent = (count || 0).toString();
+
+        renderComments(data);
+    }
+
+    function renderComments(comments: any[]) {
+        if (!commentsList) return;
+
+        if (!comments || comments.length === 0) {
+            commentsList.innerHTML = `
+        <div class="text-center py-8 text-slate-500 italic">
+            No comments yet. Be the first to comment!
+        </div>
+      `;
+            return;
+        }
+
+        commentsList.innerHTML = comments
+            .map(
+                (comment) => `
+      <div class="group relative">
+        <div class="flex gap-4">
+            <div class="flex-shrink-0">
+             <div class="w-10 h-10 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center text-primary font-bold text-sm">
+                ${comment.user_id ? comment.user_id.slice(0, 2).toUpperCase() : comment.guest_name ? comment.guest_name.slice(0, 2).toUpperCase() : "G"}
+             </div>
+           </div>
+           <div class="flex-1">
+             <div class="flex items-center justify-between mb-1">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        ${comment.user_id ? (comment.user_id === user?.id ? "You" : "User") : comment.guest_name || "Guest"}
+                    </span>
+                    <span class="text-[10px] text-slate-500">${new Date(comment.created_at).toLocaleDateString()}</span>
+                    ${userRole === "admin" ? '<span class="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded uppercase font-bold">Admin View</span>' : ""}
+                </div>
+                ${
+                    userRole === "admin" ||
+                    (user && user.id === comment.user_id)
+                        ? `
+                    <button class="delete-comment-btn p-1.5 text-slate-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100" data-id="${comment.id}" title="Delete comment">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                    </button>
+                `
+                        : ""
+                }
+             </div>
+             <div class="bg-slate-50 dark:bg-[#162a2f] p-4 rounded-xl rounded-tl-none ring-1 ring-slate-200 dark:ring-transparent">
+                <p class="text-slate-800 dark:text-slate-200 text-sm whitespace-pre-wrap">${escapeHtml(comment.content)}</p>
+             </div>
+           </div>
+        </div>
+      </div>
+    `,
+            )
+            .join("");
+
+        // Attach delete events
+        document.querySelectorAll(".delete-comment-btn").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+                const id = btn.getAttribute("data-id");
+                if (
+                    id &&
+                    confirm("Are you sure you want to delete this comment?")
+                ) {
+                    await deleteComment(id);
+                }
+            });
+        });
+    }
+
+    async function deleteComment(id: string) {
+        const { error } = await supabase.from("comments").delete().eq("id", id);
+        if (error) {
+            console.error("Error deleting comment:", error);
+            alert("Error deleting comment: " + error.message);
+        } else {
+            fetchComments();
+        }
+    }
+
+    function escapeHtml(text: string) {
+        const map: Record<string, string> = {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#039;",
+        };
+        return text.replace(/[&<>"']/g, function (m) {
+            return map[m];
+        });
+    }
+
+    commentForm?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        if (!commentInput || !commentForm) return;
+
+        const content = commentInput.value.trim();
+        if (!content) return;
+
+        const submitBtn = commentForm.querySelector(
+            'button[type="submit"]',
+        ) as HTMLButtonElement | null;
+        if (!submitBtn) return;
+
+        submitBtn.disabled = true;
+        const originalText = submitBtn.textContent;
+        submitBtn.textContent = "Posting...";
+
+        const guestName = guestNameInput?.value.trim();
+
+        if (!user && !guestName) {
+            alert("Please provide your name to post as a guest.");
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
+            return;
+        }
+
+        const { error } = await supabase.from("comments").insert({
+            post_slug: slug,
+            user_id: user?.id || null,
+            guest_name: user ? null : guestName,
+            content: content,
+        });
+
+        if (error) {
+            console.error("Error posting comment:", error);
+            alert("Error posting comment: " + error.message);
+        } else {
+            commentInput.value = "";
+            fetchComments();
+        }
+
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
+    });
+
+    init();
+</script>

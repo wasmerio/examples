@@ -1,0 +1,174 @@
+---
+interface RelatedPost {
+    title: string;
+    date: string;
+    readTime: string;
+    image: string;
+    slug: string;
+}
+
+interface Props {
+    headings: { depth: number; slug: string; text: string }[];
+    relatedPosts: RelatedPost[];
+}
+
+const { headings, relatedPosts } = Astro.props;
+---
+
+<aside class="hidden lg:block lg:col-span-3 sticky top-24 self-start space-y-8">
+        <!-- Table of Contents -->
+        {
+            headings.length > 0 && (
+                <div class="rounded-xl bg-slate-50 dark:bg-background-card p-6 border border-slate-100 dark:border-[#224249]">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#90c1cb] mb-4">
+                        Table of Contents
+                    </h3>
+                    <nav class="space-y-1 relative" id="toc-nav">
+                        {headings.map((heading) => (
+                            <a
+                                href={`#${heading.slug}`}
+                                data-slug={heading.slug}
+                                class={`toc-link block pl-6 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all py-1.5`}
+                            >
+                                {heading.text}
+                            </a>
+                        ))}
+                        <!-- Active Indicator -->
+                        <div id="toc-indicator" class="absolute left-0 w-0.5 bg-primary transition-all duration-300 hidden"></div>
+                    </nav>
+                </div>
+            )
+        }
+
+        <!-- Related Articles -->
+        <div>
+            <h3
+                class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#90c1cb] mb-4"
+            >
+                Related Articles
+            </h3>
+            <div class="space-y-4">
+                {
+                    relatedPosts.map((post) => (
+                        <a
+                            href={`/posts/${post.slug}`}
+                            class="group block rounded-xl bg-slate-50 dark:bg-background-card p-4 border border-transparent hover:border-primary/50 transition-all shadow-sm"
+                        >
+                            <div class="mb-3 overflow-hidden rounded-lg h-32 w-full bg-slate-200 dark:bg-[#102023] relative">
+                                <div class="absolute inset-0 bg-gradient-to-tr from-slate-900 to-transparent opacity-60" />
+                                <img
+                                    src={post.image}
+                                    alt={post.title}
+                                    class="h-full w-full object-cover transition-transform group-hover:scale-105"
+                                />
+                            </div>
+                            <h4 class="text-sm font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors leading-snug">
+                                {post.title}
+                            </h4>
+                            <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                {post.date} • {post.readTime}
+                            </p>
+                        </a>
+                    ))
+                }
+            </div>
+        </div>
+
+        <!-- Newsletter Widget -->
+        <div class="rounded-xl bg-primary/10 p-5 border border-primary/20">
+            <h4 class="text-sm font-bold text-slate-900 dark:text-white mb-2">
+                Weekly Tech Digest
+            </h4>
+            <p class="text-xs text-slate-600 dark:text-slate-300 mb-4">
+                Get the latest articles delivered to your inbox every Monday.
+            </p>
+            <input
+                class="w-full rounded-lg border-0 bg-white dark:bg-background-dark py-2 px-3 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-1 focus:ring-primary mb-2"
+                placeholder="Email address"
+                type="email"
+            />
+            <button
+                class="w-full rounded-lg bg-primary py-2 text-xs font-bold text-[#102023] hover:bg-primary/90 transition-colors"
+                >Subscribe</button
+            >
+        </div>
+</aside>
+
+<script>
+    const observerOptions = {
+        root: null,
+        rootMargin: '-5% 0px -85% 0px',
+        threshold: 0
+    };
+
+    const tocLinks = document.querySelectorAll('.toc-link');
+    const indicator = document.getElementById('toc-indicator');
+    const nav = document.getElementById('toc-nav');
+
+    let activeId = '';
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                activeId = entry.target.getAttribute('id') || '';
+                updateActiveLink();
+            }
+        });
+    }, observerOptions);
+
+    function updateActiveLink() {
+        if (!activeId) return;
+
+        const activeLink = document.querySelector(`.toc-link[data-slug="${activeId}"]`) as HTMLElement;
+        
+        if (activeLink && indicator && nav) {
+            // Update classes
+            tocLinks.forEach(link => link.classList.remove('text-primary', 'dark:text-primary', 'font-bold'));
+            activeLink.classList.add('text-primary', 'dark:text-primary', 'font-bold');
+            
+            // Move indicator
+            const linkRect = activeLink.getBoundingClientRect();
+            const navRect = nav.getBoundingClientRect();
+            
+            indicator.style.display = 'block';
+            indicator.style.top = `${linkRect.top - navRect.top}px`;
+            indicator.style.height = `${linkRect.height}px`;
+        }
+    }
+
+    // Observe all headings
+    tocLinks.forEach(link => {
+        const slug = link.getAttribute('data-slug');
+        if (slug) {
+            const target = document.getElementById(slug);
+            if (target) observer.observe(target);
+        }
+    });
+
+    // Handle scroll to check which one is truly active if multiple intersect
+    window.addEventListener('scroll', () => {
+        let current = '';
+        const headings = Array.from(tocLinks).map(link => {
+            const slug = link.getAttribute('data-slug');
+            return slug ? document.getElementById(slug) : null;
+        }).filter(h => h !== null) as HTMLElement[];
+
+        for (const heading of headings) {
+            const top = heading.getBoundingClientRect().top;
+            if (top < 150) {
+                current = heading.getAttribute('id') || '';
+            } else {
+                break;
+            }
+        }
+
+        if (current && current !== activeId) {
+            activeId = current;
+            updateActiveLink();
+        }
+    }, { passive: true });
+</script>
+
+<style>
+    /* TOC specific styles handled by script */
+</style>

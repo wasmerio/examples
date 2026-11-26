@@ -1,0 +1,331 @@
+---
+import { getCollection } from "astro:content";
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import ArchiveCard from "../components/ArchiveCard.astro";
+
+const allPosts = await getCollection("posts");
+const topics = [...new Set(allPosts.map((post) => post.data.category))];
+
+const formatDate = (date: Date) => {
+    return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+    });
+};
+
+---
+
+<Layout title="Article Archive | DevBlog">
+    <Header />
+
+    <main class="flex-1 flex justify-center py-8 px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-col w-full max-w-[1200px] gap-8">
+            <!-- Title Section -->
+            <div class="flex flex-col gap-4 border-b border-[#224249] pb-8">
+                <h1
+                    class="text-white text-4xl md:text-5xl font-black leading-tight tracking-[-0.033em]"
+                >
+                    Article Archives
+                </h1>
+                <p
+                    class="text-text-muted text-lg font-normal leading-normal max-w-2xl"
+                >
+                    Explore the latest insights in programming, cybersecurity,
+                    data science, and AI. Stay ahead of the curve.
+                </p>
+            </div>
+
+            <!-- Filters & Sorting -->
+            <div
+                class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+            >
+                <div class="flex gap-2 flex-wrap" id="topic-filters">
+                    <button
+                        class="topic-filter flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-background-input hover:bg-[#2a4f57] border border-transparent hover:border-primary/30 px-4 transition-all group active"
+                        data-topic="all"
+                    >
+                        <span class="text-sm">All Topics</span>
+                    </button>
+                    {
+                        topics.map((topic) => (
+                            <button
+                                class="topic-filter flex h-9 shrink-0 items-center justify-center gap-x-2 rounded-lg bg-background-input hover:bg-[#2a4f57] border border-transparent hover:border-primary/30 px-4 transition-all group"
+                                data-topic={topic}
+                            >
+                                <span class="text-white text-sm font-medium">
+                                    {topic}
+                                </span>
+                            </button>
+                        ))
+                    }
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-text-muted text-sm">Sort by:</span>
+                    <button
+                        class="flex items-center gap-1 text-white text-sm font-medium hover:text-primary"
+                        id="sort-toggle"
+                    >
+                        <span id="sort-label">Newest</span>
+                        <span class="material-symbols-outlined text-[20px]"
+                            >expand_more</span
+                        >
+                    </button>
+                </div>
+            </div>
+
+            <!-- Article Grid -->
+            <div
+                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 opacity-100 transition-opacity duration-300"
+                id="archive-grid"
+            >
+                {
+                    allPosts.map((post) => (
+                        <div
+                            class="archive-item"
+                            data-topic={post.data.category}
+                            data-date={post.data.pubDate.getTime()}
+                            data-tags={
+                                post.data.tags?.join(",").toLowerCase() || ""
+                            }
+                        >
+                            <ArchiveCard
+                                title={post.data.title}
+                                description={post.data.description}
+                                image={post.data.image}
+                                category={post.data.category}
+                                date={formatDate(post.data.pubDate)}
+                                readTime={post.data.readTime}
+                                slug={post.id}
+                            />
+                        </div>
+                    ))
+                }
+            </div>
+
+            <!-- Pagination Section -->
+            <div
+                class="flex flex-col items-center justify-center gap-6 pt-12 pb-8 border-t border-[#224249] mt-8"
+            >
+                <div class="flex items-center gap-2" id="pagination-controls">
+                    <button
+                        id="prev-page"
+                        class="flex items-center justify-center w-10 h-10 rounded-lg bg-background-input border border-primary/20 text-white hover:bg-primary/10 hover:border-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed group"
+                        aria-label="Previous page"
+                    >
+                        <span
+                            class="material-symbols-outlined text-[20px] group-hover:-translate-x-0.5 transition-transform"
+                            >chevron_left</span
+                        >
+                    </button>
+
+                    <div id="page-numbers" class="flex items-center gap-2">
+                        <!-- Numbers will be injected here -->
+                    </div>
+
+                    <button
+                        id="next-page"
+                        class="flex items-center justify-center w-10 h-10 rounded-lg bg-background-input border border-primary/20 text-white hover:bg-primary/10 hover:border-primary transition-all disabled:opacity-30 disabled:cursor-not-allowed group"
+                        aria-label="Next page"
+                    >
+                        <span
+                            class="material-symbols-outlined text-[20px] group-hover:translate-x-0.5 transition-transform"
+                            >chevron_right</span
+                        >
+                    </button>
+                </div>
+                <div
+                    class="text-xs font-medium text-text-muted uppercase tracking-widest"
+                    id="pagination-info"
+                >
+                    Page 1 of 1
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <Footer />
+</Layout>
+
+<script>
+    const topicButtons = document.querySelectorAll(".topic-filter");
+    const archiveGrid = document.getElementById("archive-grid");
+    const archiveItems = document.querySelectorAll(
+        ".archive-item",
+    ) as NodeListOf<HTMLElement>;
+    const sortToggle = document.getElementById("sort-toggle");
+    const sortLabel = document.getElementById("sort-label");
+
+    // Pagination Elements
+    const prevBtn = document.getElementById("prev-page") as HTMLButtonElement;
+    const nextBtn = document.getElementById("next-page") as HTMLButtonElement;
+    const pageNumbersContainer = document.getElementById("page-numbers");
+    const paginationInfo = document.getElementById("pagination-info");
+
+    let currentSort = "newest";
+    let currentTopic = "all";
+    let currentTag: string | null = null;
+    let currentPage = 1;
+    const itemsPerPage = 6;
+
+    // Filtered items based on topic and tag
+    let filteredItems: HTMLElement[] = Array.from(archiveItems);
+
+    const updatePagination = () => {
+        const totalPages = Math.ceil(filteredItems.length / itemsPerPage) || 1;
+        if (currentPage > totalPages) currentPage = totalPages;
+        if (currentPage < 1) currentPage = 1;
+
+        // Update Info
+        if (paginationInfo)
+            paginationInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+
+        // Update Buttons
+        if (prevBtn) prevBtn.disabled = currentPage === 1;
+        if (nextBtn) nextBtn.disabled = currentPage === totalPages;
+
+        // Render Page Numbers
+        if (pageNumbersContainer) {
+            pageNumbersContainer.innerHTML = "";
+            for (let i = 1; i <= totalPages; i++) {
+                const btn = document.createElement("button");
+                btn.className = `w-10 h-10 rounded-lg border transition-all text-sm font-bold ${
+                    i === currentPage
+                        ? "bg-primary text-background-dark border-primary shadow-[0_0_15px_rgba(13,204,242,0.3)]"
+                        : "bg-background-input border-primary/20 text-white hover:bg-primary/10 hover:border-primary"
+                }`;
+                btn.textContent = i.toString();
+                btn.addEventListener("click", () => {
+                    currentPage = i;
+                    renderCurrentPage();
+                });
+                pageNumbersContainer.appendChild(btn);
+            }
+        }
+
+        renderCurrentPage();
+    };
+
+    const renderCurrentPage = () => {
+        const start = (currentPage - 1) * itemsPerPage;
+        const end = start + itemsPerPage;
+
+        // Fade effect
+        if (archiveGrid) archiveGrid.style.opacity = "0";
+
+        setTimeout(() => {
+            archiveItems.forEach((item) => (item.style.display = "none"));
+
+            filteredItems.forEach((item, index) => {
+                if (index >= start && index < end) {
+                    item.style.display = "block";
+                }
+            });
+
+            if (archiveGrid) archiveGrid.style.opacity = "1";
+        }, 200);
+    };
+
+    const applyFilter = (topic: string | null, tag: string | null = null) => {
+        if (!topic) topic = "all";
+        currentTopic = topic;
+        currentTag = tag;
+
+        // Update active states
+        topicButtons.forEach((btn) => {
+            const btnTopic = btn.getAttribute("data-topic");
+            if (btnTopic === topic) {
+                btn.classList.add("active");
+            } else {
+                btn.classList.remove("active");
+            }
+        });
+
+        // Filter items
+        filteredItems = Array.from(archiveItems).filter((item) => {
+            const matchesTopic =
+                topic === "all" || item.getAttribute("data-topic") === topic;
+
+            if (tag) {
+                const itemTags =
+                    item.getAttribute("data-tags")?.split(",") || [];
+                return matchesTopic && itemTags.includes(tag.toLowerCase());
+            }
+
+            return matchesTopic;
+        });
+
+        currentPage = 1;
+        updatePagination();
+    };
+
+    // Event Listeners
+    prevBtn?.addEventListener("click", () => {
+        if (currentPage > 1) {
+            currentPage--;
+            updatePagination();
+        }
+    });
+
+    nextBtn?.addEventListener("click", () => {
+        const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+        if (currentPage < totalPages) {
+            currentPage++;
+            updatePagination();
+        }
+    });
+
+    // Check for query parameters on load
+    const urlParams = new URLSearchParams(window.location.search);
+    const initialTopic = urlParams.get("topic");
+    const initialTag = urlParams.get("tag");
+    applyFilter(initialTopic, initialTag);
+
+    // Topic Filtering Click Events
+    topicButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            const topic = button.getAttribute("data-topic");
+            applyFilter(topic, currentTag);
+
+            let newUrl =
+                topic === "all" ? window.location.pathname : `?topic=${topic}`;
+            if (currentTag) {
+                newUrl += (topic === "all" ? "?" : "&") + `tag=${currentTag}`;
+            }
+            window.history.pushState({ topic, tag: currentTag }, "", newUrl);
+        });
+    });
+
+    // Sorting
+    sortToggle?.addEventListener("click", () => {
+        currentSort = currentSort === "newest" ? "oldest" : "newest";
+        if (sortLabel)
+            sortLabel.textContent =
+                currentSort.charAt(0).toUpperCase() + currentSort.slice(1);
+
+        const sortedItems = Array.from(archiveItems).sort((a, b) => {
+            const dateA = parseInt(a.getAttribute("data-date") || "0");
+            const dateB = parseInt(b.getAttribute("data-date") || "0");
+            return currentSort === "newest" ? dateB - dateA : dateA - dateB;
+        });
+
+        // Update items in the DOM and re-filter
+        sortedItems.forEach((item) => archiveGrid?.appendChild(item));
+        applyFilter(currentTopic, currentTag);
+    });
+</script>
+
+<style>
+    @reference "../styles/global.css";
+
+    .topic-filter.active {
+        @apply bg-primary text-background-dark font-bold;
+        box-shadow: 0 0 15px rgba(13, 204, 242, 0.3);
+    }
+
+    #archive-grid {
+        transition-property: opacity;
+    }
+</style>

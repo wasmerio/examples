@@ -1,0 +1,131 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+
+const title = "My Liked Posts | DevBlog";
+---
+
+<Layout title={title}>
+    <Header />
+
+    <main
+        class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 w-full min-h-[60vh]"
+    >
+        <div class="mb-10">
+            <h1
+                class="text-3xl font-extrabold text-slate-900 dark:text-white flex items-center gap-3"
+            >
+                <span class="material-icons text-primary">thumb_up</span>
+                My Liked Posts
+            </h1>
+            <p class="text-slate-500 mt-2">
+                Articles you've shown some love to.
+            </p>
+        </div>
+
+        <div id="likes-grid" class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <!-- Posts will be injected here -->
+            <div class="col-span-full py-20 text-center animate-pulse">
+                <p class="text-slate-400">Loading your likes...</p>
+            </div>
+        </div>
+
+        <div id="no-likes" class="hidden py-20 text-center">
+            <div
+                class="w-20 h-20 bg-slate-100 dark:bg-[#162a2f] rounded-full flex items-center justify-center mx-auto mb-4"
+            >
+                <span class="material-icons text-slate-400 text-3xl"
+                    >sentiment_dissatisfied</span
+                >
+            </div>
+            <h2 class="text-xl font-bold text-slate-700 dark:text-slate-300">
+                No liked posts yet
+            </h2>
+            <p class="text-slate-500 mt-2">
+                Start exploring and show some love to your favorite articles!
+            </p>
+            <a
+                href="/archive"
+                class="mt-6 inline-block px-6 py-2 bg-primary text-white rounded-full font-bold hover:bg-primary-dark transition-all"
+                >Browse Articles</a
+            >
+        </div>
+    </main>
+
+    <Footer />
+
+    <script>
+        // @ts-nocheck
+        import { supabase } from "../lib/supabase";
+
+        // This is a bit tricky with Static Site Generation
+        // We need to fetch the slugs from Supabase and then match them with content
+        // Since we can't use getCollection in client-side script directly,
+        // we'll fetch the post data from a pre-defined JSON or just render placeholders
+        // For simplicity, we'll fetch slugs and redirect/link to them.
+
+        const likesGrid = document.getElementById("likes-grid");
+        const noLikes = document.getElementById("no-likes");
+
+        async function loadLikes() {
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
+
+            if (!session) {
+                window.location.href = "/login";
+                return;
+            }
+
+            const { data: likes, error } = await supabase
+                .from("likes")
+                .select("post_slug")
+                .eq("user_id", session.user.id)
+                .order("created_at", { ascending: false });
+
+            if (error || !likes || likes.length === 0) {
+                if (likesGrid) likesGrid.classList.add("hidden");
+                if (noLikes) noLikes.classList.remove("hidden");
+                return;
+            }
+
+            // In a real app, we'd fetch post metadata (title, desc, image)
+            // For now, we'll render simple cards or handle it via a search index
+            // Let's at least show the slugs for now, or fetch from a JSON we create
+            renderLikes(likes);
+        }
+
+        function renderLikes(likes) {
+            if (!likesGrid) return;
+
+            // Note: In a production Astro app, you'd likely create an API endpoint
+            // to fetch post metadata for a list of slugs.
+            likesGrid.innerHTML = likes
+                .map(
+                    (like) => `
+                <a href="/posts/${like.post_slug}" class="group bg-white dark:bg-[#162a2f] border border-slate-200 dark:border-[#224249] rounded-2xl overflow-hidden hover:shadow-xl hover:shadow-primary/10 transition-all p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-xs font-bold text-primary uppercase tracking-widest">Article</span>
+                        <span class="material-icons text-primary/40 group-hover:text-primary transition-colors">arrow_forward</span>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors mb-2 truncate">
+                        ${like.post_slug
+                            .split("-")
+                            .map(
+                                (word) =>
+                                    word.charAt(0).toUpperCase() +
+                                    word.slice(1),
+                            )
+                            .join(" ")}
+                    </h3>
+                    <p class="text-sm text-slate-500 line-clamp-2">Click to revisit this article.</p>
+                </a>
+            `,
+                )
+                .join("");
+        }
+
+        loadLikes();
+    </script>
+</Layout>

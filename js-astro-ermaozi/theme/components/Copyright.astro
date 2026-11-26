@@ -1,0 +1,56 @@
+---
+import type { Lang } from '../lib/content'
+import type { CopyrightOptions } from '../lib/copyright'
+import { licenseName, localeOf } from '../lib/locales'
+import VPLink from './VPLink.astro'
+import { withBase } from '../lib/client-utils'
+type Contributor = { name: string, url?: string }
+
+const { lang, route, options, origin, contributors = [] } = Astro.props as { lang: Lang, route: string, options: CopyrightOptions, origin: string, contributors?: Contributor[] }
+const locale = localeOf(lang)
+const licenses: Record<string, { url: string, icons: string[] }> = {
+  CC0: { url: 'https://creativecommons.org/publicdomain/zero/1.0/', icons: ['zero'] },
+  'CC-BY-4.0': { url: 'https://creativecommons.org/licenses/by/4.0/', icons: ['cc', 'by'] },
+  'CC-BY-NC-4.0': { url: 'https://creativecommons.org/licenses/by-nc/4.0/', icons: ['cc', 'by', 'nc'] },
+  'CC-BY-NC-SA-4.0': { url: 'https://creativecommons.org/licenses/by-nc-sa/4.0/', icons: ['cc', 'by', 'nc', 'sa'] },
+  'CC-BY-NC-ND-4.0': { url: 'https://creativecommons.org/licenses/by-nc-nd/4.0/', icons: ['cc', 'by', 'nc', 'nd'] },
+  'CC-BY-ND-4.0': { url: 'https://creativecommons.org/licenses/by-nd/4.0/', icons: ['cc', 'by', 'nd'] },
+  'CC-BY-SA-4.0': { url: 'https://creativecommons.org/licenses/by-sa/4.0/', icons: ['cc', 'by', 'sa'] },
+}
+const license = typeof options.license === 'object' ? options.license : { name: options.license || 'CC-BY-4.0' }
+const known = licenses[license.name]
+const creation = options.creation || 'original'
+const configuredAuthor = typeof options.author === 'string' ? { name: options.author } : options.author
+const matchingContributor = configuredAuthor && contributors.find(contributor => contributor.name === configuredAuthor.name)
+const author = configuredAuthor
+  ? { ...configuredAuthor, url: configuredAuthor.url || matchingContributor?.url }
+  : creation === 'original'
+    ? contributors[0]
+    : undefined
+const source = creation === 'original' ? new URL(withBase(route, import.meta.env.BASE_URL), import.meta.env.SITE || origin).toString() : options.source
+const creationText = creation === 'translate'
+  ? locale.copyrightCreationTranslateText
+  : creation === 'reprint'
+    ? locale.copyrightCreationReprintText
+    : locale.copyrightCreationOriginalText
+---
+
+<div class="vp-doc-copyright">
+  <h2 id="doc-copyright" tabindex="-1" class="vp-doc-header"><a href="#doc-copyright" class="header-anchor"><span>{locale.copyrightText}</span></a></h2>
+  <div class="vp-copyright">
+    <span class="copyright-mask"></span>
+    {author?.name && <p><span>{locale.copyrightAuthorText}</span><VPLink href={author.url} noIcon>{author.name}</VPLink></p>}
+    {source && <p><span>{creationText}</span><span class="source"><VPLink href={source} noIcon={creation === 'original'} data-copyright-original={creation === 'original' ? '' : undefined}>{decodeURIComponent(source)}</VPLink></span></p>}
+    {license.name && <p><span>{locale.copyrightLicenseText}</span><VPLink href={license.url || known?.url} noIcon>{known ? `${licenseName(lang, license.name)} (${license.name})` : license.name}</VPLink>{known?.icons.map(icon => <span class={`vpi-license-${icon}`} aria-hidden="true"></span>)}</p>}
+  </div>
+</div>
+
+<script>
+  const link = document.querySelector<HTMLAnchorElement>('[data-copyright-original]')
+  if (link) {
+    const url = new URL(location.href.split('#')[0])
+    url.searchParams.delete('giscus')
+    link.href = url.toString()
+    link.textContent = decodeURIComponent(url.toString())
+  }
+</script>

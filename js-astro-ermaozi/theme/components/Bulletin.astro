@@ -1,0 +1,61 @@
+---
+import { extname, isAbsolute, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import type { Lang } from '../lib/content'
+import { renderMarkdown } from '../lib/markdown'
+import { localeOf } from '../lib/locales'
+import UserSlot from './UserSlot.astro'
+import { hasUserSlot } from '../lib/user-slots'
+
+type BulletinConfig = {
+  enabled?: boolean
+  id?: string
+  layout?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
+  border?: boolean
+  lifetime?: 'session' | 'always' | 'once'
+  title?: string
+  content?: string
+  contentType?: 'markdown' | 'text'
+  contentFile?: string
+  enablePage?: boolean | ((page: { path: string }) => boolean)
+}
+
+const { pageEnabled = true, lang, route } = Astro.props as { pageEnabled?: boolean, lang: Lang, route: string }
+const configuredBulletin = (localeOf(lang) as { bulletin?: BulletinConfig | boolean }).bulletin
+const bulletin = configuredBulletin === true ? {} : configuredBulletin
+const enablePage = bulletin && (typeof bulletin.enablePage === 'function' ? bulletin.enablePage({ path: route }) : bulletin.enablePage ?? true)
+const id = bulletin && (bulletin.id || createHash('sha256').update(JSON.stringify(bulletin)).digest('hex').slice(0, 8))
+let source = bulletin ? bulletin.content ?? '' : ''
+let sourcePath: string | undefined
+let contentType = bulletin ? bulletin.contentType ?? 'text' : 'text'
+if (bulletin && bulletin.contentFile) {
+  try {
+    const file = isAbsolute(bulletin.contentFile) ? bulletin.contentFile : resolve(process.cwd(), bulletin.contentFile)
+    source = readFileSync(file, 'utf8')
+    sourcePath = file
+    if (extname(file) === '.md') contentType = 'markdown'
+  } catch {
+    source = ''
+  }
+}
+const content = contentType === 'markdown' ? await renderMarkdown(source, { sourcePath }) : source
+const userComponents = import.meta.glob<{ default: any }>('./bulletin/*.{astro,vue}', { eager: true })
+const UserBulletin = userComponents['./bulletin/Bulletin.astro']?.default ?? userComponents['./bulletin/Bulletin.vue']?.default
+const UserBulletinContent = userComponents['./bulletin/BulletinContent.astro']?.default ?? userComponents['./bulletin/BulletinContent.vue']?.default
+const hasBulletinSlot = hasUserSlot('bulletin-content')
+---
+
+{bulletin && bulletin.enabled !== false && enablePage && pageEnabled && UserBulletin && <UserBulletin {bulletin} {lang} {route} />}
+{bulletin && bulletin.enabled !== false && enablePage && pageEnabled && !UserBulletin && (
+  <aside
+    class:list={['vp-bulletin', 'preset', bulletin.layout ?? 'top-right', { border: bulletin.border ?? true }]}
+    data-bulletin-id={id}
+    data-bulletin-lifetime={bulletin.lifetime ?? 'always'}
+    hidden
+  >
+    <button type="button" class="close" aria-label={lang.startsWith('zh') ? '关闭公告' : 'Close bulletin'}><span class="vpi-close" aria-hidden="true"></span></button>
+    {bulletin.title && <h2 set:html={bulletin.title}></h2>}
+    <div class="container">{hasBulletinSlot ? <UserSlot name="bulletin-content" {bulletin} {lang} {route} /> : UserBulletinContent ? <UserBulletinContent {bulletin} {lang} {route} /> : <div class="content vp-doc" set:html={content}></div>}</div>
+  </aside>
+)}

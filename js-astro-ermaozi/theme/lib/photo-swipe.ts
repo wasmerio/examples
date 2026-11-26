@@ -1,0 +1,35 @@
+export type PhotoSwipeLocale = { close: string, download: string, fullscreen: string, zoom: string, arrowPrev: string, arrowNext: string }
+
+const locales: Record<string, PhotoSwipeLocale> = {
+  en: { close: 'Close', download: 'Download Image', fullscreen: 'Switch to fullscreen', zoom: 'Zoom in/out', arrowPrev: 'Prev (Arrow Left)', arrowNext: 'Next (Arrow Right)' },
+  zh: { close: '关闭', download: '下载图片', fullscreen: '切换全屏', zoom: '缩放', arrowPrev: '上一个 (左箭头)', arrowNext: '下一个 (右箭头)' },
+  'zh-TW': { close: '關閉', download: '下載圖片', fullscreen: '切換全屏', zoom: '縮放', arrowPrev: '上一個 (左箭頭)', arrowNext: '下一個 (右箭頭)' },
+  de: { close: 'Schließen', download: 'Download', fullscreen: 'Vollbild aktivieren', zoom: 'Rein / rauszoomen', arrowPrev: 'Zurück (Pfeil links)', arrowNext: 'Weiter (Pfeil rechts)' },
+  vi: { close: 'Đóng', download: 'download', fullscreen: 'Bật chế độ toàn màn hình', zoom: 'Phóng to / thu nhỏ', arrowPrev: 'Trước (Mũi tên trái)', arrowNext: 'Tiếp theo (Mũi tên Phải)' },
+  uk: { close: 'Закрити', download: 'Завантажити зображення', fullscreen: 'Перейти на повний екран', zoom: 'Збільшити/Зменшити', arrowPrev: 'Попередня (Стрілка вліво)', arrowNext: 'Далі (стрілка вправо)' },
+  ru: { close: 'Закрыть', download: 'Загрузить изображение', fullscreen: 'Переключиться на полный экран', zoom: 'Увеличить/Уменьшить', arrowPrev: 'Предыдущая (Стрелка влево)', arrowNext: 'Следующая (Стрелка вправо)' },
+  br: { close: 'Fechar', download: 'Baixar imagem', fullscreen: 'Alternar para tela cheia', zoom: 'Aproximar mais/menos', arrowPrev: 'Anterior (Seta Esquerda)', arrowNext: 'Próximo (Seta Direita)' },
+  pl: { close: 'Zamknij', download: 'Pobierz obraz', fullscreen: 'Przełącz na pełny ekran', zoom: 'Powiększ/pomniejsz', arrowPrev: 'Poprzedni (strzałka w lewo)', arrowNext: 'Następny (strzałka w prawo)' },
+  sk: { close: 'Zatvor', download: 'Stiahni obrázok', fullscreen: 'Prepni na celú obrazovku', zoom: 'Priblíž/Oddial', arrowPrev: 'Predošlí (šípka doľava)', arrowNext: 'Nasledujúci (šípka doprava)' },
+  fr: { close: 'Fermer', download: "Télécharger l'image", fullscreen: 'Basculer en plein écran', zoom: 'Zoom avant/arrière', arrowPrev: 'Précédent (Flèche gauche)', arrowNext: 'Suivant (Flèche droite)' },
+  es: { close: 'Cerrar', download: 'Descargar imagen', fullscreen: 'Cambiar a pantalla completa', zoom: 'Acercar/Alejar', arrowPrev: 'Anterior (Flecha izquierda)', arrowNext: 'Siguiente (Flecha derecha)' },
+  ja: { close: '閉じる', download: '画像ダウンロード', fullscreen: '全画面表示への切り替え', zoom: '拡大・縮小', arrowPrev: '前へ（左矢印）', arrowNext: '次へ（右矢印）' },
+  tr: { close: 'Kapat', download: 'Resmi indir', fullscreen: 'Tam ekrana geç', zoom: 'Yakınlaştır/Uzaklaştır', arrowPrev: 'Önceki (Sol ok)', arrowNext: 'Sonraki (Sağ ok)' },
+  ko: { close: '닫기', download: '이미지 다운로드', fullscreen: '전체 화면 전환', zoom: '확대/축소', arrowPrev: '이전 (왼쪽 화살표)', arrowNext: '다음 (오른쪽 화살표)' },
+  fi: { close: 'Sulje', download: 'Lataa kuva', fullscreen: 'Vaihda kokoruututilaan', zoom: 'Lähennä/Työnnä', arrowPrev: 'Edellinen (Vasen nuoli)', arrowNext: 'Seuraava (Oikea nuoli)' },
+  hu: { close: 'Bezárás', download: 'Kép letöltése', fullscreen: 'Váltás teljes képernyőre', zoom: 'Nagyítás/kicsinyítés', arrowPrev: 'Előző (Balra nyíl)', arrowNext: 'Következő (Jobbra nyíl)' },
+  id: { close: 'Tutup', download: 'Unduh gambar', fullscreen: 'Beralih ke layar penuh', zoom: 'Perbesar/Perkecil', arrowPrev: 'Sebelumnya (Panah kiri)', arrowNext: 'Selanjutnya (Panah kanan)' },
+  nl: { close: 'Sluiten', download: 'Download afbeelding', fullscreen: 'Schakel naar volledig scherm', zoom: 'In-/uitzoomen', arrowPrev: 'Vorige (Pijl Links)', arrowNext: 'Volgende (Pijl Rechts)' },
+}
+
+const aliases: Record<string, string> = {
+  'zh-cn': 'zh', 'zh-hans': 'zh', 'zh-tw': 'zh-TW', 'zh-hant': 'zh-TW',
+  'de-de': 'de', 'vi-vn': 'vi', 'ru-ru': 'ru', 'pt-br': 'br', 'pl-pl': 'pl', 'sk-sk': 'sk',
+  'fr-fr': 'fr', 'es-es': 'es', 'ja-jp': 'ja', 'tr-tr': 'tr', 'ko-ko': 'ko', 'ko-kr': 'ko',
+  'fi-fi': 'fi', 'hu-hu': 'hu', 'id-id': 'id', 'nl-nl': 'nl', 'en-us': 'en',
+}
+
+export const photoSwipeLocaleOf = (lang: string, localePath: string, configured: Record<string, Partial<PhotoSwipeLocale>> = {}) => {
+  const key = aliases[lang.toLowerCase()] ?? lang.split('-')[0].toLowerCase()
+  return { ...(locales[key] ?? locales.en), ...(configured[localePath] ?? {}) }
+}

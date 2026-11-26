@@ -1,0 +1,59 @@
+---
+import type { Lang } from '../lib/content'
+import { localePrefix } from '../lib/locales'
+import { siteConfig } from '../../site.config.mjs'
+const { lang, pageMap = {} } = Astro.props as { lang: Lang, pageMap?: Record<string, string> }
+const en = !lang.toLowerCase().startsWith('zh')
+const routePrefix = localePrefix(lang)
+---
+
+<div class="popular-posts-fixture">
+  <div><button class="active" type="button" data-rank="popular">{en ? 'Popular' : '热门文章'}</button><button type="button" data-rank="likes">{en ? 'Most liked' : '点赞排行'}</button></div>
+  <ol></ol><p>{en ? 'No popular-post data' : '暂无热门数据'}</p>
+</div>
+
+<script is:inline define:vars={{ titles: pageMap, isEnglish: en, statsBase: siteConfig.services.statsBase, routePrefix }}>
+  (() => {
+    const root = document.currentScript?.previousElementSibling
+    if (!root) return
+    const list = root.querySelector('ol')
+    const empty = root.querySelector('p')
+    const localPreview = ['localhost', '127.0.0.1', '::1'].includes(location.hostname)
+    const load = async kind => {
+      list.replaceChildren()
+      if (localPreview) {
+        empty.hidden = false
+        empty.textContent = isEnglish ? (kind === 'likes' ? 'No like data' : 'No popular-post data') : (kind === 'likes' ? '暂无点赞数据' : '暂无热门数据')
+        return
+      }
+      empty.textContent = isEnglish ? 'Loading…' : '加载中…'
+      try {
+        const response = await fetch(kind === 'likes' ? `${statsBase}/likes/top?limit=15` : `${statsBase}/popular`)
+        const posts = response.ok ? await response.json() : []
+        for (const post of posts.slice(0, 15)) {
+          const route = routePrefix && post.path !== `${routePrefix}/` && !post.path.startsWith(`${routePrefix}/`) ? `${routePrefix}${post.path}` : post.path
+          const item = document.createElement('li')
+          const link = document.createElement('a')
+          link.href = route
+          link.textContent = titles[route] ?? titles[post.path] ?? post.title ?? post.path
+          const count = document.createElement('span')
+          count.textContent = kind === 'likes' ? `♥ ${post.count}` : String(post.count)
+          item.append(link, count)
+          list.append(item)
+        }
+        empty.hidden = list.children.length > 0
+        if (!empty.hidden) empty.textContent = isEnglish ? (kind === 'likes' ? 'No like data' : 'No popular-post data') : (kind === 'likes' ? '暂无点赞数据' : '暂无热门数据')
+      } catch {
+        empty.hidden = false
+        empty.textContent = isEnglish ? 'No popular-post data' : '暂无热门数据'
+      }
+    }
+    root.addEventListener('click', event => {
+      const button = event.target.closest('[data-rank]')
+      if (!button) return
+      root.querySelectorAll('[data-rank]').forEach(item => item.classList.toggle('active', item === button))
+      load(button.dataset.rank)
+    })
+    setTimeout(() => load('popular'), 800)
+  })()
+</script>

@@ -1,0 +1,441 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content'
+import FriendsPage from '../components/FriendsPage.astro'
+import Copyright from '../components/Copyright.astro'
+import CustomHome from '../components/CustomHome.astro'
+import DocsSidebar from '../components/DocsSidebar.astro'
+import DocFooter from '../components/DocFooter.astro'
+import GitChangelog from '../components/GitChangelog.astro'
+import GitContributors from '../components/GitContributors.astro'
+import PageContextMenu from '../components/PageContextMenu.astro'
+import OutlineItems from '../components/OutlineItems.astro'
+import PageEncrypt from '../components/PageEncrypt.astro'
+import PostList from '../components/PostList.astro'
+import PostsNav from '../components/PostsNav.astro'
+import ProfileAside from '../components/ProfileAside.astro'
+import TaxonomyPage from '../components/TaxonomyPage.astro'
+import ArticleLikeButton from '../components/vue/stats/ArticleLikeButton.vue'
+import PageViews from '../components/vue/stats/PageViews.vue'
+import Comments from '../components/vue/Comments.vue'
+import UserSlot from '../components/UserSlot.astro'
+import UserLayout from '../components/UserLayout.astro'
+import BaseLayout from '../layouts/BaseLayout.astro'
+import { categoryListOf, createTimeTextOf, docsFor, findTranslation, isDoc, isPost, langOf, postMetaConfigOf, postsFor, publishedDateOf, routeOf, tagClassOf, updatedDateOf, wordCountOf, type Lang, type PostMetaConfig } from '../lib/content'
+import { renderMarkdown } from '../lib/markdown'
+import { encryptContent } from '../lib/encryption'
+import { encryptionPolicy } from '../lib/encrypt-policy'
+import { getGitPageData, type ChangelogOptions, type ContributorsOptions, type GitContributor } from '../lib/git'
+import { siteConfig } from '../../site.config.mjs'
+import { configuredLanguages, localeOf, localePath, localePrefix, readingTimeOf } from '../lib/locales'
+import { hasUserSlot } from '../lib/user-slots'
+import { collectionForEntry, docCollectionForSidebar, docCollectionsFor, postCollectionsFor, type ResolvedDocCollection, type ResolvedPostCollection } from '../lib/collections'
+import { configuredSidebarFor, flatSidebarLinks, resolveSidebar, type ResolvedSidebarItem } from '../lib/sidebar'
+import { resolveEditLink } from '../lib/client-utils'
+import { resolvePageNav, type PageNavLink } from '../lib/page-nav'
+import { resolveCopyrightOptions } from '../lib/copyright'
+import { outlineOfHtml, type ThemeOutline } from '../lib/outline'
+import { homeConfigOf } from '../lib/home'
+import VPLink from '../components/VPLink.astro'
+import VPBadge from '../components/VPBadge.astro'
+import LocalNav from '../components/LocalNav.astro'
+import { llmstxtPageEnabled } from '../lib/raw-markdown'
+
+type ContentEntry = CollectionEntry<'content'>
+type GeneratedKind = 'blog' | 'archives' | 'categories' | 'tags'
+type PageProps = { kind: 'content', entry: ContentEntry } | { kind: GeneratedKind, lang: Lang, route: string, collectionKey: string }
+
+export async function getStaticPaths() {
+  const entries = (await getCollection('content')).filter(entry => import.meta.env.DEV || !entry.data.draft)
+  const param = (route: string) => route === '/' ? undefined : route.replace(/^\//, '').replace(/\/$/, '')
+  const generated: Array<{ route: string, kind: GeneratedKind, lang: Lang, collectionKey: string }> = configuredLanguages().flatMap(lang => postCollectionsFor(lang).flatMap(collection => [
+    ...(collection.postList === false ? [] : [{ route: collection.link, kind: 'blog' as const, lang, collectionKey: collection.key }]),
+    ...(collection.archives === false ? [] : [{ route: collection.archivesLink, kind: 'archives' as const, lang, collectionKey: collection.key }]),
+    ...(collection.categories === false ? [] : [{ route: collection.categoriesLink, kind: 'categories' as const, lang, collectionKey: collection.key }]),
+    ...(collection.tags === false ? [] : [{ route: collection.tagsLink, kind: 'tags' as const, lang, collectionKey: collection.key }]),
+  ]))
+  return [
+    ...entries.map(entry => ({ params: { path: param(routeOf(entry)) }, props: { kind: 'content', entry } })),
+    ...generated.map(page => ({ params: { path: param(page.route) }, props: page })),
+  ]
+}
+
+const props = Astro.props as PageProps
+const includeDrafts = import.meta.env.DEV
+const entries = (await getCollection('content')).filter(entry => includeDrafts || !entry.data.draft)
+const entry = props.kind === 'content' ? props.entry : undefined
+const pageEntry = entry as ContentEntry
+const customHome = Boolean(entry && (entry.data.home === true || entry.data.pageLayout === 'home'))
+const homeConfig = customHome ? homeConfigOf(entry!.data) : []
+const lang = props.kind === 'content' ? langOf(props.entry) : props.lang
+const entryCollection = entry ? collectionForEntry(entry.id, lang) : undefined
+const en = !lang.startsWith('zh')
+const locale = localeOf(lang)
+const routePrefix = localePrefix(lang)
+const route = props.kind === 'content' ? routeOf(props.entry) : props.route
+const generatedPostCollection = props.kind === 'content' ? undefined : postCollectionsFor(lang).find(collection => collection.key === props.collectionKey)
+const translation = entry ? findTranslation(entry, entries) : undefined
+const routeWithoutLocale = routePrefix && route.startsWith(`${routePrefix}/`) ? route.slice(routePrefix.length) : route
+const translationBase = entry?.data.translationOf ?? route
+const languageLinks = siteConfig.multilingual === false ? [] : configuredLanguages().flatMap(targetLang => {
+  if (targetLang === lang) return [{ lang: targetLang, href: route }]
+  if (!entry) {
+    const target = postCollectionsFor(targetLang).find(collection => collection.dir === generatedPostCollection?.dir) ?? postCollectionsFor(targetLang)[0]
+    const href = target && (props.kind === 'blog' ? target.link : props.kind === 'tags' ? target.tagsLink : props.kind === 'categories' ? target.categoriesLink : target.archivesLink)
+    return [{ lang: targetLang, href: href ?? localePath(targetLang), fallback: !href }]
+  }
+  const candidate = entries.find(item => langOf(item) === targetLang && (
+    item.data.translationOf === translationBase
+    || routeOf(item) === translationBase
+    || (localePrefix(targetLang) && routeOf(item).startsWith(`${localePrefix(targetLang)}/`) ? routeOf(item).slice(localePrefix(targetLang).length) : routeOf(item)) === routeWithoutLocale
+  ))
+  const targetPostCollections = isPost(entry) ? postCollectionsFor(targetLang) : []
+  const fallback = targetPostCollections.find(collection => collection.dir === entryCollection?.dir)?.link ?? targetPostCollections[0]?.link
+  return candidate
+    ? [{ lang: targetLang, href: routeOf(candidate) }]
+    : [{ lang: targetLang, href: fallback ?? localePath(targetLang), fallback: true }]
+})
+const translationRoute = siteConfig.multilingual === false ? undefined : languageLinks.find(item => item.lang !== lang)?.href ?? (translation ? routeOf(translation) : undefined)
+const pageMap = Object.fromEntries(entries.map(item => [routeOf(item), item.data.title]))
+const post = entry ? isPost(entry) : false
+const doc = entry ? isDoc(entry) : false
+const postsLayout = entry?.data.pageLayout === 'posts' || entry?.data.pageLayout === 'blog'
+const standardLayouts = new Set(['home', 'posts', 'blog', 'doc', 'page', 'friends'])
+const configuredPageLayout = entry?.data.pageLayout
+const bareLayout = Boolean(entry && (configuredPageLayout === false || configuredPageLayout === 'custom'))
+const userLayoutName = typeof configuredPageLayout === 'string' && !standardLayouts.has(configuredPageLayout) && configuredPageLayout !== 'custom' ? configuredPageLayout : undefined
+const friendPage = Boolean(entry && (entry.data.friends || entry.data.pageLayout === 'friends'))
+const pageCategories = post ? categoryListOf(pageEntry) : []
+const titleBadge = typeof entry?.data.badge === 'string' ? { text: entry.data.badge } : entry?.data.badge
+const layoutPostCollection = postsLayout && entry?.data.collection
+  ? postCollectionsFor(lang).find(collection => [collection.key, collection.dir, collection.linkPrefix].includes(entry.data.collection!))
+  : undefined
+if (postsLayout && entry?.data.collection && !layoutPostCollection) throw new Error(`[ermaozi] pageLayout: posts 找不到 Post 集合 "${entry.data.collection}"`)
+const postCollection = (generatedPostCollection
+  ?? (postsLayout ? layoutPostCollection ?? postCollectionsFor(lang)[0]
+    : entryCollection?.type === 'post' ? entryCollection
+      : customHome ? postCollectionsFor(lang)[0] : undefined)) as ResolvedPostCollection | undefined
+const requestedSidebar = typeof entry?.data.sidebar === 'string' ? entry.data.sidebar : ''
+const entryDocCollection = entryCollection?.type === 'doc' ? entryCollection : undefined
+const forcedDocCollection = requestedSidebar ? docCollectionForSidebar(lang, requestedSidebar) : undefined
+const configuredSidebar = entry ? configuredSidebarFor(entries, lang, requestedSidebar || route) : undefined
+const collectionSidebar = forcedDocCollection ?? (!requestedSidebar && entryDocCollection?.sidebar ? entryDocCollection : undefined)
+const docCollection = (collectionSidebar ?? configuredSidebar?.collection ?? entryDocCollection ?? docCollectionsFor(lang)[0]) as ResolvedDocCollection | undefined
+const posts = postCollection ? postsFor(entries, lang, postCollection, includeDrafts) : postsFor(entries, lang, undefined, includeDrafts)
+const taxonomyPosts = [...posts].sort((a, b) =>
+  publishedDateOf(b).getTime() - publishedDateOf(a).getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+const docs = docCollection ? docsFor(entries, lang, docCollection, includeDrafts) : docsFor(entries, lang, undefined, includeDrafts)
+const renderedContent = entry ? await renderMarkdown(entry.body ?? '', {
+  sourcePath: entry.filePath,
+  plot: entry.data.plot,
+  removeTitle: entry.data.type !== 'page' && entry.data.pageLayout !== 'page' && !bareLayout && !userLayoutName,
+  base: import.meta.env.BASE_URL,
+}) : ''
+const encryptPolicy = entry ? encryptionPolicy(entry) : undefined
+const pageEncryption = encryptPolicy?.pageEncrypted
+  ? await Promise.all(encryptPolicy.credentials.map(({ password, scope }) => encryptContent(renderedContent, password, scope)))
+  : undefined
+const themeLayout = siteConfig as typeof siteConfig & { outline?: ThemeOutline, aside?: boolean | 'left' }
+const outlineRange = entry?.data.outline ?? locale.outline ?? themeLayout.outline ?? [2, 3]
+const toc = pageEncryption ? [] : outlineOfHtml(renderedContent, outlineRange)
+const asideSetting = entry?.data.aside ?? locale.aside ?? themeLayout.aside ?? true
+const asideEnabled = Boolean(entry && !pageEncryption && asideSetting !== false && (!post || toc.length > 0))
+const leftAside = asideEnabled && asideSetting === 'left'
+const articleWords = entry ? wordCountOf(entry) : 0
+const readingTime = readingTimeOf(lang, articleWords)
+const metaConfig = postMetaConfigOf(siteConfig.meta as PostMetaConfig | false | undefined, postCollection?.meta ?? docCollection?.meta)
+const tagsTheme = (postCollection?.tagsTheme ?? docCollection?.tagsTheme ?? siteConfig.tagsTheme ?? 'colored') as 'colored' | 'gray' | 'brand'
+const showReadingMeta = Boolean(entry && readingTime && entry.data.readingTime !== false && (metaConfig.readingTime !== false || metaConfig.wordCount !== false))
+const pageTags = entry && metaConfig.tags !== false ? entry.data.tags.slice(0, 4) : []
+const createTimeSetting = locale.createTime ?? siteConfig.createTime ?? true
+const pageCreateTime = !entry || createTimeSetting === false || (createTimeSetting === 'only-posts' && !post) || metaConfig.createTime === false
+  ? ''
+  : createTimeTextOf(entry, metaConfig.createTime === true ? 'short' : metaConfig.createTime ?? 'short')
+const layout = props.kind !== 'content'
+  ? 'posts'
+  : postsLayout
+    ? 'posts'
+  : userLayoutName
+    ? userLayoutName
+  : customHome
+    ? 'home'
+    : friendPage
+      ? 'friends'
+      : configuredPageLayout === 'page' || (configuredPageLayout === undefined && pageEntry.data.type === 'page')
+        ? 'page'
+        : 'doc'
+const docPage = layout === 'doc'
+const hasDocMeta = showReadingMeta || pageTags.length > 0 || Boolean(pageCreateTime) || Boolean(siteConfig.features.engagement)
+  || (layout === 'doc' && (hasUserSlot('doc-meta-before') || hasUserSlot('doc-meta-after')))
+const findSidebarPath = (items: ResolvedSidebarItem[]): ResolvedSidebarItem[] | undefined => {
+  for (const item of items) {
+    if (item.entryId === entry?.id) return []
+    const children = item.items && findSidebarPath(item.items)
+    if (children) return [item, ...children]
+  }
+}
+const docSidebarItems = (doc || requestedSidebar || configuredSidebar) && docCollection
+  ? collectionSidebar || !configuredSidebar ? resolveSidebar(docs, lang, docCollection) : configuredSidebar.items
+  : []
+const hasSidebar = Boolean((doc || requestedSidebar || configuredSidebar) && pageEntry.data.sidebar !== false && docSidebarItems.length > 0)
+const docSidebarPath = doc ? findSidebarPath(docSidebarItems) ?? [] : []
+const showBreadcrumb = Boolean(post ? pageCategories.length : doc && docSidebarItems.length)
+const breadcrumbs = [
+  { text: locale.homeText, href: localePath(lang) },
+  ...(post && postCollection && postCollection.postList !== false ? [{ text: postCollection.title, href: postCollection.link }] : []),
+  ...pageCategories.map(category => ({ text: category.name, href: `${postCollection?.categoriesLink ?? `${routePrefix}/blog/categories/`}?id=${category.id}` })),
+  ...(doc && docCollection?.linkPrefix !== route ? [{ text: docCollection?.title ?? locale.docsName, href: docCollection?.linkPrefix ?? `${routePrefix}/docs/` }] : []),
+  ...docSidebarPath.filter(item => item.text).map(item => ({ text: item.text, href: item.link })),
+  { text: entry?.data.title ?? '', href: route, current: true },
+].filter((item, index, list) => !index || item.href !== list[index - 1].href && item.text !== list[index - 1].text)
+const navSequence: PageNavLink[] = post
+  ? posts.map(item => ({ href: routeOf(item), title: item.data.title }))
+  : doc || configuredSidebar ? flatSidebarLinks(docSidebarItems) : []
+const navIndex = navSequence.findIndex(item => item.href === route)
+const navPages = entries.map(item => ({ href: routeOf(item), title: item.data.title }))
+const pageNavigation = siteConfig as typeof siteConfig & { prevPage?: boolean, nextPage?: boolean }
+const previous = (locale.prevPage ?? pageNavigation.prevPage ?? true) === false ? undefined : resolvePageNav(entry?.data.prev, navIndex > 0 ? navSequence[navIndex - 1] : undefined, navPages)
+const next = (locale.nextPage ?? pageNavigation.nextPage ?? true) === false ? undefined : resolvePageNav(entry?.data.next, navIndex >= 0 && navIndex < navSequence.length - 1 ? navSequence[navIndex + 1] : undefined, navPages)
+const globalContributors = (locale.contributors ?? siteConfig.contributors ?? true) as boolean | ContributorsOptions
+const contributorSetting = entry?.data.contributors ?? globalContributors
+const contributorOptions = contributorSetting === false ? false : typeof globalContributors === 'object' ? globalContributors : true
+const globalChangelog = locale.changelog ?? siteConfig.changelog ?? false
+const changelogSetting = entry?.data.changelog ?? globalChangelog
+const changelogOptions = changelogSetting === false ? false : typeof globalChangelog === 'object' ? globalChangelog as ChangelogOptions : true
+const gitEnabled = Boolean(entry && ((siteConfig as { plugins?: { git?: boolean } }).plugins?.git ?? import.meta.env.PROD))
+const git = gitEnabled && entry ? getGitPageData({
+  file: entry.filePath,
+  includes: entry.data.gitInclude,
+  contributors: contributorOptions,
+  changelog: changelogOptions,
+  repositoryUrl: siteConfig.repository.url,
+}) : { contributors: [], changelog: [] }
+const manualContributors: GitContributor[] = !Array.isArray(entry?.data.contributors) ? [] : entry.data.contributors.map(contributor => ({
+  name: typeof contributor === 'string' ? contributor : contributor.name,
+  username: typeof contributor === 'string' ? contributor : contributor.name,
+  email: '',
+  commits: 0,
+  ...(typeof contributor === 'object' && contributor.url ? { url: contributor.url } : {}),
+}))
+const contributors = [...new Map([...git.contributors, ...manualContributors].map(contributor => [contributor.username || contributor.name, contributor])).values()]
+const contributorMode = typeof globalContributors === 'object' ? globalContributors.mode ?? 'inline' : 'inline'
+const configuredUpdate = entry && updatedDateOf(entry).getTime() > 0 ? updatedDateOf(entry) : undefined
+const lastUpdatedConfig = (locale.lastUpdated ?? siteConfig.lastUpdated) as false | { formatOptions?: Intl.DateTimeFormatOptions & { forceLocale?: boolean } }
+const updated = entry && lastUpdatedConfig !== false && entry.data.lastUpdated !== false
+  ? configuredUpdate ?? (git.updatedTime ? new Date(git.updatedTime) : undefined)
+  : undefined
+const lastUpdatedFormat = typeof lastUpdatedConfig === 'object' ? lastUpdatedConfig.formatOptions : undefined
+const repository = siteConfig.repository
+const editUrl = !entry || (locale.editLink ?? (siteConfig as { editLink?: boolean }).editLink) === false || entry.data.editLink === false
+  ? ''
+  : typeof entry.data.editLink === 'string'
+    ? entry.data.editLink
+    : repository.url
+      ? resolveEditLink({
+          docsRepo: repository.url,
+          docsBranch: repository.branch,
+          docsDir: repository.contentDir,
+          filePathRelative: `${entry.id}.md`,
+          editLinkPattern: entry.data.editLinkPattern ?? locale.editLinkPattern ?? repository.editLinkPattern,
+        }) ?? ''
+      : ''
+const copyrightOptions = resolveCopyrightOptions(entry?.data.copyright, (locale.copyright ?? siteConfig.copyright) as Parameters<typeof resolveCopyrightOptions>[1])
+const rawRoute = `${route === '/' ? '' : route}index.md`
+const generatedLabels = {
+  blog: postCollection?.title ?? locale.postsText,
+  archives: postCollection?.archivesText ?? locale.archiveText,
+  categories: postCollection?.categoriesText ?? locale.categoryText,
+  tags: postCollection?.tagsText ?? locale.tagText,
+}
+const generatedDescriptions: Record<GeneratedKind, string> = {
+  blog: en ? `Browse all posts from ${locale.blogName}.` : `浏览${locale.blogName}的全部文章。`,
+  archives: en ? 'Browse posts by publication date.' : '按发布日期浏览全部文章。',
+  categories: en ? 'Browse posts by category.' : '按内容分类浏览文章。',
+  tags: en ? 'Find posts by topic and tag.' : '通过主题标签查找文章。',
+}
+const title = entry ? entry.data.title : generatedLabels[props.kind as GeneratedKind]
+const description = entry ? entry.data.description : generatedDescriptions[props.kind as GeneratedKind]
+const tags = [...new Set(posts.flatMap(item => item.data.tags))]
+const categoryIds = new Set(posts.flatMap(item => categoryListOf(item).map(category => category.id)))
+const blogStats = { tags: tags.length, categories: categoryIds.size, posts: posts.length }
+const profileLayout = (postCollection?.profile === undefined ? (locale.profile ?? (siteConfig as { profile?: { layout?: 'left' | 'right' } | false }).profile) : postCollection.profile) as { layout?: 'left' | 'right' } | false | undefined
+const profileEnabled = profileLayout !== false
+const pageLlmsEnabled = Boolean(entry && llmstxtPageEnabled(entry))
+const externalLinkIcon = (locale.externalLinkIcon ?? siteConfig.externalLinkIcon ?? true) !== false
+  && entry?.data.externalLinkIcon !== false
+  && entry?.data.externalLink !== false
+const commentConfig = siteConfig.comment as Record<string, unknown> & { provider?: 'Artalk' | 'Giscus' | 'None' | 'Twikoo' | 'Waline', comment?: boolean }
+const pageCommentConfig = { ...commentConfig, pageview: entry?.data.pageview ?? commentConfig.pageview }
+const commentsEnabled = Boolean(siteConfig.features.comments && commentConfig.comment !== false && (
+  commentConfig.provider === 'Giscus' ? commentConfig.repo && commentConfig.repoId && commentConfig.category && commentConfig.categoryId
+    : commentConfig.provider === 'Waline' ? commentConfig.serverURL
+      : commentConfig.provider === 'Twikoo' ? commentConfig.envId
+        : commentConfig.provider === 'Artalk' ? commentConfig.server
+          : false
+))
+const noindex = props.kind !== 'content' && props.kind !== 'blog'
+const footerUpdated = git.changelog.length ? undefined : updated
+const showDocFooter = Boolean(previous || next || editUrl || footerUpdated || (contributorMode === 'inline' && contributors.length) || siteConfig.features.engagement || hasUserSlot('doc-footer-before'))
+---
+
+<BaseLayout
+  {entry}
+  {title}
+  collectionTitle={entryCollection?.title}
+  {description}
+  {lang}
+  {route}
+  {translationRoute}
+  {languageLinks}
+  breadcrumbs={entry ? breadcrumbs : undefined}
+  pageClass={entry?.data.pageClass}
+  {noindex}
+  {layout}
+  {hasSidebar}
+  bare={bareLayout}
+>
+  {bareLayout ? (
+    <main id="VPContent" class:list={['vp-content', entry?.data.pageClass]}>
+      {pageEncryption
+        ? <PageEncrypt payload={pageEncryption} hint={pageEntry.data.passwordHint} {lang} />
+        : <UserLayout name={userLayoutName} content={renderedContent} {entry} {lang} {route} />}
+    </main>
+  ) : <>
+  {props.kind === 'content' && post && toc.length > 0 && !pageEncryption && <LocalNav {lang} {toc} isPosts />}
+  {props.kind === 'content' && !pageEntry.data.home && hasSidebar && <DocsSidebar docs={docs} current={pageEntry} {lang} {toc} locked={Boolean(pageEncryption)} collection={docCollection} sidebarItems={docSidebarItems} />}
+  {userLayoutName ? (
+    <main id="VPContent" class:list={['vp-content', { 'has-sidebar': hasSidebar }]}>
+      {pageEncryption
+        ? <PageEncrypt payload={pageEncryption} hint={pageEntry.data.passwordHint} {lang} />
+        : <UserLayout name={userLayoutName} content={renderedContent} {entry} {lang} {route} />}
+    </main>
+  ) : props.kind !== 'content' || postsLayout ? (
+    <main id="VPContent" class="vp-content">
+      <div class:list={['vp-posts', { 'home-posts': postsLayout }]} vp-posts data-posts-route={postCollection?.link}>
+        <UserSlot name="posts-top" {lang} {route} kind={props.kind} />
+        <div class:list={['posts-container', { 'no-profile': !profileEnabled, left: profileEnabled && profileLayout?.layout === 'left' }]}>
+          {!profileEnabled && <PostsNav {lang} {blogStats} collection={postCollection} local />}
+          {(props.kind === 'blog' || postsLayout) && <PostList {posts} {lang} collection={postCollection} />}
+          {props.kind !== 'content' && props.kind !== 'blog' && <TaxonomyPage kind={props.kind} posts={taxonomyPosts} {lang} collection={postCollection} />}
+          <ProfileAside {lang} {pageMap} {blogStats} collection={postCollection} />
+        </div>
+        <UserSlot name="posts-bottom" {lang} {route} kind={props.kind} />
+      </div>
+    </main>
+  ) : customHome ? (
+    <CustomHome config={homeConfig} content={renderedContent} posts={postsFor(entries, lang, undefined, includeDrafts)} {lang} {pageMap} />
+  ) : layout === 'page' ? (
+    <main id="VPContent" class="vp-content">
+      <div class="vp-page">
+        {pageEncryption ? <PageEncrypt payload={pageEncryption} hint={pageEntry.data.passwordHint} {lang} /> : <>
+          <UserSlot name="page-top" {entry} {lang} {route} />
+          <article class:list={['vp-doc plume-content', { 'external-link-icon-enabled': externalLinkIcon }]} data-pagefind-body data-pagefind-ignore={pageEntry.data.search === false ? 'all' : undefined}>
+            <Fragment set:html={renderedContent} />
+          </article>
+          <UserSlot name="page-bottom" {entry} {lang} {route} />
+        </>}
+      </div>
+    </main>
+  ) : friendPage ? (
+    <main id="VPContent" class="vp-content">
+      <FriendsPage
+        title={pageEntry.data.title}
+        description={pageEntry.data.description}
+        contentPosition={pageEntry.data.contentPosition}
+        cols={pageEntry.data.cols}
+        list={pageEntry.data.list}
+        groups={pageEntry.data.groups}
+        content={renderedContent}
+        {editUrl}
+        editText={locale.editLinkText}
+      />
+      {commentsEnabled && pageEntry.data.comments !== false && <Comments config={pageCommentConfig} identifier={route} lang={lang} site={locale.siteName} title={pageEntry.data.title} client:visible />}
+    </main>
+  ) : (
+    <div id="VPContent" class:list={['vp-content', { 'has-sidebar': hasSidebar }]}>
+      <div
+        class:list={['vp-doc-container', { 'is-posts': post, 'has-sidebar': hasSidebar, 'has-aside': asideEnabled, 'with-encrypt': Boolean(pageEncryption) }]}
+        data-dynamic-outline={pageEncryption ? '' : undefined}
+        data-outline-range={JSON.stringify(outlineRange)}
+        data-outline-label={locale.outlineLabel}
+        data-outline-menu-label={locale.sidebarMenuLabel ?? (en ? 'Menu' : '菜单')}
+        data-outline-print-label={en ? 'Print' : '打印'}
+        data-outline-aside={asideSetting === false ? 'false' : asideSetting === 'left' ? 'left' : 'right'}
+        data-outline-post={post ? '' : undefined}
+      >
+        {layout === 'doc' && <UserSlot name="doc-top" {entry} {lang} {route} />}
+        <div class="container">
+          {asideEnabled && (
+            <div class:list={['aside', { 'left-aside': leftAside }]}>
+              <div class="aside-curtain"></div>
+              <div class="aside-container"><div class="aside-content"><div class="vp-doc-aside">
+                <UserSlot name="aside-top" {entry} {lang} {route} />
+                <UserSlot name="aside-outline-before" {entry} {lang} {route} />
+                <nav class:list={['vp-doc-aside-outline', { 'has-outline': toc.length > 0 }]} aria-labelledby="doc-outline-aria-label" role="navigation">
+                  <div class="content"><div class="outline-marker"></div><div id="doc-outline-aria-label" aria-level="2" class="outline-title" role="heading"><span>{locale.outlineLabel}</span><span class="vpi-print icon" role="button" tabindex="0" aria-label={en ? 'Print' : '打印'}></span></div>
+                    <OutlineItems items={toc} root />
+                  </div>
+                </nav>
+                <UserSlot name="aside-outline-after" {entry} {lang} {route} />
+                <div class="spacer"></div>
+                <UserSlot name="aside-bottom" {entry} {lang} {route} />
+              </div></div></div>
+            </div>
+          )}
+          <div class="content"><div class="content-container">
+          {layout === 'doc' && <UserSlot name="doc-before" {entry} {lang} {route} />}
+          <main class="main">
+            {showBreadcrumb && <nav class="vp-breadcrumb" aria-label={en ? 'Breadcrumb' : '面包屑'}>
+              <ol vocab="https://schema.org/" typeof="BreadcrumbList">
+                {breadcrumbs.map((item, index) => <li property="itemListElement" typeof="ListItem">
+                  <VPLink class:list={['breadcrumb', { current: item.current }]} href={item.href} text={item.text} noIcon property="item" typeof="WebPage" aria-current={item.current ? 'page' : undefined} />
+                  {index !== breadcrumbs.length - 1 && <span class="vpi-chevron-right" aria-hidden="true"></span>}
+                  <meta property="name" content={item.text} />
+                  <meta property="position" content={String(index + 1)} />
+                </li>)}
+              </ol>
+            </nav>}
+
+            {layout === 'doc' && <UserSlot name="doc-meta-top" {entry} {lang} {route} />}
+            <div class="vp-doc-title">{layout === 'doc' && <UserSlot name="doc-title-before" {entry} {lang} {route} />}<h1 class:list={['page-title', { padding: !hasDocMeta }]}>{pageEntry.data.draft && <><VPBadge type="warning" text="DRAFT" />{' '}</>}{pageEntry.data.title}{titleBadge && <><span> </span><VPBadge {...titleBadge} type={titleBadge.type ?? 'tip'} /></>}</h1>{!pageEncryption && pageLlmsEnabled && <PageContextMenu {rawRoute} {lang} />}{layout === 'doc' && <UserSlot name="doc-title-after" {entry} {lang} {route} />}</div>
+            {!pageEntry.data.friends && hasDocMeta && <div class="vp-doc-meta">
+              {layout === 'doc' && <UserSlot name="doc-meta-before" {entry} {lang} {route} />}
+              {showReadingMeta && <p class="reading-time"><span class="vpi-books icon" aria-hidden="true"></span>{metaConfig.wordCount !== false && <span>{readingTime!.words}</span>}{metaConfig.readingTime !== false && <span>{readingTime!.time}</span>}</p>}
+              {pageTags.length > 0 && <p><span class="vpi-tag icon" aria-hidden="true"></span>{pageTags.map(tag => <VPLink class:list={['tag', tagClassOf(tag, tagsTheme)]} href={post && postCollection?.tags !== false ? `${postCollection?.tagsLink || `${routePrefix}/blog/tags/`}?tag=${encodeURIComponent(tag)}` : undefined} text={tag} />)}</p>}
+              {siteConfig.features.engagement && <p class="article-engagement-meta"><PageViews path={route} client:idle />{post && <ArticleLikeButton path={route} lang={lang} compact={true} client:idle />}</p>}
+              {layout === 'doc' && <UserSlot name="doc-meta-after" {entry} {lang} {route} />}
+              {pageCreateTime && <p class="create-time"><span class="vpi-clock icon" aria-hidden="true"></span><span>{pageCreateTime}</span></p>}
+            </div>}
+            {layout === 'doc' && <UserSlot name="doc-meta-bottom" {entry} {lang} {route} />}
+
+            <article class:list={['vp-doc plume-content', { 'external-link-icon-enabled': externalLinkIcon }]} data-pagefind-body data-pagefind-ignore={pageEntry.data.search === false ? 'all' : undefined}>
+              {layout === 'doc' && <UserSlot name="doc-content-before" {entry} {lang} {route} />}
+              {pageEncryption ? <PageEncrypt payload={pageEncryption} hint={pageEntry.data.passwordHint} {lang} /> : <Fragment set:html={renderedContent} />}
+              <div data-page-protected={pageEncryption ? '' : undefined} hidden={Boolean(pageEncryption)}>
+                {(post || docPage) && contributorMode === 'block' && <GitContributors {lang} {contributors} />}
+                {(post || docPage) && <GitChangelog {lang} items={git.changelog} />}
+                {(post || docPage) && copyrightOptions && <Copyright {lang} {route} origin={siteConfig.origin} options={copyrightOptions} {contributors} />}
+                {(post || docPage) && showDocFooter && <DocFooter
+                  {lang}
+                  {previous}
+                  {next}
+                  {editUrl}
+                  updated={footerUpdated}
+                  formatOptions={lastUpdatedFormat}
+                  contributors={contributorMode === 'inline' ? contributors : []}
+                >
+                  <UserSlot name="doc-footer-before" {entry} {lang} {route} />
+                  {siteConfig.features.engagement && <div class="article-like-row"><ArticleLikeButton path={route} lang={lang} compact={false} client:visible /></div>}
+                </DocFooter>}
+              </div>
+            </article>
+          </main>
+          {commentsEnabled && pageEntry.data.comments !== false && <div data-page-protected hidden={Boolean(pageEncryption)}><Comments config={pageCommentConfig} identifier={route} lang={lang} site={locale.siteName} title={pageEntry.data.title} client:visible /></div>}
+          {layout === 'doc' && <UserSlot name="doc-after" {entry} {lang} {route} />}
+          </div></div>
+        </div>
+        {layout === 'doc' && <UserSlot name="doc-bottom" {entry} {lang} {route} />}
+      </div>
+    </div>
+  )}
+  </>}
+</BaseLayout>

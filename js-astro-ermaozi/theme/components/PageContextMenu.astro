@@ -1,0 +1,119 @@
+---
+import { siteConfig } from '../../site.config.mjs'
+import type { Lang } from '../lib/content'
+import { localeOf } from '../lib/locales'
+import { withBase } from '../lib/client-utils'
+
+const { rawRoute, lang } = Astro.props as { rawRoute: string, lang: Lang }
+const en = !lang.startsWith('zh')
+const locale = localeOf(lang)
+const providers = siteConfig.pageContextMenu ?? {}
+const resolvedRawRoute = withBase(rawRoute, import.meta.env.BASE_URL)
+const aiText = (name: string) => locale.askAIText.replace('{name}', name)
+const aiTagline = (name: string) => locale.askAITagline.replace('{name}', name)
+const items = [
+  { href: resolvedRawRoute, icon: 'vpi-markdown', text: locale.viewMarkdown, tagline: locale.viewMarkdownTagline },
+  ...(providers.chatgpt ? [{ href: 'https://chat.openai.com/?prompt=', icon: 'vpi-chatgpt', text: aiText('ChatGPT'), tagline: aiTagline('ChatGPT'), ai: true }] : []),
+  ...(providers.claude ? [{ href: 'https://claude.ai/new?q=', icon: 'vpi-claude', text: aiText('Claude'), tagline: aiTagline('Claude'), ai: true }] : []),
+  ...(providers.perplexity ? [{ href: 'https://perplexity.ai/?q=', icon: 'vpi-perplexity', text: aiText('Perplexity'), tagline: aiTagline('Perplexity'), ai: true }] : []),
+]
+---
+
+<div
+  class="vp-page-context-menu"
+  data-raw-route={resolvedRawRoute}
+  data-copy-label={locale.copyPageText}
+  data-copying-label={locale.copingPageText}
+  data-copied-label={locale.copiedPageText}
+>
+  <div class="page-context-button">
+    <span class="page-context-copy" role="button" tabindex="0" data-copy-page={resolvedRawRoute}><span class="vpi-copy" aria-hidden="true"></span><span class="text">{locale.copyPageText}</span></span>
+    <span class="page-context-toggle" role="button" tabindex="0" aria-expanded="false" aria-label={en ? 'More page actions' : '更多页面操作'}><span class="vpi-chevron-down" aria-hidden="true"></span></span>
+  </div>
+  <ul class="page-context-menu" hidden>
+    <li><a href="javascript:void(0)" data-copy-page={resolvedRawRoute}><span class="vpi-copy" aria-hidden="true"></span><span><span class="text">{locale.copyPageText}</span><small>{locale.copyTagline}</small></span></a></li>
+    {items.map(item => <li><a href={item.href} data-ai-url={item.ai ? item.href : undefined} data-ai-prompt={item.ai ? locale.askAIMessage : undefined} target="_blank" rel="noopener noreferrer" aria-label={item.text} type={item.icon === 'vpi-markdown' ? 'text/markdown' : undefined}><span class={item.icon} aria-hidden="true"></span><span>{item.text}<span class="vpi-external-link" aria-hidden="true"></span><small>{item.tagline}</small></span></a></li>)}
+  </ul>
+</div>
+
+<script is:inline>
+  (() => {
+    const root = document.currentScript?.previousElementSibling
+    if (!(root instanceof HTMLElement)) return
+    const toggle = root.querySelector('.page-context-toggle')
+    const menu = root.querySelector('.page-context-menu')
+    const markdownUrl = new URL(root.dataset.rawRoute || '', location.origin).href
+    root.querySelectorAll('[data-ai-url]').forEach(item => {
+      if (!(item instanceof HTMLAnchorElement)) return
+      item.href = `${item.dataset.aiUrl}${encodeURIComponent((item.dataset.aiPrompt || '').replace('{link}', markdownUrl))}`
+    })
+
+    let markdown = ''
+    let pending
+    const load = () => pending ||= fetch(markdownUrl)
+      .then(response => response.ok ? response.text() : Promise.reject(new Error('Source unavailable')))
+      .then(source => markdown = source.trimStart().replace(/^---[\s\S]+?---/, '').trimStart())
+      .finally(() => { pending = undefined })
+    const setCopyState = state => {
+      const label = root.dataset[state === 'copying' ? 'copyingLabel' : state === 'copied' ? 'copiedLabel' : 'copyLabel'] || ''
+      root.querySelectorAll('[data-copy-page] .text').forEach(item => { item.textContent = label })
+      root.querySelectorAll('[data-copy-page] .vpi-copy').forEach(item => {
+        item.classList.toggle('loading', state === 'copying')
+        item.classList.toggle('copied', state === 'copied')
+      })
+    }
+    root.querySelectorAll('[data-copy-page]').forEach(button => button.addEventListener('click', async () => {
+      setCopyState('copying')
+      try {
+        if (!markdown) await load()
+        if (markdown) await navigator.clipboard.writeText(markdown)
+        setCopyState('copied')
+        setTimeout(() => setCopyState('copy'), 1500)
+      } catch {
+        setCopyState('copy')
+      }
+    }))
+    const idle = window.requestIdleCallback || window.requestAnimationFrame || (callback => setTimeout(callback, 0))
+    idle(() => { void load() })
+
+    const close = () => {
+      if (toggle?.getAttribute('aria-expanded') !== 'true') return
+      toggle?.setAttribute('aria-expanded', 'false')
+      toggle?.classList.remove('open')
+      transitionMenu(false)
+    }
+    let transitionTimer
+    let transitionStartTimer
+    const transitionClasses = ['fade-in-enter-from', 'fade-in-enter-active', 'fade-in-enter-to', 'fade-in-leave-from', 'fade-in-leave-active', 'fade-in-leave-to']
+    const transitionMenu = open => {
+      clearTimeout(transitionTimer)
+      clearTimeout(transitionStartTimer)
+      if (!(menu instanceof HTMLElement)) return
+      menu.classList.remove(...transitionClasses)
+      menu.hidden = false
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) { menu.hidden = !open; return }
+      const phase = open ? 'enter' : 'leave'
+      menu.classList.add(`fade-in-${phase}-from`, `fade-in-${phase}-active`)
+      void menu.offsetWidth
+      transitionStartTimer = setTimeout(() => {
+        menu.classList.replace(`fade-in-${phase}-from`, `fade-in-${phase}-to`)
+        transitionTimer = setTimeout(() => {
+          menu.classList.remove(...transitionClasses)
+          menu.hidden = !open
+        }, 200)
+      }, 16)
+    }
+    root.querySelectorAll('[role="button"]').forEach(button => button.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); button.click() }
+    }))
+    toggle?.addEventListener('click', event => {
+      event.stopPropagation()
+      const open = toggle.getAttribute('aria-expanded') !== 'true'
+      toggle.setAttribute('aria-expanded', String(open))
+      toggle.classList.toggle('open', open)
+      transitionMenu(open)
+    })
+    document.addEventListener('pointerdown', event => { if (!(event.target instanceof Node) || !root.contains(event.target)) close() })
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') close() })
+  })()
+</script>

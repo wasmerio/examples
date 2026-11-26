@@ -1,0 +1,2446 @@
+---
+import { createHash } from 'node:crypto'
+import type { ContentEntry, Lang } from '../lib/content'
+import { authorsOf, imagesOf, modifiedTimeOf, publishedTimeOf, siteLocale, structuredPageData } from '../lib/seo'
+import { hasRobotsDirective, headMetaContent, serializeHeadItems, type HeadItem } from '../lib/head'
+import { seoEnabled as automaticSeoEnabled } from '../lib/seo-options.mjs'
+import Footer from '../components/Footer.astro'
+import Header from '../components/Header.astro'
+import BackToTop from '../components/BackToTop.astro'
+import Bulletin from '../components/Bulletin.astro'
+import GlobalEncrypt from '../components/GlobalEncrypt.astro'
+import SignDown from '../components/SignDown.astro'
+import Watermark from '../components/Watermark.astro'
+import UserSlot from '../components/UserSlot.astro'
+import '../styles/global.css'
+import 'swiper/css/bundle'
+import 'photoswipe/dist/photoswipe.css'
+import '../styles/plume-parity.css'
+import 'katex/dist/katex.min.css'
+import '../styles/custom.css'
+import { siteConfig } from '../../site.config.mjs'
+import { encryptContent } from '../lib/encryption'
+import { globalAdminCredentials } from '../lib/encrypt-policy'
+import { languageFromPath, localeOf, localePath, rootLanguage } from '../lib/locales'
+import { hasUserSlot } from '../lib/user-slots'
+import { iconAssetUrls } from '../lib/iconify'
+import { homeConfigOf } from '../lib/home'
+import { socialLinksFor, twitterHandleOf } from '../lib/social'
+import { withBase } from '../lib/client-utils'
+import type { BulletinOptions, PhotoSwipeOptions, SeoHeadItem, SeoOptions, SeoPage } from '../config-types'
+import { photoSwipeLocaleOf } from '../lib/photo-swipe'
+import { isPageSearchable } from '../lib/search-options'
+
+interface Props {
+  entry?: ContentEntry
+  title: string
+  collectionTitle?: string
+  description: string
+  lang: Lang
+  route: string
+  translationRoute?: string
+  languageLinks?: Array<{ lang: Lang, href: string, fallback?: boolean }>
+  breadcrumbs?: Array<{ text: string, href?: string }>
+  pageClass?: string
+  noindex?: boolean
+  minimal404?: boolean
+  layout?: string
+  hasSidebar?: boolean
+  bare?: boolean
+}
+
+const { entry, title, collectionTitle, description, lang, route, translationRoute, languageLinks = [], breadcrumbs, pageClass = '', noindex = false, minimal404 = false, layout = 'doc', hasSidebar = false, bare = false } = Astro.props
+const isHome = layout === 'home' || entry?.data.home === true || entry?.data.pageLayout === 'home'
+const site = siteLocale(lang)
+const seoOptions = ((siteConfig.plugins as { seo?: false | SeoOptions })?.seo || {}) as SeoOptions
+const seoHostname = seoOptions.hostname ?? import.meta.env.SITE ?? siteConfig.origin
+const seoUrl = (path: string) => new URL(withBase(path, import.meta.env.BASE_URL), seoHostname).toString()
+const pluginPage: SeoPage = { path: route, pathLocale: route, lang, title, filePathRelative: entry?.id, frontmatter: entry?.data ?? {}, data: {}, content: entry?.body }
+const pluginApp = { options: { base: import.meta.env.BASE_URL }, siteData: { ...siteConfig, ...site, base: import.meta.env.BASE_URL }, env: { isDebug: import.meta.env.DEV } }
+const automaticDescription = (source = '') => source
+  .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/gu, ' ')
+  .replace(/<!--[\s\S]*?-->|<[^>]+>/gu, ' ')
+  .replace(/!\[[^\]]*\]\([^)]*\)/gu, ' ')
+  .replace(/\[([^\]]+)\]\([^)]*\)/gu, '$1')
+  .replace(/(?:^|\n)\s*(?:#{1,6}|>|[-+*]|\d+\.)\s*/gu, ' ')
+  .replace(/[*_`~={}:|]/gu, ' ')
+  .replace(/\s+/gu, ' ')
+  .trim()
+  .slice(0, 180)
+const fullTitle = minimal404 ? site.siteName : [title, collectionTitle, site.siteName].filter(Boolean).join(' | ')
+const headItems = (entry?.data.head ?? []).filter(Array.isArray) as HeadItem[]
+const customDescription = headMetaContent(headItems, 'description')
+const customKeywords = headMetaContent(headItems, 'keywords')
+const customRobots = headMetaContent(headItems, 'robots')
+const pageNoindex = noindex || hasRobotsDirective(headItems, 'noindex')
+const seoDescription = customDescription || description || (seoOptions.autoDescription === false ? '' : automaticDescription(entry?.body))
+const customCanonical = String(headItems.find(([tag, attrs]) => tag.toLowerCase() === 'link' && String(attrs?.rel ?? '').toLowerCase() === 'canonical')?.[1]?.href ?? '')
+const canonicalOption = typeof seoOptions.canonical === 'function' ? seoOptions.canonical(pluginPage) : seoOptions.canonical
+const canonical = customCanonical || (canonicalOption === null ? null : typeof canonicalOption === 'string' ? `${canonicalOption.replace(/\/$/u, '')}${route}` : seoUrl(route))
+const multilingual = siteConfig.multilingual !== false
+const fallbackLanguage = translationRoute ? languageFromPath(translationRoute) : undefined
+const alternates = !multilingual ? [] : languageLinks.length ? languageLinks.filter(item => !item.fallback) : [{ lang, href: route }, ...(translationRoute && fallbackLanguage ? [{ lang: fallbackLanguage, href: translationRoute }] : [])]
+const defaultRoute = alternates.find(item => item.lang === rootLanguage())?.href ?? route
+const locale = localeOf(lang)
+const configuredTwitter = seoOptions.twitterID ? `@${seoOptions.twitterID.replace(/^@/u, '')}` : ''
+const twitterHandle = twitterHandleOf(socialLinksFor(lang)) || configuredTwitter
+const seoEnabled = automaticSeoEnabled(siteConfig, entry?.data.seo)
+const seoArticle = seoOptions.isArticle?.(pluginPage) ?? Boolean(entry && !isHome)
+const socialCover = entry?.data.banner ?? entry?.data.cover
+const imageSource = socialCover ?? imagesOf(entry)[0] ?? seoOptions.fallBackImage ?? locale.logo ?? siteConfig.logo
+const image = typeof imageSource !== 'string' ? '' : imageSource.startsWith('/') ? seoUrl(imageSource) : imageSource
+const seoTags = entry?.data.tags.length ? entry.data.tags : typeof entry?.data.tag === 'string' ? [entry.data.tag] : entry?.data.tag ?? []
+const seoAuthors = authorsOf(entry?.data.author, seoOptions.author ?? site.authorName)
+const published = entry ? publishedTimeOf(entry) : undefined
+const preconnectMedia = Boolean(siteConfig.mediaOrigin && image.startsWith(`${siteConfig.mediaOrigin}/`))
+const modified = entry && !isHome ? modifiedTimeOf(entry) : undefined
+const automaticOgp: Record<string, unknown> = {
+  'og:title': title,
+  'og:description': seoDescription,
+  'og:url': canonical ?? undefined,
+  'og:type': seoArticle ? 'article' : 'website',
+  'og:site_name': site.siteName,
+  'og:locale': lang,
+  'og:locale:alternate': alternates.filter(item => item.lang !== lang).map(item => item.lang),
+  'og:image': image,
+  'og:image:alt': image ? title : undefined,
+  'og:updated_time': modified,
+  'og:restrictions:age': seoOptions.restrictions,
+  'twitter:creator': twitterHandle || undefined,
+  'twitter:site': twitterHandle || undefined,
+  'twitter:card': socialCover ? 'summary_large_image' : undefined,
+  'twitter:image:src': socialCover ? image : undefined,
+  'twitter:image:alt': socialCover ? title : undefined,
+  'article:author': seoArticle ? seoAuthors[0]?.name : undefined,
+  'article:tag': seoArticle ? seoTags.toReversed() : undefined,
+  'article:published_time': seoArticle ? published : undefined,
+  'article:modified_time': seoArticle ? modified : undefined,
+}
+const ogp = seoOptions.ogp?.(automaticOgp, pluginPage, pluginApp) ?? automaticOgp
+const automaticJsonLd = minimal404
+  ? [{ '@context': 'https://schema.org', '@type': 'WebPage', name: '', description: seoDescription }]
+  : seoEnabled ? structuredPageData(title, seoDescription, lang, route, entry, seoArticle, seoOptions.author, seoHostname, breadcrumbs) : []
+const jsonLd = automaticJsonLd.length && seoOptions.jsonLd
+  ? [seoOptions.jsonLd(automaticJsonLd[0], pluginPage, pluginApp), ...automaticJsonLd.slice(1)]
+  : automaticJsonLd
+const managedHead: SeoHeadItem[] = [
+  ...(canonical ? [['link', { rel: 'canonical', href: canonical }] as SeoHeadItem] : []),
+  ...(!minimal404 && multilingual ? alternates.map(item => ['link', { rel: 'alternate', hreflang: item.lang, href: seoUrl(item.href) }] as SeoHeadItem) : []),
+  ...(!minimal404 && multilingual ? [['link', { rel: 'alternate', hreflang: 'x-default', href: seoUrl(defaultRoute) }] as SeoHeadItem] : []),
+  ...(seoEnabled ? Object.entries(ogp).flatMap(([name, value]) => (Array.isArray(value) ? value : [value]).filter(item => item !== undefined && item !== null && item !== '').map(item => ['meta', { [name.startsWith('twitter:') ? 'name' : 'property']: name, content: String(item) }] as SeoHeadItem)) : []),
+  ...jsonLd.map(data => ['script', { type: 'application/ld+json' }, JSON.stringify(data).replaceAll('<', '\\u003c')] as SeoHeadItem),
+]
+seoOptions.customHead?.(managedHead, pluginPage, pluginApp)
+const managedHeadHtml = serializeHeadItems(managedHead as HeadItem[])
+const pageSearchable = isPageSearchable(siteConfig.search, pluginPage, entry?.data.search !== false)
+const defaultKeywords = site.keywords
+type WatermarkPage = { path: string, title: string, lang: Lang, filePathRelative?: string, frontmatter: Record<string, unknown> }
+type WatermarkConfig = boolean | {
+  enabled?: boolean | ((page: WatermarkPage) => boolean)
+  fullPage?: boolean
+  options?: Record<string, unknown>
+  watermarkOptions?: Record<string, unknown>
+}
+const watermarkConfig = (siteConfig.watermark ?? (siteConfig.plugins as { watermark?: WatermarkConfig }).watermark ?? false) as WatermarkConfig
+const watermarkEnabled = typeof watermarkConfig === 'boolean'
+  ? watermarkConfig
+  : typeof watermarkConfig.enabled === 'function'
+    ? watermarkConfig.enabled({ path: route, title, lang, filePathRelative: entry?.id, frontmatter: entry?.data ?? {} })
+    : watermarkConfig.enabled !== false
+const watermarkSetting = entry?.data.watermark ?? watermarkEnabled
+const watermarkOptions = !watermarkSetting
+  ? undefined
+  : {
+      ...(typeof watermarkConfig === 'object' ? (watermarkConfig.watermarkOptions ?? watermarkConfig.options) : {}),
+      fullPage: typeof watermarkConfig === 'object' ? watermarkConfig.fullPage : true,
+      ...(typeof watermarkSetting === 'object' ? watermarkSetting : {}),
+    }
+const keywords = customKeywords || defaultKeywords
+const hasCustomIcon = headItems.some(([tag, attrs]) => tag.toLowerCase() === 'link' && String(attrs?.rel ?? '').toLowerCase() === 'icon')
+const favicon = typeof siteConfig.logo === 'string' ? withBase(siteConfig.logo, import.meta.env.BASE_URL) : ''
+const userHeadHtml = serializeHeadItems(headItems.filter(([tag, attrs]) => tag.toLowerCase() !== 'title'
+  && !(tag.toLowerCase() === 'meta' && ['description', 'keywords', 'robots'].includes(String(attrs?.name ?? '').toLowerCase()))
+  && !(tag.toLowerCase() === 'link' && ['canonical', 'alternate'].includes(String(attrs?.rel ?? '').toLowerCase()))))
+const homeConfig = isHome && entry ? homeConfigOf(entry.data) : []
+const showSignDown = Boolean(entry && isHome
+  && entry.data.signDown === true
+  && (entry.data.config?.length ?? 0) > 1
+  && entry.data.config?.[0]?.full === true)
+const singleHomeSection = isHome && homeConfig.length === 1
+const shortHomeConfig = isHome && entry?.data.config !== undefined && entry.data.config.length <= 1
+const forcedHero = isHome
+  ? homeConfig.find(item => item.type === 'hero' && item.forceDark === true)
+  : undefined
+const appearance = (locale.appearance ?? siteConfig.appearance ?? true) as boolean | 'dark' | 'force-dark'
+const forceDark = Boolean(forcedHero) || appearance === 'force-dark'
+const forcedEffectValue = forcedHero?.effect ?? forcedHero?.background
+const forceDarkEffect = forcedHero ? (typeof forcedEffectValue === 'string' && forcedEffectValue.trim() ? forcedEffectValue.trim() : 'null') : ''
+const comment = siteConfig.comment as { provider?: string, repo?: string, server?: string, serverURL?: string, envId?: string }
+const commentOrigin = comment.provider === 'Giscus'
+  ? 'https://giscus.app'
+  : [comment.serverURL, comment.server, comment.envId].find(value => typeof value === 'string' && /^https?:\/\//.test(value))
+const transition = (locale.transition ?? siteConfig.transition) as false | { page?: boolean }
+const pageTransition = transition !== false && (typeof transition !== 'object' || transition.page !== false)
+const nprogressEnabled = (siteConfig.plugins as { nprogress?: boolean }).nprogress !== false
+const katexCopy = (siteConfig.markdown.math as { type?: string, copy?: boolean }).type !== 'mathjax' && (siteConfig.markdown.math as { copy?: boolean }).copy === true
+const markMode = (siteConfig.markdown as { mark?: 'lazy' | 'eager' }).mark === 'lazy' ? 'lazy' : undefined
+const replOptions = (siteConfig.markdown as { repl?: false | { theme?: string | { light: string, dark: string } } }).repl
+const replTheme = replOptions && typeof replOptions === 'object' ? replOptions.theme ?? { light: 'github-light', dark: 'github-dark' } : undefined
+const globalPhotoSwipe = (siteConfig.plugins as { photoSwipe?: false | PhotoSwipeOptions })?.photoSwipe
+const pagePhotoSwipe = (entry?.data as { photoSwipe?: false | string | string[] } | undefined)?.photoSwipe
+const photoSwipeConfig = globalPhotoSwipe === false || pagePhotoSwipe === false ? false : typeof globalPhotoSwipe === 'object' ? globalPhotoSwipe : {}
+const photoSwipeSelector = photoSwipeConfig === false ? '' : (Array.isArray(pagePhotoSwipe) ? pagePhotoSwipe : Array.isArray(photoSwipeConfig.selector) ? photoSwipeConfig.selector : [typeof pagePhotoSwipe === 'string' ? pagePhotoSwipe : photoSwipeConfig.selector ?? '.vp-doc :not(a) > img:not([no-view],.no-view,.ignore)']).join(', ')
+const photoSwipeLocale = photoSwipeLocaleOf(lang, localePath(lang), photoSwipeConfig === false ? {} : photoSwipeConfig.locales)
+const markdownIcon = (siteConfig.markdown as { icon?: { provider?: string, assets?: string | string[] } }).icon ?? {}
+const iconAssets = iconAssetUrls(markdownIcon)
+const globalCredentials = (siteConfig.encrypt as { global?: boolean }).global ? globalAdminCredentials() : []
+const globalEncryption = globalCredentials.length
+  ? await Promise.all(globalCredentials.map(({ password, scope }) => encryptContent('ermaozi-global-unlock', password, scope)))
+  : undefined
+const customContent = hasUserSlot('custom-content')
+const { password: _password, passwordHint: _passwordHint, ...publicFrontmatter } = entry?.data ?? {}
+const clientPageData = JSON.stringify({ page: { path: route, title, description }, frontmatter: publicFrontmatter }).replaceAll('<', '\\u003c')
+const navbarEnabled = entry?.data.navbar !== false
+const footerEnabled = entry?.data.footer !== false
+const backToTopEnabled = entry?.data.backToTop !== false && !shortHomeConfig
+const configuredBulletin = locale.bulletin === true ? {} : locale.bulletin as BulletinOptions | false | undefined
+const bulletinEnabled = Boolean(configuredBulletin
+  && configuredBulletin.enabled !== false
+  && entry?.data.bulletin !== false
+  && (typeof configuredBulletin.enablePage === 'function' ? configuredBulletin.enablePage({ path: route }) : configuredBulletin.enablePage ?? true))
+const routeBoundLayoutSlot = hasUserSlot('layout-top') || hasUserSlot('layout-bottom')
+const pageShellSignature = createHash('sha256').update(JSON.stringify({
+  layout,
+  bare,
+  pageClass,
+  navbarEnabled,
+  hasSidebar,
+  footerEnabled,
+  backToTopEnabled,
+  showSignDown,
+  watermarkOptions,
+  bulletinRoute: bulletinEnabled ? route : '',
+  headItems,
+  photoSwipeSelector,
+  photoSwipeConfig,
+  routeBoundLayoutSlot: routeBoundLayoutSlot ? route : '',
+})).digest('base64url').slice(0, 16)
+---
+
+<!doctype html>
+<html class:list={[!minimal404 && `layout-${layout}`, forceDark && 'force-dark dark', forceDarkEffect && `effect-${forceDarkEffect}`, { 'bg-gray': !minimal404 && layout === 'posts' }]} lang={lang} data-page-transition={pageTransition ? '' : undefined} data-katex-copy={katexCopy ? 'true' : undefined} data-mark-mode={markMode} data-repl-theme={replTheme ? JSON.stringify(replTheme) : undefined} data-photo-swipe-selector={photoSwipeSelector || undefined} data-photo-swipe-download={photoSwipeConfig !== false && photoSwipeConfig.download !== false ? 'true' : 'false'} data-photo-swipe-fullscreen={photoSwipeConfig !== false && photoSwipeConfig.fullscreen !== false ? 'true' : 'false'} data-photo-swipe-scroll-close={photoSwipeConfig !== false && photoSwipeConfig.scrollToClose !== false ? 'true' : 'false'} data-photo-swipe-locale={JSON.stringify(photoSwipeLocale)}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#336f87" />
+    <meta name="color-scheme" content="light dark" />
+    <script is:inline define:vars={{ appearance, forceDark }}>
+      (() => {
+        const root = document.documentElement
+        const stored = localStorage.getItem('vuepress-theme-appearance')
+        const selected = stored || (appearance === 'dark' ? 'dark' : 'auto')
+        const dark = forceDark || (appearance !== false && (selected === 'dark' || (selected !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)))
+        root.dataset.theme = dark ? 'dark' : 'light'
+        root.classList.toggle('dark', dark)
+      })()
+    </script>
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={seoDescription} />
+    {(customRobots || pageNoindex) && <meta data-ermaozi-managed-head name="robots" content={String(customRobots || 'noindex,follow')} />}
+    <Fragment set:html={managedHeadHtml} />
+    <Fragment set:html={userHeadHtml} />
+    {!hasCustomIcon && favicon && <link rel="icon" href={favicon} />}
+    {preconnectMedia && <link rel="preconnect" href={siteConfig.mediaOrigin} />}
+    {iconAssets.filter(asset => asset.endsWith('.css')).map(asset => <link rel="stylesheet" href={asset} />)}
+    {iconAssets.filter(asset => asset.endsWith('.js')).map(asset => <script is:inline src={asset} data-auto-replace-svg={markdownIcon.provider === 'fontawesome' ? 'nest' : undefined}></script>)}
+    {siteConfig.features.comments && commentOrigin && <link rel="dns-prefetch" href={commentOrigin} />}
+    <meta name="keywords" content={keywords} />
+    {siteConfig.verification.yandex && <meta name="yandex-verification" content={siteConfig.verification.yandex} />}
+    {siteConfig.verification.baidu && <meta name="baidu-site-verification" content={siteConfig.verification.baidu} />}
+  </head>
+  <body data-page-shell={pageShellSignature} data-pagefind-ignore={pageNoindex || !pageSearchable ? 'all' : undefined} data-pagefind-ready={String(import.meta.env.PROD)}>
+    {nprogressEnabled && <div id="nprogress" aria-hidden="true" hidden><div class="bar"></div></div>}
+    <script is:inline id="ermaozi-page-data" type="application/json" set:html={clientPageData}></script>
+    <div id="app">
+      {bare ? <>
+        {globalEncryption && <GlobalEncrypt payloads={globalEncryption} {lang} />}
+        <div class="global-protected" data-global-protected hidden={Boolean(globalEncryption)}><slot /></div>
+      </> : <div class:list={['theme-plume vp-layout', pageClass, { 'footer-no-border': singleHomeSection }]}>
+        {globalEncryption && <GlobalEncrypt payloads={globalEncryption} {lang} />}
+        <div class="global-protected" data-global-protected hidden={Boolean(globalEncryption)}>
+          <UserSlot name="layout-top" {entry} {lang} {route} {layout} />
+          {navbarEnabled && <Header {lang} {translationRoute} {languageLinks} home={isHome} {hasSidebar} fixed={layout === 'posts'} />}
+          <Watermark options={watermarkOptions} title={site.siteName} />
+          {customContent ? <UserSlot name="custom-content" {entry} {lang} {route} {layout} /> : <slot />}
+          {showSignDown && <SignDown {lang} />}
+          <Footer {lang} {hasSidebar} enabled={footerEnabled} />
+          <UserSlot name="layout-bottom" {entry} {lang} {route} {layout} />
+          <BackToTop {lang} enabled={backToTopEnabled} />
+          <Bulletin pageEnabled={entry?.data.bulletin !== false} {lang} {route} />
+        </div>
+      </div>}
+    </div>
+    {pageTransition && <script is:inline>
+      (() => {
+        const content = document.querySelector('#VPContent')
+        if (!(content instanceof HTMLElement)) return
+        const storageKey = '__ERMAOZI_PAGE_TRANSITION__'
+        const classes = ['fade-slide-y-enter-from', 'fade-slide-y-enter-active', 'fade-slide-y-enter-to', 'fade-slide-y-leave-from', 'fade-slide-y-leave-active', 'fade-slide-y-leave-to']
+        const reset = () => content.classList.remove(...classes)
+        const timestamp = Number(sessionStorage.getItem(storageKey))
+        sessionStorage.removeItem(storageKey)
+        if (!matchMedia('(prefers-reduced-motion: reduce)').matches && Date.now() - timestamp < 10_000) {
+          content.classList.add('fade-slide-y-enter-from', 'fade-slide-y-enter-active')
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            content.classList.remove('fade-slide-y-enter-from')
+            content.classList.add('fade-slide-y-enter-to')
+            setTimeout(reset, 150)
+          }))
+        }
+        addEventListener('pageshow', event => { if (event.persisted) reset() })
+        let leaving = false
+        document.addEventListener('click', event => {
+          if (leaving || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+          const link = event.target instanceof Element ? event.target.closest('a[href]') : null
+          if (!(link instanceof HTMLAnchorElement) || link.target && link.target !== '_self' || link.hasAttribute('download')) return
+          if (link.closest('.vp-sidebar')) return
+          const next = new URL(link.href, location.href)
+          if (next.origin !== location.origin || !/^https?:$/.test(next.protocol) || next.pathname === location.pathname && next.search === location.search) return
+          event.preventDefault()
+          document.dispatchEvent(new CustomEvent('plume-navigation-start'))
+          if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            location.href = next.href
+            return
+          }
+          leaving = true
+          content.classList.add('fade-slide-y-leave-from', 'fade-slide-y-leave-active')
+          requestAnimationFrame(() => requestAnimationFrame(() => {
+            content.classList.remove('fade-slide-y-leave-from')
+            content.classList.add('fade-slide-y-leave-to')
+            setTimeout(() => {
+              sessionStorage.setItem(storageKey, String(Date.now()))
+              location.href = next.href
+            }, 150)
+          }))
+        })
+      })()
+    </script>}
+    <script>
+      import type { QRCodeByteSegment, QRCodeMaskPattern, QRCodeToDataURLOptions } from 'qrcode'
+      import type PhotoSwipeInstance from 'photoswipe'
+      import * as VueRuntime from 'vue'
+      import { Watermark as PageWatermark } from 'watermark-js-plus'
+      import '../client-config.ts'
+      import { useEChartsConfig } from '../lib/echarts-config.ts'
+      import { outlineOfHtml, type OutlineItem, type ThemeOutline } from '../lib/outline.ts'
+      import { initPageNavigation } from '../lib/page-navigation.ts'
+
+      const seal = [
+        'IEVSTUFPWkkg',
+        'IE9SSUdJTkFMIEFTVFJPIFRIRU1F',
+        'R2l0SHVi',
+        'aHR0cHM6Ly9naXRodWIuY29tL2VybWFvemkvYXN0cm8tdGhlbWUtZXJtYW96aQ==',
+        'V2Vic2l0ZQ==',
+        'aHR0cHM6Ly9lcm1hby5uZXQ=',
+        'IF9fX19fX18gIF9fX19fXyAgICBfXyAgIF9fICBfX19fX19fICBfX19fX19fICAgICAgICAgX18gICAgXyAgX19fX19fXyAgX19fX19fXwp8ICAgICAgIHx8ICAgIF8gfCAgfCAgfF98ICB8fCAgIF8gICB8fCAgICAgICB8ICAgICAgIHwgIHwgIHwgfHwgICAgICAgfHwgICAgICAgfAp8ICAgIF9fX3x8ICAgfCB8fCAgfCAgICAgICB8fCAgfF98ICB8fCAgIF8gICB8ICAgICAgIHwgICB8X3wgfHwgICAgX19ffHxfICAgICBffAp8ICAgfF9fXyB8ICAgfF98fF8gfCAgICAgICB8fCAgICAgICB8fCAgfCB8ICB8ICAgICAgIHwgICAgICAgfHwgICB8X19fICAgfCAgIHwKfCAgICBfX198fCAgICBfXyAgfHwgICAgICAgfHwgICAgICAgfHwgIHxffCAgfCBfX18gICB8ICBfICAgIHx8ICAgIF9fX3wgIHwgICB8CnwgICB8X19fIHwgICB8ICB8IHx8IHx8X3x8IHx8ICAgXyAgIHx8ICAgICAgIHx8ICAgfCAgfCB8IHwgICB8fCAgIHxfX18gICB8ICAgfAp8X19fX19fX3x8X19ffCAgfF98fF98ICAgfF98fF9ffCB8X198fF9fX19fX198fF9fX3wgIHxffCAgfF9ffHxfX19fX19ffCAgfF9fX3w=',
+      ].map(value => atob(value))
+      const write = (...args: unknown[]) => queueMicrotask(console.info.bind(console, ...args))
+      write(`%c${seal[6]}`, 'color:#48a6c5;font-family:"Courier New",monospace;font-size:9px;font-weight:700;line-height:10px;letter-spacing:0;font-variant-ligatures:none;white-space:pre')
+      write(
+        `%c${seal[0]}%c${seal[1]}`,
+        'background:#336f87;color:#fff;padding:4px 8px;border-radius:6px 0 0 6px;font-weight:700;letter-spacing:.08em',
+        'background:#e6a23c;color:#1f2937;padding:4px 8px;border-radius:0 6px 6px 0;font-weight:700',
+      )
+      write(`\u25c6 ${seal[2]}  \u2192`, seal[3])
+      write(`\u25c6 ${seal[4]} \u2192`, seal[5])
+
+      const nprogress = document.getElementById('nprogress')
+      const nprogressBar = nprogress?.querySelector<HTMLElement>('.bar')
+      if (nprogress && nprogressBar) {
+        let pendingNavigations = 0
+        let finishTimer = 0
+        document.addEventListener('plume-navigation-start', () => {
+          pendingNavigations += 1
+          if (pendingNavigations > 1) return
+          clearTimeout(finishTimer)
+          nprogress.hidden = false
+          nprogress.style.opacity = '1'
+          nprogressBar.style.transition = 'none'
+          nprogressBar.style.transform = 'translate3d(-92%,0,0)'
+          void nprogress.offsetWidth
+          nprogressBar.style.transition = 'transform 800ms ease'
+          nprogressBar.style.transform = 'translate3d(-20%,0,0)'
+        })
+        document.addEventListener('plume-navigation-end', () => {
+          pendingNavigations = Math.max(0, pendingNavigations - 1)
+          if (pendingNavigations) return
+          nprogressBar.style.transition = 'transform 200ms ease'
+          nprogressBar.style.transform = 'translate3d(0,0,0)'
+          finishTimer = window.setTimeout(() => {
+            nprogress.style.opacity = '0'
+            nprogress.hidden = true
+          }, 200)
+        })
+        document.addEventListener('click', event => {
+          if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+          const link = event.target instanceof Element ? event.target.closest('a[href]') : null
+          if (!(link instanceof HTMLAnchorElement) || link.target && link.target !== '_self' || link.hasAttribute('download')) return
+          const next = new URL(link.href, location.href)
+          if (next.origin === location.origin && /^https?:$/.test(next.protocol) && (next.pathname !== location.pathname || next.search !== location.search)) {
+            document.dispatchEvent(new CustomEvent('plume-navigation-start'))
+          }
+        })
+      }
+
+      initPageNavigation()
+
+      if (document.documentElement.dataset.katexCopy === 'true') void import('katex/dist/contrib/copy-tex.min.js')
+
+      if (document.documentElement.dataset.markMode === 'lazy') {
+        const observer = new IntersectionObserver((entries, current) => {
+          for (const entry of entries) if (entry.isIntersecting || entry.intersectionRatio > 0) {
+            entry.target.classList.add('vp-mark-visible')
+            entry.target.removeAttribute('data-vp-mark-bound')
+            current.unobserve(entry.target)
+          }
+        }, { threshold: [0, .1, .25, .5], rootMargin: '8% 0px -8% 0px' })
+        const bindMarks = () => document.querySelectorAll<HTMLElement>('mark:not(.vp-mark-visible):not([data-vp-mark-bound="1"])').forEach(mark => {
+          mark.dataset.vpMarkBound = '1'
+          observer.observe(mark)
+        })
+        bindMarks()
+        document.addEventListener('plume-content-updated', () => requestAnimationFrame(bindMarks))
+      }
+
+      const loadRemoteIcons = async (root: ParentNode = document) => {
+        const icons = [...root.querySelectorAll<HTMLElement>('[data-iconify-remote]:not([data-iconify-state])')]
+        await Promise.all(icons.map(async icon => {
+          const name = icon.dataset.iconifyRemote ?? ''
+          const [collection, glyph] = name.split(':', 2)
+          if (!collection || !glyph || !/^[\w-]+$/.test(collection) || !/^[\w-]+$/.test(glyph)) return
+          icon.dataset.iconifyState = 'loading'
+          try {
+            const response = await fetch(`https://api.iconify.design/${encodeURIComponent(collection)}/${encodeURIComponent(glyph)}.svg`)
+            if (!response.ok) throw new Error(`Iconify ${response.status}`)
+            const parsed = new DOMParser().parseFromString(await response.text(), 'image/svg+xml')
+            const svg = parsed.documentElement
+            if (svg.localName !== 'svg' || parsed.querySelector('parsererror')) throw new Error('Invalid Iconify SVG')
+            svg.querySelectorAll('script,style,foreignObject').forEach(node => node.remove())
+            for (const element of [svg, ...svg.querySelectorAll('*')]) {
+              for (const attribute of [...element.attributes]) {
+                if (/^on/i.test(attribute.name) || (/^(?:href|xlink:href)$/i.test(attribute.name) && !attribute.value.startsWith('#'))) element.removeAttribute(attribute.name)
+              }
+            }
+            svg.setAttribute('width', '100%')
+            svg.setAttribute('height', '100%')
+            svg.setAttribute('aria-hidden', 'true')
+            icon.replaceChildren(document.importNode(svg, true))
+            icon.dataset.iconifyState = 'ready'
+          } catch { icon.dataset.iconifyState = 'error' }
+        }))
+      }
+      void loadRemoteIcons()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        void loadRemoteIcons(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+
+      const selectTab = (button: HTMLButtonElement, persist = true) => {
+        const tabs = button.closest<HTMLElement>('[data-tabs]')
+        if (!tabs) return
+        const index = Number(button.dataset.tabIndex)
+        const buttonSelector = tabs.dataset.tabKind === 'code' ? '.vp-code-tab-nav' : '.vp-tab-nav'
+        const panelSelector = tabs.dataset.tabKind === 'code' ? '.vp-code-tab' : '.vp-tab'
+        tabs.querySelectorAll<HTMLButtonElement>(buttonSelector).forEach((item, itemIndex) => {
+          item.setAttribute('aria-selected', String(itemIndex === index))
+          item.tabIndex = itemIndex === index ? 0 : -1
+          item.classList.toggle('active', itemIndex === index)
+        })
+        tabs.querySelectorAll<HTMLElement>(panelSelector).forEach((panel, panelIndex) => {
+          panel.classList.toggle('active', panelIndex === index)
+          panel.setAttribute('aria-expanded', String(panelIndex === index))
+        })
+        const tabId = tabs.dataset.tabId
+        if (!persist || !tabId) return
+        const storeName = tabs.dataset.tabStore ?? 'VUEPRESS_TAB_STORE'
+        let store: Record<string, string> = {}
+        try { store = JSON.parse(localStorage.getItem(storeName) || '{}') }
+        catch { /* ignore invalid user storage */ }
+        store[tabId] = button.dataset.tabValue ?? ''
+        localStorage.setItem(storeName, JSON.stringify(store))
+        document.querySelectorAll<HTMLElement>('[data-tabs]').forEach(group => {
+          if (group === tabs || group.dataset.tabStore !== storeName || group.dataset.tabId !== tabId) return
+          const match = [...group.querySelectorAll<HTMLButtonElement>('[data-tab-value]')].find(item => item.dataset.tabValue === store[tabId])
+          if (match) selectTab(match, false)
+        })
+      }
+
+      const restoreTabs = (storeName?: string) => document.querySelectorAll<HTMLElement>('[data-tabs]').forEach(tabs => {
+        const tabId = tabs.dataset.tabId
+        if (!tabId || (storeName && tabs.dataset.tabStore !== storeName)) return
+        let value = ''
+        try { value = JSON.parse(localStorage.getItem(tabs.dataset.tabStore ?? 'VUEPRESS_TAB_STORE') || '{}')[tabId] ?? '' }
+        catch { /* ignore invalid user storage */ }
+        const button = [...tabs.querySelectorAll<HTMLButtonElement>('[data-tab-value]')].find(item => item.dataset.tabValue === value)
+        if (button) selectTab(button, false)
+      })
+      restoreTabs()
+      addEventListener('storage', event => {
+        if (event.key === 'VUEPRESS_TAB_STORE' || event.key === 'VUEPRESS_CODE_TAB_STORE') restoreTabs(event.key)
+      })
+
+      let collapseTransitionId = 0
+      const setCollapse = (item: HTMLElement, button: HTMLButtonElement, content: HTMLElement, expanded: boolean) => {
+        const token = String(++collapseTransitionId)
+        content.dataset.collapseTransition = token
+        content.classList.remove(
+          'fade-in-height-expand-enter-from',
+          'fade-in-height-expand-enter-active',
+          'fade-in-height-expand-enter-to',
+          'fade-in-height-expand-leave-from',
+          'fade-in-height-expand-leave-active',
+          'fade-in-height-expand-leave-to',
+        )
+        content.style.removeProperty('max-height')
+        content.style.removeProperty('transition')
+        item.classList.toggle('expanded', expanded)
+        button.setAttribute('aria-expanded', String(expanded))
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          content.hidden = !expanded
+          return
+        }
+
+        const phase = expanded ? 'enter' : 'leave'
+        const from = `fade-in-height-expand-${phase}-from`
+        const active = `fade-in-height-expand-${phase}-active`
+        const to = `fade-in-height-expand-${phase}-to`
+        const finish = () => {
+          if (content.dataset.collapseTransition !== token) return
+          content.classList.remove(from, active, to)
+          content.style.removeProperty('max-height')
+          if (!expanded) content.hidden = true
+        }
+        const onEnd = (event: TransitionEvent) => {
+          if (event.propertyName !== 'max-height') return
+          content.removeEventListener('transitionend', onEnd)
+          finish()
+        }
+        content.addEventListener('transitionend', onEnd)
+        setTimeout(finish, 350)
+
+        if (expanded) {
+          content.hidden = false
+          content.classList.add(from, active)
+          const height = content.scrollHeight
+          content.style.transition = 'none'
+          content.style.maxHeight = '0'
+          content.offsetWidth
+          content.style.removeProperty('transition')
+          content.style.maxHeight = `${height}px`
+          content.offsetWidth
+        } else {
+          content.style.maxHeight = `${content.offsetHeight}px`
+          content.offsetWidth
+          content.classList.add(from, active)
+        }
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          if (content.dataset.collapseTransition !== token) return
+          content.classList.remove(from)
+          content.classList.add(to)
+          if (!expanded) content.style.maxHeight = '0'
+        }))
+      }
+
+      const selectCodeTreeFile = (button: HTMLElement) => {
+        const tree = button.closest<HTMLElement>('[data-code-tree]')
+        if (!tree) return
+        const filepath = button.dataset.codeFile ?? ''
+        let matched = false
+        tree.querySelectorAll<HTMLElement>('[data-code-file]').forEach(item => item.classList.toggle('active', item.dataset.codeFile === filepath))
+        tree.querySelectorAll<HTMLElement>('.code-panel > .code-block-title').forEach(block => {
+          const active = block.dataset.title === filepath
+          block.classList.toggle('active', active)
+          matched ||= active
+        })
+        const empty = tree.querySelector<HTMLElement>('.code-tree-empty')
+        if (empty) empty.hidden = matched
+      }
+
+      const decodeBase64 = (value: string) => Uint8Array.from(atob(value), character => character.charCodeAt(0))
+      const decodeHtml = (value = '') => new TextDecoder().decode(decodeBase64(value))
+      const floatingDuration = 200
+      const enterFloating = (element: HTMLElement) => {
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+        element.classList.add('fade-in-enter-active', 'fade-in-enter-from')
+        element.offsetWidth
+        requestAnimationFrame(() => {
+          element.classList.replace('fade-in-enter-from', 'fade-in-enter-to')
+          setTimeout(() => element.classList.remove('fade-in-enter-active', 'fade-in-enter-to'), floatingDuration)
+        })
+      }
+      const leaveFloating = (element: HTMLElement, immediate = false) => {
+        if (immediate || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          element.remove()
+          return
+        }
+        element.classList.remove('fade-in-enter-active', 'fade-in-enter-from', 'fade-in-enter-to')
+        element.classList.add('fade-in-leave-active', 'fade-in-leave-from')
+        element.offsetWidth
+        requestAnimationFrame(() => element.classList.replace('fade-in-leave-from', 'fade-in-leave-to'))
+        setTimeout(() => element.remove(), floatingDuration)
+      }
+      const placeFloating = (anchor: HTMLElement, floating: HTMLElement, gap: number, padding: number, flip = false) => {
+        const bounds = anchor.getBoundingClientRect()
+        const floatingBounds = floating.getBoundingClientRect()
+        let placement = 'bottom'
+        let top = bounds.bottom + scrollY + gap
+        const bottomOverflow = Math.max(0, top + floatingBounds.height - scrollY - innerHeight)
+        const topPosition = bounds.top + scrollY - floatingBounds.height - gap
+        const topOverflow = Math.max(0, scrollY - topPosition)
+        if (flip && bottomOverflow > 0 && topOverflow < bottomOverflow) {
+          placement = 'top'
+          top = topPosition
+        }
+        const left = Math.min(
+          Math.max(bounds.left + scrollX + bounds.width / 2 - floatingBounds.width / 2, scrollX + padding),
+          scrollX + innerWidth - floatingBounds.width - padding,
+        )
+        floating.style.position = 'absolute'
+        floating.style.left = '0'
+        floating.style.top = '0'
+        floating.style.transform = `translate(${left}px, ${top}px)`
+        return { placement, left, bounds }
+      }
+
+      let activeAbbreviation: HTMLElement | null = null
+      let abbreviationTooltip: HTMLElement | null = null
+      const hideAbbreviation = (immediate = false) => {
+        if (abbreviationTooltip) leaveFloating(abbreviationTooltip, immediate)
+        activeAbbreviation = null
+        abbreviationTooltip = null
+      }
+      const positionAbbreviation = () => {
+        if (!activeAbbreviation || !abbreviationTooltip) return
+        const { left, bounds } = placeFloating(activeAbbreviation, abbreviationTooltip, 10, 20)
+        const arrow = abbreviationTooltip.querySelector<HTMLElement>('.tooltip-arrow')
+        if (arrow) {
+          const border = (abbreviationTooltip.offsetWidth - abbreviationTooltip.clientWidth) / 2
+          const centered = bounds.left + scrollX + bounds.width / 2 - left - border - arrow.offsetWidth / 2
+          arrow.style.left = `${Math.min(Math.max(centered, 4), abbreviationTooltip.clientWidth - arrow.offsetWidth - 4)}px`
+        }
+      }
+      const showAbbreviation = (abbreviation: HTMLElement) => {
+        if (activeAbbreviation === abbreviation && abbreviationTooltip) return
+        hideAbbreviation(true)
+        const tooltip = document.createElement('span')
+        tooltip.className = 'vp-abbr-tooltip ignore-header'
+        tooltip.setAttribute('aria-hidden', 'true')
+        tooltip.innerHTML = `<span class="tooltip-arrow"></span>${decodeHtml(abbreviation.dataset.abbrContent)}`
+        document.body.append(tooltip)
+        activeAbbreviation = abbreviation
+        abbreviationTooltip = tooltip
+        positionAbbreviation()
+        enterFloating(tooltip)
+      }
+
+      let activeAnnotation: HTMLButtonElement | null = null
+      let annotationPopover: HTMLElement | null = null
+      const hideAnnotation = (immediate = false) => {
+        if (activeAnnotation) {
+          activeAnnotation.classList.remove('active')
+          activeAnnotation.setAttribute('aria-expanded', 'false')
+        }
+        if (annotationPopover) leaveFloating(annotationPopover, immediate)
+        activeAnnotation = null
+        annotationPopover = null
+      }
+      const positionAnnotation = () => {
+        if (!activeAnnotation || !annotationPopover) return
+        const { placement } = placeFloating(activeAnnotation, annotationPopover, 0, 16, true)
+        activeAnnotation.classList.remove('top', 'left', 'bottom', 'right')
+        activeAnnotation.classList.add(placement)
+      }
+      const showAnnotation = (button: HTMLButtonElement) => {
+        if (activeAnnotation === button && annotationPopover) return
+        hideAnnotation(true)
+        const popover = document.createElement('div')
+        popover.className = `vp-annotation-popover${Number(button.dataset.annotationTotal) > 1 ? ' group' : ''}`
+        popover.innerHTML = decodeHtml(button.dataset.annotationContent)
+        document.body.append(popover)
+        activeAnnotation = button
+        annotationPopover = popover
+        button.classList.add('active')
+        button.setAttribute('aria-expanded', 'true')
+        positionAnnotation()
+        enterFloating(popover)
+      }
+
+      document.addEventListener('mouseover', event => {
+        if (innerWidth <= 768 || !(event.target instanceof Element)) return
+        const abbreviation = event.target.closest<HTMLElement>('.vp-abbr')
+        if (abbreviation && (!(event.relatedTarget instanceof Node) || !abbreviation.contains(event.relatedTarget))) showAbbreviation(abbreviation)
+      })
+      document.addEventListener('mouseout', event => {
+        if (innerWidth <= 768 || !(event.target instanceof Element)) return
+        const abbreviation = event.target.closest<HTMLElement>('.vp-abbr')
+        if (abbreviation) {
+          if (event.relatedTarget instanceof Node && abbreviation.contains(event.relatedTarget)) return
+          setTimeout(() => {
+            if (!activeAbbreviation?.matches(':hover') && !abbreviationTooltip?.matches(':hover')) hideAbbreviation()
+          })
+          return
+        }
+        const tooltip = event.target.closest<HTMLElement>('.vp-abbr-tooltip')
+        if (tooltip && (!(event.relatedTarget instanceof Node) || !tooltip.contains(event.relatedTarget))) hideAbbreviation()
+      })
+      document.addEventListener('focusin', event => {
+        if (innerWidth > 768 && event.target instanceof HTMLElement && event.target.matches('.vp-abbr')) showAbbreviation(event.target)
+      })
+      document.addEventListener('focusout', event => {
+        if (innerWidth <= 768 || !(event.target instanceof HTMLElement) || !event.target.matches('.vp-abbr')) return
+        setTimeout(() => {
+          if (!activeAbbreviation?.matches(':focus') && !abbreviationTooltip?.matches(':hover')) hideAbbreviation()
+        })
+      })
+      const updateFloating = () => {
+        positionAbbreviation()
+        if (activeAnnotation) {
+          const bounds = activeAnnotation.getBoundingClientRect()
+          if (bounds.bottom <= 64 || bounds.top >= innerHeight) hideAnnotation()
+          else positionAnnotation()
+        }
+      }
+      addEventListener('resize', updateFloating)
+      addEventListener('scroll', updateFloating, true)
+
+      const decryptContent = async (element: HTMLElement, password = '') => {
+        const fallback = [{ ciphertext: element.dataset.encryptCiphertext ?? '', iv: element.dataset.encryptIv ?? '', salt: element.dataset.encryptSalt ?? '' }]
+        const payloads = element.dataset.encryptPayloads ? JSON.parse(element.dataset.encryptPayloads) : fallback
+        for (const payload of payloads) {
+          const cacheKey = `plume:decrypt:${payload.salt}`
+          const cached = sessionStorage.getItem(cacheKey)
+          try {
+            let key: CryptoKey
+            if (cached) key = await crypto.subtle.importKey('raw', decodeBase64(cached), 'AES-GCM', false, ['decrypt'])
+            else {
+              if (!password) continue
+              const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'])
+              key = await crypto.subtle.deriveKey(
+                { name: 'PBKDF2', salt: decodeBase64(payload.salt), iterations: 100_000, hash: 'SHA-256' },
+                material,
+                { name: 'AES-GCM', length: 256 },
+                true,
+                ['decrypt'],
+              )
+            }
+            const content = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: decodeBase64(payload.iv) }, key, decodeBase64(payload.ciphertext))
+            if (!cached) {
+              const rawKey = new Uint8Array(await crypto.subtle.exportKey('raw', key))
+              sessionStorage.setItem(cacheKey, btoa(String.fromCharCode(...rawKey)))
+            }
+            return new TextDecoder().decode(content)
+          } catch {
+            continue
+          }
+        }
+        throw new Error('Invalid password')
+      }
+
+      const unlockEncrypted = async (element: HTMLElement, password = '') => {
+        const html = await decryptContent(element, password)
+        if (element.matches('[data-global-encrypt]')) {
+          document.querySelectorAll<HTMLElement>('[data-global-protected]').forEach(content => { content.hidden = false })
+          element.remove()
+          document.querySelectorAll<HTMLElement>('[data-page-encrypt], [data-encrypt-snippet]').forEach(content => { void unlockEncrypted(content).catch(() => {}) })
+        } else if (element.matches('[data-page-encrypt]')) {
+          const content = document.querySelector<HTMLElement>('[data-page-decrypted]')
+          if (content) {
+            content.innerHTML = html
+            content.hidden = false
+          }
+          document.querySelectorAll<HTMLElement>('[data-page-protected]').forEach(protectedContent => { protectedContent.hidden = false })
+          element.remove()
+        } else {
+          const template = document.createElement('template')
+          template.innerHTML = html
+          const content = document.createElement('div')
+          content.className = 'decrypted-content'
+          content.append(template.content)
+          element.replaceWith(content)
+        }
+        document.dispatchEvent(new CustomEvent('plume-content-updated'))
+      }
+
+      const photoSwipeSelector = document.documentElement.dataset.photoSwipeSelector ?? ''
+      const photoSwipeLocale = JSON.parse(document.documentElement.dataset.photoSwipeLocale ?? '{}') as Record<string, string>
+      const photoSwipeLoading = '<div class="photo-swipe-loading"><svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" preserveAspectRatio="xMidYMid" viewBox="25 25 50 50"><animateTransform attributeName="transform" type="rotate" dur="2s" keyTimes="0;1" repeatCount="indefinite" values="0;360"></animateTransform><circle cx="50" cy="50" r="20" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"><animate attributeName="stroke-dasharray" dur="1.5s" keyTimes="0;0.5;1" repeatCount="indefinite" values="1,200;90,200;1,200"></animate><animate attributeName="stroke-dashoffset" dur="1.5s" keyTimes="0;0.5;1" repeatCount="indefinite" values="0;-35px;-125px"></animate></circle></svg></div>'
+      let activePhotoSwipe: PhotoSwipeInstance | null = null
+      const photoSwipeLoader = photoSwipeSelector ? import('photoswipe').then(module => module.default) : null
+      const registerPhotoSwipeUi = (viewer: PhotoSwipeInstance) => viewer.on('uiRegister', () => {
+        viewer.ui?.registerElement({
+          name: 'bulletsIndicator',
+          className: 'photo-swipe-bullets-indicator',
+          appendTo: 'wrapper',
+          onInit: element => {
+            const bullets = Array.from({ length: viewer.getNumItems() }, (_, index) => {
+              const bullet = document.createElement('button')
+              bullet.className = 'photo-swipe-bullet'
+              bullet.type = 'button'
+              bullet.ariaLabel = String(index + 1)
+              bullet.addEventListener('click', () => viewer.goTo(index))
+              element.append(bullet)
+              return bullet
+            })
+            viewer.on('change', () => bullets.forEach((bullet, index) => bullet.classList.toggle('active', index === viewer.currIndex)))
+          },
+        })
+        if (document.documentElement.dataset.photoSwipeFullscreen === 'true' && document.fullscreenEnabled) viewer.ui?.registerElement({
+          name: 'fullscreen', order: 7, isButton: true, title: photoSwipeLocale.fullscreen,
+          html: '<svg class="pswp__icn" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path d="M249.5 270.833H437v-75H212a37.5 37.5 0 0 0-37.5 37.5v225h75v-187.5zm-37.5 600h225v-75H249.5v-187.5h-75v225a37.5 37.5 0 0 0 37.5 37.5zm637.5-37.5v-225h-75v187.5H587v75h225a37.5 37.5 0 0 0 37.5-37.5zM587 270.833h187.5v187.5h75v-225a37.5 37.5 0 0 0-37.5-37.5H587v75z"/></svg>',
+          onClick: () => { void (document.fullscreenElement ? document.exitFullscreen() : viewer.element?.requestFullscreen()) },
+        })
+        if (document.documentElement.dataset.photoSwipeDownload === 'true') viewer.ui?.registerElement({
+          name: 'download', order: 8, isButton: true, tagName: 'a', title: photoSwipeLocale.download,
+          html: { isCustomSVG: true, inner: '<path d="M20.5 14.3 17.1 18V10h-2.2v7.9l-3.4-3.6L10 16l6 6.1 6-6.1-1.5-1.6ZM23 23H9v2h14" id="pswp__icn-download"/>', outlineID: 'pswp__icn-download' },
+          onInit: element => {
+            element.setAttribute('download', '')
+            element.setAttribute('target', '_blank')
+            element.setAttribute('rel', 'noopener')
+            viewer.on('change', () => element.setAttribute('href', String(viewer.currSlide?.data.src ?? '')))
+          },
+        })
+      })
+      const openPhotoSwipe = async (image: HTMLImageElement) => {
+        if (!photoSwipeLoader) return
+        activePhotoSwipe?.destroy()
+        const PhotoSwipe = await photoSwipeLoader
+        const images = [...document.querySelectorAll<HTMLImageElement>(photoSwipeSelector)]
+        const dataSource: any[] = images.map(element => ({ html: photoSwipeLoading, element, msrc: element.src }))
+        const viewer = new PhotoSwipe({
+          preloaderDelay: 0,
+          showHideAnimationType: 'zoom',
+          dataSource,
+          index: images.indexOf(image),
+          closeOnVerticalDrag: document.documentElement.dataset.photoSwipeScrollClose === 'true',
+          wheelToZoom: document.documentElement.dataset.photoSwipeScrollClose !== 'true',
+          closeTitle: photoSwipeLocale.close,
+          zoomTitle: photoSwipeLocale.zoom,
+          arrowPrevTitle: photoSwipeLocale.arrowPrev,
+          arrowNextTitle: photoSwipeLocale.arrowNext,
+        })
+        activePhotoSwipe = viewer
+        registerPhotoSwipeUi(viewer)
+        viewer.init()
+        viewer.on('destroy', () => { if (activePhotoSwipe === viewer) activePhotoSwipe = null })
+        images.forEach((element, index) => { void element.decode().then(() => {
+          if (activePhotoSwipe !== viewer) return
+          dataSource.splice(index, 1, { type: 'image', element, src: element.src, width: element.naturalWidth, height: element.naturalHeight, alt: element.alt, msrc: element.src })
+          viewer.refreshSlideContent(index)
+        }).catch(() => {}) })
+      }
+      if (photoSwipeLoader && 'requestIdleCallback' in window) window.requestIdleCallback(() => { void photoSwipeLoader })
+      addEventListener('wheel', () => { if (document.documentElement.dataset.photoSwipeScrollClose === 'true') setTimeout(() => activePhotoSwipe?.close()) }, { passive: true, capture: true })
+
+      document.addEventListener('click', event => {
+        if (!(event.target instanceof Element)) return
+        const tab = event.target.closest<HTMLButtonElement>('.vp-tab-nav, .vp-code-tab-nav')
+        if (tab) selectTab(tab)
+
+        const collapseButton = event.target.closest<HTMLButtonElement>('.vp-collapse-header')
+        if (collapseButton) {
+          const item = collapseButton.closest<HTMLElement>('.vp-collapse-item')
+          const content = item?.querySelector<HTMLElement>('.vp-collapse-content')
+          if (!item || !content) return
+          const expanded = collapseButton.getAttribute('aria-expanded') !== 'true'
+          if (expanded && item.parentElement?.hasAttribute('data-accordion')) {
+            item.parentElement.querySelectorAll<HTMLElement>('.vp-collapse-item.expanded').forEach(openItem => {
+              if (openItem === item) return
+              const openButton = openItem.querySelector<HTMLButtonElement>('.vp-collapse-header')
+              const openContent = openItem.querySelector<HTMLElement>('.vp-collapse-content')
+              if (openButton && openContent) setCollapse(openItem, openButton, openContent, false)
+            })
+          }
+          setCollapse(item, collapseButton, content, expanded)
+        }
+
+        const collapsedLines = event.target.closest<HTMLElement>('.collapsed-lines')
+        if (collapsedLines) {
+          const block = collapsedLines.closest<HTMLElement>('.has-collapsed-lines')
+          if (block) {
+            const collapsed = block.classList.toggle('collapsed')
+            collapsedLines.setAttribute('aria-expanded', String(!collapsed))
+            if (collapsed) block.scrollIntoView({ block: 'center', behavior: 'instant' })
+          }
+        }
+
+        const abbreviation = event.target.closest<HTMLElement>('.vp-abbr')
+        if (abbreviation && innerWidth <= 768) {
+          if (activeAbbreviation === abbreviation) hideAbbreviation()
+          else showAbbreviation(abbreviation)
+        } else if (!event.target.closest('.vp-abbr-tooltip') && innerWidth <= 768) hideAbbreviation()
+
+        const plot = event.target.closest<HTMLElement>('.vp-plot.click')
+        document.querySelectorAll<HTMLElement>('.vp-plot.click.active').forEach(item => {
+          if (item !== plot) item.classList.remove('active')
+        })
+        if (plot) plot.classList.toggle('active')
+
+        const annotationButton = event.target.closest<HTMLButtonElement>('.vp-annotation')
+        if (annotationButton) {
+          if (activeAnnotation === annotationButton) hideAnnotation()
+          else showAnnotation(annotationButton)
+        } else if (!event.target.closest('.vp-annotation-popover')) hideAnnotation()
+
+        const folder = event.target.closest<HTMLElement>('.vp-file-tree-info.folder')
+        if (folder && !event.target.closest('.comment')) {
+          const expanded = !folder.classList.contains('expanded')
+          folder.classList.toggle('expanded', expanded)
+          folder.setAttribute('aria-expanded', String(expanded))
+        }
+
+        const codeTreeFile = event.target.closest<HTMLElement>('.vp-code-tree .vp-file-tree-info.file')
+        if (codeTreeFile) selectCodeTreeFile(codeTreeFile)
+
+        const preview = event.target.closest<HTMLButtonElement>('.mermaid-actions .preview-button')
+        if (preview) {
+          const svg = preview.parentElement?.nextElementSibling?.querySelector('svg')
+          if (!svg) return
+          const overlay = document.createElement('div')
+          overlay.className = 'mermaid-preview'
+          overlay.append(svg.cloneNode(true))
+          overlay.addEventListener('click', () => overlay.remove(), { once: true })
+          document.body.append(overlay)
+        }
+
+        const download = event.target.closest<HTMLButtonElement>('.mermaid-actions .download-button')
+        if (download) {
+          const wrapper = download.parentElement?.nextElementSibling as HTMLElement | null
+          const svg = wrapper?.querySelector('svg')
+          if (!wrapper || !svg) return
+          const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' })
+          const url = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = `${wrapper.dataset.mermaidTitle || wrapper.dataset.mermaidId || 'mermaid'}.svg`
+          link.click()
+          URL.revokeObjectURL(url)
+        }
+
+        const copyCode = event.target.closest<HTMLButtonElement>('[data-copy-code]')
+        if (copyCode) {
+          const block = copyCode.closest<HTMLElement>('div[class*="language-"]')
+          const code = block?.querySelector('pre')?.cloneNode(true) as HTMLElement | undefined
+          if (!block || !code) return
+          code.querySelectorAll('.line-numbers, .collapsed-lines, .vp-copy-ignore, .diff.remove').forEach(element => element.remove())
+          let text = code.textContent ?? ''
+          if (/language-(?:shellscript|shell|bash|sh|zsh)/u.test(block.className)) text = text.replaceAll(/^ *(?:\$|>) /gmu, '')
+          void navigator.clipboard.writeText(text).then(() => {
+            const duration = Number(copyCode.dataset.copyDuration)
+            if (!(duration > 0)) return
+            copyCode.classList.add('copied')
+            setTimeout(() => { copyCode.classList.remove('copied'); copyCode.blur() }, duration)
+          })
+        }
+
+        const tableButton = event.target.closest<HTMLButtonElement>('[data-copy-table]')
+        if (tableButton) {
+          const table = tableButton.closest('.vp-table')?.querySelector('table')
+          if (!table) return
+          const rows = [...table.querySelectorAll('tr')].map(row => [...row.querySelectorAll('th, td')].map(cell => cell.textContent?.trim() ?? ''))
+          const text = tableButton.dataset.copyTable === 'html'
+            ? table.closest('.table-inner')?.innerHTML ?? table.outerHTML
+            : rows.map((row, index) => `| ${row.join(' | ')} |${index === 0 ? `\n| ${row.map(() => '---').join(' | ')} |` : ''}`).join('\n')
+          void navigator.clipboard.writeText(text).then(() => {
+            const icon = tableButton.querySelector('span')
+            icon?.classList.replace('vpi-table-copy', 'vpi-table-copied')
+            setTimeout(() => { icon?.classList.replace('vpi-table-copied', 'vpi-table-copy') }, 1500)
+          })
+        }
+
+        const treeButton = event.target.closest<HTMLButtonElement>('[data-copy-tree]')
+        if (treeButton) {
+          const tree = treeButton.closest<HTMLElement>('.vp-file-tree')
+          if (!tree) return
+          const renderNodes = (container: Element, prefix = ''): string => {
+            const nodes = [...container.children].filter(child => child.classList.contains('vp-file-tree-node') && !child.classList.contains('generated'))
+            return nodes.map((node, index) => {
+              const name = node.querySelector<HTMLElement>(':scope > .vp-file-tree-info > .name')?.textContent?.trim() ?? ''
+              const last = index === nodes.length - 1
+              const group = node.querySelector<HTMLElement>(':scope > .group')
+              return `${prefix}${last ? '└── ' : '├── '}${name}\n${group ? renderNodes(group, `${prefix}${last ? '    ' : '│   '}`) : ''}`
+            }).join('')
+          }
+          const encoded = treeButton.dataset.copyTreeText
+          const text = encoded
+            ? new TextDecoder().decode(Uint8Array.from(atob(encoded), character => character.charCodeAt(0)))
+            : `.\n${renderNodes(tree)}`
+          void navigator.clipboard.writeText(text).then(() => {
+            treeButton.classList.add('copied')
+            setTimeout(() => treeButton.classList.remove('copied'), 1500)
+          })
+        }
+
+        if (event.target.closest('.vpi-print')) window.print()
+
+        const image = event.target instanceof HTMLImageElement && photoSwipeSelector && event.target.matches(photoSwipeSelector) ? event.target : null
+        if (image) void openPhotoSwipe(image)
+      })
+
+      document.addEventListener('keydown', event => {
+        const print = event.target instanceof Element ? event.target.closest<HTMLElement>('.vpi-print[role="button"]') : null
+        if (print && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault()
+          print.click()
+        }
+        if (event.key === 'Escape') {
+          hideAbbreviation()
+          hideAnnotation()
+        }
+        const tab = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('.vp-tab-nav, .vp-code-tab-nav') : null
+        if (tab && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+          const buttons = [...(tab.closest('[data-tabs]')?.querySelectorAll<HTMLButtonElement>('.vp-tab-nav, .vp-code-tab-nav') ?? [])]
+          const index = buttons.indexOf(tab)
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length
+          event.preventDefault()
+          selectTab(buttons[next])
+          buttons[next].focus()
+          return
+        }
+        const folder = event.target instanceof Element ? event.target.closest<HTMLElement>('.vp-file-tree-info.folder') : null
+        if (folder && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault()
+          folder.click()
+        }
+        const collapsedLines = event.target instanceof Element ? event.target.closest<HTMLElement>('.collapsed-lines') : null
+        if (collapsedLines && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault()
+          collapsedLines.click()
+        }
+        const codeTreeFile = event.target instanceof Element ? event.target.closest<HTMLElement>('.vp-code-tree .vp-file-tree-info.file') : null
+        if (codeTreeFile && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault()
+          selectCodeTreeFile(codeTreeFile)
+        }
+        const plot = event.target instanceof Element ? event.target.closest<HTMLElement>('.vp-plot.click') : null
+        if (plot && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault()
+          plot.click()
+        }
+      })
+
+      const setupPlots = (root: ParentNode = document) => {
+        root.querySelectorAll<HTMLElement>('.vp-plot:not([data-plot-ready])').forEach(plot => {
+          if (innerWidth <= 768 && plot.dataset.plotDefaultTrigger === 'true') plot.classList.replace('hover', 'click')
+          if (plot.classList.contains('click')) {
+            plot.tabIndex = 0
+            plot.setAttribute('role', 'button')
+          }
+          plot.dataset.plotReady = 'true'
+        })
+      }
+      setupPlots()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        setupPlots(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+
+      const timelineMedia = matchMedia('(max-width: 639px)')
+      const setupTimelines = (root: ParentNode = document) => {
+        root.querySelectorAll<HTMLElement>('[data-timeline-between]').forEach(item => {
+          const placement = item.dataset.timelineBetween === 'right' ? 'right' : 'left'
+          item.classList.toggle('between', !timelineMedia.matches)
+          item.classList.toggle(`between-${placement}`, !timelineMedia.matches)
+          item.classList.toggle('placement-left', timelineMedia.matches)
+        })
+      }
+      setupTimelines()
+      timelineMedia.addEventListener('change', () => setupTimelines())
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        setupTimelines(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+
+      document.querySelectorAll<HTMLElement>('[data-code-tree]').forEach(tree => {
+        const entry = tree.dataset.entryFile
+        const button = [...tree.querySelectorAll<HTMLElement>('[data-code-file]')].find(item => item.dataset.codeFile === entry)
+          ?? tree.querySelector<HTMLElement>('[data-code-file]')
+        if (button) selectCodeTreeFile(button)
+      })
+
+      document.querySelectorAll<HTMLElement>('[data-global-encrypt], [data-encrypt-snippet], [data-page-encrypt]').forEach(element => {
+        const input = element.querySelector<HTMLInputElement>('input[type="password"]')
+        const button = element.querySelector<HTMLButtonElement>('button')
+        const error = element.querySelector<HTMLElement>('.snippet-error')
+        const warning = element.querySelector<HTMLElement>('.snippet-warning')
+        const idleButton = button?.innerHTML ?? ''
+        let unlocking = false
+        if (!crypto.subtle) {
+          if (warning) warning.hidden = false
+          if (button) button.disabled = true
+          return
+        }
+        const submit = async () => {
+          if (!input || !button || unlocking || (element.matches('[data-encrypt-snippet]') && !input.value)) return
+          unlocking = true
+          if (button.matches('.encrypt-button')) button.classList.add('unlocking')
+          button.innerHTML = '<span class="vpi-loading"></span>'
+          try {
+            await unlockEncrypted(element, input.value)
+          } catch {
+            input.classList.add('error')
+            input.setAttribute('aria-invalid', 'true')
+            input.setAttribute('aria-describedby', 'encrypt-error')
+            element.querySelector('.snippet-form')?.classList.add('error')
+            element.classList.add('animation')
+            if (error) error.hidden = false
+            setTimeout(() => element.classList.remove('animation'), 800)
+            button.innerHTML = idleButton
+            button.classList.remove('unlocking')
+            unlocking = false
+          }
+        }
+        input?.addEventListener('input', () => {
+          input.classList.remove('error')
+          input.setAttribute('aria-invalid', 'false')
+          input.removeAttribute('aria-describedby')
+          element.querySelector('.snippet-form')?.classList.remove('error')
+          if (error) error.hidden = true
+          if (button && element.matches('[data-encrypt-snippet]')) button.disabled = !input.value
+        })
+        input?.addEventListener('keydown', event => {
+          if (event.key === 'Enter') void submit()
+        })
+        button?.addEventListener('click', () => { void submit() })
+        void unlockEncrypted(element).catch(() => {})
+      })
+
+      const localNavTimers = new WeakMap<HTMLElement, { timer?: number, frame?: number }>()
+      const localNavClasses = (prefix: string) => [`${prefix}-enter-from`, `${prefix}-enter-active`, `${prefix}-enter-to`, `${prefix}-leave-from`, `${prefix}-leave-active`, `${prefix}-leave-to`]
+      const resetLocalNavTransition = (element: HTMLElement, visible: boolean, prefix: string) => {
+        const pending = localNavTimers.get(element)
+        if (pending?.timer) clearTimeout(pending.timer)
+        if (pending?.frame) cancelAnimationFrame(pending.frame)
+        localNavTimers.delete(element)
+        element.classList.remove(...localNavClasses(prefix))
+        element.hidden = !visible
+        if (!visible) element.remove()
+      }
+      const toggleLocalNavTransition = (element: HTMLElement | null, open: boolean, prefix: string) => {
+        if (!element || (!open && !element.isConnected)) return
+        resetLocalNavTransition(element, true, prefix)
+        if (matchMedia('(prefers-reduced-motion: reduce)').matches) return resetLocalNavTransition(element, open, prefix)
+        const phase = open ? 'enter' : 'leave'
+        element.classList.add(`${prefix}-${phase}-from`)
+        void element.offsetWidth
+        element.classList.add(`${prefix}-${phase}-active`)
+        const pending: { timer?: number, frame?: number } = {}
+        pending.frame = requestAnimationFrame(() => {
+          element.classList.replace(`${prefix}-${phase}-from`, `${prefix}-${phase}-to`)
+          pending.timer = window.setTimeout(() => resetLocalNavTransition(element, open, prefix), 200)
+        })
+        localNavTimers.set(element, pending)
+      }
+      const initLocalNav = (localNav: HTMLElement) => {
+        if (!localNav.dataset.localNavReady) {
+          const updateReachedTop = () => {
+            const navHeight = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue('--vp-nav-height'))
+            localNav.classList.toggle('reached-top', scrollY >= navHeight)
+          }
+          addEventListener('scroll', updateReachedTop, { passive: true })
+          updateReachedTop()
+          localNav.dataset.localNavReady = 'true'
+        }
+        const outline = localNav.querySelector<HTMLElement>('.vp-local-nav-outline-dropdown')
+        const button = outline?.querySelector<HTMLButtonElement>('.outline-toggle')
+        if (!outline || !button || button.dataset.outlineReady) return
+        const items = outline.querySelector<HTMLElement>('.items')
+        const mask = outline.querySelector<HTMLElement>('.outline-mask')
+        items?.remove()
+        mask?.remove()
+        const close = () => {
+          button.setAttribute('aria-expanded', 'false')
+          button.classList.remove('open')
+          toggleLocalNavTransition(items, false, 'fade-in-scale-up')
+          toggleLocalNavTransition(mask, false, 'fade-in')
+        }
+        button.addEventListener('click', () => {
+          const open = button.getAttribute('aria-expanded') !== 'true'
+          button.setAttribute('aria-expanded', String(open))
+          button.classList.toggle('open', open)
+          if (open) {
+            const navHeight = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue('--vp-nav-height'))
+            outline.style.setProperty('--vp-vh', `${innerHeight + Math.min(scrollY - navHeight, 0)}px`)
+            if (mask && items) outline.append(mask, items)
+          }
+          toggleLocalNavTransition(items, open, 'fade-in-scale-up')
+          toggleLocalNavTransition(mask, open, 'fade-in')
+        })
+        items?.addEventListener('click', event => {
+          if (!(event.target instanceof Element) || !event.target.closest('.outline-link')) return
+          items.style.transition = 'none'
+          close()
+          setTimeout(() => items.style.removeProperty('transition'), 220)
+        })
+        mask?.addEventListener('click', close)
+        addEventListener('keydown', event => { if (event.key === 'Escape') close() })
+        button.dataset.outlineReady = 'true'
+      }
+      const initLocalNavs = () => document.querySelectorAll<HTMLElement>('.vp-local-nav').forEach(initLocalNav)
+      initLocalNavs()
+      document.addEventListener('ermaozi-outline-updated', initLocalNavs)
+
+      const createOutlineList = (items: OutlineItem[], root = false): HTMLUListElement => {
+        const list = document.createElement('ul')
+        list.className = root ? 'root' : 'nested'
+        items.forEach(item => {
+          const row = document.createElement('li')
+          const link = document.createElement('a')
+          link.className = 'outline-link'
+          link.href = `#${item.id}`
+          link.textContent = item.label
+          row.append(link)
+          if (item.children.length) row.append(createOutlineList(item.children))
+          list.append(row)
+        })
+        return list
+      }
+      const outlineSignature = (root: ParentNode | null) => JSON.stringify([...root?.querySelectorAll<HTMLAnchorElement>('.outline-link[href^="#"]') ?? []].map(link => [decodeURIComponent(link.hash.slice(1)), link.textContent?.trim()]))
+      const itemSignature = (items: OutlineItem[]) => {
+        const links: string[][] = []
+        const visit = (list: OutlineItem[]) => list.forEach(item => {
+          links.push([item.id, item.label])
+          visit(item.children)
+        })
+        visit(items)
+        return JSON.stringify(links)
+      }
+      const fillAsideOutline = (aside: HTMLElement, items: OutlineItem[], shell: HTMLElement) => {
+        let nav = aside.querySelector<HTMLElement>('.vp-doc-aside-outline')
+        if (!nav) {
+          aside.innerHTML = '<div class="aside-curtain"></div><div class="aside-container"><div class="aside-content"><div class="vp-doc-aside"><nav class="vp-doc-aside-outline" aria-labelledby="doc-outline-aria-label" role="navigation"><div class="content"><div class="outline-marker"></div><div id="doc-outline-aria-label" aria-level="2" class="outline-title" role="heading"><span></span><span class="vpi-print icon" role="button" tabindex="0"></span></div></div></nav><div class="spacer"></div></div></div></div>'
+          nav = aside.querySelector<HTMLElement>('.vp-doc-aside-outline')!
+        }
+        nav.classList.toggle('has-outline', items.length > 0)
+        nav.querySelector('.root')?.remove()
+        nav.querySelector('.content')?.append(createOutlineList(items, true))
+        const title = nav.querySelector<HTMLElement>('.outline-title > span:first-child')
+        const print = nav.querySelector<HTMLElement>('.vpi-print')
+        if (title) title.textContent = shell.dataset.outlineLabel ?? 'On this page'
+        if (print) print.setAttribute('aria-label', shell.dataset.outlinePrintLabel ?? 'Print')
+      }
+      const fillLocalOutline = (localNav: HTMLElement, items: OutlineItem[], shell: HTMLElement) => {
+        localNav.classList.remove('with-outline')
+        let dropdown = localNav.querySelector<HTMLElement>('.vp-local-nav-outline-dropdown')
+        if (!dropdown) {
+          dropdown = document.createElement('div')
+          dropdown.className = 'vp-local-nav-outline-dropdown'
+          localNav.append(dropdown)
+        }
+        dropdown.replaceChildren()
+        if (!items.length) return
+        const button = document.createElement('button')
+        button.className = 'outline-toggle'
+        button.type = 'button'
+        button.setAttribute('aria-expanded', 'false')
+        const icon = document.createElement('span')
+        icon.className = 'vpi-chevron-right icon'
+        icon.setAttribute('aria-hidden', 'true')
+        button.append(document.createTextNode(shell.dataset.outlineLabel ?? 'On this page'), icon)
+        const mask = document.createElement('div')
+        mask.className = 'outline-mask'
+        mask.hidden = true
+        const itemShell = document.createElement('div')
+        itemShell.className = 'items'
+        itemShell.hidden = true
+        const outline = document.createElement('div')
+        outline.className = 'outline'
+        outline.append(createOutlineList(items))
+        itemShell.append(outline)
+        dropdown.append(button, mask, itemShell)
+      }
+      const createPostLocalNav = (shell: HTMLElement) => {
+        const localNav = document.createElement('div')
+        localNav.className = 'vp-local-nav is-posts'
+        const menu = document.createElement('button')
+        menu.className = 'menu hidden'
+        menu.type = 'button'
+        menu.disabled = true
+        menu.setAttribute('aria-expanded', 'false')
+        menu.setAttribute('aria-controls', 'SidebarNav')
+        const icon = document.createElement('span')
+        icon.className = 'vpi-align-left menu-icon'
+        icon.setAttribute('aria-hidden', 'true')
+        const text = document.createElement('span')
+        text.className = 'menu-text'
+        text.textContent = shell.dataset.outlineMenuLabel ?? 'Menu'
+        menu.append(icon, text)
+        localNav.append(menu)
+        document.getElementById('VPContent')?.before(localNav)
+        return localNav
+      }
+      const syncOutline = (shell: HTMLElement) => {
+        if (shell.hasAttribute('data-dynamic-outline') && shell.querySelector('[data-page-encrypt]')) return false
+        const article = shell.querySelector<HTMLElement>('.vp-doc')
+        if (!article) return false
+        let range: ThemeOutline = [2, 3]
+        try { range = JSON.parse(shell.dataset.outlineRange ?? '[2,3]') }
+        catch { /* use the frozen default */ }
+        const items = outlineOfHtml(article.innerHTML, range)
+        const signature = itemSignature(items)
+        const posts = shell.hasAttribute('data-outline-post')
+        const asideEnabled = shell.dataset.outlineAside !== 'false' && (!posts || items.length > 0)
+        shell.classList.remove('with-encrypt')
+        const columns = shell.querySelector<HTMLElement>(':scope > .container')
+        let aside = columns?.querySelector<HTMLElement>(':scope > .aside') ?? null
+        let changed = false
+        if (asideEnabled && columns) {
+          if (!aside) {
+            aside = document.createElement('div')
+            aside.className = 'aside'
+            columns.insertBefore(aside, columns.querySelector(':scope > .content'))
+            changed = true
+          }
+          aside.classList.toggle('left-aside', shell.dataset.outlineAside === 'left')
+          if (outlineSignature(aside) !== signature) {
+            fillAsideOutline(aside, items, shell)
+            changed = true
+          }
+          shell.classList.add('has-aside')
+        } else {
+          if (posts && aside) {
+            aside.remove()
+            changed = true
+          }
+          shell.classList.remove('has-aside')
+        }
+        let localNav = document.querySelector<HTMLElement>('.vp-local-nav')
+        if (posts && items.length && !localNav) {
+          localNav = createPostLocalNav(shell)
+          changed = true
+        }
+        if (posts && !items.length && localNav?.classList.contains('is-posts')) {
+          localNav.remove()
+          localNav = null
+          changed = true
+        }
+        if (localNav && (posts || shell.classList.contains('has-sidebar'))) {
+          if (localNav.classList.contains('with-outline') || outlineSignature(localNav) !== signature) {
+            fillLocalOutline(localNav, items, shell)
+            changed = true
+          }
+        }
+        shell.removeAttribute('data-dynamic-outline')
+        return changed
+      }
+      const outlineControllers = new WeakMap<HTMLElement, () => void>()
+      const initActiveOutline = (activeOutline: HTMLElement) => {
+        const existing = outlineControllers.get(activeOutline)
+        if (existing) return existing()
+        let frame = 0
+        let hashTimer = 0
+        const activateOutline = () => {
+          frame = 0
+          if (!activeOutline.isConnected) return
+          const links = [...activeOutline.querySelectorAll<HTMLAnchorElement>('.outline-link[href^="#"]')]
+          const headings = [...new Set(links.map(link => decodeURIComponent(link.hash.slice(1))))]
+            .map(id => ({ hash: `#${id}`, element: document.getElementById(id) }))
+            .filter((item): item is { hash: string, element: HTMLElement } => Boolean(item.element))
+          const hasSidebar = Boolean(document.querySelector('.vp-sidebar'))
+          if (innerWidth < (hasSidebar ? 1280 : 960)) return
+          const scrollY = Math.round(window.scrollY)
+          const activationOffset = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) + 1
+          const bottom = Math.abs(scrollY + window.innerHeight - document.body.offsetHeight) < 2
+          let hash = ''
+          if (scrollY > 0) {
+            for (const heading of headings) {
+              if (heading.element.getBoundingClientRect().top > activationOffset) break
+              hash = heading.hash
+            }
+          }
+          if (bottom) {
+            const activeIndex = headings.findIndex(heading => heading.hash === hash)
+            const routeHash = decodeURIComponent(location.hash)
+            if (headings.findIndex(heading => heading.hash === routeHash) > activeIndex) hash = routeHash
+          }
+          const active = links.find(link => decodeURIComponent(link.hash) === hash)
+          activeOutline.querySelectorAll('.outline-link.active').forEach(link => link.classList.remove('active'))
+          active?.classList.add('active')
+          const marker = activeOutline.querySelector<HTMLElement>('.outline-marker')
+          if (marker) {
+            marker.style.top = active ? `${active.offsetTop + 39}px` : '33px'
+            marker.style.opacity = active ? '1' : '0'
+          }
+          const scroller = activeOutline.closest<HTMLElement>('.aside-container')
+          if (active && scroller && scroller.getClientRects().length) {
+            const scrollerRect = scroller.getBoundingClientRect()
+            const activeRect = active.getBoundingClientRect()
+            if (activeRect.top < scrollerRect.top || activeRect.bottom > scrollerRect.bottom) active.scrollIntoView({ block: 'center' })
+          }
+          clearTimeout(hashTimer)
+          hashTimer = window.setTimeout(() => {
+            if (location.hash !== hash) history.replaceState(null, '', `${location.pathname}${location.search}${hash}`)
+          }, 500)
+        }
+        outlineControllers.set(activeOutline, activateOutline)
+        addEventListener('scroll', () => {
+          if (!frame) frame = requestAnimationFrame(activateOutline)
+        }, { passive: true })
+        setTimeout(activateOutline, 0)
+      }
+      const refreshOutlines = () => {
+        const changed = [...document.querySelectorAll<HTMLElement>('.vp-doc-container[data-outline-range]')].some(syncOutline)
+        if (changed) document.dispatchEvent(new Event('ermaozi-outline-updated'))
+        document.querySelectorAll<HTMLElement>('.vp-doc-aside-outline.has-outline').forEach(initActiveOutline)
+      }
+      document.addEventListener('click', event => {
+        const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('.outline-link[href^="#"]') : null
+        if (!link?.closest('.vp-doc-aside-outline, .vp-local-nav-outline-dropdown')) return
+        document.getElementById(decodeURIComponent(link.hash.slice(1)))?.focus({ preventScroll: true })
+        requestAnimationFrame(() => document.querySelectorAll<HTMLElement>('.vp-doc-aside-outline.has-outline').forEach(outline => outlineControllers.get(outline)?.()))
+      })
+      refreshOutlines()
+      document.addEventListener('plume-content-updated', refreshOutlines)
+
+      type ReplResult = { stdout: string[], stderr: string[], error?: string, version?: string }
+      type ReplTheme = string | { light: string, dark: string }
+      let pyodidePromise: Promise<any> | undefined
+      const createReplHighlighter = async () => {
+        const raw = document.documentElement.dataset.replTheme
+        if (!raw) return
+        const parsed = JSON.parse(raw) as ReplTheme
+        const theme = typeof parsed === 'string' ? parsed : { light: parsed.light, dark: parsed.dark }
+        const { createHighlighter } = await import('shiki')
+        const themes = (typeof theme === 'string' ? [theme] : [theme.light, theme.dark]) as Parameters<typeof createHighlighter>[0]['themes']
+        const langs = ['go', 'kotlin', 'rust', 'python'] as Parameters<typeof createHighlighter>[0]['langs']
+        return { highlighter: await createHighlighter({ themes, langs }), theme }
+      }
+      let replHighlighterPromise: ReturnType<typeof createReplHighlighter> | undefined
+      const getReplHighlighter = () => replHighlighterPromise ??= createReplHighlighter()
+      const loadPyodide = () => pyodidePromise ??= new Promise((resolve, reject) => {
+        const ready = () => (globalThis as any).loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v314.0.2/full/' }).then(resolve, reject)
+        if ((globalThis as any).loadPyodide) return ready()
+        const script = document.createElement('script')
+        script.src = 'https://cdn.jsdelivr.net/pyodide/v314.0.2/full/pyodide.js'
+        script.onload = ready
+        script.onerror = () => reject(new Error('Failed to load Pyodide'))
+        document.head.append(script)
+      })
+      const runRust = (code: string) => new Promise<ReplResult>((resolve, reject) => {
+        const socket = new WebSocket('wss://play.rust-lang.org/websocket')
+        const stdout: string[] = []
+        const stderr: string[] = []
+        let stdoutBuffer = ''
+        let stderrBuffer = ''
+        let accepted = false
+        const timer = setTimeout(() => { socket.close(); reject(new Error('Rust playground timed out')) }, 30_000)
+        const send = (type: string, payload: Record<string, unknown>, meta: Record<string, unknown>) => socket.send(JSON.stringify({ type, meta, payload }))
+        socket.addEventListener('open', () => send('websocket/connected', { iAcceptThisIsAnUnsupportedApi: true }, { websocket: true, sequenceNumber: 0 }))
+        socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Rust playground connection failed')) })
+        socket.addEventListener('message', event => {
+          const message = JSON.parse(String(event.data))
+          if (!accepted && message.type === 'websocket/connected') {
+            accepted = true
+            send('output/execute/wsExecuteRequest', { backtrace: false, channel: 'stable', crateType: 'bin', edition: '2021', mode: 'release', tests: false, code }, { sequenceNumber: 0 })
+            return
+          }
+          if (message.meta?.sequenceNumber !== 0) return
+          if (message.type === 'output/execute/wsExecuteStdout') {
+            stdoutBuffer += String(message.payload ?? '')
+            if (stdoutBuffer.endsWith('\n')) { stdout.push(stdoutBuffer); stdoutBuffer = '' }
+          }
+          if (message.type === 'output/execute/wsExecuteStderr') {
+            stderrBuffer += String(message.payload ?? '')
+            if (stderrBuffer.endsWith('\n')) { stderr.push(stderrBuffer); stderrBuffer = '' }
+          }
+          if (message.type === 'output/execute/wsExecuteEnd') {
+            clearTimeout(timer)
+            socket.close()
+            resolve({ stdout: [...stdout, stdoutBuffer].filter(Boolean), stderr: [...stderr, stderrBuffer].filter(Boolean), error: message.payload?.success === false ? message.payload.exitDetail : '', version: 'release' })
+          }
+        })
+      })
+      const executeRepl = async (lang: string, code: string): Promise<ReplResult> => {
+        if (lang === 'go') {
+          const response = await fetch('https://api.pengzhanbo.cn/repl/golang/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) })
+          if (!response.ok) throw new Error(`Go playground ${response.status}`)
+          const result = await response.json()
+          const stdout: string[] = []
+          const stderr: string[] = []
+          for (const event of result.events ?? []) {
+            if (event.delay) await new Promise(resolve => setTimeout(resolve, event.delay / 1_000_000))
+            ;(event.kind === 'stderr' ? stderr : stdout).push(event.message)
+          }
+          return { stdout, stderr, error: result.error, version: result.version ? `v${result.version}` : '' }
+        }
+        if (lang === 'kotlin') {
+          const response = await fetch('https://api.pengzhanbo.cn/repl/kotlin/run', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ args: '', files: [{ name: 'File.kt', publicId: '', text: code }] }) })
+          if (!response.ok) throw new Error(`Kotlin playground ${response.status}`)
+          const result = await response.json()
+          const errors = result.errors?.['File.kt']
+          const stderr = (Array.isArray(errors) ? errors : errors ? [errors] : []).filter(item => item.severity === 'ERROR').map(item => item.message)
+          return { stdout: result.text === undefined ? [] : [String(result.text)], stderr, version: result.version ? `v${result.version}` : '' }
+        }
+        if (lang === 'rust') return runRust(code)
+        if (lang === 'python') {
+          const pyodide = await loadPyodide()
+          const stdout: string[] = []
+          pyodide.setStdout({ batched: (message: string) => stdout.push(message) })
+          try {
+            const value = pyodide.runPython(code)
+            if (value !== undefined && value !== null && String(value)) stdout.push(String(value))
+            return { stdout, stderr: [] }
+          } catch (error) { return { stdout, stderr: [String(error)] } }
+        }
+        throw new Error(`Unsupported language: ${lang}`)
+      }
+      const initCodeRepls = (root: ParentNode = document) => root.querySelectorAll<HTMLElement>('[data-code-repl]:not([data-repl-ready])').forEach(repl => {
+        repl.dataset.replReady = 'true'
+        const editor = repl.querySelector<HTMLElement>('.code-repl-editor')
+        const pre = editor?.querySelector<HTMLElement>('pre')
+        const codeElement = pre?.querySelector<HTMLElement>('code')
+        const code = () => {
+          const textarea = editor?.querySelector<HTMLTextAreaElement>('textarea')
+          if (textarea) return textarea.value
+          const clone = pre?.cloneNode(true) as HTMLElement | undefined
+          clone?.querySelectorAll('.diff.remove,.vp-copy-ignore,.line-numbers').forEach(node => node.remove())
+          return clone?.textContent ?? ''
+        }
+        if (repl.dataset.replEditable === 'true' && editor && pre && codeElement) {
+          const textarea = document.createElement('textarea')
+          textarea.className = 'code-repl-input'
+          textarea.spellcheck = false
+          textarea.setAttribute('aria-label', `${repl.dataset.replLang} code`)
+          textarea.value = code()
+          let highlightRun = 0
+          const highlight = async () => {
+            const run = ++highlightRun
+            const configured = await getReplHighlighter()
+            if (!configured || run !== highlightRun) return
+            const options = typeof configured.theme === 'string'
+              ? { lang: repl.dataset.replLang ?? 'text', theme: configured.theme }
+              : { lang: repl.dataset.replLang ?? 'text', themes: configured.theme, defaultColor: false }
+            const template = document.createElement('template')
+            template.innerHTML = configured.highlighter.codeToHtml(textarea.value, options as Parameters<typeof configured.highlighter.codeToHtml>[1])
+            const renderedPre = template.content.querySelector('pre')
+            const renderedCode = renderedPre?.querySelector('code')
+            if (!renderedPre || !renderedCode || run !== highlightRun) return
+            codeElement.innerHTML = renderedCode.innerHTML
+            codeElement.setAttribute('style', renderedCode.getAttribute('style') ?? '')
+            pre.setAttribute('style', renderedPre.getAttribute('style') ?? '')
+            const numbers = editor.querySelector<HTMLElement>('.line-numbers')
+            if (numbers) numbers.innerHTML = Array.from({ length: textarea.value.split('\n').length }, () => '<div class="line-number"></div>').join('')
+          }
+          textarea.addEventListener('input', () => void highlight())
+          editor.append(textarea)
+          void highlight()
+        }
+        const run = repl.querySelector<HTMLButtonElement>('.icon-run')
+        const output = repl.querySelector<HTMLElement>('.code-repl-output')
+        const content = repl.querySelector<HTMLElement>('.output-content')
+        const version = repl.querySelector<HTMLElement>('.output-version')
+        const render = (result: ReplResult) => {
+          if (!content) return
+          content.replaceChildren()
+          if (result.error) {
+            const error = document.createElement('p')
+            error.className = 'error'
+            error.textContent = result.error
+            content.append(error)
+          }
+          for (const [name, lines] of [['stderr', result.stderr], ['stdout', result.stdout]] as const) {
+            if (!lines.length) continue
+            const group = document.createElement('div')
+            group.className = name
+            if (result.stderr.length && name === 'stdout' || name === 'stderr') {
+              const heading = document.createElement('h4')
+              heading.textContent = `${name === 'stderr' ? 'Stderr' : 'Stdout'}:`
+              group.append(heading)
+            }
+            lines.forEach(line => {
+              const pre = document.createElement('pre')
+              pre.textContent = line
+              group.append(pre)
+            })
+            content.append(group)
+          }
+          if (version) version.textContent = result.version ? `Running on: ${repl.dataset.replLang} ${result.version}` : ''
+        }
+        run?.addEventListener('click', async () => {
+          if (!run || !output || !content) return
+          output.hidden = false
+          content.innerHTML = '<span class="loading">Running…</span>'
+          run.disabled = true
+          output.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          try { render(await executeRepl(repl.dataset.replLang ?? '', code())) }
+          catch (error) { render({ stdout: [], stderr: [], error: error instanceof Error ? error.message : String(error) }) }
+          run.disabled = false
+        })
+        repl.querySelector<HTMLButtonElement>('.icon-close')?.addEventListener('click', () => {
+          if (output) output.hidden = true
+          if (content) content.replaceChildren()
+          if (version) version.textContent = ''
+        })
+      })
+      initCodeRepls()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        initCodeRepls(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+
+      const responsiveCount = (raw: string | undefined, defaults: { sm: number, md: number, lg: number }, mdBreakpoint: number) => {
+        if (!raw) return innerWidth >= 960 ? defaults.lg : innerWidth >= mdBreakpoint ? defaults.md : defaults.sm
+        try {
+          const value = JSON.parse(raw)
+          if (typeof value === 'number') return value
+          return innerWidth >= 960 ? value.lg ?? defaults.lg : innerWidth >= mdBreakpoint ? value.md ?? defaults.md : value.sm ?? defaults.sm
+        } catch {
+          const value = Number(raw)
+          return Number.isInteger(value) && value > 0 ? value : defaults.sm
+        }
+      }
+
+      document.querySelectorAll<HTMLElement>('[data-dynamic-cards-app]:not([data-dynamic-cards-ready])').forEach(root => {
+        try {
+          const module = { exports: {} as { default?: object } }
+          const source = new TextDecoder().decode(Uint8Array.from(atob(root.dataset.dynamicCardsCode ?? ''), character => character.charCodeAt(0)))
+          Function('require', 'module', 'exports', source)((specifier: string) => {
+            if (specifier === 'vue') return VueRuntime
+            throw new Error(`Unsupported dynamic card dependency: ${specifier}`)
+          }, module, module.exports)
+          const app = VueRuntime.createApp(module.exports.default!)
+          app.mount(root)
+          root.dataset.dynamicCardsReady = 'true'
+        } catch (error) {
+          root.dataset.dynamicCardsError = 'true'
+          console.error('dynamic cards error:', error)
+        }
+      })
+
+      document.querySelectorAll<HTMLElement>('[data-card-grid-cols]').forEach(grid => {
+        const draw = () => {
+          const count = responsiveCount(grid.dataset.cardGridCols, { sm: 1, md: 2, lg: 2 }, 768)
+          grid.className = `vp-card-grid cols-${count}`
+          grid.style.gridTemplateColumns = `repeat(${count}, 1fr)`
+        }
+        draw()
+        addEventListener('resize', draw, { passive: true })
+      })
+
+      document.querySelectorAll<HTMLElement>('.vp-card-masonry').forEach((masonry, masonryIndex) => {
+        const items = [...masonry.children]
+        const gap = Number(masonry.dataset.masonryGap) || 16
+        items.forEach((item, itemIndex) => item.classList.add(`masonry-v-${masonryIndex}-${itemIndex}`))
+        const draw = () => {
+          const count = responsiveCount(masonry.dataset.masonryCols, { sm: 2, md: 2, lg: 3 }, 640)
+          const heights = Array.from({ length: count }, () => 0)
+          const itemHeights = items.map(item => (item as HTMLElement).offsetHeight)
+          const columns = Array.from({ length: count }, () => {
+            const column = document.createElement('div')
+            column.className = 'card-masonry-item'
+            column.style.gap = `${gap}px`
+            return column
+          })
+          masonry.replaceChildren(...columns)
+          masonry.className = `vp-card-masonry cols-${count}`
+          masonry.style.gap = `${gap}px`
+          masonry.style.setProperty('--card-masonry-cols', String(count))
+          items.forEach((item, index) => {
+            const columnIndex = heights.indexOf(Math.min(...heights))
+            columns[columnIndex].append(item)
+            heights[columnIndex] += itemHeights[index] + gap
+          })
+        }
+        draw()
+        addEventListener('resize', draw, { passive: true })
+        new ResizeObserver(draw).observe(masonry)
+        masonry.querySelectorAll('img').forEach(image => image.addEventListener('load', draw, { once: true }))
+      })
+
+      const backToTop = document.querySelector<HTMLButtonElement>('.vp-back-to-top')
+      const footer = document.querySelector<HTMLElement>('.vp-footer')
+      if (footer) {
+        const updateFooterHeight = () => document.body.style.setProperty('--vp-footer-height', `${footer.offsetHeight}px`)
+        new ResizeObserver(updateFooterHeight).observe(footer)
+        updateFooterHeight()
+      }
+      if (backToTop) {
+        const percent = backToTop.querySelector<HTMLElement>('.percent')
+        const circle = backToTop.querySelector<SVGCircleElement>('circle')
+        let scrollTimer = 0
+        const updateBackToTop = () => {
+          const scrollable = Math.max(document.documentElement.scrollHeight - innerHeight, 0)
+          const progress = scrollable ? Math.min(Math.round(scrollY / scrollable * 100), 100) : 0
+          backToTop.hidden = !scrollable || scrollY <= innerHeight / 2
+          percent?.classList.add('show')
+          backToTop.querySelector('.icon')?.classList.remove('show')
+          if (percent) percent.textContent = `${progress}%`
+          if (circle) circle.style.strokeDasharray = `calc(${Math.PI * progress}% - ${4 * Math.PI}px) calc(${Math.PI * 100}% - ${4 * Math.PI}px)`
+          clearTimeout(scrollTimer)
+          scrollTimer = window.setTimeout(() => {
+            percent?.classList.remove('show')
+            backToTop.querySelector('.icon')?.classList.add('show')
+          }, 1000)
+        }
+        addEventListener('scroll', updateBackToTop, { passive: true })
+        addEventListener('resize', updateBackToTop, { passive: true })
+        backToTop.addEventListener('click', () => scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }))
+        updateBackToTop()
+      }
+
+      const bulletin = document.querySelector<HTMLElement>('.vp-bulletin')
+      if (bulletin) {
+        const lifetime = bulletin.dataset.bulletinLifetime
+        const storage = lifetime === 'once' ? localStorage : lifetime === 'session' ? sessionStorage : null
+        const key = 'plume:bulletin'
+        bulletin.hidden = Boolean(storage && storage.getItem(key) === bulletin.dataset.bulletinId)
+        const transition = (phase: 'enter' | 'leave', done?: () => void) => {
+          const active = `fade-in-scale-up-${phase}-active`
+          const from = `fade-in-scale-up-${phase}-from`
+          const to = `fade-in-scale-up-${phase}-to`
+          let finished = false
+          const clear = () => {
+            if (finished) return
+            finished = true
+            bulletin.classList.remove(active, from, to)
+            done?.()
+          }
+          bulletin.classList.add(active, from)
+          if (matchMedia('(prefers-reduced-motion: reduce)').matches) return clear()
+          void bulletin.offsetHeight
+          bulletin.classList.replace(from, to)
+          bulletin.addEventListener('transitionend', clear, { once: true })
+          setTimeout(clear, 250)
+        }
+        if (!bulletin.hidden) transition('enter')
+        bulletin.querySelector<HTMLButtonElement>('.close')?.addEventListener('click', () => {
+          if (storage) storage.setItem(key, bulletin.dataset.bulletinId ?? '')
+          transition('leave', () => { bulletin.hidden = true })
+        })
+      }
+
+      const watermarkConfig = document.querySelector<HTMLScriptElement>('[data-watermark-options]')
+      if (watermarkConfig?.textContent) {
+        const watermark = new PageWatermark()
+        void watermark.changeOptions(JSON.parse(watermarkConfig.textContent))
+      }
+
+      const repoElement = (tag: string, className = '', text?: string) => {
+        const element = document.createElement(tag)
+        if (className) element.className = className
+        if (text !== undefined) element.textContent = text
+        return element
+      }
+      const repoCount = (value: number) => value < 1000 ? String(value) : `${(value / 1000).toFixed(1)}k`
+      const renderRepoCard = (card: HTMLElement, data: Record<string, any>) => {
+        if (!data?.name) return
+        const provider = card.dataset.provider === 'gitee' ? 'gitee' : 'github'
+        const fullname = card.dataset.fullname === 'true' || (card.dataset.fullname === undefined && data.ownerType === 'Organization')
+        const name = repoElement('p', 'repo-name')
+        name.append(repoElement('span', `vpi-${provider}-repo`))
+        const linkWrap = repoElement('span', 'repo-link')
+        const link = repoElement('a', 'no-icon', fullname ? data.fullName : data.name) as HTMLAnchorElement
+        link.href = data.url
+        link.target = '_blank'
+        link.rel = 'noopener noreferrer'
+        link.title = data.fullName
+        linkWrap.append(link)
+        const visibility = repoElement('span', `repo-visibility${data.archived ? ' archived' : ''}`, `${data.visibility}${data.template ? ' Template' : ''}${data.archived ? ' archive' : ''}`)
+        name.append(linkWrap, visibility)
+        const description = repoElement('p', 'repo-desc', data.description ?? '')
+        description.title = data.description ?? ''
+        const info = repoElement('div', 'repo-info')
+        if (data.language) {
+          const language = repoElement('p')
+          const dot = repoElement('span', 'repo-language')
+          dot.style.backgroundColor = data.languageColor ?? ''
+          language.append(dot, repoElement('span', '', data.language))
+          info.append(language)
+        }
+        for (const [kind, value, title] of [
+          ['star', data.convertStars ?? repoCount(Number(data.stars ?? 0)), `Stars: ${data.stars ?? 0}`],
+          ['fork', data.convertForks ?? repoCount(Number(data.forks ?? 0)), `Forks: ${data.forks ?? 0}`],
+        ]) {
+          const item = repoElement('p')
+          item.title = String(title)
+          item.append(repoElement('span', `vpi-github-${kind}`), repoElement('span', '', String(value)))
+          info.append(item)
+        }
+        if (data.license?.name) {
+          const license = repoElement('p')
+          license.title = `License: ${data.license.name}`
+          license.append(repoElement('span', 'vpi-github-license'), repoElement('span', '', data.license.name))
+          info.append(license)
+        }
+        card.replaceChildren(name, description, info)
+        card.hidden = false
+      }
+      const loadRepoCards = async (root: ParentNode = document) => {
+        const cards = [...root.querySelectorAll<HTMLElement>('[data-repo-card]:not([data-loaded])')]
+        if (!cards.length) return
+        let cache: Record<string, { info: Record<string, any>, updatedAt: number }> = {}
+        try { cache = JSON.parse(localStorage.getItem('__VUEPRESS_GITHUB_REPO__') ?? '{}') } catch {}
+        await Promise.all(cards.map(async card => {
+          card.dataset.loaded = 'true'
+          const [owner = '', name = ''] = (card.dataset.repo ?? '').split('/')
+          if (!owner || !name) return
+          const provider = card.dataset.provider === 'gitee' ? 'gitee' : 'github'
+          const key = `${provider === 'github' ? '' : `${provider}:`}${owner}/${name}`
+          let info = cache[key]?.info
+          if (!info?.name || Date.now() - cache[key].updatedAt > 86_400_000) {
+            try {
+              const response = await fetch(`https://api.pengzhanbo.cn/${provider}/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`)
+              if (!response.ok) throw new Error(`HTTP ${response.status}`)
+              info = await response.json()
+              info.convertStars = repoCount(Number(info.stars ?? 0))
+              info.convertForks = repoCount(Number(info.forks ?? 0))
+              cache[key] = { info, updatedAt: Date.now() }
+              try { localStorage.setItem('__VUEPRESS_GITHUB_REPO__', JSON.stringify(cache)) } catch {}
+            } catch (error) {
+              console.error('github repo error:', error)
+              return
+            }
+          }
+          renderRepoCard(card, info)
+        }))
+      }
+      void loadRepoCards()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        void loadRepoCards(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+
+      const loadSwipers = async (root: ParentNode = document) => {
+        const elements = [...root.querySelectorAll<HTMLElement>('[data-swiper-options]:not([data-swiper-ready])')]
+        if (!elements.length) return
+        const [{ default: Swiper }, modules] = await Promise.all([import('swiper'), import('swiper/modules')])
+        const effects: Record<string, any> = {
+          fade: modules.EffectFade,
+          cube: modules.EffectCube,
+          flip: modules.EffectFlip,
+          coverflow: modules.EffectCoverflow,
+          cards: modules.EffectCards,
+          creative: modules.EffectCreative,
+        }
+        elements.forEach(element => {
+          let options: any
+          try { options = JSON.parse(element.dataset.swiperOptions ?? '{}') } catch { return }
+          const mode = options.mode ?? 'banner'
+          const enabledModules = mode === 'carousel'
+            ? [modules.Autoplay]
+            : mode === 'broadcast'
+              ? [modules.Navigation, modules.Pagination, modules.Mousewheel]
+              : [modules.Navigation, modules.Pagination, modules.Autoplay, effects[options.effect]].filter(Boolean)
+          element.dataset.swiperReady = 'true'
+          const swiper = new Swiper(element, {
+            modules: enabledModules,
+            autoplay: mode === 'banner'
+              ? { delay: options.delay, disableOnInteraction: false, pauseOnMouseEnter: options.pauseOnMouseEnter }
+              : mode === 'carousel' ? { delay: 0, disableOnInteraction: false } : false,
+            navigation: options.navigation && mode !== 'carousel' ? {
+              prevEl: element.querySelector<HTMLElement>('.swiper-button-prev'),
+              nextEl: element.querySelector<HTMLElement>('.swiper-button-next'),
+            } : false,
+            pagination: mode !== 'carousel' ? { el: element.querySelector<HTMLElement>('.swiper-pagination'), dynamicBullets: true, clickable: true } : false,
+            mousewheel: mode === 'broadcast' ? options.mousewheel : false,
+            effect: mode === 'banner' ? options.effect : 'slide',
+            creativeEffect: options.creativeEffect,
+            speed: options.speed,
+            loop: options.loop,
+            slidesPerView: options.slidesPerView,
+            spaceBetween: options.spaceBetween,
+          })
+          if (mode === 'carousel' && options.pauseOnMouseEnter) {
+            element.addEventListener('mouseenter', () => swiper.autoplay.stop())
+            element.addEventListener('mouseleave', () => swiper.autoplay.start())
+          } else if (mode === 'carousel') {
+            new MutationObserver(() => {
+              swiper.wrapperEl.style.transform = 'translate3d(0px, 0px, 0px)'
+              setTimeout(() => swiper.update(), 350)
+            }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+          }
+        })
+      }
+      void loadSwipers()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        void loadSwipers(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+
+      const decodeDemoValue = (value = '') => new TextDecoder().decode(Uint8Array.from(atob(value), character => character.charCodeAt(0)))
+      const loadDemos = (root: ParentNode = document) => {
+        root.querySelectorAll<HTMLElement>('.vp-demo-wrapper:not([data-demo-controls-ready])').forEach(demo => {
+          const button = demo.querySelector<HTMLButtonElement>('[aria-label="Toggle Code"]')
+          const code = demo.querySelector<HTMLElement>('.demo-code')
+          if (button && code) {
+            button.addEventListener('click', () => {
+              code.hidden = !code.hidden
+              button.setAttribute('aria-expanded', String(!code.hidden))
+            })
+          }
+          const resourcesButton = demo.querySelector<HTMLButtonElement>('.demo-resources-toggle')
+          const resources = demo.querySelector<HTMLElement>('.demo-resources-container')
+          if (resourcesButton && resources) {
+            resourcesButton.addEventListener('click', () => {
+              resources.hidden = !resources.hidden
+              resourcesButton.setAttribute('aria-expanded', String(!resources.hidden))
+            })
+            document.addEventListener('click', event => {
+              if (event.target instanceof Node && !resourcesButton.parentElement?.contains(event.target)) {
+                resources.hidden = true
+                resourcesButton.setAttribute('aria-expanded', 'false')
+              }
+            })
+          }
+          demo.dataset.demoControlsReady = 'true'
+        })
+        root.querySelectorAll<HTMLElement>('[data-demo]:not([data-demo-ready])').forEach(demo => {
+          const frame = demo.querySelector<HTMLIFrameElement>('.draw-iframe')
+          if (!frame) return
+          const html = decodeDemoValue(demo.dataset.demoHtml)
+          const css = decodeDemoValue(demo.dataset.demoCss)
+          const cssLib = JSON.parse(decodeDemoValue(demo.dataset.demoCssLib) || '[]') as string[]
+          const jsLib = JSON.parse(decodeDemoValue(demo.dataset.demoJsLib) || '[]') as string[]
+          const scriptEnd = '<' + '/script>'
+          const js = decodeDemoValue(demo.dataset.demoJs).replaceAll(scriptEnd, '<\\' + '/script>')
+          const safeUrl = (value: string) => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')
+          const stylesheets = cssLib.map(url => `<link rel="stylesheet" href="${safeUrl(url)}">`).join('')
+          const scripts = jsLib.map(url => `<script src="${safeUrl(url)}">${scriptEnd}`).join('')
+          const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+          frame.srcdoc = `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${stylesheets}${scripts}<style>html,body{margin:0}body{padding:1px}${css}</style></head><body>${html}<script>;(function(){${js}})();${scriptEnd}</body></html>`
+          frame.addEventListener('load', () => {
+            const resize = () => { frame.style.height = `${Math.max(80, frame.contentDocument?.documentElement.scrollHeight ?? 0)}px` }
+            resize()
+            if (frame.contentDocument?.body) new ResizeObserver(resize).observe(frame.contentDocument.body)
+            demo.dataset.demoReady = 'true'
+          }, { once: true })
+        })
+        root.querySelectorAll<HTMLElement>('[data-vue-demo]:not([data-demo-ready])').forEach(demo => {
+          const mount = demo.querySelector<HTMLElement>('[data-demo-vue-mount]')
+          if (!mount) return
+          try {
+            const module = { exports: {} as { default?: object } }
+            const requireDemoDependency = (specifier: string) => {
+              if (specifier === 'vue') return VueRuntime
+              throw new Error(`Unsupported external Vue demo dependency: ${specifier}`)
+            }
+            Function('require', 'module', 'exports', decodeDemoValue(demo.dataset.demoVueCode))(requireDemoDependency, module, module.exports)
+            const component = module.exports.default
+            if (!component) throw new Error('Vue demo did not export a component')
+            const app = VueRuntime.createApp(component)
+            app.mount(mount)
+            ;(demo as HTMLElement & { __vueDemoApp?: typeof app }).__vueDemoApp = app
+            demo.dataset.demoReady = 'true'
+          } catch (error) {
+            mount.textContent = error instanceof Error ? error.message : String(error)
+            demo.dataset.demoError = 'true'
+            console.error('vue demo error:', error)
+          }
+        })
+      }
+      loadDemos()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        loadDemos(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+      document.addEventListener('theme-change', () => document.querySelectorAll<HTMLIFrameElement>('[data-demo] .draw-iframe').forEach(frame => {
+        if (frame.contentDocument) frame.contentDocument.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+      }))
+
+      const decodeChartConfig = (value = '') => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(value), character => character.charCodeAt(0))))
+      const decodeChartSource = (value = '') => new TextDecoder().decode(Uint8Array.from(atob(value), character => character.charCodeAt(0)))
+      const chartJsConfig = (element: HTMLElement) => element.dataset.chartType === 'js'
+        ? Function(`let config,__chart_js_config__;{${decodeChartSource(element.dataset.chartConfig)};__chart_js_config__=config;}return __chart_js_config__;`)()
+        : decodeChartConfig(element.dataset.chartConfig)
+      const AsyncFunction = (async () => {}).constructor as FunctionConstructor
+      const eChartsConfig = async (element: HTMLElement, echarts: unknown, chart: unknown) => element.dataset.chartType === 'js'
+        ? AsyncFunction('echarts', 'myChart', `let width,height,option,__echarts_config__;{${decodeChartSource(element.dataset.chartConfig)};__echarts_config__={width,height,option};}return __echarts_config__;`)(echarts, chart)
+        : { option: decodeChartConfig(element.dataset.chartConfig) }
+      const loadCharts = async (root: ParentNode = document, refreshChartJs = false) => {
+        const chartJs = [...root.querySelectorAll<HTMLElement>('[data-chartjs]')].filter(element => refreshChartJs || !element.dataset.chartReady)
+        const eCharts = [...root.querySelectorAll<HTMLElement>('[data-echarts]:not([data-chart-ready])')]
+        await Promise.all([
+          chartJs.length && import('chart.js/auto').then(({ default: Chart }) => {
+            Chart.defaults.borderColor = document.documentElement.dataset.theme === 'dark' ? '#ccc' : '#36a2eb'
+            Chart.defaults.color = document.documentElement.dataset.theme === 'dark' ? '#fff' : '#000'
+            Chart.defaults.maintainAspectRatio = false
+            chartJs.forEach(element => {
+              const canvas = element.querySelector<HTMLCanvasElement>('canvas')
+              if (!canvas) return
+              ;(element as any).__chart?.destroy()
+              try {
+                ;(element as any).__chart = new Chart(canvas, chartJsConfig(element))
+                element.dataset.chartReady = 'true'
+                element.style.display = 'block'
+                element.previousElementSibling?.matches('.chartjs-loading') && element.previousElementSibling?.remove()
+              } catch (error) { console.error('chartjs error:', error) }
+            })
+          }),
+          eCharts.length && import('echarts').then(async echarts => {
+            const globalConfig = useEChartsConfig()
+            if (!globalConfig.isSetup) {
+              await globalConfig.setup?.()
+              globalConfig.isSetup = true
+            }
+            await Promise.all(eCharts.map(async element => {
+              const container = element.querySelector<HTMLElement>('.echarts-container')
+              if (!container) return
+              try {
+                const chart = echarts.init(container)
+                const { option, ...size } = await eChartsConfig(element, echarts, chart)
+                chart.resize(size)
+                chart.setOption({ ...globalConfig.option, ...option })
+                ;(element as any).__chart = chart
+                element.dataset.chartReady = 'true'
+                element.querySelector('.echarts-loading')?.remove()
+              } catch (error) { console.error('echarts error:', error) }
+            }))
+          }),
+        ])
+      }
+      void loadCharts()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        void loadCharts(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+      document.addEventListener('theme-change', () => { void loadCharts(document, true) })
+      addEventListener('resize', () => document.querySelectorAll<HTMLElement>('[data-echarts]').forEach(element => (element as any).__chart?.resize()), { passive: true })
+
+      const flowchartBase = {
+        x: 0, y: 0, 'line-width': 2, 'line-length': 40, 'text-margin': 8, 'font-size': 14,
+        'font-color': '#8DA1AC', 'line-color': '#8DA1AC', 'element-color': 'black', fill: 'white',
+        'yes-text': 'Yes', 'no-text': 'No', 'arrow-end': 'block', scale: 1,
+      }
+      const flowchartPresets = {
+        ant: { ...flowchartBase, symbols: {
+          start: { class: 'start-element', 'font-color': '#fff', fill: '#595959', 'line-width': 0 },
+          end: { class: 'end-element', 'font-color': '#fff', fill: '#595959', 'line-width': 0 },
+          operation: { class: 'operation-element', 'font-color': '#fff', fill: '#1890ff', 'line-width': 0 },
+          inputoutput: { class: 'inputoutput-element', 'font-color': '#fff', fill: '#1890ff', 'line-width': 0 },
+          subroutine: { class: 'subroutine-element', 'font-color': '#fff', fill: '#FF485E', 'element-color': '#fff', 'line-color': 'red' },
+          condition: { class: 'condition-element', 'font-color': '#fff', fill: '#FF485E', 'line-width': 0 },
+          parallel: { class: 'parallel-element', 'font-color': '#fff', fill: '#1890ff', 'line-width': 0 },
+        } },
+        vue: { ...flowchartBase, symbols: {
+          start: { class: 'start-element', 'font-color': '#fff', fill: '#2F495F', 'line-width': 0 },
+          end: { class: 'end-element', 'font-color': '#fff', fill: '#2F495F', 'line-width': 0 },
+          operation: { class: 'operation-element', 'font-color': '#fff', fill: '#00BC7D', 'line-width': 0 },
+          inputoutput: { class: 'inputoutput-element', 'font-color': '#fff', fill: '#EB4D5D', 'line-width': 0 },
+          subroutine: { class: 'subroutine-element', 'font-color': '#fff', fill: '#937AC4', 'element-color': '#fff', 'line-color': 'red' },
+          condition: { class: 'condition-element', 'font-color': '#fff', fill: '#FFB500', 'line-width': 0 },
+          parallel: { class: 'parallel-element', 'font-color': '#fff', fill: '#2F495F', 'line-width': 0 },
+        } },
+        pie: { ...flowchartBase, 'line-width': 1, symbols: Object.fromEntries(
+          ['start', 'end', 'operation', 'inputoutput', 'subroutine', 'condition', 'parallel'].map(type => [type, {
+            class: `${type}-element`, fill: type === 'start' || type === 'end' ? '#ccc' : '#f1f1f1',
+            'line-color': '#5c6ac4', 'font-color': '#000',
+          }]),
+        ) },
+      }
+      const flowchartScale = () => innerWidth < 419 ? .8 : innerWidth > 1280 ? 1 : .9
+      const loadFlowcharts = async (root: ParentNode = document) => {
+        const elements = [...root.querySelectorAll<HTMLElement>('[data-flowchart]:not([data-flowchart-ready])')]
+        if (!elements.length) return
+        const { parse } = await import('flowchart.ts')
+        elements.forEach(element => {
+          try {
+            const code = new TextDecoder().decode(Uint8Array.from(atob(element.dataset.flowCode ?? ''), character => character.charCodeAt(0)))
+            const diagram = parse(code)
+            const draw = () => {
+              const scale = flowchartScale()
+              diagram.draw(element.id, { ...flowchartPresets[element.dataset.flowPreset as keyof typeof flowchartPresets], scale })
+              element.dataset.flowchartScale = String(scale)
+            }
+            draw()
+            ;(element as any).__flowchart = { diagram, draw }
+            element.dataset.flowchartReady = 'true'
+            element.style.display = 'block'
+            element.previousElementSibling?.matches('.flowchart-loading') && element.previousElementSibling?.remove()
+          } catch (error) { console.error('flowchart error:', error) }
+        })
+      }
+      void loadFlowcharts()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        void loadFlowcharts(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+      let flowchartResize: number | undefined
+      addEventListener('resize', () => {
+        clearTimeout(flowchartResize)
+        flowchartResize = window.setTimeout(() => document.querySelectorAll<HTMLElement>('[data-flowchart]').forEach(element => {
+          if (element.dataset.flowchartScale !== String(flowchartScale())) (element as any).__flowchart?.draw()
+        }), 100)
+      }, { passive: true })
+
+      const loadMarkmaps = async (root: ParentNode = document) => {
+        const elements = [...root.querySelectorAll<HTMLElement>('[data-markmap]:not([data-markmap-ready])')]
+        if (!elements.length) return
+        const [{ Transformer }, view, { Toolbar }] = await Promise.all([
+          import('markmap-lib'), import('markmap-view'), import('markmap-toolbar'),
+        ])
+        await Promise.all(elements.map(async element => {
+          const svg = element.querySelector<SVGElement>('.markmap-svg')
+          if (!svg) return
+          try {
+            const content = new TextDecoder().decode(Uint8Array.from(atob(element.dataset.markmapContent ?? ''), character => character.charCodeAt(0)))
+            const transformer = new Transformer()
+            const { frontmatter, features, root } = transformer.transform(content)
+            const { styles, scripts } = transformer.getUsedAssets(features)
+            await Promise.all([
+              scripts ? view.loadJS(scripts, { getMarkmap: () => view }) : Promise.resolve(),
+              styles ? view.loadCSS(styles) : Promise.resolve(),
+            ])
+            const markmap = view.Markmap.create(svg, view.deriveOptions({ maxWidth: 240, ...frontmatter?.markmap }))
+            const toolbar = Toolbar.create(markmap).el
+            await markmap.setData(root)
+            await markmap.fit()
+            toolbar.style.position = 'absolute'
+            toolbar.style.right = '.5rem'
+            toolbar.style.bottom = '.5rem'
+            element.append(toolbar)
+            ;(element as any).__markmap = markmap
+            element.dataset.markmapReady = 'true'
+            element.querySelector('.markmap-loading')?.remove()
+          } catch (error) { console.error('markmap error:', error) }
+        }))
+      }
+      void loadMarkmaps()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        void loadMarkmaps(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+      let markmapResize: number | undefined
+      addEventListener('resize', () => {
+        clearTimeout(markmapResize)
+        markmapResize = window.setTimeout(() => document.querySelectorAll<HTMLElement>('[data-markmap]').forEach(element => {
+          void (element as any).__markmap?.fit()
+        }), 100)
+      }, { passive: true })
+
+      const audioPlayers: HTMLAudioElement[] = []
+      const loadAudioReaders = (root: ParentNode = document) => {
+        root.querySelectorAll<HTMLElement>('[data-audio-reader]:not([data-audio-ready])').forEach(reader => {
+          const audio = document.createElement('audio')
+          const start = Number(reader.dataset.audioStart) || 0
+          const end = Number(reader.dataset.audioEnd) || 0
+          audio.className = 'audio-player'
+          audio.hidden = true
+          audio.preload = reader.dataset.audioAutoplay === 'true' ? 'auto' : 'none'
+          audio.autoplay = reader.dataset.audioAutoplay === 'true'
+          audio.src = reader.dataset.audioSrc ?? ''
+          if (reader.dataset.audioVolume !== '') audio.volume = Math.min(1, Math.max(0, Number(reader.dataset.audioVolume)))
+          const setPlaying = (playing: boolean) => {
+            reader.classList.toggle('playing', playing)
+            reader.setAttribute('aria-pressed', String(playing))
+          }
+          audio.addEventListener('canplay', () => { if (start) audio.currentTime = start })
+          audio.addEventListener('play', () => setPlaying(true))
+          audio.addEventListener('pause', () => setPlaying(false))
+          audio.addEventListener('ended', () => setPlaying(false))
+          audio.addEventListener('timeupdate', () => {
+            if (end && audio.currentTime >= end) {
+              audio.pause()
+              if (start) audio.currentTime = start
+            }
+          })
+          const toggle = () => {
+            if (audio.paused) {
+              audioPlayers.forEach(item => { if (item !== audio) item.pause() })
+              void audio.play().catch(() => setPlaying(false))
+            } else audio.pause()
+          }
+          reader.addEventListener('click', toggle)
+          reader.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              toggle()
+            }
+          })
+          document.body.append(audio)
+          audioPlayers.push(audio)
+          ;(reader as any).__audio = audio
+          reader.dataset.audioReady = 'true'
+        })
+      }
+      loadAudioReaders()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        loadAudioReaders(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+
+      const resizeEmbed = (element: HTMLElement, height: string | undefined, ratio: string | undefined) => {
+        if (height) element.style.height = height
+        else {
+          const [width, ratioHeight] = (ratio || '16:9').split(':').map(Number)
+          element.style.height = `${element.offsetWidth / (width / ratioHeight || 16 / 9)}px`
+        }
+      }
+      const loadVideoEmbeds = (root: ParentNode = document) => {
+        root.querySelectorAll<HTMLIFrameElement>('[data-video-embed]:not([data-video-ready])').forEach(frame => {
+          const resize = () => resizeEmbed(frame, frame.dataset.videoHeight, frame.dataset.videoRatio)
+          frame.addEventListener('load', resize)
+          resize()
+          frame.dataset.videoReady = 'true'
+        })
+      }
+      const loadPdfViewers = (root: ParentNode = document) => {
+        root.querySelectorAll<HTMLElement>('[data-pdf-viewer]:not([data-pdf-ready])').forEach(wrapper => {
+          const url = new URL(wrapper.dataset.pdfSrc ?? '', location.href).toString()
+          const userAgent = navigator.userAgent
+          const mobile = /Android|iPad|iPhone|iPod|Mobile/i.test(userAgent) || (/Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1)
+          const safari = !mobile && /Safari/i.test(userAgent) && !/(?:Chrome|Chromium|CriOS|Edg)/i.test(userAgent)
+          const query = `#page=${wrapper.dataset.pdfPage}&toolbar=${wrapper.dataset.pdfToolbar}&zoom=${wrapper.dataset.pdfZoom}`
+          const pdfjsUrl = new URL(wrapper.dataset.pdfjsUrl || 'https://static.pengzhanbo.cn/pdfjs/', location.href).toString().replace(/\/?$/, '/')
+          const source = mobile ? `${pdfjsUrl}web/viewer.html?file=${url}${query}` : `${url}${query}`
+          const viewer = document.createElement(mobile || safari ? 'iframe' : 'embed')
+          viewer.className = 'pdf-viewer'
+          viewer.setAttribute('type', 'application/pdf')
+          viewer.setAttribute('title', wrapper.dataset.pdfTitle || 'PDF Viewer')
+          viewer.setAttribute('src', source)
+          if (viewer instanceof HTMLIFrameElement) viewer.allow = 'fullscreen'
+          wrapper.replaceChildren(viewer)
+          resizeEmbed(wrapper, wrapper.dataset.pdfHeight, wrapper.dataset.pdfRatio)
+          wrapper.dataset.pdfReady = 'true'
+        })
+      }
+      loadVideoEmbeds()
+      loadPdfViewers()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        const root = target instanceof Element || target instanceof DocumentFragment ? target : document
+        loadVideoEmbeds(root)
+        loadPdfViewers(root)
+      })
+      addEventListener('resize', () => {
+        document.querySelectorAll<HTMLElement>('[data-video-embed]').forEach(element => resizeEmbed(element, element.dataset.videoHeight, element.dataset.videoRatio))
+        document.querySelectorAll<HTMLElement>('[data-pdf-viewer]').forEach(element => resizeEmbed(element, element.dataset.pdfHeight, element.dataset.pdfRatio))
+      }, { passive: true })
+
+      const supportedVideoTypes = new Set(['mp4', 'mp3', 'webm', 'ogg', 'mpd', 'dash', 'm3u8', 'hls', 'ts', 'flv', 'mkv', 'mov', 'ogv'])
+      const artPlayerCustomType = (type: string) => {
+        const customType: Record<string, (video: HTMLVideoElement, url: string, art: any) => Promise<void>> = {}
+        if (type === 'mpd' || type === 'dash') customType[type] = async (video, url, art) => {
+          const { supportsMediaSource, MediaPlayer } = await import('dashjs')
+          if (!supportsMediaSource()) return
+          const player = MediaPlayer().create()
+          player.initialize(video, url, art.option.autoplay, 0)
+          art.on('destroy', () => player.destroy())
+        }
+        if (type === 'm3u8' || type === 'hls') customType[type] = async (video, url, art) => {
+          if (video.canPlayType('application/x-mpegURL') || video.canPlayType('application/vnd.apple.mpegURL')) {
+            video.src = url
+            return
+          }
+          const Hls = (await import('hls.js')).default
+          if (!Hls.isSupported()) return
+          const hls = new Hls()
+          hls.attachMedia(video)
+          hls.on(Hls.Events.MEDIA_ATTACHED, () => hls.loadSource(url))
+          art.on('destroy', () => hls.destroy())
+        }
+        if (type === 'ts' || type === 'flv') customType[type] = async (video, url, art) => {
+          const mpegts = (await import('mpegts.js')).default
+          if (!mpegts.isSupported()) return
+          const player = mpegts.createPlayer({ type: 'flv', url })
+          player.attachMediaElement(video)
+          player.load()
+          art.on('destroy', () => player.destroy())
+        }
+        return customType
+      }
+      const resizeArtPlayer = (wrapper: HTMLElement) => {
+        const container = wrapper.querySelector<HTMLElement>('.vp-artplayer')
+        if (!container) return
+        if (wrapper.dataset.artplayerHeight) container.style.height = wrapper.dataset.artplayerHeight
+        else {
+          const [width, height] = (wrapper.dataset.artplayerRatio ?? '16:9').split(':').map(Number)
+          container.style.height = `${container.offsetWidth / (width / height || 16 / 9)}px`
+        }
+      }
+      const loadArtPlayers = async (root: ParentNode = document) => {
+        const wrappers = [...root.querySelectorAll<HTMLElement>('[data-artplayer]:not([data-artplayer-ready])')]
+        if (!wrappers.length) return
+        const { default: ArtPlayer } = await import('artplayer')
+        wrappers.forEach(wrapper => {
+          wrapper.querySelector('.md-power-loading')?.remove()
+          const container = wrapper.querySelector<HTMLElement>('.vp-artplayer')
+          if (!container) return
+          try {
+            const options = decodeChartConfig(wrapper.dataset.artplayerOptions)
+            if (!supportedVideoTypes.has(options.type)) throw new Error(`Unsupported video type: ${options.type}`)
+            const { customType = {}, ...playerOptions } = options
+            resizeArtPlayer(wrapper)
+            ;(wrapper as any).__artplayer = new ArtPlayer({
+              container,
+              url: wrapper.dataset.artplayerSrc,
+              lang: document.documentElement.lang.startsWith('zh') ? 'zh-cn' : 'en',
+              useSSR: false,
+              theme: getComputedStyle(document.documentElement).getPropertyValue('--vp-c-brand-1').trim() || '#5086a1',
+              hotkey: true,
+              mutex: true,
+              playsInline: true,
+              ...playerOptions,
+              customType: { ...artPlayerCustomType(options.type), ...customType },
+            })
+            wrapper.dataset.artplayerReady = 'true'
+          } catch (error) { console.error('artplayer error:', error) }
+        })
+      }
+      void loadArtPlayers()
+      document.addEventListener('plume-content-updated', event => {
+        const target = event.target
+        void loadArtPlayers(target instanceof Element || target instanceof DocumentFragment ? target : document)
+      })
+      addEventListener('resize', () => document.querySelectorAll<HTMLElement>('[data-artplayer]').forEach(resizeArtPlayer), { passive: true })
+
+      const syncCanIUseTheme = () => {
+        const dark = document.documentElement.dataset.theme === 'dark'
+        document.querySelectorAll<HTMLElement>('[data-caniuse]').forEach(embed => {
+          const feature = embed.dataset.feature ?? ''
+          const meta = embed.dataset.meta ?? ''
+          const baseline = embed.dataset.baseline === 'true'
+          const hash = baseline
+            ? `meta=${meta}&theme=${dark ? 'dark' : 'light'}`
+            : `past=${embed.dataset.past}&future=${embed.dataset.future}&meta=${meta}&theme=${dark ? 'dark' : 'light'}`
+          const frame = embed.querySelector<HTMLIFrameElement>('iframe')
+          if (frame) frame.src = `https://caniuse.pengzhanbo.cn/${encodeURIComponent(feature)}${baseline ? '/baseline' : ''}#${hash}`
+        })
+      }
+      syncCanIUseTheme()
+      document.addEventListener('theme-change', syncCanIUseTheme)
+      const syncCodeEmbedTheme = () => {
+        const theme = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+        document.querySelectorAll<HTMLIFrameElement>('[data-code-embed]:not([data-theme-locked])').forEach(frame => {
+          const url = new URL(frame.src)
+          if (frame.dataset.codeEmbed === 'codepen') url.searchParams.set('theme-id', theme)
+          else if (frame.dataset.codeEmbed === 'replit') url.searchParams.set('theme', theme)
+          else if (frame.dataset.codeEmbed === 'jsfiddle') {
+            url.pathname = `/${frame.dataset.codeSource}/embedded/${frame.dataset.codeTab}/${theme === 'dark' ? 'dark/' : ''}`
+          }
+          if (frame.src !== url.href) frame.src = url.href
+        })
+      }
+      syncCodeEmbedTheme()
+      document.addEventListener('theme-change', syncCodeEmbedTheme)
+      addEventListener('message', event => {
+        if (event.origin !== 'https://caniuse.pengzhanbo.cn') return
+        let data = event.data
+        if (typeof data === 'string') {
+          try { data = JSON.parse(data) } catch { return }
+        }
+        if (data?.type !== 'ciu-embed' || !data.payload) return
+        const embed = [...document.querySelectorAll<HTMLElement>('[data-caniuse]')].find(item => item.dataset.feature === data.payload.feature && item.dataset.meta === data.payload.meta)
+        const height = Math.ceil(Number(data.payload.height))
+        if (embed && Number.isFinite(height)) {
+          const frame = embed.querySelector<HTMLIFrameElement>('iframe')
+          if (frame) frame.style.height = `${height}px`
+        }
+      })
+
+      const qrCodes = [...document.querySelectorAll<HTMLElement>('[data-qrcode]')]
+      if (qrCodes.length) {
+        const { toCanvas, toDataURL } = await import('qrcode')
+        const loadQrLogo = (url: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+          const logo = new Image()
+          logo.crossOrigin = 'anonymous'
+          logo.onload = () => resolve(logo)
+          logo.onerror = () => reject(new Error('Failed to load QR code logo'))
+          logo.src = new URL(url, location.href).toString()
+        })
+        await Promise.all(qrCodes.map(async wrapper => {
+          const raw = wrapper.dataset.qrcodeText ?? ''
+          const text = raw === '.'
+            ? location.href.split(/[?#]/)[0]
+            : raw.startsWith('//')
+              ? `${location.protocol}${raw}`
+              : wrapper.dataset.qrcodeInternal === 'true'
+                ? new URL(raw, location.href).toString()
+                : raw
+          if (!text) return
+          const image = wrapper.querySelector<HTMLImageElement>('.qrcode-img')
+          if (!image) return
+          const level = wrapper.dataset.qrcodeLevel
+          const version = Number(wrapper.dataset.qrcodeVersion)
+          const maskPattern = Number(wrapper.dataset.qrcodeMask)
+          const margin = Number(wrapper.dataset.qrcodeMargin)
+          const scale = Number(wrapper.dataset.qrcodeScale)
+          const internal = wrapper.dataset.qrcodeInternal === 'true'
+          const logo = wrapper.dataset.qrcodeLogo || (internal ? document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.href : '')
+          const configuredLogoSize = Number.parseFloat(wrapper.dataset.qrcodeLogoSize || '0.2')
+          const logoSize = Number.isFinite(configuredLogoSize) && configuredLogoSize > 0 ? configuredLogoSize : .2
+          const pixelWidth = 300 * Math.max(Math.round(devicePixelRatio || 1), 1)
+          const options: QRCodeToDataURLOptions = {
+            width: pixelWidth,
+            margin: Number.isFinite(margin) ? margin : 2,
+            scale: Number.isFinite(scale) ? scale : 4,
+            errorCorrectionLevel: level && ['L', 'M', 'Q', 'H'].includes(level.toUpperCase()) ? level.toUpperCase() as 'L' | 'M' | 'Q' | 'H' : logo ? 'H' : 'M',
+            ...(version >= 1 && version <= 40 ? { version } : {}),
+            ...(maskPattern >= 0 && maskPattern <= 7 && wrapper.dataset.qrcodeMask !== '' ? { maskPattern: maskPattern as QRCodeMaskPattern } : {}),
+            color: {
+              ...(wrapper.dataset.qrcodeDark ? { dark: wrapper.dataset.qrcodeDark } : {}),
+              ...(wrapper.dataset.qrcodeLight ? { light: wrapper.dataset.qrcodeLight } : {}),
+            },
+          }
+          const segments: QRCodeByteSegment[] = [{ data: new TextEncoder().encode(text), mode: 'byte' }]
+          if (logo) {
+            try {
+              const [canvas, logoImage] = await Promise.all([toCanvas(segments, options), loadQrLogo(logo)])
+              const context = canvas.getContext('2d')!
+              const logoWidth = logoSize * canvas.width
+              const logoHeight = logoWidth / logoImage.naturalWidth * logoImage.naturalHeight
+              const x = (canvas.width - logoWidth) / 2
+              const y = (canvas.height - logoHeight) / 2
+              context.fillStyle = options.color?.light || '#fff'
+              context.beginPath()
+              context.roundRect(x, y, logoWidth, logoHeight, logoWidth / 20)
+              context.fill()
+              context.drawImage(logoImage, x, y, logoWidth, logoHeight)
+              image.src = canvas.toDataURL('image/png')
+            } catch {
+              image.src = await toDataURL(segments, options)
+            }
+          } else image.src = await toDataURL(segments, options)
+          image.width = pixelWidth
+          image.height = pixelWidth
+          image.alt = text
+          image.title = text
+          image.hidden = false
+          const isLink = wrapper.dataset.qrcodeIsLink === 'true'
+          const link = wrapper.querySelector<HTMLAnchorElement>('[data-qrcode-link]')
+          const value = wrapper.querySelector<HTMLElement>('[data-qrcode-value]')
+          if (link && isLink) {
+            link.href = text
+            link.textContent = text
+            link.hidden = false
+            if (value) value.hidden = true
+          } else if (value) {
+            value.replaceChildren(...text.split('\n').flatMap((line, index) => index ? [document.createElement('br'), document.createTextNode(line)] : [document.createTextNode(line)]))
+          }
+        }))
+      }
+    </script>
+    <script>
+      const diagrams = [...document.querySelectorAll<HTMLElement>('[data-mermaid-source]')]
+      if (diagrams.length) {
+        const { default: mermaid } = await import('mermaid')
+        let renderIndex = 0
+        const render = async () => {
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'strict',
+            theme: document.documentElement.classList.contains('dark') ? 'dark' : 'default',
+          })
+          for (const diagram of diagrams) {
+            const source = new TextDecoder().decode(Uint8Array.from(atob(diagram.dataset.mermaidSource ?? ''), character => character.charCodeAt(0)))
+            const content = diagram.querySelector<HTMLElement>('.mermaid-content')
+            if (!content) continue
+            const result = await mermaid.render(`${diagram.dataset.mermaidId}-${renderIndex++}`, source)
+            content.innerHTML = result.svg
+          }
+        }
+        await render()
+        document.addEventListener('theme-change', () => { void render() })
+      }
+    </script>
+  </body>
+</html>

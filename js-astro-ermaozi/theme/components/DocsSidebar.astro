@@ -1,0 +1,132 @@
+---
+import { createHash } from 'node:crypto'
+import type { ContentEntry, Lang } from '../lib/content'
+import UserSlot from './UserSlot.astro'
+import SidebarItems from './SidebarItems.astro'
+import LocalNav from './LocalNav.astro'
+import { collectionForEntry, type ResolvedDocCollection } from '../lib/collections'
+import { resolveSidebar, sidebarGroups, type ResolvedSidebarItem } from '../lib/sidebar'
+import type { OutlineItem } from '../lib/outline'
+import { localeOf } from '../lib/locales'
+
+const { docs, current, lang, toc = [], locked = false, collection: configuredCollection, sidebarItems } = Astro.props as { docs: ContentEntry[], current: ContentEntry, lang: Lang, toc?: OutlineItem[], locked?: boolean, collection?: ResolvedDocCollection, sidebarItems?: ResolvedSidebarItem[] }
+const en = !lang.startsWith('zh')
+const collection = configuredCollection ?? collectionForEntry(current.id, lang) as ResolvedDocCollection
+const items = sidebarGroups(sidebarItems ?? resolveSidebar(docs, lang, collection))
+const hideScrollbar = collection.sidebarScrollbar ?? localeOf(lang).sidebarScrollbar
+const signature = createHash('sha256').update(JSON.stringify(items)).digest('base64url').slice(0, 16)
+---
+
+<LocalNav {lang} {toc} {locked} hasSidebar />
+
+<div class="vp-backdrop" hidden></div>
+<aside class:list={['vp-sidebar', { 'hide-scrollbar': hideScrollbar === false }]} data-sidebar-signature={signature}>
+  <div class="curtain"></div>
+  <nav id="SidebarNav" class="nav" aria-labelledby="sidebar-aria-label" tabindex="-1">
+    <span id="sidebar-aria-label" class="visually-hidden">{en ? 'Sidebar Navigation' : '侧边栏导航'}</span>
+    <UserSlot name="sidebar-nav-before" {lang} entry={current} />
+    <SidebarItems {items} currentId={current.id} />
+    <UserSlot name="sidebar-nav-after" {lang} entry={current} />
+  </nav>
+</aside>
+<div class="vp-sidebar-control"><button class="toggle-sidebar-btn" type="button" aria-label={en ? 'Toggle sidebar' : '收起侧边栏'}><span class="vpi-sidebar-close" aria-hidden="true"></span></button></div>
+
+<script is:inline>
+  (() => {
+    const sidebar = document.querySelector('.vp-sidebar')
+    const backdrop = document.querySelector('.vp-backdrop')
+    const menu = document.querySelector('.vp-local-nav .menu')
+    let backdropTimer
+    const closeSidebar = () => {
+      sidebar?.classList.remove('open')
+      menu?.setAttribute('aria-expanded', 'false')
+      if (backdrop instanceof HTMLElement) {
+        backdrop.classList.remove('show')
+        clearTimeout(backdropTimer)
+        backdropTimer = setTimeout(() => { backdrop.hidden = true }, 250)
+      }
+      document.body.style.overflow = ''
+    }
+    menu?.addEventListener('click', () => {
+      sidebar?.classList.add('open')
+      menu.setAttribute('aria-expanded', 'true')
+      if (backdrop instanceof HTMLElement) {
+        clearTimeout(backdropTimer)
+        backdrop.hidden = false
+        requestAnimationFrame(() => backdrop.classList.add('show'))
+      }
+      document.body.style.overflow = 'hidden'
+      sidebar?.querySelector('.nav')?.focus()
+    })
+    backdrop?.addEventListener('click', closeSidebar)
+    sidebar?.querySelectorAll('a').forEach(link => link.addEventListener('click', closeSidebar))
+
+    const collapseTimers = new WeakMap()
+    const collapseClasses = ['fade-in-height-expand-enter-from', 'fade-in-height-expand-enter-active', 'fade-in-height-expand-enter-to', 'fade-in-height-expand-leave-from', 'fade-in-height-expand-leave-active', 'fade-in-height-expand-leave-to']
+    const resetCollapse = (element, visible) => {
+      const pending = collapseTimers.get(element)
+      clearTimeout(pending?.timer)
+      cancelAnimationFrame(pending?.frame)
+      collapseTimers.delete(element)
+      element.classList.remove(...collapseClasses)
+      element.style.removeProperty('max-height')
+      element.hidden = !visible
+    }
+    const setCollapse = (element, visible) => {
+      resetCollapse(element, true)
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) return resetCollapse(element, visible)
+      const phase = visible ? 'enter' : 'leave'
+      const height = element.scrollHeight
+      element.style.maxHeight = `${visible ? 0 : height}px`
+      element.classList.add(`fade-in-height-expand-${phase}-from`, `fade-in-height-expand-${phase}-active`)
+      void element.offsetHeight
+      const pending = {}
+      pending.frame = requestAnimationFrame(() => {
+        element.classList.replace(`fade-in-height-expand-${phase}-from`, `fade-in-height-expand-${phase}-to`)
+        element.style.maxHeight = `${visible ? height : 0}px`
+        pending.timer = setTimeout(() => resetCollapse(element, visible), 320)
+      })
+      collapseTimers.set(element, pending)
+    }
+    setTimeout(() => sidebar?.querySelectorAll('.group.no-transition').forEach(group => group.classList.remove('no-transition')), 300)
+
+    sidebar?.addEventListener('click', event => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const item = target.closest('.vp-sidebar-item.collapsible > .item')
+      if (!(item instanceof HTMLElement) || (target.closest('a') && !target.closest('.caret'))) return
+      const group = item.parentElement
+      const content = group?.querySelector(':scope > .items-wrapper')
+      const caret = item.querySelector('.caret')
+      const collapsed = !group?.classList.contains('collapsed')
+      group?.classList.toggle('collapsed', collapsed)
+      if (content instanceof HTMLElement) setCollapse(content, !collapsed)
+      caret?.setAttribute('aria-expanded', String(!collapsed))
+    })
+    sidebar?.addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return
+      const target = event.target
+      if (target instanceof HTMLElement && target.matches('.vp-sidebar-item.collapsible > .item')) target.click()
+    })
+
+    const control = document.querySelector('.vp-sidebar-control')
+    control?.querySelector('button')?.addEventListener('click', () => {
+      const collapsed = sidebar?.classList.toggle('collapsed') ?? false
+      control.classList.toggle('collapsed', collapsed)
+      document.querySelector('.vp-doc-container')?.classList.toggle('sidebar-collapsed', collapsed)
+      document.querySelector('.vp-navbar')?.classList.toggle('sidebar-collapsed', collapsed)
+      const icon = control.querySelector('span')
+      icon?.classList.toggle('vpi-sidebar-close', !collapsed)
+      icon?.classList.toggle('vpi-sidebar-open', collapsed)
+    })
+    addEventListener('keydown', event => { if (event.key === 'Escape') closeSidebar() })
+
+    requestAnimationFrame(() => {
+      const active = sidebar?.querySelector('.vp-link[aria-current="page"]')
+      if (!(sidebar instanceof HTMLElement) || !(active instanceof HTMLElement)) return
+      const navRect = sidebar.getBoundingClientRect()
+      const activeRect = active.getBoundingClientRect()
+      if (activeRect.top < navRect.top || activeRect.bottom > navRect.bottom) active.scrollIntoView({ block: 'center' })
+    })
+  })()
+</script>

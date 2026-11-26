@@ -1,0 +1,70 @@
+---
+import type { ContentEntry, Lang } from '../lib/content'
+import { categoryListOf, postsFor } from '../lib/content'
+import PostList from './PostList.astro'
+import PostsNav from './PostsNav.astro'
+import ProfileAside from './ProfileAside.astro'
+import UserSlot from './UserSlot.astro'
+import VPHomeBanner from './VPHomeBanner.astro'
+import VPHomeCustom from './VPHomeCustom.astro'
+import VPHomeDocHero from './VPHomeDocHero.astro'
+import VPHomeFeatures from './VPHomeFeatures.astro'
+import VPHomeHero from './VPHomeHero.astro'
+import VPHomeProfile from './VPHomeProfile.astro'
+import VPHomeTextImage from './VPHomeTextImage.astro'
+import { siteConfig } from '../../site.config.mjs'
+import { postCollectionsFor } from '../lib/collections'
+import { localeOf } from '../lib/locales'
+
+type HomeItem = Record<string, any> & { type: string }
+const { config, content, posts, lang, pageMap } = Astro.props as {
+  config: HomeItem[]
+  content: string
+  posts: ContentEntry[]
+  lang: Lang
+  pageMap: Record<string, string>
+}
+const onlyOnce = config.length === 1
+const postCollections = postCollectionsFor(lang)
+const locale = localeOf(lang)
+const builtInHomeTypes = new Set(['banner', 'hero', 'doc-hero', 'features', 'text-image', 'image-text', 'profile', 'custom', 'posts', 'blog'])
+const userHomeModules = import.meta.glob<{ default: any }>('./home/*.{astro,vue}', { eager: true })
+const userHomeComponents = Object.fromEntries(Object.entries(userHomeModules).map(([filename, module]) => {
+  const name = filename.split('/').at(-1)?.replace(/\.(?:astro|vue)$/, '').replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase() ?? ''
+  return [name, module.default]
+}))
+---
+
+<main id="VPContent" class="vp-content is-home">
+  <div class="vp-home">
+  {config.map((item, index) => {
+    const componentName = item.type.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
+    const UserHomeComponent = builtInHomeTypes.has(item.type) ? undefined : userHomeComponents[componentName]
+    if (!builtInHomeTypes.has(item.type) && !UserHomeComponent) throw new Error(`[ermaozi] 首页区块 type "${item.type}" 未找到对应组件；请添加 theme/components/home/${item.type}.astro 或 .vue`)
+    const collection = item.collection ? postCollections.find(entry => entry.dir === item.collection) : postCollections[0]
+    if (['posts', 'blog'].includes(item.type) && item.collection && !collection) throw new Error(`[ermaozi] 首页 ${item.type} 区块找不到 Post 集合 "${item.collection}"`)
+    const itemPosts = collection ? postsFor(posts, lang, collection, true) : []
+    const itemStats = { tags: new Set(itemPosts.flatMap(post => post.data.tags)).size, categories: new Set(itemPosts.flatMap(post => categoryListOf(post).map(category => category.id))).size, posts: itemPosts.length }
+    const profileLayout = (collection?.profile === undefined ? (locale.profile ?? siteConfig.profile) : collection.profile) as { layout?: 'left' | 'right' } | false | undefined
+    const profileEnabled = profileLayout !== false
+    return <div class:list={[{ layout: index > 0 && !['features', 'custom'].includes(item.type) }]}>
+      {item.type === 'banner' && <VPHomeBanner {...item} />}
+
+      {item.type === 'hero' && <VPHomeHero {...item} index={index} {onlyOnce} />}
+
+      {item.type === 'doc-hero' && <VPHomeDocHero {...item} />}
+
+      {item.type === 'features' && <VPHomeFeatures {...item} />}
+
+      {['text-image', 'image-text'].includes(item.type) && <VPHomeTextImage {...item} />}
+
+      {item.type === 'profile' && <VPHomeProfile {...item} {lang} />}
+
+      {item.type === 'custom' && <VPHomeCustom {...item}><Fragment set:html={content} /></VPHomeCustom>}
+
+      {['posts', 'blog'].includes(item.type) && <div class="vp-posts home-posts" vp-posts><UserSlot name="posts-top" {lang} kind="blog" /><div class:list={['posts-container', { 'no-profile': !profileEnabled, left: profileEnabled && profileLayout?.layout === 'left' }]}>{!profileEnabled && <PostsNav {lang} blogStats={itemStats} {collection} local />}<PostList posts={itemPosts} {lang} {collection} /><ProfileAside {lang} {pageMap} blogStats={itemStats} {collection} /></div><UserSlot name="posts-bottom" {lang} kind="blog" /></div>}
+      {UserHomeComponent && <UserHomeComponent {...item} index={index} onlyOnce={onlyOnce} />}
+    </div>
+  })}
+  </div>
+</main>

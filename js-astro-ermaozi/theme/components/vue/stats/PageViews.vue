@@ -1,0 +1,57 @@
+<template>
+  <span class="view-count">
+    <span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"><path fill="currentColor" d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5M12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5s5 2.24 5 5s-2.24 5-5 5m0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3s3-1.34 3-3s-1.34-3-3-3"/></svg></span>
+    <span class="count-text">{{ count !== null ? count : '...' }}</span>
+  </span>
+</template>
+
+<script setup>
+import { computed, ref, onMounted, watch } from 'vue'
+import { getEngagementStatus } from './like-api.js'
+import { canonicalizeStatsPath } from './stats-path.js'
+
+const props = defineProps({
+  path: String
+})
+
+const count = ref(null)
+const statsPath = computed(() => canonicalizeStatsPath(props.path))
+
+const fetchCount = async (p) => {
+    if (!p) return
+
+    count.value = null
+    try {
+        const data = await getEngagementStatus(p)
+        count.value = Number(data.views || 0)
+    } catch (e) {}
+}
+
+onMounted(() => {
+    fetchCount(statsPath.value)
+})
+
+watch(statsPath, (newPath) => {
+    fetchCount(newPath)
+})
+</script>
+
+<style scoped>
+.view-count {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.9em;
+  color: var(--vp-c-text-2, #666); /* Try to match theme color var */
+  margin-left: 0.5em;
+  vertical-align: middle;
+  min-width: 3.5em; /* Prevent CLS */
+}
+.view-count .icon {
+    margin-right: 4px;
+    display: inline-flex;
+}
+.count-text {
+  min-width: 2em; /* Ensure stable text width */
+  text-align: left;
+}
+</style>

@@ -1,0 +1,36 @@
+---
+import { iconifySvg } from '../lib/iconify'
+import { withBase } from '../lib/client-utils'
+import { siteConfig } from '../../site.config.mjs'
+
+type IconValue = string | { svg: string }
+const { icon, name: publicName, provider: publicProvider, extra = '', class: className = '', size, color } = Astro.props as { icon?: IconValue, name?: IconValue, provider?: 'iconify' | 'iconfont' | 'fontawesome', extra?: string, class?: string, size?: string | number, color?: string }
+const value = icon ?? publicName ?? ''
+const options = (siteConfig.markdown as { icon?: { provider?: string, prefix?: string } }).icon ?? {}
+const raw = typeof value === 'string' ? value.trim() : ''
+const explicit = raw.match(/^(iconify|iconfont|fontawesome)\s+(.+)$/)
+const provider = explicit?.[1] ?? publicProvider ?? options.provider ?? 'iconify'
+let name = explicit?.[2] ?? raw
+if (provider === 'iconify' && options.prefix && !name.includes(':')) name = `${options.prefix}:${name}`
+const unit = (value = '') => String(Number(value)) === value ? `${value}px` : value
+const [width, parsedHeight] = String(size ?? '').replaceAll('px', '[UNIT]').split('x').map(value => unit(value.replaceAll('[UNIT]', 'px').trim()))
+const height = parsedHeight || width
+const style = [color && `color:${color}`, width && `width:${width}`, height && `height:${height}`].filter(Boolean).join(';')
+const svg = typeof value === 'object' ? value.svg : provider === 'iconify' ? iconifySvg(name) : ''
+const remote = provider === 'iconify' && !svg && name.includes(':')
+const image = /^(?:https?:)?\/\//.test(name) || name.startsWith('/')
+const builtin = !image && provider === 'iconify' && !name.includes(':')
+const faAliases: Record<string, string> = { fas: 'solid', s: 'solid', far: 'regular', r: 'regular', fal: 'light', l: 'light', fat: 'thin', t: 'thin', fads: 'duotone solid', ds: 'duotone solid', fass: 'sharp solid', ss: 'sharp solid', fasr: 'sharp regular', sr: 'sharp regular', fasl: 'sharp light', sl: 'sharp light', fast: 'sharp thin', st: 'sharp thin', fasds: 'sharp-duotone solid', sds: 'sharp-duotone solid', fab: 'brands', b: 'brands' }
+const [faType, faName = name] = name.includes(':') ? name.split(':', 2) : [options.provider === 'fontawesome' ? options.prefix || 'fas' : 'fas', name]
+const faExtra = extra.split(/\s+/).filter(Boolean).map(value => value.startsWith('fa-') ? value : `fa-${value}`)
+---
+
+{typeof value === 'object'
+  ? <span class:list={['vp-icon', 'is-svg', extra, className]} aria-hidden="true" style={style} set:html={svg}></span>
+  : image
+  ? <span class:list={['vp-icon-img', extra, className]} aria-hidden="true"><img src={withBase(name, import.meta.env.BASE_URL)} alt="" style={height ? `height:${height}` : undefined} /></span>
+  : provider === 'iconfont'
+    ? <i class:list={['vp-icon', className, `${options.prefix || 'iconfont icon-'}${name}`]} data-provider="iconfont" aria-hidden="true" style={[color && `color:${color}`, `font-size:${height || '1em'}`].filter(Boolean).join(';')}></i>
+    : provider === 'fontawesome'
+      ? <i class:list={['vp-icon', 'fontawesome', ...String(faAliases[faType] || 'solid').split(' ').map(value => `fa-${value}`), `fa-${faName}`, ...faExtra, className]} data-provider="fontawesome" aria-hidden="true" style={style}></i>
+      : <span class:list={['vp-icon', extra, className, builtin ? `icon-${name}` : 'iconify', { 'is-svg': Boolean(svg) }]} data-provider="iconify" data-iconify-remote={remote ? name : undefined} aria-hidden="true" style={style} set:html={svg}></span>}

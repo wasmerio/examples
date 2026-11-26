@@ -1,0 +1,194 @@
+---
+import type { ContentEntry, Lang } from '../lib/content'
+import { categoryListOf, formatDate, publishedDateOf, routeOf, tagClassOf } from '../lib/content'
+import { siteConfig } from '../../site.config.mjs'
+import CategoryTree from './CategoryTree.astro'
+import { localeOf } from '../lib/locales'
+import UserSlot from './UserSlot.astro'
+import { postCollectionsFor, type ResolvedPostCollection } from '../lib/collections'
+import VPLink from './VPLink.astro'
+
+interface Props {
+  kind: 'archives' | 'categories' | 'tags'
+  posts: ContentEntry[]
+  lang: Lang
+  collection?: ResolvedPostCollection
+}
+
+interface CategoryPost {
+  type: 'post'
+  title: string
+  path: string
+}
+
+interface CategoryNode {
+  type: 'category'
+  title: string
+  id: string
+  sort: number
+  items: CategoryTreeItem[]
+}
+
+type CategoryTreeItem = CategoryNode | CategoryPost
+
+const { kind, posts, lang, collection = postCollectionsFor(lang)[0] } = Astro.props
+const locale = localeOf(lang)
+const categoryRoots: CategoryTreeItem[] = []
+
+for (const post of posts) {
+  const categories = categoryListOf(post)
+  let level = categoryRoots
+  for (const category of categories) {
+    let node = level.find((item): item is CategoryNode => item.type === 'category' && item.id === category.id)
+    if (!node) {
+      node = { type: 'category', title: category.name, id: category.id, sort: category.sort, items: [] }
+      level.push(node)
+    }
+    level = node.items
+  }
+  level.push({ type: 'post', title: post.data.title, path: routeOf(post) })
+}
+
+const sortCategories = (items: CategoryTreeItem[]): CategoryTreeItem[] => {
+  for (const item of items) if (item.type === 'category') item.items = sortCategories(item.items)
+  return items.sort((a, b) => {
+    if (a.type === 'category' && b.type === 'category') return a.sort - b.sort
+    if (a.type === 'category') return -1
+    if (b.type === 'category') return 1
+    return 0
+  })
+}
+const orderedRoots = sortCategories(categoryRoots)
+const categoryExpand = collection?.categoriesExpand ?? siteConfig.categoriesExpand ?? 'deep'
+const expandDepth = categoryExpand === 'deep' ? Infinity : Number(categoryExpand)
+
+const tagCounts = new Map<string, number>()
+for (const post of posts) for (const tag of post.data.tags ?? []) tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1)
+
+const tagsTheme = (collection?.tagsTheme ?? siteConfig.tagsTheme ?? 'colored') as 'colored' | 'gray' | 'brand'
+const archives = [...Map.groupBy(posts, post => publishedDateOf(post).getFullYear())]
+  .filter(([year]) => year > 1970)
+  .sort(([a], [b]) => b - a)
+const archiveDate = (post: ContentEntry) => formatDate(publishedDateOf(post), lang).slice(5)
+---
+
+{kind === 'categories' && (
+  <div class="vp-post-categories">
+    <UserSlot name="posts-categories-before" {lang} {posts} />
+    <h2 class="categories-title"><span class="vpi-category icon" aria-hidden="true"></span><span>{collection?.categoriesText ?? locale.categoryText}</span></h2>
+    <UserSlot name="posts-categories-content-before" {lang} {posts} />
+    <div class="content">
+      <CategoryTree items={orderedRoots} {expandDepth} />
+    </div>
+    <UserSlot name="posts-categories-after" {lang} {posts} />
+  </div>
+)}
+
+{kind === 'tags' && (
+  <div class="vp-tags">
+    <UserSlot name="posts-tags-before" {lang} {posts} />
+    <div class="tags-nav">
+      <h2 class="tags-title"><span class="vpi-tag icon" aria-hidden="true"></span><span>{collection?.tagsText ?? locale.tagText}</span></h2>
+      <UserSlot name="posts-tags-title-after" {lang} {posts} />
+      <div class="tags">
+        {[...tagCounts].map(([tag, count]) => (
+          <p class:list={['tag', tagClassOf(tag, tagsTheme)]} data-tag={tag} tabindex="0" role="button">
+            <span class="tag-name">{tag}</span><span class="tag-count">{count > 99 ? '99+' : count}</span>
+          </p>
+        ))}
+      </div>
+    </div>
+    <UserSlot name="posts-tags-content-before" {lang} {posts} />
+    <template data-tags-container-template><div class="tags-container">
+      <h3 class="tag-title"></h3>
+      <ul class="vp-short-post-list">
+        {posts.map(post => (
+          <li data-tags={JSON.stringify(post.data.tags ?? [])}>
+            <p class="post-title"><VPLink class="post-link" href={routeOf(post)} text={post.data.title} /></p>
+            <span class="post-time">{formatDate(publishedDateOf(post), lang)}</span>
+          </li>
+        ))}
+      </ul>
+    </div></template>
+    <UserSlot name="posts-tags-after" {lang} {posts} />
+  </div>
+)}
+
+{kind === 'archives' && (
+  <div class="vp-archives">
+    <UserSlot name="posts-archives-before" {lang} {posts} />
+    <h2 class="archives-title"><span class="vpi-archive icon" aria-hidden="true"></span><span>{collection?.archivesText ?? locale.archiveText}</span></h2>
+    <div class="archives">
+      {archives.map(([year, yearPosts]) => (
+        <div class="archive">
+          <h3 class="archive-title">{year}<span class="total">{locale.archiveTotalText.replace('{count}', String(yearPosts.length))}</span></h3>
+          <ul class="vp-short-post-list">
+            {yearPosts.map(post => (
+              <li><p class="post-title"><VPLink class="post-link" href={routeOf(post)} text={post.data.title} /></p><span class="post-time">{archiveDate(post)}</span></li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+    <UserSlot name="posts-archives-after" {lang} {posts} />
+  </div>
+)}
+
+<script is:inline>
+  (() => {
+    const setExpanded = (group, expanded) => {
+      group.classList.toggle('expand', expanded)
+      const folder = group.querySelector(':scope > .folder')
+      folder?.setAttribute('aria-expanded', String(expanded))
+      folder?.querySelector('.icon')?.classList.toggle('vpi-folder-open', expanded)
+      folder?.querySelector('.icon')?.classList.toggle('vpi-folder', !expanded)
+    }
+    document.querySelectorAll('[data-category-group] > .folder').forEach(folder => {
+      const toggle = () => setExpanded(folder.parentElement, !folder.parentElement.classList.contains('expand'))
+      folder.addEventListener('click', toggle)
+      folder.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle() }
+      })
+    })
+    const categoryId = new URLSearchParams(location.search).get('id')
+    if (categoryId) {
+      const target = document.querySelector(`[data-category-id="${CSS.escape(categoryId)}"]`)
+      document.querySelectorAll('[data-category-group]').forEach(group => setExpanded(group, group === target || group.contains(target)))
+      target?.scrollIntoView({ block: 'center' })
+    }
+
+    const tagsRoot = document.querySelector('.vp-tags')
+    if (!tagsRoot) return
+    const template = tagsRoot.querySelector('[data-tags-container-template]')
+    const insertBefore = template?.nextSibling ?? null
+    const container = template?.content.firstElementChild
+    template?.remove()
+    const title = container?.querySelector('.tag-title')
+    const rows = [...(container?.querySelectorAll('.vp-short-post-list > li') ?? [])]
+    const showTag = (tag, markActive = true) => {
+      tagsRoot.querySelectorAll('[data-tag]').forEach(link => link.classList.toggle('active', markActive && link.dataset.tag === tag))
+      rows.forEach(row => { row.hidden = !tag || !JSON.parse(row.dataset.tags).includes(tag) })
+      title.textContent = tag || ''
+      if (tag && !container.isConnected) tagsRoot.insertBefore(container, insertBefore)
+      if (!tag) container.remove()
+      tagsRoot.classList.toggle('has-list', Boolean(tag))
+    }
+    showTag(new URLSearchParams(location.search).get('tag'))
+    tagsRoot.querySelector('.tags')?.addEventListener('click', event => {
+      const link = event.target.closest('[data-tag]')
+      if (!link) return
+      const url = new URL(location.href)
+      url.searchParams.set('tag', link.dataset.tag)
+      history.pushState({}, '', url)
+      showTag(link.dataset.tag)
+    })
+    tagsRoot.querySelector('.tags')?.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      const link = event.target.closest('[data-tag]')
+      if (!link) return
+      event.preventDefault()
+      link.click()
+    })
+    addEventListener('popstate', () => showTag(new URLSearchParams(location.search).get('tag')))
+  })()
+</script>

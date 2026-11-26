@@ -1,0 +1,796 @@
+---
+import { getCollection } from 'astro:content'
+import { routeOf, type Lang } from '../lib/content'
+import { normalizeLink, normalizePrefix, withBase, withoutBase } from '../lib/client-utils'
+import { languageFromPath, localeOf, localePath as pathForLocale, searchLocaleOf } from '../lib/locales'
+import { navbarSocialLinksFor, socialLinksFor } from '../lib/social'
+import { navbarFor } from '../lib/navbar'
+import AlgoliaSearch from './vue/AlgoliaSearch.vue'
+import SocialLinks from './SocialLinks.astro'
+import ThemeIcon from './ThemeIcon.astro'
+import UserSlot from './UserSlot.astro'
+import VPBadge from './VPBadge.astro'
+import VPLink from './VPLink.astro'
+import { siteConfig } from '../../site.config.mjs'
+
+interface Props {
+  lang: Lang
+  translationRoute?: string
+  languageLinks?: Array<{ lang: Lang, href: string, fallback?: boolean }>
+  home?: boolean
+  hasSidebar?: boolean
+  fixed?: boolean
+}
+
+const { lang, translationRoute, languageLinks = [], home: isHome = false, hasSidebar = false, fixed = false } = Astro.props
+const en = !lang.toLowerCase().startsWith('zh')
+const locale = localeOf(lang)
+const home = locale.home ?? pathForLocale(lang)
+const fallbackLanguage = translationRoute ? languageFromPath(translationRoute) : undefined
+const languages = languageLinks.length
+  ? languageLinks
+  : translationRoute && fallbackLanguage ? [{ lang, href: Astro.url.pathname }, { lang: fallbackLanguage, href: translationRoute }] : []
+const otherLanguages = languages.filter(item => item.lang !== lang)
+const currentPath = withoutBase(Astro.url.pathname, import.meta.env.BASE_URL)
+const homeHref = typeof home === 'string' ? withBase(home, import.meta.env.BASE_URL) : ''
+const HomeTag = homeHref ? 'a' : 'span'
+const logoSource = locale.logo ?? siteConfig.logo
+const logo = typeof logoSource === 'string' ? withBase(logoSource, import.meta.env.BASE_URL) : ''
+const logoDarkSource = locale.logoDark || logoSource
+const logoDark = typeof logoDarkSource === 'string' ? withBase(logoDarkSource, import.meta.env.BASE_URL) : logo
+const socialLinks = socialLinksFor(lang)
+const navbarSocialLinks = navbarSocialLinksFor(lang)
+type NavItem = {
+  label?: string
+  text?: string
+  href?: string
+  link?: string
+  prefix?: string
+  symbol?: string
+  icon?: string | { svg: string }
+  badge?: string | { text?: string, type?: string, color?: string, bgColor?: string, borderColor?: string }
+  activeMatch?: string
+  target?: string
+  rel?: string
+  noIcon?: boolean
+  items?: Array<NavItem | string>
+}
+type ResolvedNavItem = Omit<NavItem, 'items'> & { label: string, href?: string, items?: ResolvedNavItem[] }
+const navEntries = await getCollection('content')
+const navEntryMap = new Map(navEntries.flatMap(entry => {
+  const route = routeOf(entry)
+  const id = `/${entry.id.replace(/^\/+/, '')}`
+  return [[route, entry], [id, entry], [`${id}.md`, entry]] as const
+}))
+const navEntry = (link: string) => {
+  const clean = link.split(/[?#]/, 1)[0]
+  return navEntryMap.get(clean) ?? navEntryMap.get(clean.replace(/(?:index|README)?\.(?:md|html)$/i, '').replace(/\/?$/, '/'))
+}
+const normalizeItem = (item: NavItem | string, parentPrefix = ''): ResolvedNavItem => {
+  if (typeof item === 'string') {
+    const resolved = normalizeLink(parentPrefix, item)
+    const entry = navEntry(resolved)
+    const metadata = entry?.data as { title?: string, icon?: NavItem['icon'], badge?: NavItem['badge'] } | undefined
+    return {
+      label: metadata?.title ?? decodeURIComponent(resolved.replace(/\/$/, '').split('/').at(-1) || resolved),
+      href: entry ? routeOf(entry) : resolved,
+      icon: metadata?.icon,
+      badge: metadata?.badge,
+    }
+  }
+  const prefix = item.prefix === undefined ? parentPrefix : normalizeLink(parentPrefix, item.prefix)
+  const link = item.href ?? item.link
+  const href = link === undefined ? undefined : normalizeLink(prefix, link)
+  return {
+    ...item,
+    label: item.label ?? item.text ?? href?.replace(/\/$/, '').split('/').at(-1) ?? '',
+    href,
+    items: item.items?.map(child => normalizeItem(child, prefix)),
+  }
+}
+const navigation = navbarFor(lang).map(item => normalizeItem(item as NavItem | string))
+const badgeText = (badge: ResolvedNavItem['badge']) => typeof badge === 'string' ? badge : badge?.text
+const badgeProps = (badge: ResolvedNavItem['badge']) => typeof badge === 'string' ? { text: badge } : badge ?? {}
+const navGroupId = (label: string) => `nav-screen-menu-group-${label.replace(' ', '-').toLowerCase()}`
+const activeGroup = (item: ResolvedNavItem): boolean => {
+  if (item.activeMatch) {
+    try { return new RegExp(item.activeMatch).test(currentPath) } catch { return false }
+  }
+  return item.href === currentPath || item.items?.some(activeGroup) === true
+}
+const transition = (locale.transition ?? siteConfig.transition) as false | { appearance?: false | string }
+const appearanceTransition = transition === false ? false : typeof transition === 'object' ? transition.appearance ?? 'fade' : 'fade'
+const appearance = (locale.appearance ?? siteConfig.appearance ?? true) as boolean | 'dark' | 'force-dark'
+const appearanceEnabled = Boolean(appearance) && appearance !== 'force-dark'
+const appearanceDefault = appearance === 'dark' ? 'dark' : 'auto'
+type SearchConfig = { provider?: 'local' | 'algolia'; appId?: string; apiKey?: string; locales?: Record<string, any>; [key: string]: unknown }
+const configuredSearch = siteConfig.search as boolean | SearchConfig | undefined
+const search = configuredSearch === false ? false : typeof configuredSearch === 'object' ? configuredSearch : { provider: 'local' as const }
+const searchProvider = search === false ? false : search.provider ?? 'local'
+const searchLocale = searchLocaleOf(lang, search === false ? {} : search.locales ?? {})
+const searchButtonText = searchLocale.buttonText || searchLocale.placeholder || 'Search'
+const disableQueryPersistence = search !== false && search.disableQueryPersistence === true
+const localePath = pathForLocale(lang)
+const algoliaReady = search !== false && searchProvider === 'algolia' && Boolean(search.appId && search.apiKey)
+const basePath = normalizePrefix(import.meta.env.BASE_URL)
+---
+
+<span tabindex="-1"></span>
+<a class="vp-skip-link visually-hidden" href="#VPContent">{en ? 'Skip to content' : '跳到内容'}</a>
+<header class:list={['vp-nav', { fixed }]}>
+  <div class:list={['vp-navbar', { home: isHome, top: isHome, 'has-sidebar': hasSidebar }]}>
+    <div class="wrapper">
+      <div class="container">
+        <div class="title">
+          <UserSlot name="nav-bar-title-before" {lang} route={currentPath} />
+          <div class="vp-navbar-title">
+            <HomeTag class:list={['vp-link title', { link: Boolean(homeHref), 'no-icon': true }]} href={homeHref || undefined} aria-label={homeHref ? `${locale.siteName} ${locale.homeText}` : undefined}>
+              {logo && <>
+                <img class="vp-image dark logo" src={logoDark} alt="" width="24" height="24" />
+                <img class="vp-image light logo" src={logo} alt="" width="24" height="24" />
+              </>}
+              <span>{locale.siteName}</span>
+            </HomeTag>
+          </div>
+          <UserSlot name="nav-bar-title-after" {lang} route={currentPath} />
+        </div>
+
+        <div class="content">
+          <div class="content-body">
+            <UserSlot name="nav-bar-content-before" {lang} route={currentPath} />
+            {searchProvider === 'local' && <div class="vp-navbar-search search">
+              <div class="search-wrapper"><div id="local-search">
+                <button class="mini-search mini-search-button search-button" type="button" aria-label={searchLocale.placeholder}>
+                  <span class="mini-search-button-container"><span class="mini-search-search-icon vpi-mini-search" aria-label="search icon"></span><span class="mini-search-button-placeholder">{searchLocale.placeholder}</span></span>
+                  <span class="mini-search-button-keys" aria-hidden="true"><kbd class="mini-search-button-key"></kbd><kbd class="mini-search-button-key">K</kbd></span>
+                </button>
+              </div></div>
+            </div>}
+            {algoliaReady && <div class="vp-navbar-search search"><AlgoliaSearch client:load lang={lang} localePath={localePath} options={search || {}} /></div>}
+
+            <UserSlot name="nav-bar-menu-before" {lang} route={currentPath} />
+            <nav class="vp-navbar-menu menu" aria-labelledby="main-nav-aria-label">
+              <span id="main-nav-aria-label" class="visually-hidden">Main Navigation</span>
+              {navigation.map(item => item.items ? (
+                <div class:list={['vp-flyout vp-navbar-menu-group nav-group', { active: activeGroup(item) }]}>
+                  <button class="button flyout-button" type="button" aria-haspopup="true" aria-expanded="false">
+                    <span class="text">{item.icon ? <ThemeIcon icon={item.icon} class="nav-symbol" /> : <span class="vp-icon nav-symbol" aria-hidden="true">{item.symbol}</span>}<span class="nav-label" set:html={item.label}></span>{badgeText(item.badge) && <VPBadge class="vp-menu-badge" {...badgeProps(item.badge)} />}<span class="vpi-chevron-down text-icon" aria-hidden="true"></span></span>
+                  </button>
+                  <div class="menu"><div class="vp-menu nav-dropdown"><div class="items">
+                    {item.items.map(child => child.items ? (
+                      <div class="vp-menu-group">
+                        {child.label && <p class="title">{child.icon && <ThemeIcon icon={child.icon} class="nav-menu-icon" />}<span>{child.label}</span></p>}
+                        {child.items.filter(entry => entry.href).map(entry => <div class="vp-menu-link"><VPLink class:list={{ active: activeGroup(entry) }} href={entry.href} target={entry.target} rel={entry.rel}>{entry.icon && <ThemeIcon icon={entry.icon} class="nav-menu-icon" />}{entry.label}{badgeText(entry.badge) && <VPBadge class="vp-menu-badge" {...badgeProps(entry.badge)} />}</VPLink></div>)}
+                      </div>
+                    ) : child.href ? (
+                      <div class="vp-menu-link"><VPLink class:list={{ active: activeGroup(child) }} href={child.href} target={child.target} rel={child.rel}>{child.icon && <ThemeIcon icon={child.icon} class="nav-menu-icon" />}{child.label}{badgeText(child.badge) && <VPBadge class="vp-menu-badge" {...badgeProps(child.badge)} />}</VPLink></div>
+                    ) : null)}
+                  </div></div></div>
+                </div>
+              ) : (
+                <VPLink class:list={['navbar-menu-link', { active: activeGroup(item) }]} href={item.href} target={item.target} rel={item.rel} noIcon={item.noIcon} tabindex="0">{item.icon ? <ThemeIcon icon={item.icon} class="nav-symbol" /> : <span class="vp-icon nav-symbol" aria-hidden="true">{item.symbol}</span>}<span set:html={item.label}></span>{badgeText(item.badge) && <VPBadge class="vp-menu-badge" {...badgeProps(item.badge)} />}</VPLink>
+              ))}
+            </nav>
+            <UserSlot name="nav-bar-menu-after" {lang} route={currentPath} />
+
+            {otherLanguages.length > 0 && (
+              <div class="vp-flyout vp-navbar-translations translations">
+                <button class="button flyout-button" type="button" aria-haspopup="true" aria-expanded="false" aria-label={locale.selectLanguageAriaLabel ?? locale.selectLanguageText}>
+                  <span class="text"><span class="vpi-languages option-icon" aria-hidden="true"></span><span class="vpi-chevron-down text-icon" aria-hidden="true"></span></span>
+                </button>
+                <div class="menu flyout-menu"><div class="vp-menu flyout-panel language-panel">
+                  <div class="items"><p class="title">{locale.selectLanguageName}</p>{otherLanguages.map(item => <div class="vp-menu-link"><a class="vp-link link no-icon" href={withBase(item.href, import.meta.env.BASE_URL)}>{localeOf(item.lang).selectLanguageName}</a></div>)}</div>
+                </div></div>
+              </div>
+            )}
+
+            {appearanceEnabled && <div class="vp-navbar-appearance appearance">
+              <button class="vp-switch vp-switch-appearance" type="button" role="switch" title={locale.darkModeSwitchTitle} aria-checked="false">
+                <span class="check"><span class="icon"><span class="vpi-sun sun" aria-hidden="true"></span><span class="vpi-moon moon" aria-hidden="true"></span></span></span>
+              </button>
+            </div>}
+
+            {navbarSocialLinks.length > 0 && <SocialLinks class="vp-navbar-social-links social-links" links={navbarSocialLinks} />}
+
+            <div class="vp-flyout vp-navbar-extra extra">
+              <button class="button flyout-button" type="button" aria-haspopup="true" aria-expanded="false" aria-label="extra navigation"><span class="vpi-more-horizontal icon" aria-hidden="true"></span></button>
+              <div class="menu flyout-menu"><div class="vp-menu flyout-panel extra-panel">
+                {otherLanguages.length > 0 && <div class="group translations"><p class="trans-title">{locale.selectLanguageName}</p>{otherLanguages.map(item => <div class="vp-menu-link"><a class="vp-link link no-icon" href={withBase(item.href, import.meta.env.BASE_URL)} lang={item.lang} hreflang={item.lang} rel="alternate">{localeOf(item.lang).selectLanguageName}</a></div>)}</div>}
+                {appearanceEnabled && <div class="group appearance"><div class="item appearance"><p class="label">{locale.appearanceText}</p><div class="appearance-action">
+                  <button class="vp-switch vp-switch-appearance" type="button" role="switch" title={locale.darkModeSwitchTitle} aria-checked="false"><span class="check"><span class="icon"><span class="vpi-sun sun" aria-hidden="true"></span><span class="vpi-moon moon" aria-hidden="true"></span></span></span></button>
+                </div></div></div>}
+                {navbarSocialLinks.length > 0 && <div class="group social"><div class="item social-links"><SocialLinks class="social-links-list" links={navbarSocialLinks} /></div></div>}
+              </div></div>
+            </div>
+
+            <UserSlot name="nav-bar-content-after" {lang} route={currentPath} />
+            <button class="vp-navbar-hamburger hamburger" type="button" aria-label={en ? 'Mobile navigation' : '移动端导航'} aria-expanded="false" aria-controls="nav-screen">
+              <span class="container"><span class="top"></span><span class="middle"></span><span class="bottom"></span></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="divider"><div class="divider-line"></div></div>
+  </div>
+
+  <div id="navScreen" class="vp-nav-screen" hidden>
+    <div class="container">
+      <UserSlot name="nav-screen-content-before" {lang} route={currentPath} />
+      <UserSlot name="nav-screen-menu-before" {lang} route={currentPath} />
+      <nav class="vp-nav-screen-menu menu">
+        {navigation.map(item => item.items ? (
+          <div class="vp-nav-screen-menu-group mobile-nav-group">
+            <button class="button" type="button" aria-controls={navGroupId(item.label)} aria-expanded="false">
+              <span class="button-text">{item.icon && <ThemeIcon icon={item.icon} />}<span set:html={item.label}></span>{badgeText(item.badge) && <VPBadge class="vp-menu-badge" {...badgeProps(item.badge)} />}</span>
+              <span class="vpi-plus button-icon" aria-hidden="true"></span>
+            </button>
+            <div id={navGroupId(item.label)} class="vp-nav-screen-menu-group-container" style="display:none"><div class="items">{item.items.map(child => child.items ? (
+              <div class="group"><div class="vp-nav-screen-menu-group-section">
+                {child.label && <p class="title">{child.icon && <ThemeIcon icon={child.icon} />}{child.label}</p>}
+                {child.items.filter(entry => entry.href).map(entry => <VPLink class:list={['vp-nav-screen-menu-group-link', { active: activeGroup(entry) }]} href={entry.href} target={entry.target} rel={entry.rel} noIcon={entry.noIcon}>{entry.icon && <ThemeIcon icon={entry.icon} />}<span set:html={entry.label}></span>{badgeText(entry.badge) && <VPBadge class="vp-menu-badge" {...badgeProps(entry.badge)} />}</VPLink>)}
+              </div></div>
+            ) : child.href ? (
+              <div class="item"><VPLink class:list={['vp-nav-screen-menu-group-link', { active: activeGroup(child) }]} href={child.href} target={child.target} rel={child.rel} noIcon={child.noIcon}>{child.icon && <ThemeIcon icon={child.icon} />}<span set:html={child.label}></span>{badgeText(child.badge) && <VPBadge class="vp-menu-badge" {...badgeProps(child.badge)} />}</VPLink></div>
+            ) : null)}</div></div>
+          </div>
+        ) : (
+          <VPLink class:list={['vp-nav-screen-menu-link', { active: activeGroup(item) }]} href={item.href} target={item.target} rel={item.rel} noIcon={item.noIcon}>{item.icon && <ThemeIcon icon={item.icon} />}<span set:html={item.label}></span>{badgeText(item.badge) && <VPBadge class="vp-menu-badge" {...badgeProps(item.badge)} />}</VPLink>
+        ))}
+      </nav>
+      <UserSlot name="nav-screen-menu-after" {lang} route={currentPath} />
+      {otherLanguages.length > 0 && <div class="vp-nav-screen-translations mobile-translations translations">
+        <button class="title" type="button" aria-expanded="false" aria-label={locale.selectLanguageAriaLabel ?? locale.selectLanguageText}><span class="vpi-languages icon lang" aria-hidden="true"></span>{locale.selectLanguageName}<span class="vpi-chevron-down icon chevron" aria-hidden="true"></span></button>
+        <div class="vp-nav-screen-translations-container" style="display:none"><ul class="list">{otherLanguages.map(item => <li class="item"><VPLink class="link" href={item.href} lang={item.lang}>{localeOf(item.lang).selectLanguageName}</VPLink></li>)}</ul></div>
+      </div>}
+      {appearanceEnabled && <div class="vp-nav-screen-appearance mobile-appearance appearance"><p class="text">{locale.appearanceText}</p>
+        <button class="vp-switch vp-switch-appearance" type="button" role="switch" title={locale.darkModeSwitchTitle} aria-checked="false">
+          <span class="check"><span class="icon"><span class="vpi-sun sun" aria-hidden="true"></span><span class="vpi-moon moon" aria-hidden="true"></span></span></span>
+        </button>
+      </div>}
+      {socialLinks.length > 0 && <SocialLinks class="vp-nav-screen-social-links social-links" links={socialLinks} />}
+      <UserSlot name="nav-screen-content-after" {lang} route={currentPath} />
+    </div>
+  </div>
+</header>
+
+{searchProvider === 'local' && <div role="button" aria-expanded="true" aria-haspopup="listbox" aria-labelledby="mini-search-label" class="VPLocalSearchBox" hidden data-no-results={searchLocale.noResultsText}>
+  <div class="backdrop"></div>
+  <div class="shell">
+    <form class="search-bar" role="search">
+      <label id="localsearch-label" title={searchButtonText} for="localsearch-input">
+        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></g></svg>
+      </label>
+      <div class="search-actions before"><button class="back-button" type="button" title={searchLocale.backButtonTitle} aria-label={searchLocale.backButtonTitle}><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 12H5m7 7-7-7 7-7"></path></svg></button></div>
+      <input id="localsearch-input" class="search-input" placeholder={searchButtonText} aria-labelledby="localsearch-label" autocomplete="off" />
+      <div class="search-actions"><span class="search-loading" aria-live="polite"></span><button class="clear-button" type="reset" disabled title={searchLocale.resetButtonTitle}><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 5H9l-7 7 7 7h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm-2 4-6 6m0-6 6 6"></path></svg></button></div>
+    </form>
+    <ul class="results"></ul>
+    <div class="search-keyboard-shortcuts" aria-hidden="true">
+      <span><kbd aria-label={searchLocale.footer.navigateUpKeyAriaLabel}><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19V5m-7 7 7-7 7 7"></path></svg></kbd><kbd aria-label={searchLocale.footer.navigateDownKeyAriaLabel}><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m7-7-7 7-7-7"></path></svg></kbd>{searchLocale.footer.navigateText}</span>
+      <span><kbd aria-label={searchLocale.footer.selectKeyAriaLabel}><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="m9 10-5 5 5 5"></path><path d="M20 4v7a4 4 0 0 1-4 4H4"></path></g></svg></kbd>{searchLocale.footer.selectText}</span>
+      <span><kbd aria-label={searchLocale.footer.closeKeyAriaLabel}>esc</kbd>{searchLocale.footer.closeText}</span>
+    </div>
+  </div>
+</div>}
+
+<script is:inline define:vars={{ appearanceDefault, appearanceEnabled, appearanceTransition, searchProvider, disableQueryPersistence, basePath, lightModeSwitchTitle: locale.lightModeSwitchTitle, darkModeSwitchTitle: locale.darkModeSwitchTitle }}>
+  (() => {
+    const root = document.documentElement
+    const updateAppearance = dark => {
+      document.querySelectorAll('.vp-switch-appearance').forEach(button => {
+        button.setAttribute('aria-checked', String(dark))
+        button.setAttribute('title', dark ? lightModeSwitchTitle : darkModeSwitchTitle)
+      })
+    }
+    const preferredDark = matchMedia('(prefers-color-scheme: dark)')
+    const setTheme = dark => {
+      dark ||= root.classList.contains('force-dark')
+      root.dataset.theme = dark ? 'dark' : 'light'
+      root.classList.toggle('dark', dark)
+      updateAppearance(dark)
+      document.querySelector('iframe.giscus-frame')?.contentWindow?.postMessage({ giscus: { setConfig: { theme: dark ? 'dark' : 'light' } } }, 'https://giscus.app')
+      document.dispatchEvent(new CustomEvent('theme-change'))
+    }
+    const appearanceKeyframes = (mode, x, y, dark) => {
+      const reverse = values => dark ? values.toReversed() : values
+      const distance = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))
+      const strategies = {
+        fade: { opacity: reverse(['0', '1']), duration: 300 },
+        'circle-clip': { clipPath: reverse([`circle(0px at ${x}px ${y}px)`, `circle(${distance}px at ${x}px ${y}px)`]), duration: 650 },
+        'horizontal-clip': { clipPath: reverse([`inset(0px ${innerWidth}px 0px 0px)`, 'inset(0px 0px 0px 0px)']) },
+        'vertical-clip': { clipPath: reverse([`inset(0px 0px ${innerHeight}px 0px)`, 'inset(0px 0px 0px 0px)']) },
+        'skew-clip': { clipPath: reverse(['polygon(0px 0px, 0px 0px, 0px 0px)', `polygon(0px 0px, ${innerWidth * 2}px 0px, 0px ${innerHeight * 2}px)`]) },
+        'blinds-vertical': { clipPath: reverse(['inset(50% 0% 50% 0%)', 'inset(0 0 0 0)']) },
+        'blinds-horizontal': { clipPath: reverse(['polygon(50% 0, 50% 100%, 50% 100%, 50% 0)', 'polygon(0 0, 0 100%, 100% 100%, 100% 0)']) },
+        'soft-blur-fade': { opacity: reverse(['0', '1']), filter: reverse(['blur(10px)', 'blur(0px)']), duration: 380 },
+        'diamond-reveal': { clipPath: reverse(['polygon(50% 50%, 50% 50%, 50% 50%, 50% 50%)', 'polygon(50% -50%, 150% 50%, 50% 150%, -50% 50%)']), duration: 500 },
+      }
+      const { duration = 400, ...keyframes } = strategies[mode] ?? strategies.fade
+      return { duration, keyframes }
+    }
+    const syncAutomaticAppearance = () => {
+      if (!appearanceEnabled) return setTheme(root.classList.contains('force-dark'))
+      const appearance = localStorage.getItem('vuepress-theme-appearance') || appearanceDefault
+      if (!appearance || appearance === 'auto') setTheme(preferredDark.matches)
+      else setTheme(appearance === 'dark')
+    }
+    updateAppearance(root.dataset.theme === 'dark')
+    preferredDark.addEventListener('change', syncAutomaticAppearance)
+    addEventListener('storage', event => {
+      if (event.key !== 'vuepress-theme-appearance') return
+      if (!appearanceEnabled) return setTheme(root.classList.contains('force-dark'))
+      if (event.newValue === 'dark' || event.newValue === 'light') setTheme(event.newValue === 'dark')
+      else syncAutomaticAppearance()
+    })
+    let printWasDark = false
+    addEventListener('beforeprint', () => {
+      printWasDark = root.dataset.theme === 'dark'
+      if (printWasDark) { root.dataset.theme = 'light'; root.classList.remove('dark') }
+    })
+    addEventListener('afterprint', () => {
+      if (printWasDark) { root.dataset.theme = 'dark'; root.classList.add('dark') }
+    })
+
+    const navbar = document.querySelector('.vp-navbar')
+    const updateNavbarTop = () => navbar?.classList.toggle('top', scrollY === 0)
+    updateNavbarTop()
+    addEventListener('scroll', updateNavbarTop, { passive: true })
+    document.querySelector('.vp-skip-link')?.addEventListener('click', event => {
+      const link = event.currentTarget
+      if (!(link instanceof HTMLAnchorElement)) return
+      const target = document.querySelector(link.hash)
+      if (!(target instanceof HTMLElement)) return
+      const clear = () => { target.removeAttribute('tabindex'); target.removeEventListener('blur', clear) }
+      target.tabIndex = -1
+      target.addEventListener('blur', clear)
+      target.focus()
+      scrollTo(0, 0)
+    })
+
+    document.querySelectorAll('.vp-switch-appearance').forEach(button => button.addEventListener('click', async event => {
+      const next = root.dataset.theme !== 'dark'
+      const apply = () => {
+        localStorage.setItem('vuepress-theme-appearance', next ? 'dark' : 'light')
+        setTheme(next)
+      }
+      if (appearanceTransition === false || !document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        apply()
+        return
+      }
+      try {
+        root.classList.add('appearance-transition')
+        const transition = document.startViewTransition(apply)
+        void transition.finished.finally(() => root.classList.remove('appearance-transition'))
+        await transition.ready
+        const { keyframes, duration } = appearanceKeyframes(appearanceTransition, event.clientX, event.clientY, next)
+        root.animate(keyframes, {
+          duration,
+          easing: 'ease-in',
+          fill: 'forwards',
+          pseudoElement: `::view-transition-${next ? 'old' : 'new'}(root)`,
+        })
+      } catch {
+        root.classList.remove('appearance-transition')
+        apply()
+      }
+    }))
+
+    const button = document.querySelector('.vp-navbar-hamburger')
+    const menu = document.querySelector('.vp-nav-screen')
+    let screenTimer
+    let screenFrame
+    const screenClasses = ['fade-in-enter-from', 'fade-in-enter-active', 'fade-in-enter-to', 'fade-in-leave-from', 'fade-in-leave-active', 'fade-in-leave-to']
+    const resetScreen = visible => {
+      clearTimeout(screenTimer)
+      cancelAnimationFrame(screenFrame)
+      menu?.classList.remove(...screenClasses)
+      if (menu instanceof HTMLElement) menu.hidden = !visible
+    }
+    const toggleScreen = open => {
+      resetScreen(true)
+      if (!(menu instanceof HTMLElement) || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        resetScreen(open)
+        if (!open) document.body.style.overflow = ''
+        return
+      }
+      const phase = open ? 'enter' : 'leave'
+      menu.classList.add(`fade-in-${phase}-from`)
+      void menu.offsetWidth
+      menu.classList.add(`fade-in-${phase}-active`)
+      screenFrame = requestAnimationFrame(() => {
+        menu.classList.replace(`fade-in-${phase}-from`, `fade-in-${phase}-to`)
+        screenTimer = setTimeout(() => {
+          resetScreen(open)
+          if (!open) document.body.style.overflow = ''
+        }, 200)
+      })
+    }
+    const expandTimers = new WeakMap()
+    const expandClasses = ['fade-in-height-expand-enter-from', 'fade-in-height-expand-enter-active', 'fade-in-height-expand-enter-to', 'fade-in-height-expand-leave-from', 'fade-in-height-expand-leave-active', 'fade-in-height-expand-leave-to']
+    const resetExpand = (container, visible) => {
+      const pending = expandTimers.get(container)
+      clearTimeout(pending?.timer)
+      cancelAnimationFrame(pending?.frame)
+      expandTimers.delete(container)
+      container.classList.remove(...expandClasses)
+      container.style.maxHeight = ''
+      container.style.transition = ''
+      container.style.display = visible ? '' : 'none'
+    }
+    const toggleExpand = (container, open) => {
+      resetExpand(container, true)
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) return resetExpand(container, open)
+      const phase = open ? 'enter' : 'leave'
+      const from = `fade-in-height-expand-${phase}-from`
+      const active = `fade-in-height-expand-${phase}-active`
+      const to = `fade-in-height-expand-${phase}-to`
+      container.classList.add(from, active)
+      if (open) {
+        container.style.transition = 'none'
+        const height = container.offsetHeight
+        container.style.maxHeight = '0px'
+        void container.offsetWidth
+        container.style.transition = ''
+        container.style.maxHeight = `${height}px`
+      } else {
+        container.style.maxHeight = `${container.offsetHeight}px`
+        void container.offsetWidth
+        container.style.maxHeight = '0px'
+      }
+      const pending = {}
+      pending.frame = requestAnimationFrame(() => {
+        pending.frame = requestAnimationFrame(() => {
+          container.classList.remove(from)
+          container.classList.add(to)
+          pending.timer = setTimeout(() => resetExpand(container, open), 300)
+        })
+      })
+      expandTimers.set(container, pending)
+    }
+    const closeMobileMenu = () => {
+      button?.setAttribute('aria-expanded', 'false')
+      button?.classList.remove('active')
+      document.querySelector('.vp-navbar')?.classList.remove('screen-open')
+      menu?.querySelectorAll('.vp-nav-screen-menu-group.open').forEach(group => {
+        group.classList.remove('open')
+        group.querySelector('.button')?.setAttribute('aria-expanded', 'false')
+        const container = group.querySelector('.vp-nav-screen-menu-group-container')
+        if (container instanceof HTMLElement) resetExpand(container, false)
+      })
+      const translations = menu?.querySelector('.vp-nav-screen-translations.open')
+      translations?.classList.remove('open')
+      translations?.querySelector('.title')?.setAttribute('aria-expanded', 'false')
+      const translationsContainer = translations?.querySelector('.vp-nav-screen-translations-container')
+      if (translationsContainer instanceof HTMLElement) resetExpand(translationsContainer, false)
+      toggleScreen(false)
+    }
+    button?.addEventListener('click', () => {
+      const open = button.getAttribute('aria-expanded') !== 'true'
+      if (!open) return closeMobileMenu()
+      button.setAttribute('aria-expanded', 'true')
+      button.classList.add('active')
+      document.querySelector('.vp-navbar')?.classList.add('screen-open')
+      document.body.style.overflow = 'hidden'
+      toggleScreen(true)
+    })
+    menu?.querySelectorAll('a').forEach(link => link.addEventListener('click', closeMobileMenu))
+    menu?.querySelectorAll('.vp-nav-screen-menu-group > .button').forEach(groupButton => groupButton.addEventListener('click', () => {
+      const group = groupButton.closest('.vp-nav-screen-menu-group')
+      const container = group?.querySelector('.vp-nav-screen-menu-group-container')
+      const open = groupButton.getAttribute('aria-expanded') !== 'true'
+      groupButton.setAttribute('aria-expanded', String(open))
+      group?.classList.toggle('open', open)
+      if (container instanceof HTMLElement) toggleExpand(container, open)
+    }))
+    const mobileTranslations = menu?.querySelector('.vp-nav-screen-translations')
+    const mobileTranslationsButton = mobileTranslations?.querySelector('.title')
+    mobileTranslationsButton?.addEventListener('click', () => {
+      const open = mobileTranslationsButton.getAttribute('aria-expanded') !== 'true'
+      mobileTranslationsButton.setAttribute('aria-expanded', String(open))
+      mobileTranslations?.classList.toggle('open', open)
+      const container = mobileTranslations?.querySelector('.vp-nav-screen-translations-container')
+      if (container instanceof HTMLElement) toggleExpand(container, open)
+    })
+
+    const flyouts = [...document.querySelectorAll('.vp-flyout')]
+    const closeFlyouts = except => flyouts.forEach(flyout => {
+      if (flyout === except) return
+      const button = flyout.querySelector('.flyout-button')
+      button?.setAttribute('aria-expanded', 'false')
+      if (button instanceof HTMLElement) delete button.dataset.clickedOpen
+    })
+    flyouts.forEach(flyout => {
+      const trigger = flyout.querySelector('.flyout-button')
+      const setOpen = open => trigger?.setAttribute('aria-expanded', String(open))
+      flyout.addEventListener('mouseenter', () => { closeFlyouts(flyout); setOpen(true) })
+      flyout.addEventListener('mouseleave', () => {
+        if (trigger instanceof HTMLElement) delete trigger.dataset.clickedOpen
+        setOpen(false)
+      })
+      flyout.addEventListener('focusin', () => { closeFlyouts(flyout); setOpen(true) })
+      flyout.addEventListener('focusout', event => {
+        if (!(event.relatedTarget instanceof Node) || !flyout.contains(event.relatedTarget)) {
+          if (trigger instanceof HTMLElement) delete trigger.dataset.clickedOpen
+          setOpen(false)
+        }
+      })
+      trigger?.addEventListener('click', () => {
+        const open = !(trigger instanceof HTMLElement && trigger.dataset.clickedOpen === 'true')
+        closeFlyouts(flyout)
+        if (trigger instanceof HTMLElement) {
+          if (open) trigger.dataset.clickedOpen = 'true'
+          else delete trigger.dataset.clickedOpen
+        }
+        setOpen(open)
+      })
+      flyout.querySelectorAll('a').forEach(link => link.addEventListener('click', () => {
+        if (trigger instanceof HTMLElement) delete trigger.dataset.clickedOpen
+        setOpen(false)
+      }))
+    })
+
+    document.addEventListener('pointerdown', event => {
+      if (!(event.target instanceof Element)) return
+      if (!event.target.closest('.vp-flyout')) closeFlyouts()
+    })
+
+    const dialog = document.querySelector('.VPLocalSearchBox')
+    const searchButton = document.querySelector('.search-button')
+    if (dialog) document.body.append(dialog)
+    const searchInput = dialog?.querySelector('.search-input')
+    const results = dialog?.querySelector('.results')
+    const clearButton = dialog?.querySelector('.clear-button')
+    const loading = dialog?.querySelector('.search-loading')
+    const searchNoResultsText = dialog instanceof HTMLElement ? dialog.dataset.noResults || 'No results for' : 'No results for'
+    let pagefind
+    let searchTimer
+    let searchRun = 0
+    let selectedIndex = -1
+    let bodyOverflow = ''
+    const searchResults = []
+    const closeSearch = () => {
+      if (!(dialog instanceof HTMLElement) || dialog.hidden) return
+      dialog.hidden = true
+      document.body.style.overflow = bodyOverflow
+      searchButton?.focus()
+    }
+    const setLoading = active => {
+      loading?.classList.toggle('active', active)
+      if (active) {
+        loading?.setAttribute('role', 'status')
+        loading?.setAttribute('aria-label', 'Loading search results')
+      } else {
+        loading?.removeAttribute('role')
+        loading?.removeAttribute('aria-label')
+      }
+    }
+    const selectResult = index => {
+      const links = [...(results?.querySelectorAll('.result') || [])]
+      selectedIndex = links.length ? (index + links.length) % links.length : -1
+      links.forEach((link, i) => {
+        link.classList.toggle('selected', i === selectedIndex)
+        link.parentElement?.setAttribute('aria-selected', String(i === selectedIndex))
+      })
+      links[selectedIndex]?.scrollIntoView({ block: 'nearest' })
+    }
+    const appendHighlighted = (target, value, query) => {
+      const text = String(value || '')
+      const needle = query.trim().toLocaleLowerCase(root.lang)
+      if (!needle) {
+        target.textContent = text
+        return
+      }
+      const lower = text.toLocaleLowerCase(root.lang)
+      let offset = 0
+      let index
+      while ((index = lower.indexOf(needle, offset)) >= 0) {
+        target.append(document.createTextNode(text.slice(offset, index)))
+        const mark = document.createElement('mark')
+        mark.textContent = text.slice(index, index + needle.length)
+        target.append(mark)
+        offset = index + needle.length
+      }
+      target.append(document.createTextNode(text.slice(offset)))
+    }
+    const chevron = () => {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+      svg.setAttribute('width', '18')
+      svg.setAttribute('height', '18')
+      svg.setAttribute('viewBox', '0 0 24 24')
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+      for (const [name, value] of Object.entries({ fill: 'none', stroke: 'currentColor', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'stroke-width': '2', d: 'm9 18 6-6-6-6' })) path.setAttribute(name, value)
+      svg.append(path)
+      return svg
+    }
+    const renderResults = (items, query) => {
+      searchResults.splice(0, searchResults.length, ...items)
+      results?.replaceChildren()
+      if (!results) return
+      for (const attribute of ['id', 'role', 'aria-labelledby']) results.removeAttribute(attribute)
+      if (items.length) {
+        results.id = 'localsearch-list'
+        results.setAttribute('role', 'listbox')
+        results.setAttribute('aria-labelledby', 'localsearch-label')
+        dialog?.setAttribute('aria-owns', 'localsearch-list')
+      } else {
+        dialog?.removeAttribute('aria-owns')
+      }
+      if (query && !items.length) {
+        const empty = document.createElement('li')
+        empty.className = 'no-results'
+        const strong = document.createElement('strong')
+        strong.textContent = query
+        empty.append(`${searchNoResultsText} "`, strong, '"')
+        results.append(empty)
+      }
+      items.forEach((item, index) => {
+        const li = document.createElement('li')
+        li.setAttribute('role', 'option')
+        li.setAttribute('aria-selected', String(index === 0))
+        const link = document.createElement('a')
+        link.href = !item.url?.startsWith('/') || basePath === '/' || item.url.startsWith(basePath) ? item.url : `${basePath}${item.url.replace(/^\/+/, '')}`
+        link.className = `result${index === 0 ? ' selected' : ''}`
+        link.setAttribute('aria-label', [...item.parents, item.title].join(' > '))
+        const body = document.createElement('div')
+        const titles = document.createElement('div')
+        titles.className = 'titles'
+        const icon = document.createElement('span')
+        icon.className = 'title-icon'
+        icon.textContent = '#'
+        titles.append(icon)
+        for (const parent of item.parents) {
+          const title = document.createElement('span')
+          title.className = 'title'
+          const text = document.createElement('span')
+          text.className = 'text'
+          text.textContent = parent
+          title.append(text, chevron())
+          titles.append(title)
+        }
+        const main = document.createElement('span')
+        main.className = 'title main'
+        const text = document.createElement('span')
+        text.className = 'text'
+        appendHighlighted(text, item.title, query)
+        main.append(text)
+        titles.append(main)
+        body.append(titles)
+        link.append(body)
+        link.addEventListener('mouseenter', () => selectResult(index))
+        link.addEventListener('focus', () => selectResult(index))
+        link.addEventListener('click', closeSearch)
+        li.append(link)
+        results.append(li)
+      })
+      selectedIndex = items.length ? 0 : -1
+    }
+    const runSearch = async query => {
+      const run = ++searchRun
+      if (!query.trim()) {
+        renderResults([], '')
+        setLoading(false)
+        return
+      }
+      setLoading(true)
+      try {
+        pagefind ||= await import(/* @vite-ignore */ `${basePath}pagefind/pagefind.js`).then(async module => {
+          await module.init()
+          return module
+        })
+        const response = await pagefind.search(query)
+        const pages = await Promise.all(response.results.map(result => result.data()))
+        if (run !== searchRun) return
+        const items = pages.flatMap(data => {
+          const pageTitle = data.meta?.title || data.title || data.url
+          const matches = data.sub_results?.length ? data.sub_results : [{ title: pageTitle, url: data.url }]
+          return matches.map(match => ({
+            title: match.title || pageTitle,
+            url: match.url || data.url,
+            parents: (match.url || data.url) === data.url ? [] : [pageTitle],
+          }))
+        }).slice(0, 16)
+        renderResults(items, query)
+      } catch {
+        if (run === searchRun) renderResults([], query)
+      } finally {
+        if (run === searchRun) setLoading(false)
+      }
+    }
+    const openSearch = async () => {
+      if (!(dialog instanceof HTMLElement) || !dialog.hidden) return
+      closeFlyouts()
+      closeMobileMenu()
+      dialog.hidden = false
+      bodyOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+      history.pushState(null, '', null)
+      if (document.body.dataset.pagefindReady !== 'true') {
+        renderResults([{ title: root.lang.startsWith('zh') ? '快速开发模式未生成搜索索引，请先执行 pnpm build。' : 'The development preview has no search index. Run pnpm build first.', url: location.pathname, parents: [] }], '')
+        return
+      }
+      const saved = disableQueryPersistence ? '' : sessionStorage.getItem('vuepress-plume:mini-search-filter') || ''
+      if (searchInput instanceof HTMLInputElement) searchInput.value = saved
+      if (clearButton instanceof HTMLButtonElement) clearButton.disabled = !saved
+      await runSearch(saved)
+      requestAnimationFrame(() => { searchInput?.focus(); searchInput?.select() })
+    }
+    searchButton?.addEventListener('click', openSearch)
+    dialog?.querySelector('.back-button')?.addEventListener('click', closeSearch)
+    dialog?.querySelector('.backdrop')?.addEventListener('click', closeSearch)
+    dialog?.querySelector('.search-bar')?.addEventListener('pointerup', event => {
+      if (event.pointerType === 'mouse') {
+        searchInput?.focus()
+        searchInput?.select()
+      }
+    })
+    dialog?.querySelector('.search-bar')?.addEventListener('submit', event => {
+      event.preventDefault()
+      if (selectedIndex >= 0) location.href = searchResults[selectedIndex].url
+    })
+    dialog?.querySelector('.search-bar')?.addEventListener('reset', event => {
+      event.preventDefault()
+      clearTimeout(searchTimer)
+      if (searchInput instanceof HTMLInputElement) searchInput.value = ''
+      if (!disableQueryPersistence) sessionStorage.removeItem('vuepress-plume:mini-search-filter')
+      if (clearButton instanceof HTMLButtonElement) clearButton.disabled = true
+      runSearch('')
+      searchInput?.focus()
+    })
+    searchInput?.addEventListener('input', () => {
+      const query = searchInput.value
+      if (!disableQueryPersistence) sessionStorage.setItem('vuepress-plume:mini-search-filter', query)
+      if (clearButton instanceof HTMLButtonElement) clearButton.disabled = !query
+      clearTimeout(searchTimer)
+      searchTimer = setTimeout(() => runSearch(query), 200)
+    })
+    dialog?.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeSearch()
+        return
+      }
+      if (event.key === 'Tab') {
+        const focusable = [...dialog.querySelectorAll('button:not([disabled]), input, a[href]')].filter(element => element instanceof HTMLElement && !element.hidden && element.getClientRects().length)
+        const first = focusable[0]
+        const last = focusable.at(-1)
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last?.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first?.focus()
+        }
+      }
+      const macControl = root.classList.contains('mac') && event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
+      const offset = event.key === 'ArrowDown' || (macControl && event.key.toLowerCase() === 'n') ? 1
+        : event.key === 'ArrowUp' || (macControl && event.key.toLowerCase() === 'p') ? -1 : 0
+      if (!offset || !searchResults.length) return
+      event.preventDefault()
+      selectResult(selectedIndex + offset)
+    })
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        closeSearch()
+        closeFlyouts()
+        closeMobileMenu()
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        if (searchProvider !== 'local') return
+        event.preventDefault()
+        openSearch()
+      }
+      const target = event.target
+      const editing = target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName))
+      if (searchProvider === 'local' && event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey && !editing) {
+        event.preventDefault()
+        openSearch()
+      }
+    })
+    addEventListener('popstate', event => {
+      if (!(dialog instanceof HTMLElement) || dialog.hidden) return
+      event.preventDefault()
+      closeSearch()
+    })
+  })()
+</script>

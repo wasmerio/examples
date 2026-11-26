@@ -1,0 +1,321 @@
+---
+import type { ContentEntry, Lang, PostMetaConfig } from '../lib/content'
+import { categoryListOf, createTimeTextOf, postMetaConfigOf, routeOf, showsStickyBadge, tagClassOf, wordCountOf } from '../lib/content'
+import { encryptionPolicy } from '../lib/encrypt-policy'
+import { postExcerptOf } from '../lib/post-excerpt'
+import ArticleLikeButton from './vue/stats/ArticleLikeButton.vue'
+import PageViews from './vue/stats/PageViews.vue'
+import { siteConfig } from '../../site.config.mjs'
+import UserSlot from './UserSlot.astro'
+import { postCollectionsFor, type ResolvedPostCollection } from '../lib/collections'
+import { localeOf, readingTimeOf } from '../lib/locales'
+import { normalizePrefix, withBase, withBaseInHtml } from '../lib/client-utils'
+
+interface Props {
+  posts: ContentEntry[]
+  lang: Lang
+  limit?: number
+  collection?: ResolvedPostCollection
+}
+
+const { posts, lang, limit: requestedLimit, collection = postCollectionsFor(lang)[0] } = Astro.props as Props
+const pagination = (collection?.pagination ?? siteConfig.pagination) as false | number | { perPage?: number } | undefined
+const transition = localeOf(lang).transition as boolean | { postList?: boolean }
+const postListTransition = transition !== false && (typeof transition !== 'object' || transition.postList !== false)
+const limit = requestedLimit ?? (pagination === false
+  ? posts.length
+  : typeof pagination === 'number'
+    ? pagination
+    : pagination?.perPage ?? 15)
+const en = !lang.startsWith('zh')
+const tagsTheme = (collection?.tagsTheme ?? siteConfig.tagsTheme ?? 'colored') as 'colored' | 'gray' | 'brand'
+const metaConfig = postMetaConfigOf(siteConfig.meta as PostMetaConfig | false | undefined, collection?.meta)
+const createTimeEnabled = localeOf(lang).createTime !== false
+const configuredPostCover = collection?.postCover ?? siteConfig.postCover
+const pages = Math.ceil(posts.length / limit)
+const visiblePosts = posts.slice(0, limit)
+const visiblePostData = await Promise.all(visiblePosts.map(async (post, index) => {
+  const encrypted = encryptionPolicy(post).pageEncrypted
+  const excerpt = encrypted ? '' : withBaseInHtml(await postExcerptOf(post), import.meta.env.BASE_URL)
+  const globalCover = typeof configuredPostCover === 'string' ? { layout: configuredPostCover } : configuredPostCover || {}
+  const cover = configuredPostCover !== false && post.data.cover ? { ...globalCover, ...post.data.coverStyle } : undefined
+  const baseLayout = cover?.layout ?? 'right'
+  const odd = (index + 1) % 2 === 1
+  const layout = baseLayout === 'odd-left' ? (odd ? 'left' : 'right') : baseLayout === 'odd-right' ? (odd ? 'right' : 'left') : baseLayout
+  const ratio = typeof cover?.ratio === 'number' ? cover.ratio : (() => {
+    const [width, height] = String(cover?.ratio ?? '4/3').split(/[:/]/).map(Number)
+    return height / width
+  })()
+  const width = cover?.width ?? 240
+  return {
+    index,
+    post,
+    encrypted,
+    categories: categoryListOf(post),
+    date: !createTimeEnabled || metaConfig.createTime === false ? '' : createTimeTextOf(post, metaConfig.createTime === true ? 'short' : metaConfig.createTime ?? 'short'),
+    readingTime: readingTimeOf(lang, wordCountOf(post)),
+    excerpt,
+    cover: cover && { layout, compact: !excerpt && layout !== 'top' && Boolean(cover.compact), compactEnabled: !excerpt && Boolean(cover.compact), ratio, width },
+  }
+}))
+const initialPageRange = pages <= 10
+  ? Array.from({ length: pages }, (_, index) => ({ value: index + 1 }))
+  : [{ value: 1 }, { value: 2 }, { value: 3 }, { value: 4 }, { value: 5, more: true }, { value: pages - 1 }, { value: pages }]
+const base = normalizePrefix(import.meta.env.BASE_URL)
+const categoriesLink = withBase(collection?.categoriesLink, base)
+const tagsLink = withBase(collection?.tagsLink, base)
+const postsEndpoint = withBase('/posts.json', base)
+---
+
+<div class="vp-post-list">
+  <UserSlot name="posts-post-list-before" {lang} {posts} />
+  {visiblePostData.map(({ index, post, encrypted, categories, date, readingTime, excerpt, cover }) => (
+    <div class:list={['vp-post-item', { 'has-cover': cover, draft: post.data.draft }, cover?.layout, { 'no-post-transition': !postListTransition }]} style={`--vp-post-delay:${index * .025}s`}>
+      {cover && <div
+        class:list={['post-cover', { compact: cover.compact }]}
+        data-cover-layout={cover.layout}
+        data-cover-ratio={cover.ratio}
+        data-cover-width={cover.width}
+        data-cover-compact={String(cover.compactEnabled)}
+        style={cover.layout === 'top'
+        ? `--vp-cover-ratio:${cover.ratio * 100}%;height:0;padding-bottom:${cover.ratio * 100}%`
+        : `--vp-cover-ratio:${cover.ratio * 100}%;width:${cover.width}px;height:${cover.width * cover.ratio}px`}
+      >
+        <a class="vp-link link" href={withBase(routeOf(post), base)}><img src={withBase(post.data.cover, base)} alt={post.data.title} loading="lazy" /></a>
+      </div>}
+      <div class="post-item-content">
+        <h3>{showsStickyBadge(post.data.sticky) && <span class="sticky">TOP</span>}{post.data.draft && <span class="draft">DRAFT</span>}{encrypted && <span class="icon-lock vpi-lock" aria-hidden="true"></span>}<a class="vp-link link" href={withBase(routeOf(post), base)}>{post.data.title}</a></h3>
+        <div class="post-meta">
+          {categories.length > 0 && <div class="category-list"><span class="icon vpi-folder" aria-hidden="true"></span>{categories.map((category, index) => <><a class="vp-link link no-icon" href={`${categoriesLink}?id=${category.id}`}>{category.name}</a>{index < categories.length - 1 && <span>/</span>}</>)}</div>}
+          {readingTime && (metaConfig.readingTime !== false || metaConfig.wordCount !== false) && <div class="reading-time"><span class="vpi-books icon" aria-hidden="true"></span>{metaConfig.wordCount !== false && <span>{readingTime.words}</span>}{metaConfig.readingTime !== false && <span>{readingTime.time}</span>}</div>}
+          {metaConfig.tags !== false && post.data.tags.length > 0 && <div class="tag-list"><span class="icon vpi-tag" aria-hidden="true"></span>{post.data.tags.slice(0, 4).map(tag => tagsLink
+            ? <a class:list={['vp-link link tag', tagClassOf(tag, tagsTheme)]} href={`${tagsLink}?tag=${encodeURIComponent(tag)}`}>{tag}</a>
+            : <span class:list={['vp-link tag', tagClassOf(tag, tagsTheme)]}>{tag}</span>)}</div>}
+          {date && <div class="create-time"><span class="icon vpi-clock" aria-hidden="true"></span><span>{date}</span></div>}
+          {siteConfig.features.engagement && <span class="meta-group post-engagement"><PageViews path={routeOf(post)} client:visible /><ArticleLikeButton path={routeOf(post)} lang={lang} compact={true} client:visible /></span>}
+        </div>
+        {excerpt && <div class="vp-doc excerpt" set:html={excerpt}></div>}
+      </div>
+    </div>
+  ))}
+  <UserSlot name="posts-post-list-after" {lang} {posts} />
+  {posts.length > limit && (
+    <div class="vp-pagination" aria-label={en ? 'Pagination' : '分页'}>
+      <button type="button" class="btn prev" data-page-action="previous" disabled>{en ? 'Prev' : '上一页'}</button>
+      <div class="page-range">
+        {initialPageRange.map(({ value, more }) => <button type="button" class:list={[{ active: value === 1, more }, 'btn']} data-page={more ? undefined : value} disabled={more} aria-current={value === 1 ? 'page' : undefined}>{more ? '...' : value}</button>)}
+      </div>
+      <button type="button" class="btn next" data-page-action="next">{en ? 'Next' : '下一页'}</button>
+    </div>
+  )}
+  <UserSlot name="posts-post-list-pagination-after" {lang} {posts} />
+</div>
+
+<script is:inline define:vars={{ pageSize: limit, totalPages: pages, postLanguage: lang, postCollection: collection?.key, categoriesLink, tagsLink, postsEndpoint, base, showEngagement: siteConfig.features.engagement, postCover: configuredPostCover, postListTransition, metaConfig }}>
+  (() => {
+    const list = document.currentScript?.previousElementSibling
+    const nav = list?.querySelector(':scope > .vp-pagination')
+    if (!(list instanceof HTMLElement)) return
+    const isMobile = () => typeof navigator.userAgentData?.mobile === 'boolean'
+      ? navigator.userAgentData.mobile
+      : /\b(?:Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|CriOS|FxiOS)\b/i.test(navigator.userAgent)
+    const syncCover = cover => {
+      const item = cover.closest('.vp-post-item')
+      if (!(item instanceof HTMLElement)) return
+      const layout = isMobile() ? 'top' : cover.dataset.coverLayout
+      item.classList.remove('left', 'right', 'top')
+      item.classList.add(layout)
+      cover.classList.toggle('compact', cover.dataset.coverCompact === 'true' && layout !== 'top')
+      const ratio = Number(cover.dataset.coverRatio)
+      const width = Number(cover.dataset.coverWidth)
+      cover.style.setProperty('--vp-cover-ratio', `${ratio * 100}%`)
+      if (layout === 'top') {
+        cover.style.removeProperty('width')
+        cover.style.height = '0px'
+        cover.style.paddingBottom = `${ratio * 100}%`
+      } else {
+        cover.style.width = `${width}px`
+        cover.style.height = `${width * ratio}px`
+        cover.style.removeProperty('padding-bottom')
+      }
+    }
+    const syncCovers = () => list.querySelectorAll(':scope > .vp-post-item > .post-cover').forEach(syncCover)
+    syncCovers()
+    addEventListener('resize', syncCovers, { passive: true })
+    if (!(nav instanceof HTMLElement)) return
+    const firstPage = [...list.querySelectorAll(':scope > .vp-post-item')]
+    let posts
+    let page = 1
+    const createElement = (tag, className, text) => {
+      const element = document.createElement(tag)
+      if (className) element.className = className
+      if (text !== undefined) element.textContent = text
+      return element
+    }
+    const createLink = (href, className, text) => {
+      const link = createElement('a', className, text)
+      link.href = href
+      return link
+    }
+    const resolvePath = value => !value || base === '/' || !value.startsWith('/') || value.startsWith(base) ? value : `${base}${value.replace(/^\/+/, '')}`
+    const createMeta = post => {
+      const meta = createElement('div', 'post-meta')
+      if (post.categories?.length) {
+        const group = createElement('div', 'category-list')
+        group.append(createElement('span', 'icon vpi-folder'))
+        post.categories.forEach((category, index) => {
+          group.append(createLink(`${categoriesLink}?id=${category.id}`, 'vp-link link no-icon', category.name))
+          if (index < post.categories.length - 1) group.append(createElement('span', '', '/'))
+        })
+        meta.append(group)
+      }
+      if (post.readingTime && (metaConfig.readingTime !== false || metaConfig.wordCount !== false)) {
+        const reading = createElement('div', 'reading-time')
+        reading.append(createElement('span', 'vpi-books icon'))
+        if (metaConfig.wordCount !== false) reading.append(createElement('span', '', post.readingTime.words))
+        if (metaConfig.readingTime !== false) reading.append(createElement('span', '', post.readingTime.time))
+        meta.append(reading)
+      }
+      if (metaConfig.tags !== false && post.tags?.length) {
+        const group = createElement('div', 'tag-list')
+        group.append(createElement('span', 'icon vpi-tag'))
+        post.tags.forEach(tag => group.append(tagsLink
+          ? createLink(`${tagsLink}?tag=${encodeURIComponent(tag.name)}`, `vp-link link tag ${tag.className}`, tag.name)
+          : createElement('span', `vp-link tag ${tag.className}`, tag.name)))
+        meta.append(group)
+      }
+      if (post.date) {
+        const created = createElement('div', 'create-time')
+        created.append(createElement('span', 'icon vpi-clock'), createElement('span', '', post.date))
+        meta.append(created)
+      }
+      if (showEngagement) meta.append(createElement('span', 'meta-group post-engagement', '♡ —'))
+      return meta
+    }
+    const createPost = (post, index) => {
+      const item = createElement('div', `vp-post-item${post.draft ? ' draft' : ''}${postListTransition ? '' : ' no-post-transition'}`)
+      item.style.setProperty('--vp-post-delay', `${index * .025}s`)
+      if (post.cover && postCover !== false) {
+        const globalCover = typeof postCover === 'string' ? { layout: postCover } : postCover
+        const options = { layout: 'right', ratio: '4/3', ...globalCover, ...post.coverStyle }
+        const odd = (index + 1) % 2 === 1
+        const layout = options.layout === 'odd-left' ? (odd ? 'left' : 'right') : options.layout === 'odd-right' ? (odd ? 'right' : 'left') : options.layout
+        const ratio = typeof options.ratio === 'number' ? options.ratio : (() => {
+          const [width, height] = String(options.ratio).split(/[:/]/).map(Number)
+          return height / width
+        })()
+        const width = options.width ?? 240
+        item.className += ` has-cover ${layout}`
+        const cover = createElement('div', `post-cover${!post.excerpt && layout !== 'top' && options.compact ? ' compact' : ''}`)
+        cover.dataset.coverLayout = layout
+        cover.dataset.coverRatio = String(ratio)
+        cover.dataset.coverWidth = String(width)
+        cover.dataset.coverCompact = String(!post.excerpt && Boolean(options.compact))
+        cover.style.setProperty('--vp-cover-ratio', `${ratio * 100}%`)
+        if (layout === 'top') {
+          cover.style.height = '0'
+          cover.style.paddingBottom = `${ratio * 100}%`
+        } else {
+          cover.style.width = `${width}px`
+          cover.style.height = `${width * ratio}px`
+        }
+        const link = createLink(resolvePath(post.route), 'vp-link link')
+        const image = createElement('img')
+        image.src = resolvePath(post.cover)
+        image.alt = post.title
+        image.loading = 'lazy'
+        link.append(image)
+        cover.append(link)
+        item.append(cover)
+      }
+      const content = createElement('div', 'post-item-content')
+      const heading = createElement('h3')
+      if (post.sticky === true || typeof post.sticky === 'number' && post.sticky >= 0) heading.append(createElement('span', 'sticky', 'TOP'))
+      if (post.draft) heading.append(createElement('span', 'draft', 'DRAFT'))
+      if (post.encrypt) heading.append(createElement('span', 'icon-lock vpi-lock'))
+      heading.append(createLink(resolvePath(post.route), 'vp-link link', post.title))
+      content.append(heading, createMeta(post))
+      if (post.excerpt) {
+        const excerpt = createElement('div', 'vp-doc excerpt')
+        excerpt.innerHTML = post.excerpt
+        content.append(excerpt)
+      }
+      item.append(content)
+      return item
+    }
+    const rangeFor = current => {
+      const range = []
+      const per = matchMedia('(min-width: 960px)').matches ? 4 : 5
+      if (totalPages <= 10) return Array.from({ length: totalPages }, (_, index) => ({ value: index + 1 }))
+      let more = false
+      for (let value = 1; value <= totalPages; value++) {
+        if ((current <= per && value <= per) || (current >= totalPages - (per - 1) && value >= totalPages - (per - 1)) || value <= 2 || value >= totalPages - 1 || ((current > per + 1 || current < totalPages - (per + 1)) && current - value < per - 2 && value - current < per - 2)) {
+          more = false
+          range.push({ value })
+        } else if (!more) {
+          more = true
+          range.push({ value, more: true })
+        }
+      }
+      return range
+    }
+    const renderPagination = () => {
+      const range = nav.querySelector('.page-range')
+      const buttons = rangeFor(page).map(({ value, more }) => {
+        const button = createElement('button', `${more ? 'more ' : ''}${value === page && !more ? 'active ' : ''}btn`, more ? '...' : String(value))
+        button.type = 'button'
+        button.disabled = Boolean(more)
+        if (!more) button.dataset.page = String(value)
+        if (value === page && !more) button.setAttribute('aria-current', 'page')
+        return button
+      })
+      range.replaceChildren(...buttons)
+      nav.querySelector('[data-page-action="previous"]').disabled = page === 1
+      nav.querySelector('[data-page-action="next"]').disabled = page === totalPages
+    }
+    const show = async (next, updateHistory = true, scroll = true) => {
+      const target = Math.max(1, Math.min(totalPages, next))
+      if (target === 1) {
+        list.querySelectorAll(':scope > .vp-post-item').forEach(item => item.remove())
+        nav.before(...firstPage)
+      }
+      else {
+        try {
+          posts ??= (await fetch(postsEndpoint).then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`)
+            return response.json()
+          }))[postLanguage]?.[postCollection] ?? []
+        } catch (error) {
+          console.error('Failed to load the post page', error)
+          return
+        }
+        const fragment = document.createDocumentFragment()
+        posts.slice((target - 1) * pageSize, target * pageSize).forEach((post, index) => fragment.append(createPost(post, index)))
+        list.querySelectorAll(':scope > .vp-post-item').forEach(item => item.remove())
+        nav.before(fragment)
+      }
+      syncCovers()
+      page = target
+      renderPagination()
+      if (updateHistory) {
+        const url = new URL(location.href)
+        if (page === 1) url.searchParams.delete('p')
+        else url.searchParams.set('p', String(page))
+        history.pushState({}, '', url)
+      }
+      if (scroll) window.scrollTo({ top: 0, behavior: 'instant' })
+    }
+    nav.addEventListener('click', event => {
+      const button = event.target.closest('button')
+      if (!button) return
+      if (button.dataset.page) void show(Number(button.dataset.page))
+      if (button.dataset.pageAction === 'previous') void show(page - 1)
+      if (button.dataset.pageAction === 'next') void show(page + 1)
+    })
+    addEventListener('popstate', () => void show(Number(new URLSearchParams(location.search).get('p')) || 1, false, false))
+    matchMedia('(min-width: 960px)').addEventListener('change', renderPagination)
+    const initialPage = Number(new URLSearchParams(location.search).get('p')) || 1
+    if (initialPage > 1) void show(initialPage, false, false)
+    else renderPagination()
+  })()
+</script>

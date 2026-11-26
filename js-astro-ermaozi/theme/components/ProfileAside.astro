@@ -1,0 +1,107 @@
+---
+import type { Lang } from '../lib/content'
+import { socialLinksFor } from '../lib/social'
+import PopularPosts from './PopularPosts.astro'
+import PostsNav from './PostsNav.astro'
+import SocialLinks from './SocialLinks.astro'
+import { siteConfig } from '../../site.config.mjs'
+import { localeOf } from '../lib/locales'
+import UserSlot from './UserSlot.astro'
+import { postCollectionsFor, type ResolvedPostCollection } from '../lib/collections'
+import type { SocialLink } from '../lib/social'
+import VPLink from './VPLink.astro'
+import { withBase } from '../lib/client-utils'
+
+interface ProfileOptions {
+  avatar?: string
+  url?: string
+  name?: string
+  description?: string
+  circle?: boolean
+  location?: string
+  organization?: string
+  layout?: 'left' | 'right'
+}
+
+const { lang, pageMap = {}, blogStats = { tags: 0, categories: 0, posts: 0 }, collection = postCollectionsFor(lang)[0] } = Astro.props as { lang: Lang, pageMap?: Record<string, string>, blogStats?: { tags: number, categories: number, posts: number }, collection?: ResolvedPostCollection }
+const en = !lang.startsWith('zh')
+const locale = localeOf(lang)
+const configuredProfile = (collection?.profile === undefined ? (locale.profile ?? siteConfig.profile) : collection.profile) as ProfileOptions | false | undefined ?? {}
+const profileSocial = (collection?.social === false ? [] : collection?.social ?? socialLinksFor(lang)) as SocialLink[]
+const avatarSource = configuredProfile === false ? false : configuredProfile.avatar ?? configuredProfile.url ?? locale.logo ?? siteConfig.logo
+const profile = configuredProfile === false ? false : {
+  avatar: typeof avatarSource === 'string' ? withBase(avatarSource, import.meta.env.BASE_URL) : '',
+  name: configuredProfile.name ?? locale.siteName,
+  description: configuredProfile.description ?? locale.profileTagline,
+  circle: Boolean(configuredProfile.circle),
+  location: configuredProfile.location ?? '',
+  organization: configuredProfile.organization ?? '',
+}
+---
+
+{profile && <div class="vp-posts-aside">
+  <UserSlot name="posts-aside-top" {lang} />
+  <div class="vp-profile">
+    {profile.avatar && <p class:list={{ circle: profile.circle }}><img src={profile.avatar} alt={profile.name} /></p>}
+    <div class="profile-info">
+      <h3>{profile.name}</h3>
+      {profile.description && <p set:html={profile.description}></p>}
+      {profile.location && <div class="profile-location"><span class="vpi-location" aria-hidden="true"></span><p set:html={profile.location}></p></div>}
+      {profile.organization && <div class="profile-organization"><span class="vpi-organization" aria-hidden="true"></span><p set:html={profile.organization}></p></div>}
+    </div>
+    {profileSocial.length > 0 && <div class="profile-social"><SocialLinks links={profileSocial} /></div>}
+  </div>
+  <PostsNav {lang} {blogStats} {collection} />
+  {siteConfig.features.popularPosts && <PopularPosts {lang} {pageMap} />}
+  <UserSlot name="posts-aside-bottom" {lang} />
+</div>}
+
+<div class="vp-posts-extract" role="button" tabindex="0" aria-label={en ? 'Open blog profile' : '打开博客资料'} aria-expanded="false">
+  <span class="vpi-posts-ext icon" aria-hidden="true"></span>
+</div>
+<div class="posts-modal" role="dialog" aria-modal="true" aria-label={en ? 'Blog profile and navigation' : '博客资料与导航'} hidden>
+  <div class="posts-modal-container">
+    <UserSlot name="posts-extract-before" {lang} />
+    {profile && <div class="profile">
+      {profile.avatar && <p class="avatar"><img src={profile.avatar} alt={profile.name} /></p>}
+      <div><h3>{profile.name}</h3>{profile.description && <p class="desc" set:html={profile.description}></p>}<div class="profile-info">
+        {profile.location && <div class="profile-location"><span class="vpi-location" aria-hidden="true"></span><p set:html={profile.location}></p></div>}
+        {profile.organization && <div class="profile-organization"><span class="vpi-organization" aria-hidden="true"></span><p set:html={profile.organization}></p></div>}
+      </div></div>
+    </div>}
+    <div class:list={['posts-nav', { 'no-profile': !profile }]}>
+      {collection?.tags !== false && <VPLink class="nav-link" href={collection?.tagsLink} noIcon><span class="vpi-tag icon" aria-hidden="true"></span><span>{collection?.tagsText ?? locale.tagText}</span></VPLink>}
+      {collection?.categories !== false && <VPLink class="nav-link" href={collection?.categoriesLink} noIcon><span class="vpi-category icon" aria-hidden="true"></span><span>{collection?.categoriesText ?? locale.categoryText}</span></VPLink>}
+      {collection?.archives !== false && <VPLink class="nav-link" href={collection?.archivesLink} noIcon><span class="vpi-archive icon" aria-hidden="true"></span><span>{collection?.archivesText ?? locale.archiveText}</span></VPLink>}
+    </div>
+    <UserSlot name="posts-extract-after" {lang} />
+  </div>
+</div>
+
+<script is:inline>
+  (() => {
+    const modal = document.currentScript?.previousElementSibling
+    const button = modal?.previousElementSibling
+    if (!(modal instanceof HTMLElement) || !(button instanceof HTMLElement)) return
+    let openTimer
+    const close = () => {
+      clearTimeout(openTimer)
+      modal.hidden = true
+      modal.querySelector('.posts-modal-container')?.classList.remove('open')
+      button.setAttribute('aria-expanded', 'false')
+      document.body.style.overflow = ''
+    }
+    button.addEventListener('click', () => {
+      modal.hidden = false
+      button.setAttribute('aria-expanded', 'true')
+      document.body.style.overflow = 'hidden'
+      openTimer = setTimeout(() => modal.querySelector('.posts-modal-container')?.classList.add('open'), 200)
+    })
+    button.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); button.click() }
+    })
+    modal.addEventListener('click', event => { if (event.target === modal) close() })
+    addEventListener('keydown', event => { if (event.key === 'Escape' && !modal.hidden) close() })
+
+  })()
+</script>

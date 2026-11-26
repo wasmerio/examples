@@ -1,0 +1,52 @@
+---
+import { getI18n } from '../i18n/context';
+
+// Shared clipboard handler for every [data-copy] button on the page, with a
+// polite live region so screen readers hear the result.
+const { t } = getI18n(Astro.currentLocale);
+---
+
+<p
+  id="copy-status"
+  role="status"
+  data-done={t('copy.done')}
+  data-done-generic={t('copy.doneGeneric')}
+  data-failed={t('copy.failed')}
+  class="pointer-events-none fixed right-4 bottom-4 z-50 rounded border border-outline bg-elevated px-3 py-1.5 font-mono text-xs text-fg opacity-0 transition-opacity"
+></p>
+
+<script>
+  const status = document.getElementById('copy-status');
+  const msg = (key: 'done' | 'doneGeneric' | 'failed', value = '') =>
+    (status?.dataset[key] ?? '').replace('{value}', value);
+  let timer: number | undefined;
+  const show = (text: string) => {
+    if (!status) return;
+    status.textContent = text;
+    status.style.opacity = '1';
+    clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      status.style.opacity = '0';
+      status.textContent = '';
+    }, 2000);
+  };
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
+    button.addEventListener('click', async () => {
+      const raw = button.dataset.copy ?? '';
+      let value = raw;
+      if (button.dataset.copyEncoded === 'true') {
+        try {
+          value = decodeURIComponent(raw);
+        } catch {
+          value = raw;
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(value);
+        show(/^#[0-9A-F]{6}$/i.test(value) ? msg('done', value) : msg('doneGeneric'));
+      } catch {
+        show(msg('failed'));
+      }
+    });
+  }
+</script>

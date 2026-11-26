@@ -1,0 +1,101 @@
+---
+import { Icon } from 'astro-icon/components';
+import { site } from '../config/site';
+import { getI18n } from '../i18n/context';
+
+interface Props {
+  id: string;
+  items?: typeof site.install;
+}
+
+const { id, items = site.install } = Astro.props;
+const { t } = getI18n(Astro.currentLocale);
+---
+
+<div class="overflow-hidden rounded border border-hairline bg-raised" data-tabs>
+  <div
+    role="tablist"
+    aria-label={t('install.tablist')}
+    class="flex gap-1 overflow-x-auto border-b border-hairline bg-elevated px-2 pt-2"
+  >
+    {items.map((item, i) => (
+      <button
+        type="button"
+        role="tab"
+        id={`${id}-tab-${item.id}`}
+        aria-controls={`${id}-panel-${item.id}`}
+        aria-selected={i === 0 ? 'true' : 'false'}
+        tabindex={i === 0 ? 0 : -1}
+        class="tab rounded-t border border-b-0 border-transparent px-4 py-2 font-mono text-xs whitespace-nowrap text-muted"
+      >
+        {item.label}
+      </button>
+    ))}
+  </div>
+  {items.map((item, i) => (
+    <div
+      role="tabpanel"
+      id={`${id}-panel-${item.id}`}
+      aria-labelledby={`${id}-tab-${item.id}`}
+      hidden={i !== 0}
+      class="space-y-4 p-6"
+    >
+      <div class="flex items-center justify-between gap-4">
+        <span class="font-mono text-xs text-muted">{item.label}</span>
+        <button
+          type="button"
+          data-copy={encodeURIComponent(item.command)}
+          data-copy-encoded="true"
+          class="flex shrink-0 items-center gap-1.5 rounded border border-outline px-2.5 py-1 font-mono text-[11px] text-fg transition-colors hover:border-accent"
+        >
+          <Icon name="lucide:copy" class="size-3" aria-hidden="true" />
+          {t('install.copy')}
+        </button>
+      </div>
+      <pre class="overflow-x-auto rounded border border-hairline bg-base p-4 font-mono text-xs leading-relaxed text-fg"><code>{item.command}</code></pre>
+    </div>
+  ))}
+</div>
+
+<style>
+  .tab[aria-selected='true'] {
+    border-color: var(--color-outline);
+    background: var(--color-raised);
+    color: var(--color-accent);
+    font-weight: 500;
+  }
+  .tab[aria-selected='false']:hover {
+    color: var(--color-fg);
+  }
+</style>
+
+<script>
+  import { nextTab } from '../lib/tabs';
+
+  const handled = new Set(['ArrowLeft', 'ArrowRight', 'Home', 'End']);
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-tabs]')) {
+    const tabs = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const select = (tab: HTMLButtonElement) => {
+      for (const item of tabs) {
+        const on = item === tab;
+        item.setAttribute('aria-selected', String(on));
+        item.tabIndex = on ? 0 : -1;
+        const panelId = item.getAttribute('aria-controls');
+        const panel = panelId ? root.querySelector<HTMLElement>(`#${CSS.escape(panelId)}`) : null;
+        if (panel) panel.hidden = !on;
+      }
+    };
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => select(tab));
+      tab.addEventListener('keydown', event => {
+        if (!handled.has(event.key)) return;
+        event.preventDefault();
+        const next = tabs[nextTab(tabs.indexOf(tab), event.key, tabs.length)];
+        if (!next) return;
+        select(next);
+        next.focus();
+      });
+    });
+  }
+</script>

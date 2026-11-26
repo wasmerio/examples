@@ -1,0 +1,284 @@
+---
+import '@fontsource-variable/inter';
+import '@fontsource-variable/newsreader';
+import '@fontsource-variable/jetbrains-mono';
+import '../styles/global.css';
+import { Icon } from 'astro-icon/components';
+import { site } from '../config/site';
+import { getI18n } from '../i18n/context';
+import { LOCALE_LABELS, LOCALES, htmlLang, switchLocalePath } from '../i18n/locales';
+import { ui, type UiKey } from '../i18n/ui';
+import { cssVariables } from '../lib/palette';
+import { pageMetadata } from '../lib/seo';
+import { isActive } from '../lib/site';
+import { asset } from '../lib/urls';
+import { getCtas } from '../lib/ctas';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const { locale, t, path } = getI18n(Astro.currentLocale);
+const { title, description = site.hero[locale].description } = Astro.props;
+const pageTitle = title ? `${title} · ${site.name}` : site.name;
+const pathname = Astro.url.pathname;
+const base = import.meta.env.BASE_URL;
+const ctas = getCtas(locale, base);
+const home = path('/');
+
+function navigationLabel(key: string): string {
+  if (!(key in ui.en) || !(key in ui['pt-br'])) throw new Error(`Unknown navigation key: ${key}`);
+  return t(key as UiKey);
+}
+
+const block = (vars: Record<string, string>) =>
+  Object.entries(vars)
+    .map(([k, v]) => `${k}:${v}`)
+    .join(';');
+// Noir is the default; Paper is an explicit choice, remembered per visitor.
+const themeCss =
+  `:root{${block(cssVariables('dark'))};color-scheme:dark}` +
+  `:root[data-theme="light"]{${block(cssVariables('light'))};color-scheme:light}`;
+
+const navLink = (active: boolean) => [
+  'border-b pb-1 font-mono text-xs tracking-wider uppercase transition-colors',
+  active ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-fg',
+];
+const nav = site.nav.map(item => {
+  const href = path(item.href);
+  return { href, label: navigationLabel(item.key), active: isActive(href, pathname, home) };
+});
+const meta = pageMetadata(site.url, base, pathname, pageTitle, description);
+---
+
+<!doctype html>
+<html lang={htmlLang(locale)}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{meta.title}</title>
+    <meta name="description" content={meta.description} />
+    <link rel="canonical" href={meta.canonical} />
+    <link rel="icon" href={asset('/favicon.svg', base)} type="image/svg+xml" />
+    <link rel="alternate" hreflang={htmlLang('en')} href={meta.alternates.en} />
+    <link rel="alternate" hreflang={htmlLang('pt-br')} href={meta.alternates['pt-br']} />
+    <link rel="alternate" hreflang="x-default" href={meta.alternates.en} />
+    <meta property="og:title" content={meta.title} />
+    <meta property="og:description" content={meta.description} />
+    <meta property="og:url" content={meta.canonical} />
+    <meta property="og:image" content={meta.image} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={meta.title} />
+    <meta name="twitter:description" content={meta.description} />
+    <meta name="twitter:image" content={meta.image} />
+    <style is:inline set:html={themeCss} />
+    <script is:inline>
+      try {
+        if (localStorage.getItem('tn-theme') === 'light') document.documentElement.dataset.theme = 'light';
+      } catch {}
+    </script>
+  </head>
+  <body class="flex min-h-screen flex-col bg-base text-fg">
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded focus:bg-accent focus:px-3 focus:py-2 focus:text-on-accent"
+    >
+      {t('a11y.skip')}
+    </a>
+
+    <header class="sticky top-0 z-50 border-b border-hairline bg-base">
+      <div class="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-6">
+        <a
+          href={home}
+          class="flex items-center gap-1 font-mono text-sm tracking-tight text-fg"
+          aria-label={`${site.name}, ${t('nav.home')}`}
+        >
+          <span>{site.terminalLabel}</span>
+          <span class="cursor" aria-hidden="true"></span>
+        </a>
+
+        <nav aria-label={t('nav.main')} class="hidden md:block">
+          <ul class="flex items-center gap-7">
+            {nav.map(item => (
+              <li>
+                <a href={item.href} aria-current={item.active ? 'page' : undefined} class:list={navLink(item.active)}>
+                  {item.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <div class="flex items-center gap-3">
+          <nav aria-label={t('nav.language')} class="flex items-center rounded border border-hairline bg-raised p-0.5">
+            {LOCALES.map(l => (
+              <a
+                href={switchLocalePath(pathname, l, base)}
+                hreflang={htmlLang(l)}
+                lang={htmlLang(l)}
+                aria-current={l === locale ? 'true' : undefined}
+                aria-label={`${LOCALE_LABELS[l].short}, ${LOCALE_LABELS[l].name}`}
+                class:list={[
+                  'rounded border px-2 py-0.5 font-mono text-[11px] transition-colors',
+                  l === locale
+                    ? 'border-outline bg-elevated text-accent'
+                    : 'border-transparent text-muted hover:text-fg',
+                ]}
+              >
+                {LOCALE_LABELS[l].short}
+              </a>
+            ))}
+          </nav>
+          <div
+            role="group"
+            aria-label={t('theme.group')}
+            class="hidden items-center rounded border border-hairline bg-raised p-0.5 sm:inline-flex"
+          >
+            <button
+              type="button"
+              data-theme-choice="dark"
+              class="theme-choice flex items-center gap-1 rounded border border-transparent px-2 py-0.5 font-mono text-[11px] text-muted"
+            >
+              <Icon name="lucide:moon" class="size-3" aria-hidden="true" />
+              {t('theme.noir')}
+            </button>
+            <button
+              type="button"
+              data-theme-choice="light"
+              class="theme-choice flex items-center gap-1 rounded border border-transparent px-2 py-0.5 font-mono text-[11px] text-muted"
+            >
+              <Icon name="lucide:sun" class="size-3" aria-hidden="true" />
+              {t('theme.paper')}
+            </button>
+          </div>
+          <a
+            href={site.repository}
+            class="hidden items-center gap-1.5 rounded border border-outline px-3 py-1.5 font-mono text-xs text-fg transition-colors hover:border-accent lg:flex"
+          >
+            <Icon name="simple-icons:github" class="size-3.5" aria-hidden="true" />
+            <span>{t('nav.github')}</span>
+          </a>
+          <a
+            href={ctas.header.href}
+            class="hidden rounded bg-accent px-3.5 py-1.5 font-mono text-xs font-semibold whitespace-nowrap text-on-accent transition-opacity hover:opacity-95 sm:block"
+          >
+            {ctas.header.label}
+          </a>
+        </div>
+      </div>
+
+      <div class="border-t border-hairline md:hidden">
+        <nav aria-label={t('nav.main')} class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-2.5">
+          <ul class="flex gap-5 overflow-x-auto">
+            {nav.map(item => (
+              <li class="shrink-0">
+                <a href={item.href} aria-current={item.active ? 'page' : undefined} class:list={navLink(item.active)}>
+                  {item.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <div class="mx-auto flex max-w-5xl px-6 pb-2.5 sm:hidden">
+          <div
+            role="group"
+            aria-label={t('theme.group')}
+            class="inline-flex items-center rounded border border-hairline bg-raised p-0.5"
+          >
+            <button
+              type="button"
+              data-theme-choice="dark"
+              class="theme-choice flex items-center gap-1 rounded border border-transparent px-2 py-0.5 font-mono text-[11px] text-muted"
+            >
+              <Icon name="lucide:moon" class="size-3" aria-hidden="true" />
+              {t('theme.noir')}
+            </button>
+            <button
+              type="button"
+              data-theme-choice="light"
+              class="theme-choice flex items-center gap-1 rounded border border-transparent px-2 py-0.5 font-mono text-[11px] text-muted"
+            >
+              <Icon name="lucide:sun" class="size-3" aria-hidden="true" />
+              {t('theme.paper')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main id="main" class="flex-grow">
+      <slot />
+    </main>
+
+    <footer class="border-t border-hairline bg-base">
+      <div class="mx-auto flex max-w-5xl flex-col items-center justify-between gap-6 px-6 py-8 md:flex-row">
+        <div class="flex flex-col items-center gap-3 text-center sm:flex-row sm:text-left">
+          <span class="font-mono text-sm text-fg">{site.terminalLabel}</span>
+          <span class="text-xs text-muted">
+            {site.name} v{site.version}. {site.author}.
+          </span>
+          <span class="text-xs text-muted">
+            by{' '}
+            <a
+              href="https://github.com/nandomoreirame"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="underline hover:text-fg"
+            >
+              nandomoreira.dev
+            </a>
+          </span>
+        </div>
+        <nav aria-label={t('nav.footer')}>
+          <ul class="flex flex-wrap items-center justify-center gap-6 font-mono text-xs tracking-wider text-muted uppercase">
+            {nav.map(item => (
+              <li>
+                <a class="hover:text-fg" href={item.href}>
+                  {item.label}
+                </a>
+              </li>
+            ))}
+            <li>
+              <a class="hover:text-fg" href={site.repository}>
+                {t('nav.github')}
+              </a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    </footer>
+
+    <style>
+      .theme-choice[aria-pressed='true'] {
+        border-color: var(--color-outline);
+        background: var(--color-elevated);
+        color: var(--color-accent);
+      }
+      .theme-choice[aria-pressed='false']:hover {
+        color: var(--color-fg);
+      }
+    </style>
+
+    <script>
+      const root = document.documentElement;
+      const buttons = [...document.querySelectorAll<HTMLButtonElement>('[data-theme-choice]')];
+      const render = () => {
+        const current = root.dataset.theme === 'light' ? 'light' : 'dark';
+        for (const b of buttons) b.setAttribute('aria-pressed', String(b.dataset.themeChoice === current));
+      };
+      for (const b of buttons) {
+        b.addEventListener('click', () => {
+          const next = b.dataset.themeChoice === 'light' ? 'light' : 'dark';
+          if (next === 'light') root.dataset.theme = 'light';
+          else delete root.dataset.theme;
+          try {
+            localStorage.setItem('tn-theme', next);
+          } catch {}
+          render();
+        });
+      }
+      render();
+    </script>
+  </body>
+</html>

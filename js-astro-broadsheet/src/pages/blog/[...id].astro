@@ -1,0 +1,113 @@
+---
+import { type CollectionEntry, getCollection, render } from "astro:content";
+import Layout from "@layouts/Layout.astro";
+import Container from "@components/Container.astro";
+import FormattedDate from "@components/FormattedDate.astro";
+import { readingTime } from "@lib/utils";
+import BackToPrevious from "@components/BackToPrevious.astro";
+import PostNavigation from "@components/PostNavigation.astro";
+import TableOfContents from "@components/TableOfContents.astro";
+import Giscus from "@components/Giscus.astro";
+import TagLink from "@components/TagLink.astro";
+
+export async function getStaticPaths() {
+  const posts = (await getCollection("blog"))
+    .filter((post) => !post.data.draft)
+    .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+  return posts.map((post) => ({
+    params: { id: post.id },
+    props: post,
+  }));
+}
+type Props = CollectionEntry<"blog">;
+
+const posts = (await getCollection("blog"))
+  .filter((post) => !post.data.draft)
+  .sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf());
+
+function getNextPost() {
+  let postIndex;
+  for (const post of posts) {
+    if (post.id === Astro.params.id) {
+      postIndex = posts.indexOf(post);
+      return posts[postIndex + 1];
+    }
+  }
+}
+
+function getPrevPost() {
+  let postIndex;
+  for (const post of posts) {
+    if (post.id === Astro.params.id) {
+      postIndex = posts.indexOf(post);
+      return posts[postIndex - 1];
+    }
+  }
+}
+
+const nextPost = getNextPost();
+const prevPost = getPrevPost();
+
+const post = Astro.props;
+const { Content, headings } = await render(post);
+---
+
+<Layout title={post.data.title} description={post.data.description}>
+  <div class="page-shell">
+    <Container>
+      <div class="animate">
+        <BackToPrevious href="/blog">返回文章列表</BackToPrevious>
+      </div>
+      <header class="article-hero">
+        <div
+          class="animate flex flex-wrap items-center gap-2 font-mono text-xs text-[var(--muted)]"
+        >
+          <FormattedDate date={post.data.date} />
+          <span aria-hidden="true">/</span>
+          {post.body && <span>{readingTime(post.body)}</span>}
+        </div>
+        <h1 class="animate">
+          {post.data.title}
+        </h1>
+        <p class="animate mt-4 max-w-2xl leading-7 text-[var(--muted)]">
+          {post.data.description}
+        </p>
+        {
+          post.data.tags.length > 0 && (
+            <nav
+              class="animate mt-5 flex flex-wrap gap-2"
+              aria-label="文章标签"
+            >
+              {post.data.tags.map((tag) => (
+                <TagLink tag={tag} />
+              ))}
+            </nav>
+          )
+        }
+      </header>
+      {
+        post.data.cover && (
+          <figure class="article-cover animate">
+            <img
+              src={post.data.cover}
+              alt=""
+              width="1400"
+              height="900"
+              loading="eager"
+            />
+          </figure>
+        )
+      }
+      {headings.length > 0 && <TableOfContents headings={headings} />}
+      <article class="article-shell animate">
+        <Content />
+        <div class="mt-24">
+          <PostNavigation prevPost={prevPost} nextPost={nextPost} />
+        </div>
+        <div class="mt-24">
+          <Giscus />
+        </div>
+      </article>
+    </Container>
+  </div>
+</Layout>

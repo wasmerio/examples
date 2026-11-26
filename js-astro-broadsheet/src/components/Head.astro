@@ -1,0 +1,338 @@
+---
+import "../styles/global.css";
+import { ClientRouter } from "astro:transitions";
+
+import "@fontsource/geist-sans/400.css";
+import "@fontsource/geist-sans/500.css";
+import "@fontsource/geist-sans/600.css";
+import "@fontsource/geist-sans/700.css";
+import "@fontsource/geist-mono/400.css";
+import "@fontsource/geist-mono/500.css";
+
+interface Props {
+  title: string;
+  description: string;
+  image?: string;
+}
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+const { title, description, image } = Astro.props;
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<meta name="generator" content={Astro.generator} />
+<link rel="canonical" href={canonicalURL} />
+
+<title>{title}</title>
+<meta name="title" content={title} />
+<meta name="description" content={description} />
+
+<meta property="og:type" content="website" />
+<meta property="og:url" content={Astro.url} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+{image && <meta property="og:image" content={new URL(image, Astro.url)} />}
+
+<meta property="twitter:card" content="summary_large_image" />
+<meta property="twitter:url" content={Astro.url} />
+<meta property="twitter:title" content={title} />
+<meta property="twitter:description" content={description} />
+{image && <meta property="twitter:image" content={new URL(image, Astro.url)} />}
+
+<link href="/pagefind/pagefind-ui.css" rel="stylesheet" />
+<script is:inline src="/pagefind/pagefind-ui.js"></script>
+
+<script is:inline>
+  (() => {
+    let stored = "system";
+    try {
+      const saved = localStorage.getItem("theme");
+      if (["light", "dark", "system"].includes(saved)) stored = saved;
+    } catch {}
+
+    const dark =
+      stored === "dark" ||
+      (stored === "system" &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.dataset.theme = stored;
+    document.documentElement.classList.toggle("dark", dark);
+  })();
+</script>
+
+<ClientRouter />
+
+<script is:inline>
+  const SPHERE_THEME_MODES = ["light", "dark", "system"];
+  const SPHERE_THEME_LABELS = {
+    light: "亮色",
+    dark: "暗色",
+    system: "跟随系统",
+  };
+
+  function getSphereThemeMode() {
+    try {
+      const stored = localStorage.getItem("theme");
+      return SPHERE_THEME_MODES.includes(stored) ? stored : "system";
+    } catch {
+      return "system";
+    }
+  }
+
+  function sphereThemeIsDark(mode) {
+    return (
+      mode === "dark" ||
+      (mode === "system" &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches)
+    );
+  }
+
+  function applySphereTheme(mode, root = document.documentElement) {
+    root.dataset.theme = mode;
+    root.classList.toggle("dark", sphereThemeIsDark(mode));
+  }
+
+  function setSphereThemeMode(mode) {
+    if (!SPHERE_THEME_MODES.includes(mode)) return;
+
+    try {
+      localStorage.setItem("theme", mode);
+    } catch {}
+
+    applySphereTheme(mode);
+    updateSphereThemeControls(mode);
+    setGiscusTheme();
+  }
+
+  function setGiscusTheme() {
+    const giscus = document.querySelector(".giscus-frame");
+    if (!giscus) return;
+    const url = new URL(giscus.src);
+    url.searchParams.set(
+      "theme",
+      document.documentElement.classList.contains("dark") ? "dark" : "light",
+    );
+    giscus.src = url.toString();
+  }
+
+  function initializeThemeControls() {
+    const mode = getSphereThemeMode();
+    applySphereTheme(mode);
+    updateSphereThemeControls(mode);
+
+    document.querySelectorAll("[data-theme-picker]").forEach((picker) => {
+      if (picker.dataset.ready === "true") return;
+
+      const trigger = picker.querySelector("[data-theme-menu-trigger]");
+      const menu = picker.querySelector("[data-theme-menu]");
+      if (!trigger || !menu) return;
+
+      const closeMenu = () => {
+        picker.classList.remove("is-open");
+        trigger.setAttribute("aria-expanded", "false");
+        menu.setAttribute("aria-hidden", "true");
+      };
+
+      trigger.addEventListener("click", () => {
+        const open = trigger.getAttribute("aria-expanded") === "true";
+        document.querySelectorAll("[data-theme-picker]").forEach((item) => {
+          item.classList.remove("is-open");
+          item
+            .querySelector("[data-theme-menu-trigger]")
+            ?.setAttribute("aria-expanded", "false");
+          item
+            .querySelector("[data-theme-menu]")
+            ?.setAttribute("aria-hidden", "true");
+        });
+
+        if (!open) {
+          picker.classList.add("is-open");
+          trigger.setAttribute("aria-expanded", "true");
+          menu.setAttribute("aria-hidden", "false");
+          menu.querySelector('[aria-checked="true"]')?.focus();
+        }
+      });
+
+      picker.querySelectorAll("[data-theme-mode]").forEach((option) => {
+        option.addEventListener("click", () => {
+          setSphereThemeMode(option.dataset.themeMode);
+          closeMenu();
+          trigger.focus();
+        });
+      });
+
+      picker.dataset.ready = "true";
+    });
+
+    if (!window.sphereThemeMediaReady) {
+      window
+        .matchMedia("(prefers-color-scheme: dark)")
+        .addEventListener("change", () => {
+          if (getSphereThemeMode() !== "system") return;
+          applySphereTheme("system");
+          setGiscusTheme();
+        });
+      window.sphereThemeMediaReady = true;
+    }
+
+    if (!window.sphereThemeMenuReady) {
+      document.addEventListener("click", (event) => {
+        if (event.target.closest?.("[data-theme-picker]")) return;
+        closeSphereThemeMenus();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        closeSphereThemeMenus();
+      });
+
+      window.addEventListener("storage", (event) => {
+        if (event.key !== "theme") return;
+        const nextMode = getSphereThemeMode();
+        applySphereTheme(nextMode);
+        updateSphereThemeControls(nextMode);
+        setGiscusTheme();
+      });
+
+      document.addEventListener("astro:before-swap", (event) => {
+        applySphereTheme(
+          getSphereThemeMode(),
+          event.newDocument.documentElement,
+        );
+      });
+
+      window.sphereThemeMenuReady = true;
+    }
+  }
+
+  function updateSphereThemeControls(mode) {
+    const label = SPHERE_THEME_LABELS[mode];
+
+    document
+      .querySelectorAll("[data-theme-menu-trigger]")
+      .forEach((trigger) => {
+        trigger.setAttribute("aria-label", `主题：${label}`);
+        trigger.setAttribute("title", `主题：${label}`);
+      });
+
+    document.querySelectorAll("[data-theme-mode]").forEach((option) => {
+      const active = option.dataset.themeMode === mode;
+      option.setAttribute("aria-checked", String(active));
+      option.dataset.active = String(active);
+    });
+  }
+
+  function closeSphereThemeMenus() {
+    document.querySelectorAll("[data-theme-picker]").forEach((picker) => {
+      picker.classList.remove("is-open");
+      picker
+        .querySelector("[data-theme-menu-trigger]")
+        ?.setAttribute("aria-expanded", "false");
+      picker
+        .querySelector("[data-theme-menu]")
+        ?.setAttribute("aria-hidden", "true");
+    });
+  }
+
+  function initializeReveal() {
+    window.sphereRevealObserver?.disconnect();
+    const elements = document.querySelectorAll(".animate:not(.show)");
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      elements.forEach((element) => element.classList.add("show"));
+      return;
+    }
+
+    window.sphereRevealObserver = new IntersectionObserver(
+      (entries, observer) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("show");
+          observer.unobserve(entry.target);
+        });
+      },
+      { rootMargin: "0px 0px -8%", threshold: 0.08 },
+    );
+
+    elements.forEach((element, index) => {
+      element.style.transitionDelay = `${Math.min(index, 5) * 55}ms`;
+      window.sphereRevealObserver.observe(element);
+    });
+  }
+
+  function initializeHeaderState() {
+    window.sphereHeaderObserver?.disconnect();
+    const sentinel = document.getElementById("page-top-sentinel");
+    if (!sentinel) return;
+
+    window.sphereHeaderObserver = new IntersectionObserver(([entry]) => {
+      document.documentElement.classList.toggle(
+        "scrolled",
+        !entry.isIntersecting,
+      );
+    });
+    window.sphereHeaderObserver.observe(sentinel);
+  }
+
+  function initializeNavigationControls() {
+    const backToTop = document.getElementById("back-to-top");
+    if (backToTop && backToTop.dataset.ready !== "true") {
+      backToTop.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+      backToTop.dataset.ready = "true";
+    }
+
+    const backToPrevious = document.getElementById("back-to-prev");
+    if (backToPrevious && backToPrevious.dataset.ready !== "true") {
+      backToPrevious.addEventListener("click", () => window.history.back());
+      backToPrevious.dataset.ready = "true";
+    }
+  }
+
+  function initializeCopyButtons() {
+    document
+      .querySelectorAll("pre:not([data-copy-ready])")
+      .forEach((codeBlock) => {
+        codeBlock.dataset.copyReady = "true";
+        codeBlock.style.position = "relative";
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.innerText = "复制";
+        button.className = "copy-code";
+        button.setAttribute("aria-label", "复制代码");
+
+        button.addEventListener("click", async () => {
+          const code =
+            codeBlock.querySelector("code")?.innerText ?? codeBlock.innerText;
+          await navigator.clipboard.writeText(code);
+          button.innerText = "已复制";
+          window.setTimeout(() => {
+            button.innerText = "复制";
+          }, 1600);
+        });
+
+        codeBlock.appendChild(button);
+      });
+  }
+
+  function initializeSite() {
+    initializeThemeControls();
+    initializeReveal();
+    initializeHeaderState();
+    initializeNavigationControls();
+    initializeCopyButtons();
+    setGiscusTheme();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeSite, {
+      once: true,
+    });
+  } else {
+    initializeSite();
+  }
+  document.addEventListener("astro:page-load", initializeSite);
+</script>

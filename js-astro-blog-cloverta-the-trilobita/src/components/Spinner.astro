@@ -1,0 +1,104 @@
+<div id="page-loading-indicator" aria-hidden="true" transition:persist>
+  <span class="page-loading-spinner"></span>
+</div>
+
+<script>
+  let activeNavigation: AbortSignal | undefined;
+
+  document.addEventListener('astro:before-preparation', (event) => {
+    const originalLoader = event.loader;
+    event.loader = async () => {
+      const indicator = document.getElementById('page-loading-indicator');
+      activeNavigation = event.signal;
+      indicator?.classList.remove('is-active');
+      const timer = window.setTimeout(() => {
+        if (activeNavigation === event.signal && !event.signal.aborted) {
+          indicator?.classList.add('is-active');
+        }
+      }, 120);
+      const stop = () => {
+        window.clearTimeout(timer);
+        if (activeNavigation === event.signal) {
+          indicator?.classList.remove('is-active');
+          activeNavigation = undefined;
+        }
+      };
+
+      event.signal.addEventListener('abort', stop, { once: true });
+      try {
+        await originalLoader();
+      } finally {
+        stop();
+        event.signal.removeEventListener('abort', stop);
+      }
+    };
+  });
+</script>
+
+<style>
+  #page-loading-indicator {
+    position: fixed;
+    top: max(1rem, env(safe-area-inset-top));
+    right: max(1rem, env(safe-area-inset-right));
+    width: 2rem;
+    height: 2rem;
+    display: grid;
+    place-items: center;
+    visibility: hidden;
+    opacity: 0;
+    transform: scale(1.3) translateY(-70px);
+    pointer-events: none;
+    transition: transform 160ms linear, opacity 160ms linear, visibility 160ms;
+    z-index: 9999;
+  }
+
+  #page-loading-indicator.is-active {
+    visibility: visible;
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+
+  .page-loading-spinner {
+    width: 1.4rem;
+    height: 1.4rem;
+    border: 1.5px solid var(--blue);
+    border-top-color: var(--paper);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--muted), inset 0 0 0 1px var(--muted);
+    animation: page-loading-spin-rhythm 2.1s infinite;
+    animation-play-state: paused;
+  }
+
+  .is-active .page-loading-spinner {
+    animation-play-state: running;
+  }
+
+  @keyframes page-loading-spin-rhythm {
+    0% {
+      transform: rotate(0deg);
+      animation-timing-function: cubic-bezier(0.25, 0.75, 0.35, 1);
+    }
+    52% {
+      transform: rotate(720deg);
+      animation-timing-function: cubic-bezier(0.55, 0.08, 0.78, 0.22);
+    }
+    100% {
+      transform: rotate(1080deg);
+    }
+  }
+
+  @media (max-width: 700px) {
+    #page-loading-indicator {
+      top: max(0px, env(safe-area-inset-top));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #page-loading-indicator {
+      transition: none;
+    }
+    .page-loading-spinner {
+      animation: none;
+    }
+  }
+</style>

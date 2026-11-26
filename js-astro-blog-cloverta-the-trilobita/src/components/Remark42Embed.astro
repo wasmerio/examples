@@ -1,0 +1,209 @@
+---
+import Remark42Status from "./Remark42Status.astro";
+
+const { slug, pagePath = `/posts/${slug}/` } = Astro.props;
+const host = import.meta.env.PUBLIC_REMARK42_HOST;
+const siteId = import.meta.env.PUBLIC_REMARK42_SITE_ID;
+---
+
+<div class="remark42-embed">
+    <Remark42Status />
+    <div id="remark42"></div>
+</div>
+<script define:vars={{ pagePath, host, siteId }} is:inline data-astro-rerun>
+    function getTheme() {
+        return document.documentElement.classList.contains("dark")
+            ? "dark"
+            : "light";
+    }
+
+    function setRemarkConfig() {
+        window.remark_config = {
+            host,
+            site_id: siteId,
+            url: pagePath,
+            page_id: pagePath,
+            theme: getTheme(),
+            components: ["embed"],
+            show_rss_subscription: false,
+        };
+    }
+
+    function ensureScript() {
+        return new Promise((resolve, reject) => {
+            const existing = document.getElementById("remark42-loader");
+
+            if (existing) {
+                if (window.REMARK42) {
+                    resolve(true);
+                    return;
+                }
+
+                existing.addEventListener("load", () => resolve(true), {
+                    once: true,
+                });
+                existing.addEventListener("error", reject, { once: true });
+                return;
+            }
+
+            const script = document.createElement("script");
+            script.id = "remark42-loader";
+            script.defer = true;
+
+            if ("noModule" in script) {
+                script.type = "module";
+                script.src = `${host}/web/embed.mjs`;
+            } else {
+                script.async = true;
+                script.src = `${host}/web/embed.js`;
+            }
+
+            script.onload = () => resolve(true);
+            script.onerror = (error) => {
+                script.remove();
+                reject(error);
+            };
+            document.head.appendChild(script);
+        });
+    }
+
+    async function mountRemark42() {
+        const node = document.getElementById("remark42");
+        const status = document.getElementById("remark42-status");
+        const loadingStatus = status?.querySelector("[data-remark42-loading]");
+        const failedStatus = status?.querySelector("[data-remark42-failed]");
+        if (!node || !loadingStatus || !failedStatus) return;
+
+        window.__remark42LoadCleanup?.();
+
+        let active = true;
+        let iframe = null;
+        let timer;
+
+        const onIframeLoad = () => {
+            if (!active || !iframe || !node.contains(iframe)) return;
+            loadingStatus.hidden = true;
+            failedStatus.hidden = true;
+            status.hidden = true;
+            clearTimeout(timer);
+            observer.disconnect();
+        };
+
+        const watchIframe = () => {
+            const nextIframe = node.querySelector("iframe");
+            if (nextIframe === iframe) return;
+
+            iframe?.removeEventListener("load", onIframeLoad);
+            iframe = nextIframe;
+            iframe?.addEventListener("load", onIframeLoad, { once: true });
+        };
+
+        const observer = new MutationObserver(watchIframe);
+        observer.observe(node, { childList: true, subtree: true });
+        watchIframe();
+
+        const showFailure = () => {
+            if (!active || loadingStatus.hidden) return;
+            loadingStatus.hidden = true;
+            failedStatus.hidden = false;
+        };
+
+        window.__remark42LoadCleanup = () => {
+            active = false;
+            clearTimeout(timer);
+            observer.disconnect();
+            iframe?.removeEventListener("load", onIframeLoad);
+        };
+
+        loadingStatus.hidden = false;
+        failedStatus.hidden = true;
+        status.hidden = false;
+        timer = setTimeout(showFailure, 15000);
+
+        if (!host || !siteId) {
+            showFailure();
+            return;
+        }
+
+        try {
+            const alreadyLoaded = Boolean(window.REMARK42);
+            setRemarkConfig();
+            await ensureScript();
+
+            if (!active) return;
+            if (!window.REMARK42) {
+                showFailure();
+                return;
+            }
+
+            if (alreadyLoaded && typeof window.REMARK42.destroy === "function") {
+                window.REMARK42.destroy();
+            }
+
+            // The script creates the first iframe itself. Only remount when
+            // reusing it on a new page/theme, or if it did not create one.
+            if (
+                (alreadyLoaded || !node.querySelector("iframe")) &&
+                typeof window.REMARK42.createInstance === "function"
+            ) {
+                node.innerHTML = "";
+                window.REMARK42.createInstance(window.remark_config);
+            }
+        } catch {
+            showFailure();
+        }
+    }
+
+    function setupRemark42ThemeObserver() {
+        if (window.__remark42ThemeObserver) {
+            window.__remark42ThemeObserver.disconnect();
+        }
+
+        let lastTheme = getTheme();
+
+        const observer = new MutationObserver(() => {
+            const currentTheme = getTheme();
+
+            if (currentTheme === lastTheme) return;
+
+            lastTheme = currentTheme;
+            mountRemark42();
+        });
+
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ["class"],
+        });
+
+        window.__remark42ThemeObserver = observer;
+    }
+
+    mountRemark42();
+    setupRemark42ThemeObserver();
+</script>
+
+<script>
+    document.addEventListener('astro:before-swap', () => {
+        const remarkWindow = window as typeof window & {
+            __remark42LoadCleanup?: () => void;
+            __remark42ThemeObserver?: MutationObserver;
+        };
+        remarkWindow.__remark42LoadCleanup?.();
+        remarkWindow.__remark42ThemeObserver?.disconnect();
+    });
+</script>
+
+<style>
+    .remark42-embed {
+        position: relative;
+        min-width: 0;
+    }
+
+    /* Let the iframe load in the same space occupied by the centered status. */
+    :global(#remark42-status:not([hidden])) + #remark42 {
+        position: absolute;
+        inset: 0;
+        visibility: hidden;
+        pointer-events: none;
+    }
+</style>

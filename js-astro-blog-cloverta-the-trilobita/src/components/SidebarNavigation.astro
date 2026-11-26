@@ -1,0 +1,93 @@
+---
+import { getTranslations, type Lang } from '../i18n';
+
+interface Props {
+  lang: Lang;
+  active: string;
+}
+
+const { lang, active } = Astro.props;
+const t = getTranslations(lang);
+---
+
+<sidebar-navigation class="sidebar-navigation">
+  <button
+    type="button"
+    class="mobile-menu-toggle"
+    aria-label={t.menuToggle}
+    aria-controls="site-navigation"
+  >
+    <span class="mobile-menu-label" aria-hidden="true">{t.menuToggle}</span>
+    <span class="mobile-menu-arrow" aria-hidden="true">
+      <span class="mobile-menu-expand">{'>>>'}</span>
+      <span class="mobile-menu-collapse">{'<<'}</span>
+    </span>
+  </button>
+  <nav id="site-navigation" aria-label={t.menu}>
+    <div class="sidebar-nav-links">
+      {Object.entries(t.nav).map(([key, label]) => (
+        <a
+          class:list={['nav-link', { current: active === key }]}
+          href={key === 'home' ? `/${lang}/` : `/${lang}/${key}/`}
+          aria-current={active === key ? 'page' : undefined}
+        >
+          <span>{label}</span>
+        </a>
+      ))}
+    </div>
+  </nav>
+</sidebar-navigation>
+
+<script>
+  class SidebarNavigation extends HTMLElement {
+    private cleanup?: () => void;
+
+    connectedCallback() {
+      const toggle = this.querySelector<HTMLButtonElement>('.mobile-menu-toggle');
+      const nav = this.querySelector('nav');
+      const links = this.querySelector('.sidebar-nav-links');
+      if (!toggle || !nav || !links) return;
+
+      const mobile = matchMedia('(max-width: 700px)');
+      const controller = new AbortController();
+      const { signal } = controller;
+
+      const updateFades = () => {
+        const scrollEnd = nav.scrollWidth - nav.clientWidth;
+        nav.toggleAttribute('data-fade-start', nav.scrollLeft > 1);
+        nav.toggleAttribute('data-fade-end', nav.scrollLeft < scrollEnd - 1);
+      };
+
+      const updateInteractivity = () => {
+        const collapsed = toggle.getAttribute('aria-expanded') === 'false';
+        nav.inert = mobile.matches && collapsed;
+      };
+
+      toggle.setAttribute('aria-expanded', 'true');
+      updateInteractivity();
+      toggle.addEventListener('click', () => {
+        const expanded = toggle.getAttribute('aria-expanded') === 'true';
+        this.setAttribute('data-menu-animated', '');
+        toggle.setAttribute('aria-expanded', String(!expanded));
+        updateInteractivity();
+      }, { signal });
+
+      mobile.addEventListener('change', updateInteractivity, { signal });
+      nav.addEventListener('scroll', updateFades, { signal, passive: true });
+      const resize = new ResizeObserver(updateFades);
+      resize.observe(nav);
+      resize.observe(links);
+
+      this.cleanup = () => {
+        controller.abort();
+        resize.disconnect();
+      };
+    }
+
+    disconnectedCallback() {
+      this.cleanup?.();
+    }
+  }
+
+  customElements.define('sidebar-navigation', SidebarNavigation);
+</script>

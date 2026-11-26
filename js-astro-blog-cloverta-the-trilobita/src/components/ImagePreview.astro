@@ -1,0 +1,163 @@
+---
+import { getTranslations, type Lang } from '../i18n';
+interface Props { lang: Lang; }
+const { lang } = Astro.props;
+const t = getTranslations(lang);
+---
+<dialog id="image-preview-dialog" class="image-preview-dialog" aria-label={t.imagePreview} data-open-label={t.previewImage} data-downloading={t.downloadingImage} data-download-error={t.downloadImageFailed} data-load-error={t.imageLoadFailed}>
+  <button type="button" class="image-preview-close" aria-label={t.closePreview} autofocus>×</button>
+  <div class="image-preview-stage"><img class="image-preview-image" alt="" /></div>
+  <div class="image-preview-controls">
+    <p class="image-preview-status sr-only" role="status" aria-live="polite"></p>
+    <div class="image-preview-actions">
+      <a class="image-preview-download" target="_blank" rel="noopener noreferrer" aria-label={t.downloadImage} title={t.downloadImage}>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14" /></svg>
+      </a>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  let cleanup: (() => void) | undefined;
+  function initImagePreview() {
+    cleanup?.();
+    const dialog = document.querySelector<HTMLDialogElement>('#image-preview-dialog');
+    const preview = dialog?.querySelector<HTMLImageElement>('.image-preview-image');
+    const close = dialog?.querySelector<HTMLButtonElement>('.image-preview-close');
+    const download = dialog?.querySelector<HTMLAnchorElement>('.image-preview-download');
+    const status = dialog?.querySelector<HTMLElement>('.image-preview-status');
+    if (!dialog || !preview || !close || !download || !status) return;
+    const idleLabel = download.getAttribute('aria-label') ?? '';
+    const controller = new AbortController();
+    const { signal } = controller;
+    let downloadController: AbortController | undefined;
+    let source = '';
+    let downloading = false;
+    let openOriginal = false;
+    let previousOverflow = '';
+    let scrollLocked = false;
+    const reset = () => {
+      downloadController?.abort();
+      downloadController = undefined;
+      preview.removeAttribute('src');
+      download.removeAttribute('href');
+      source = '';
+      status.textContent = '';
+      downloading = false;
+      openOriginal = false;
+      download.removeAttribute('aria-busy');
+      download.removeAttribute('aria-disabled');
+      download.setAttribute('aria-label', idleLabel);
+      download.title = idleLabel;
+      if (scrollLocked) document.documentElement.style.overflow = previousOverflow;
+      scrollLocked = false;
+    };
+    const open = (image: HTMLImageElement) => {
+      if (dialog.open) return;
+      source = image.currentSrc || image.src;
+      if (!source) return;
+      preview.alt = image.alt || image.title || '';
+      preview.src = source;
+      download.href = source;
+      previousOverflow = document.documentElement.style.overflow;
+      document.documentElement.style.overflow = 'hidden';
+      scrollLocked = true;
+      dialog.showModal();
+    };
+    const images = document.querySelectorAll<HTMLImageElement>('.prose img, .post-article .article-cover');
+    images.forEach(image => {
+      image.dataset.imagePreview = '';
+      const link = image.closest('a');
+      const trigger: HTMLElement = link ?? image;
+      if (!link) {
+        image.tabIndex = 0;
+        image.setAttribute('role', 'button');
+        image.setAttribute('aria-haspopup', 'dialog');
+        image.setAttribute('aria-controls', dialog.id);
+        image.setAttribute('aria-label', `${dialog.dataset.openLabel}${image.alt ? `: ${image.alt}` : ''}`);
+      }
+      const activate = (event: MouseEvent) => {
+        if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        trigger.focus({ preventScroll: true });
+        open(image);
+      };
+      image.addEventListener('click', activate, { signal });
+      trigger.addEventListener('keydown', event => {
+        if (event.target !== trigger || !['Enter', ' '].includes(event.key)) return;
+        event.preventDefault();
+        open(image);
+      }, { signal });
+    });
+    close.addEventListener('click', () => dialog.close(), { signal });
+    dialog.addEventListener('click', event => {
+      if (event.target === dialog || event.target === dialog.querySelector('.image-preview-stage')) dialog.close();
+    }, { signal });
+    dialog.addEventListener('close', reset, { signal });
+    preview.addEventListener('error', () => { status.textContent = dialog.dataset.loadError ?? ''; }, { signal });
+    download.addEventListener('click', async event => {
+      if (openOriginal && !downloading) return;
+      event.preventDefault();
+      if (!source || downloading) return;
+      const imageUrl = source;
+      const request = new AbortController();
+      downloadController = request;
+      downloading = true;
+      download.setAttribute('aria-busy', 'true');
+      download.setAttribute('aria-disabled', 'true');
+      download.setAttribute('aria-label', dialog.dataset.downloading ?? idleLabel);
+      status.textContent = '';
+      try {
+        const response = await fetch(imageUrl, { mode: 'cors', credentials: 'omit', signal: request.signal });
+        if (!response.ok) throw new Error('Image download failed');
+        const blob = await response.blob();
+        if (request.signal.aborted) return;
+        let filename = 'image';
+        try { filename = decodeURIComponent(new URL(imageUrl).pathname.split('/').pop() || filename); } catch {}
+        const blobUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = blobUrl;
+        anchor.download = filename.replace(/[\\/:\u0000-\u001f]/g, '-');
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      } catch {
+        if (!request.signal.aborted) {
+          openOriginal = true;
+          status.textContent = dialog.dataset.downloadError ?? '';
+          download.title = dialog.dataset.downloadError ?? idleLabel;
+        }
+      } finally {
+        if (downloadController === request) {
+          downloadController = undefined;
+          downloading = false;
+          download.removeAttribute('aria-busy');
+          download.removeAttribute('aria-disabled');
+          download.setAttribute('aria-label', idleLabel);
+        }
+      }
+    }, { signal });
+    cleanup = () => {
+      controller.abort();
+      if (dialog.open) dialog.close();
+      reset();
+    };
+  }
+  document.addEventListener('astro:page-load', initImagePreview);
+  document.addEventListener('astro:before-swap', () => cleanup?.());
+</script>
+
+<style>
+  .image-preview-dialog { padding: 0; border: none; background: transparent; max-width: min(96vw, 1200px); max-height: 96vh; margin: auto; }
+  .image-preview-dialog::backdrop { background: rgba(0, 0, 0, .72); backdrop-filter: blur(6px); }
+  .image-preview-image { display: block; max-width: 96vw; max-height: 90vh; object-fit: contain; box-shadow: 0 20px 80px rgba(0, 0, 0, .45); }
+  .image-preview-close:focus { outline: none; }
+  .image-preview-close:focus-visible { outline: 2px solid rgba(125, 162, 255, .9); outline-offset: 4px; }
+  .image-preview-close { position: fixed; top: 1.25rem; right: 1.25rem; z-index: 1; width: 2.4rem; height: 2.4rem; border: none; border-radius: 999px; background: transparent; color: #e6e6e6; font-size: 2.6rem; line-height: 1; cursor: pointer; }
+  .image-preview-download { position: fixed; left: 50%; bottom: max(1.5rem, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 2; display: inline-flex; align-items: center; justify-content: center; color: white; background: transparent; border: none; padding: .4rem; cursor: pointer; text-decoration: none; opacity: .88; transition: opacity .2s ease, transform .2s ease; }
+  .image-preview-download:hover { opacity: 1; transform: translateX(-50%) translateY(-2px); }
+  .image-preview-download:focus { outline: none; }
+  .image-preview-download:focus-visible { outline: 2px solid rgba(125, 162, 255, .9); outline-offset: 4px; border-radius: 8px; }
+  .image-preview-download[aria-disabled="true"] { opacity: .6; cursor: progress; }
+</style>

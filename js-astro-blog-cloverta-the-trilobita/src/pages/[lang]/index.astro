@@ -1,0 +1,332 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import PageIntro from "../../components/PageIntro.astro";
+import PostCard from "../../components/PostCard.astro";
+import PostMeta from "../../components/PostMeta.astro";
+import PostDiscount from "../../components/PostDiscount.astro";
+import LatestComments from "../../components/LatestComments.astro";
+import {
+  articles,
+  columns,
+  columnId,
+  columnCover,
+  articleUrl,
+  columnTransition,
+} from "../../lib/content";
+import { languagePaths, getTranslations } from "../../i18n";
+export const getStaticPaths = languagePaths;
+const { lang } = Astro.params as { lang: "zh" | "en" };
+const t = getTranslations(lang);
+const allPosts = await articles(lang);
+const posts = allPosts.slice(0, 6);
+const archiveYearCounts = new Map<number, number>();
+for (const post of allPosts) {
+  const year = post.data.pubDate.getUTCFullYear();
+  archiveYearCounts.set(year, (archiveYearCounts.get(year) ?? 0) + 1);
+}
+const archiveYears = [...archiveYearCounts.keys()];
+const tagCounts = new Map<string, number>();
+for (const post of allPosts) {
+  for (const tag of new Set(post.data.tags)) tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+}
+const popularTags = [...tagCounts]
+  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], lang))
+  .slice(0, 8);
+const entries = await articles(lang, "seriesPosts");
+const latestColumns = columns(lang)
+  .map((column) => ({
+    ...column,
+    posts: entries.filter((post) => columnId(post) === column.id),
+  }))
+  .filter((column) => column.posts.length)
+  .sort(
+    (a, b) =>
+      b.posts[0].data.pubDate.valueOf() - a.posts[0].data.pubDate.valueOf(),
+  );
+---
+
+<Layout active="home">
+  <aside class="home-sidebar" data-overlap-check>
+    <section class="home-archive" aria-label={t.nav.archive}>
+      <h2><a href={`/${lang}/archive/`}>{t.nav.archive}</a></h2>
+      <nav aria-label={t.nav.archive}>
+        {archiveYears.map((year) => (
+          <a href={`/${lang}/archive/#archive-${year}`}>
+            <span>{year}</span><sup>{archiveYearCounts.get(year)}</sup>
+          </a>
+        ))}
+      </nav>
+    </section>
+    <section class="home-tag-cloud" aria-label={lang === "zh" ? "标签云" : "Tag cloud"}>
+      <h2><a href={`/${lang}/tags/`}>{lang === "zh" ? "标签云" : "Tag cloud"}</a></h2>
+      <nav aria-label={t.nav.tags}>
+        {popularTags.map(([tag]) => <a href={`/${lang}/tags/${encodeURIComponent(tag)}/`}><span>#{tag}</span></a>)}
+      </nav>
+    </section>
+  </aside>
+  <PageIntro
+    lang={lang}
+    page="home"
+    feed={lang === "zh" ? "/rss.xml" : `/${lang}/rss.xml`}
+  />
+  <section class="home-section">
+    <h2>{t.latest}</h2>
+    {posts.map((post) => <PostCard post={post} lang={lang} />)}
+    {!posts.length && <p class="muted">{t.noPosts}</p>}
+    <a class="more-link" href={`/${lang}/archive/`}>{t.more}</a>
+  </section>
+  <section class="home-section column-updates">
+    <h2>{t.columnUpdates}</h2>
+    {
+      latestColumns.map((column) => (
+        <article class="post-card column-card">
+          <h3>
+            <a
+              href={`/${lang}/series/${column.id}/`}
+              transition:name={columnTransition(lang, column.id, "title")}
+            >
+              {column.title}
+            </a>
+          </h3>
+          <div class="post-card-body">
+            <a
+              class="post-image-link"
+              href={`/${lang}/series/${column.id}/`}
+              tabindex="-1"
+              aria-hidden="true"
+            >
+              <img
+                class="post-thumbnail"
+                src={columnCover(column, column.posts)}
+                width="120"
+                height="120"
+                alt=""
+                loading="lazy"
+                transition:name={columnTransition(lang, column.id, "image")}
+              />
+            </a>
+            <ul class="column-preview">
+              {column.posts.slice(0, 4).map((post, index) => (
+                <li>
+                  <a href={articleUrl(post)}>{post.data.title}</a>
+                  <PostDiscount post={post} lang={lang} />
+                  {index === 0 && (
+                    <span class="latest-label">{t.latestLabel}</span>
+                  )}
+                </li>
+              ))}
+              <li>
+                <a href={`/${lang}/series/${column.id}/`}>
+                  {lang === "zh" ? "更多…" : "More…"}
+                </a>
+              </li>
+            </ul>
+            <PostMeta post={column.posts[0]} />
+          </div>
+        </article>
+      ))
+    }
+    <a class="more-link" href={`/${lang}/series/`}>{t.more}</a>
+  </section>
+  <LatestComments lang={lang} />
+</Layout>
+<script>
+  let controller: AbortController | undefined;
+  function initPostCardLayout() {
+    controller?.abort();
+    controller = new AbortController();
+    const { signal } = controller;
+    const cards = [
+      ...document.querySelectorAll<HTMLElement>(
+        ".home-section > .post-card:not(.column-card):has(.post-image-link)",
+      ),
+    ];
+    if (!cards.length) return;
+    const desktop = matchMedia("(min-width: 701px)");
+    let frame = 0;
+    function updateLayout() {
+      for (const card of cards) {
+        if (!desktop.matches) {
+          card.classList.remove("post-card-image-top");
+          continue;
+        }
+        const title = card.querySelector<HTMLHeadingElement>("h3")!;
+        const image = card.querySelector<HTMLElement>(".post-image-link")!;
+        const imageStyle = getComputedStyle(image);
+        const coverRightWidth =
+          card.clientWidth - parseFloat(imageStyle.marginRight);
+        const availableWidth =
+          coverRightWidth -
+          image.offsetWidth -
+          parseFloat(imageStyle.marginLeft);
+        // Measure a single line independently of the card's current layout.
+        const measure = title.cloneNode(true) as HTMLHeadingElement;
+        measure.setAttribute("aria-hidden", "true");
+        measure.style.cssText =
+          "position: fixed; visibility: hidden; white-space: nowrap; width: max-content; max-width: none;";
+        card.append(measure);
+        const fits = measure.getBoundingClientRect().width <= availableWidth;
+        measure.remove();
+        card.style.setProperty(
+          "--post-title-width",
+          `${fits ? availableWidth : coverRightWidth}px`,
+        );
+        card.classList.toggle("post-card-image-top", fits);
+      }
+    }
+    function queueUpdate() {
+      if (frame || signal.aborted) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        updateLayout();
+      });
+    }
+    const observer = new ResizeObserver(queueUpdate);
+    cards.forEach((card) => observer.observe(card));
+    document.fonts.addEventListener("loadingdone", queueUpdate, { signal });
+    document.fonts.ready.then(queueUpdate);
+    signal.addEventListener(
+      "abort",
+      () => {
+        observer.disconnect();
+        cancelAnimationFrame(frame);
+      },
+      { once: true },
+    );
+    updateLayout();
+  }
+  document.addEventListener("astro:page-load", initPostCardLayout);
+  document.addEventListener("astro:before-swap", () => controller?.abort());
+</script>
+
+<script>
+  let archiveController: AbortController | undefined;
+  function initHomeArchive() {
+    archiveController?.abort();
+    archiveController = new AbortController();
+    const { signal } = archiveController;
+    const sidebar = document.querySelector<HTMLElement>(".home-sidebar");
+    const background = document.querySelector<HTMLElement>(".background-word");
+    const tagCloud = sidebar?.querySelector<HTMLElement>(".home-tag-cloud nav");
+    if (!sidebar || !background) return;
+
+    const tagLinks = [...(tagCloud?.querySelectorAll<HTMLAnchorElement>("a") ?? [])];
+    let hoveredTag: HTMLAnchorElement | null = null;
+    const positionTags = () => {
+      if (!tagCloud || !hoveredTag || !hoveredTag.offsetWidth) {
+        for (const tag of tagLinks) {
+          tag.style.removeProperty("--tag-offset");
+          tag.style.removeProperty("--tag-scale");
+        }
+        return;
+      }
+
+      // The offsets describe the original rows even while the links animate.
+      const top = hoveredTag.offsetTop;
+      const bottom = top + hoveredTag.offsetHeight;
+      const row = tagLinks.filter(tag =>
+        tag.offsetTop < bottom && tag.offsetTop + tag.offsetHeight > top,
+      );
+      const index = row.indexOf(hoveredTag);
+      const before = row.slice(0, index);
+      const after = row.slice(index + 1);
+      const gap = 8;
+      const left = hoveredTag.offsetLeft;
+      const width = hoveredTag.offsetWidth;
+      const right = left + width;
+      const rightLimit = Math.max(
+        tagCloud.clientWidth,
+        document.documentElement.clientWidth - tagCloud.getBoundingClientRect().left - gap,
+      );
+      const occupied = (tags: HTMLAnchorElement[]) =>
+        tags.reduce((total, tag) => total + tag.offsetWidth + gap, 0);
+      const leftRoom = Math.max(0, left + 16 - occupied(before));
+      const rightRoom = Math.max(0, rightLimit - right - occupied(after));
+      const growth = Math.min(width * 0.5, leftRoom + rightRoom);
+      const growLeft = Math.min(leftRoom, Math.max(growth / 2, growth - rightRoom));
+      const growRight = growth - growLeft;
+      const shiftTag = (tag: HTMLAnchorElement, offset: number) =>
+        tag.style.setProperty("--tag-offset", `${offset}px`);
+      const offsets = new Map([[hoveredTag, (growRight - growLeft) / 2]]);
+
+      let leftEdge = left - growLeft;
+      for (const tag of before.reverse()) {
+        leftEdge = Math.min(tag.offsetLeft, leftEdge - gap - tag.offsetWidth);
+        offsets.set(tag, leftEdge - tag.offsetLeft);
+      }
+      let rightEdge = right + growRight;
+      for (const tag of after) {
+        const nextLeft = Math.max(tag.offsetLeft, rightEdge + gap);
+        offsets.set(tag, nextLeft - tag.offsetLeft);
+        rightEdge = nextLeft + tag.offsetWidth;
+      }
+      for (const tag of tagLinks) {
+        shiftTag(tag, offsets.get(tag) ?? 0);
+        if (tag !== hoveredTag) tag.style.removeProperty("--tag-scale");
+      }
+      hoveredTag.style.setProperty("--tag-scale", String(1 + growth / width));
+    };
+
+    tagCloud?.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "touch" || !(event.target instanceof Element)) return;
+      const tag = event.target.closest<HTMLAnchorElement>("a");
+      if (tag === hoveredTag) return;
+      hoveredTag = tag;
+      positionTags();
+    }, { signal });
+    tagCloud?.addEventListener("pointerleave", () => {
+      hoveredTag = null;
+      positionTags();
+    }, { signal });
+
+    const sections = [...sidebar.querySelectorAll<HTMLElement>(".home-archive, .home-tag-cloud")];
+    const updateVisibility = () => {
+      if (signal.aborted) return;
+      const backgroundRect = background.getBoundingClientRect();
+      for (const section of sections) {
+        section.removeAttribute("data-overlapped");
+        const rect = section.getBoundingClientRect();
+        const overlaps = rect.left < backgroundRect.right
+          && rect.right > backgroundRect.left
+          && rect.top < backgroundRect.bottom
+          && rect.bottom > backgroundRect.top;
+        section.toggleAttribute("data-overlapped", overlaps);
+      }
+      sidebar.removeAttribute("data-overlap-check");
+    };
+
+    let measuredCloudWidth = -1;
+    const fitTags = (force = false) => {
+      if (!tagCloud) return;
+      const width = tagCloud.clientWidth;
+      if (!force && width === measuredCloudWidth) return;
+      measuredCloudWidth = width;
+      for (const tag of tagLinks) {
+        tag.style.removeProperty("font-size");
+        const baseSize = parseFloat(getComputedStyle(tag).fontSize);
+        let size = baseSize;
+        while (tag.clientWidth > 0 && tag.scrollWidth > tag.clientWidth + 1 && size > 1) {
+          size = Math.max(1, size - 0.5);
+          tag.style.fontSize = `${size}px`;
+        }
+      }
+    };
+    const backgroundObserver = new ResizeObserver(updateVisibility);
+    backgroundObserver.observe(background);
+
+    const refreshSidebar = (force = false) => {
+      if (signal.aborted) return;
+      updateVisibility();
+      fitTags(force);
+      positionTags();
+    };
+    window.addEventListener("resize", () => refreshSidebar(), { signal });
+    window.visualViewport?.addEventListener("resize", () => refreshSidebar(), { signal });
+    document.fonts.addEventListener("loadingdone", () => refreshSidebar(true), { signal });
+    document.fonts.ready.then(() => refreshSidebar(true));
+    signal.addEventListener("abort", () => backgroundObserver.disconnect(), { once: true });
+    refreshSidebar(true);
+  }
+  document.addEventListener("astro:page-load", initHomeArchive);
+  document.addEventListener("astro:before-swap", () => archiveController?.abort());
+</script>

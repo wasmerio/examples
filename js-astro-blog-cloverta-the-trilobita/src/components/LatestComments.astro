@@ -1,0 +1,105 @@
+---
+import { getTranslations, type Lang } from '../i18n';
+import { articles, articleUrl } from '../lib/content';
+const { lang } = Astro.props as { lang: Lang };
+const t = getTranslations(lang);
+const localPaths = [...await articles(lang), ...await articles(lang, 'seriesPosts')].map(articleUrl);
+---
+<section class="latest-comments" data-lang={lang} data-paths={JSON.stringify(localPaths)} data-canonical-origin={Astro.site?.origin} data-host={import.meta.env.PUBLIC_REMARK42_HOST} data-site={import.meta.env.PUBLIC_REMARK42_SITE_ID} data-loading={t.loading} data-empty={t.noComments} data-error={t.commentsFailed} data-unconfigured={t.commentsUnconfigured} data-reply={t.reply} data-anonymous={t.anonymous} data-expand={t.expand} data-collapse={t.collapse} data-expand-comments={t.expandComments} data-collapse-comments={t.collapseComments}>
+  <h2>{t.recentComments}</h2>
+  <p class="comments-status muted" role="status">{t.loading}</p>
+  <div id="recent-comment-list" class="latest-comments-list" aria-live="polite"></div>
+  <button class="comments-retry text-button" type="button" hidden>{t.retry}</button>
+  <button class="comments-more text-button" type="button" aria-controls="recent-comment-list" aria-expanded="false" hidden>{t.expand} ﹀</button>
+</section>
+<script>
+  interface Comment { id: string; pid?: string; title?: string; text?: string; time: string; locator?: { url?: string }; user?: { name?: string; picture?: string; photo?: string; avatar?: string }; }
+  let controller: AbortController | undefined;
+  function initComments() {
+    controller?.abort();
+    controller = new AbortController();
+    const pageSignal = controller.signal;
+    const root = document.querySelector<HTMLElement>('.latest-comments');
+    if (root) {
+      const list = root.querySelector<HTMLElement>('.latest-comments-list')!;
+      const status = root.querySelector<HTMLElement>('.comments-status')!;
+      const more = root.querySelector<HTMLButtonElement>('.comments-more')!;
+      const retry = root.querySelector<HTMLButtonElement>('.comments-retry')!;
+      const { host, site, lang = 'zh' } = root.dataset;
+      const localPaths = new Set<string>(JSON.parse(root.dataset.paths || '[]'));
+      let comments: Comment[] = [];
+      let visible = 0;
+      let expansions = 0;
+      const initialCount = 3;
+      const shouldCollapse = () => expansions >= 2 || visible >= comments.length;
+      function updateButton() {
+        const collapse = shouldCollapse();
+        more.hidden = comments.length <= initialCount;
+        more.textContent = collapse ? root!.dataset.collapse! : `${root!.dataset.expand} ﹀`;
+        more.setAttribute('aria-label', (collapse ? root!.dataset.collapseComments : root!.dataset.expandComments)!);
+        more.setAttribute('aria-expanded', String(expansions > 0));
+      }
+      const safeImage = (value: string) => { if (!value.trim()) return ''; try { const url = new URL(value, location.origin); return ['https:', 'http:'].includes(url.protocol) ? url.href : ''; } catch { return ''; } };
+      const discussionUrl = (value = '') => {
+        try {
+          const path = new URL(value, location.origin).pathname;
+          const localizedPath = `/${lang}${path.replace(/^\/(zh|en)(?=\/)/, '').replace(/\/?$/, '/')}`;
+          // Older live discussions can refer to articles not included in this checkout.
+          return localPaths.has(localizedPath) ? `${localizedPath}#comments` : `${root!.dataset.canonicalOrigin}${localizedPath}#comments`;
+        } catch { return `/${lang}/`; }
+      };
+      function appendBatch(count: number) {
+        const end = Math.min(visible + count, comments.length);
+        const names = new Map(comments.map(comment => [comment.id, comment.user?.name]));
+        for (const item of comments.slice(visible, end)) {
+          const card = document.createElement('article'); card.className = 'comment-card';
+          const avatar = document.createElement('span'); avatar.className = 'comment-avatar';
+          const name = item.user?.name || root!.dataset.anonymous!;
+          const picture = safeImage(item.user?.picture || item.user?.photo || item.user?.avatar || '');
+          if (picture) { const img = document.createElement('img'); img.src = picture; img.alt = ''; img.loading = 'lazy'; avatar.append(img); }
+          else avatar.textContent = name.slice(0, 1).toUpperCase();
+          const body = document.createElement('div'); body.className = 'comment-body';
+          const meta = document.createElement('div'); meta.className = 'comment-byline';
+          const author = document.createElement('span'); author.textContent = name; meta.append(author);
+          if (item.pid && names.get(item.pid)) { const reply = document.createElement('span'); reply.textContent = `${root!.dataset.reply} ${names.get(item.pid)}`; meta.append(reply); }
+          const date = document.createElement('time'); const parsedDate = new Date(item.time);
+          if (!Number.isNaN(parsedDate.valueOf())) { date.dateTime = parsedDate.toISOString(); date.textContent = parsedDate.toISOString().slice(0, 10); meta.append(date); }
+          const text = document.createElement('p');
+          const parsed = new DOMParser().parseFromString(item.text || '', 'text/html');
+          text.textContent = parsed.body.textContent?.trim() || (lang === 'zh' ? '[图片]' : '[Image]');
+          const link = document.createElement('a'); link.className = 'comment-source'; link.href = discussionUrl(item.locator?.url); link.textContent = item.title || (lang === 'zh' ? '查看讨论' : 'View discussion');
+          body.append(meta, text, link); card.append(avatar, body); list.append(card);
+        }
+        visible = end;
+        updateButton();
+      }
+      function toggleComments() {
+        if (shouldCollapse()) {
+          [...list.children].slice(initialCount).forEach(card => card.remove());
+          visible = initialCount;
+          expansions = 0;
+          updateButton();
+        } else {
+          expansions += 1;
+          appendBatch(4);
+        }
+      }
+      async function load() {
+        retry.hidden = true; more.hidden = true; status.hidden = false;
+        status.textContent = root!.dataset.loading!;
+        if (!host || !site) { status.textContent = root!.dataset.unconfigured!; return; }
+        try {
+          const response = await fetch(`${host}/api/v1/last/100?site=${encodeURIComponent(site)}`, { credentials: 'omit', signal: AbortSignal.any([pageSignal, AbortSignal.timeout(12000)]) });
+          if (!response.ok) throw new Error('Comment service unavailable');
+          const data = await response.json(); comments = Array.isArray(data) ? data : data.comments ?? [];
+          list.replaceChildren(); visible = 0; expansions = 0;
+          if (!comments.length) { status.textContent = root!.dataset.empty!; return; }
+          status.hidden = true; appendBatch(initialCount);
+        } catch { if (pageSignal.aborted) return; status.textContent = root!.dataset.error!; retry.hidden = false; }
+      }
+      more.addEventListener('click', toggleComments, { signal: pageSignal }); retry.addEventListener('click', load, { signal: pageSignal }); load();
+    }
+  }
+  document.addEventListener('astro:page-load', initComments);
+  document.addEventListener('astro:before-swap', () => controller?.abort());
+</script>

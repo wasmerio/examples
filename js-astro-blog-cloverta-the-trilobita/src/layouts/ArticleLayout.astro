@@ -1,0 +1,221 @@
+---
+import Layout from './Layout.astro';
+import Stripes from '../components/Stripes.astro';
+import Remark42Embed from '../components/Remark42Embed.astro';
+import PostDiscount from '../components/PostDiscount.astro';
+import { articles, articleSlug, articleUrl, articleTransition, articleSummary, discussionKey, formatDate, type Article } from '../lib/content';
+import { getTranslations, type Lang } from '../i18n';
+import type { MarkdownHeading } from 'astro';
+interface Props { post: Article; headings: MarkdownHeading[]; }
+const { post, headings } = Astro.props;
+const tocHeadings = headings.filter(heading => heading.depth <= 3);
+const tocRows: MarkdownHeading[][] = [];
+for (const heading of tocHeadings) {
+  const lastRow = tocRows.at(-1);
+  if (heading.depth <= 2 || !lastRow || lastRow[0].depth === 1) {
+    tocRows.push([heading]);
+  } else {
+    lastRow.push(heading);
+  }
+}
+const lang = post.id.split('/')[0] as Lang;
+const t = getTranslations(lang);
+const isColumn = post.collection === 'seriesPosts';
+const summary = await articleSummary(post);
+const siblings = (await articles(lang, post.collection)).filter(item => !isColumn || item.id.split('/')[2] === post.id.split('/')[2]);
+const index = siblings.findIndex(item => item.id === post.id);
+const previous = siblings[index + 1]; const next = siblings[index - 1];
+const otherLang = lang === 'zh' ? 'en' : 'zh';
+const translated = (await articles(otherLang, post.collection)).find(item => articleSlug(item) === articleSlug(post));
+const alternate = translated ? articleUrl(translated) : `/${otherLang}/${isColumn ? 'series' : 'archive'}/`;
+---
+<Layout active={isColumn ? 'series' : ''} title={post.data.title} description={summary} image={post.data.image?.url} alternatePath={alternate}>
+  <div class="reading-progress" aria-hidden="true"></div>
+  <article class:list={['post-article', { 'column-article': isColumn }]}>
+    <header class="article-header">
+      {isColumn && post.data.image && <img class="article-cover" src={post.data.image.url} alt={post.data.image.alt} width="126" height="126" transition:name={articleTransition(post, 'image')} />}
+      <h1 transition:name={articleTransition(post, 'title')}>{post.data.title}<PostDiscount post={post} lang={lang} /></h1>
+      {!isColumn && post.data.image && <img class="article-cover" src={post.data.image.url} alt={post.data.image.alt} width="126" height="126" transition:name={articleTransition(post, 'image')} />}
+      {!isColumn && <p class="article-description">{summary}</p>}
+      <p class="article-byline">{t.author} {post.data.author}<time datetime={post.data.pubDate.toISOString()}>{formatDate(post.data.pubDate)}</time>{post.data.sample && <span class="sample-label">{t.sample}</span>}</p>
+      {!isColumn && <div class="tags flex flex-wrap gap-x-4 gap-y-1">{post.data.tags.map(tag => <a href={`/${lang}/tags/${encodeURIComponent(tag)}/`}>#{tag}</a>)}</div>}
+    </header>
+    <Stripes class="article-divider" />
+    {tocHeadings.length > 0 && <aside class="article-toc"><details open><summary>{t.contents}</summary><nav aria-label={t.contents} tabindex="0">{tocRows.map(row => <div class="toc-row">{row.map(heading => <a href={`#${heading.slug}`} data-depth={heading.depth} class:list={{ 'toc-sub': heading.depth > 2 }}>{heading.text}</a>)}</div>)}</nav></details></aside>}
+    <div class="prose article-content"><slot /></div>
+    <nav class="post-pagination" aria-label={lang === 'zh' ? '相邻文章' : 'Adjacent posts'}>
+      <div>{previous && <><span>{t.previous}</span><a href={articleUrl(previous)}>{previous.data.title}<PostDiscount post={previous} lang={lang} /></a></>}</div>
+      <div>{next && <><span>{t.next}</span><a href={articleUrl(next)}>{next.data.title}<PostDiscount post={next} lang={lang} /></a></>}</div>
+    </nav>
+    <section id="comments" class="comments-section">
+      <h2>{t.comments}</h2><p>{t.commentPrompt}</p><p>{t.subscribe}</p>
+      <Remark42Embed slug={articleSlug(post)} pagePath={discussionKey(post)} />
+    </section>
+  </article>
+  <script type="application/ld+json" set:html={JSON.stringify({ '@context': 'https://schema.org', '@type': 'BlogPosting', headline: post.data.title, description: summary, datePublished: post.data.pubDate.toISOString(), author: { '@type': 'Person', name: post.data.author }, mainEntityOfPage: new URL(articleUrl(post), Astro.site).href }).replaceAll('<', '\\u003c')} />
+</Layout>
+<script>
+  let controller: AbortController | undefined;
+  function initTocScroll(signal: AbortSignal) {
+    const nav = document.querySelector<HTMLElement>('.article-toc nav');
+    const details = nav?.closest('details');
+    if (!nav || !details) return;
+    const inlineToc = matchMedia('(max-width: 1240px)');
+    let touch: { id: number; x: number; y: number } | undefined;
+    const resetTouch = () => {
+      touch = undefined;
+      nav.removeAttribute('data-touch-scrolling');
+    };
+    nav.addEventListener('touchstart', event => {
+      resetTouch();
+      if (!inlineToc.matches || event.touches.length !== 1 || (visualViewport?.scale ?? 1) > 1.05) return;
+      const point = event.touches[0];
+      touch = { id: point.identifier, x: point.clientX, y: point.clientY };
+      nav.setAttribute('data-touch-scrolling', '');
+    }, { passive: true, signal });
+    nav.addEventListener('touchmove', event => {
+      if (!touch) return;
+      if (!inlineToc.matches || event.touches.length !== 1) { resetTouch(); return; }
+      const point = event.touches[0];
+      if (point.identifier !== touch.id) { resetTouch(); return; }
+      const deltaY = touch.y - point.clientY;
+      const deltaX = touch.x - point.clientX;
+      touch = { id: point.identifier, x: point.clientX, y: point.clientY };
+      if (Math.abs(deltaY) <= Math.abs(deltaX)) return;
+      const maxScroll = Math.max(0, nav.scrollHeight - nav.clientHeight);
+      const pastTop = deltaY < 0 && nav.scrollTop <= 1;
+      const pastBottom = deltaY > 0 && nav.scrollTop >= maxScroll - 1;
+      if (!pastTop && !pastBottom) return;
+      // Keep native scrolling inside the TOC; forward outward movement at its edges.
+      if (event.cancelable) event.preventDefault();
+      window.scrollBy({ top: deltaY, behavior: 'instant' });
+    }, { passive: false, signal });
+    nav.addEventListener('touchend', resetTouch, { passive: true, signal });
+    nav.addEventListener('touchcancel', resetTouch, { passive: true, signal });
+    signal.addEventListener('abort', resetTouch, { once: true });
+    const updateFade = () => {
+      if (signal.aborted) return;
+      nav.toggleAttribute('data-more-below', details.open && nav.scrollHeight - nav.clientHeight - nav.scrollTop > 1);
+    };
+    nav.addEventListener('scroll', updateFade, { passive: true, signal });
+    details.addEventListener('toggle', updateFade, { signal });
+    addEventListener('resize', updateFade, { signal });
+    document.fonts.addEventListener('loadingdone', updateFade, { signal });
+    document.fonts.ready.then(updateFade);
+    const observer = new ResizeObserver(updateFade);
+    observer.observe(nav);
+    observer.observe(details);
+    signal.addEventListener('abort', () => observer.disconnect(), { once: true });
+    updateFade();
+  }
+  function initArticleCover(signal: AbortSignal) {
+    const header = document.querySelector<HTMLElement>('.post-article:not(.column-article) > .article-header');
+    const title = header?.querySelector('h1');
+    const cover = header?.querySelector<HTMLImageElement>('.article-cover');
+    if (!header || !title || !cover) return;
+    const desktop = matchMedia('(min-width: 701px)');
+    let frame = 0;
+    function updateLayout() {
+      if (!desktop.matches) {
+        header!.classList.remove('article-header-cover-top');
+        return;
+      }
+      const coverStyle = getComputedStyle(cover!);
+      const coverRightWidth = header!.clientWidth - parseFloat(coverStyle.marginRight);
+      const availableWidth = coverRightWidth - cover!.offsetWidth - parseFloat(coverStyle.marginLeft);
+      const measure = title!.cloneNode(true) as HTMLHeadingElement;
+      measure.setAttribute('aria-hidden', 'true');
+      measure.style.cssText = 'position: fixed; visibility: hidden; white-space: nowrap; width: max-content; max-width: none;';
+      header!.append(measure);
+      const fits = measure.getBoundingClientRect().width <= availableWidth;
+      measure.remove();
+      header!.style.setProperty('--article-title-width', `${fits ? availableWidth : coverRightWidth}px`);
+      header!.classList.toggle('article-header-cover-top', fits);
+    }
+    function queueUpdate() {
+      if (frame || signal.aborted) return;
+      frame = requestAnimationFrame(() => { frame = 0; updateLayout(); });
+    }
+    const observer = new ResizeObserver(queueUpdate);
+    observer.observe(header);
+    document.fonts.addEventListener('loadingdone', queueUpdate, { signal });
+    document.fonts.ready.then(queueUpdate);
+    signal.addEventListener('abort', () => { observer.disconnect(); cancelAnimationFrame(frame); }, { once: true });
+    updateLayout();
+  }
+  function initArticle() {
+    controller?.abort();
+    controller = new AbortController();
+    const { signal } = controller;
+    const article = document.querySelector<HTMLElement>('.article-content');
+    const progress = document.querySelector<HTMLElement>('.reading-progress');
+    if (!article || !progress) return;
+    initTocScroll(signal);
+    initArticleCover(signal);
+    const sections = [...document.querySelectorAll<HTMLAnchorElement>('.article-toc a[href^="#"]')].flatMap(link => {
+      let id: string;
+      try { id = decodeURIComponent(link.hash.slice(1)); } catch { return []; }
+      const heading = document.getElementById(id);
+      return heading && article.contains(heading) ? [{ link, heading }] : [];
+    });
+    let activeLink: HTMLAnchorElement | undefined;
+    let frame = 0;
+    const updateReadingState = () => {
+      const start = article.getBoundingClientRect().top + scrollY;
+      const distance = Math.max(article.offsetHeight - innerHeight, 1);
+      progress.style.transform = `scaleX(${Math.min(1, Math.max(0, (scrollY - start) / distance))})`;
+      // Match the heading's 25px anchor offset, with a small rounding allowance.
+      let current: typeof sections[number] | undefined = sections[0];
+      for (const section of sections) {
+        if (section.heading.getBoundingClientRect().top > 32) break;
+        current = section;
+      }
+      if (scrollY > 0 && scrollY + innerHeight >= document.documentElement.scrollHeight - 2) current = sections.at(-1);
+      if (current?.link !== activeLink) {
+        activeLink?.removeAttribute('aria-current');
+        activeLink = current?.link;
+        activeLink?.setAttribute('aria-current', 'location');
+      }
+    };
+    const queueUpdate = () => {
+      if (frame || signal.aborted) return;
+      frame = requestAnimationFrame(() => { frame = 0; updateReadingState(); });
+    };
+    addEventListener('scroll', queueUpdate, { passive: true, signal });
+    addEventListener('resize', queueUpdate, { signal });
+    addEventListener('hashchange', queueUpdate, { signal });
+    article.addEventListener('load', queueUpdate, { capture: true, signal });
+    document.fonts.addEventListener('loadingdone', queueUpdate, { signal });
+    const initialHash = location.hash;
+    const initialSection = sections.find(section => section.link.hash === initialHash);
+    let userInteracted = false;
+    if (initialSection) {
+      for (const event of ['pointerdown', 'wheel', 'touchstart', 'keydown']) {
+        addEventListener(event, () => { userInteracted = true; }, { once: true, passive: true, signal });
+      }
+    }
+    document.fonts.ready.then(() => {
+      // Font swapping can shift the browser's initial fragment landing position.
+      if (!signal.aborted && !userInteracted && initialSection && location.hash === initialHash) {
+        initialSection.heading.scrollIntoView({ behavior: 'instant', block: 'start' });
+      }
+      queueUpdate();
+    });
+    const observer = new ResizeObserver(queueUpdate);
+    observer.observe(article);
+    signal.addEventListener('abort', () => { cancelAnimationFrame(frame); observer.disconnect(); }, { once: true });
+    updateReadingState();
+    article.querySelectorAll<HTMLElement>('pre').forEach(pre => {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'copy-code';
+      const zh = document.documentElement.lang.startsWith('zh'); button.textContent = zh ? '复制' : 'Copy';
+      button.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(pre.querySelector('code')?.textContent || ''); button.textContent = zh ? '已复制' : 'Copied'; }
+        catch { button.textContent = zh ? '复制失败' : 'Copy failed'; }
+        setTimeout(() => { if (!signal.aborted) button.textContent = zh ? '复制' : 'Copy'; }, 1800);
+      }, { signal });
+      pre.append(button);
+    });
+  }
+  document.addEventListener('astro:page-load', initArticle);
+  document.addEventListener('astro:before-swap', () => controller?.abort());
+</script>

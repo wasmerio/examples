@@ -1,0 +1,479 @@
+---
+// SPDX-License-Identifier: MIT
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import { getCollection } from "astro:content";
+import { localePath } from "../../../utils/i18n";
+
+export async function getStaticPaths() {
+  const cleanSlug = (v) =>
+    String(v ?? "")
+      .trim()
+      .replace(/\/+$/g, "")
+      .replace(/\.mdx?$/i, "");
+
+  const allProjects = await getCollection("projects");
+  const projects = allProjects.filter((p) => p.data.ready !== false);
+  const sorted = projects.slice().sort((a, b) => (a.data.pid ?? 999999) - (b.data.pid ?? 999999));
+
+  const paths = [];
+  for (const [i, entry] of sorted.entries()) {
+    const slug = cleanSlug(entry.data.slug ?? entry.id);
+    const prev = i > 0 ? sorted[i - 1] : null;
+    const next = i < sorted.length - 1 ? sorted[i + 1] : null;
+
+    paths.push({ params: { locale: undefined, slug }, props: { entry, prev, next } });
+    paths.push({ params: { locale: "de", slug }, props: { entry, prev, next } });
+  }
+  return paths;
+}
+
+const cleanSlugLocal = (v) =>
+  String(v ?? "")
+    .trim()
+    .replace(/\/+$/g, "")
+    .replace(/\.mdx?$/i, "");
+
+const locale = (Astro.params.locale as string) || "en";
+const t = (en: string, de: string) => (locale === "de" ? de : en);
+
+const { entry, prev, next } = Astro.props;
+const { Content } = await entry.render();
+
+const cover = entry.data.coverImage;
+const logo = entry.data.image;
+const gallery = entry.data.gallery ?? [];
+const hasCover = !!cover;
+const dateStr = entry.data.date?.toISOString().slice(0, 10) ?? "Unknown";
+const title = locale === "de" ? (entry.data.title_de || entry.data.title) : entry.data.title;
+const description = locale === "de" ? (entry.data.description_de || entry.data.description) : entry.data.description;
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  name: title,
+  description,
+  dateCreated: dateStr,
+  author: { "@type": "Person", name: "Your Name", url: Astro.site?.href ?? "https://example.com" },
+};
+---
+
+<BaseLayout title={`${title} • ${t("Project", "Projekt")}`} description={description} showNavigation={false} locale={locale} jsonLd={jsonLd}>
+  <div class="mx-auto max-w-6xl">
+    <nav class="mb-6 flex items-center justify-between px-2">
+      <a
+        href={localePath("/projects", locale)}
+        class="group flex items-center gap-2 text-sm font-semibold text-zinc-700 transition hover:opacity-80 dark:text-zinc-300"
+      >
+        <span class="rounded bg-white/30 px-1.5 py-0.5 font-mono text-xs dark:bg-zinc-800/70">←</span>
+        <span>{t("Back", "Zurück")}</span>
+      </a>
+
+      <div class="font-mono text-xs text-zinc-500 dark:text-zinc-400">
+        ID: {String(entry.data.pid ?? "---").padStart(3, "0")} • {dateStr}
+      </div>
+    </nav>
+
+    <article
+      class="overflow-hidden rounded-[32px] border shadow-xl"
+      style="border-color: var(--glass-border); background: var(--glass);"
+    >
+      {/* ── Hero media ─────────────────────────── */}
+      <div class={`detail-hero relative w-full overflow-hidden ${hasCover ? 'detail-hero--cover' : 'detail-hero--logo'}`}>
+        {hasCover ? (
+          <img
+            src={cover}
+            alt={title}
+            class="detail-hero-cover"
+            loading="eager"
+            decoding="async"
+          />
+        ) : logo ? (
+          <div class="detail-hero-logo-wrap">
+            <div
+              class="pointer-events-none absolute inset-0 opacity-40"
+              style="background: radial-gradient(800px 400px at 30% 40%, var(--a2), transparent 60%), radial-gradient(800px 500px at 70% 60%, var(--a1), transparent 60%); filter: blur(30px);"
+            ></div>
+            <img
+              src={logo}
+              alt={title}
+              class="detail-hero-logo"
+              loading="eager"
+              decoding="async"
+            />
+          </div>
+        ) : (
+          <div class="detail-hero-empty">
+            <span class="font-mono text-sm opacity-40">{t("NO_PREVIEW", "KEINE_VORSCHAU")}</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Title & tags bar ──────────────────── */}
+      <div class="border-b px-6 py-5 md:px-10 md:py-6" style="border-color: var(--glass-border);">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div class="min-w-0">
+            <h1 class="text-2xl md:text-3xl font-black tracking-tight text-zinc-900 dark:text-zinc-100 break-words">
+              {title}
+            </h1>
+          </div>
+          <div class="flex flex-wrap gap-2 shrink-0">
+            {(entry.data.tags ?? []).map((tg) => (
+              <span
+                class="rounded-full px-3 py-1 text-[11px] font-medium
+                       bg-zinc-100 text-zinc-600
+                       dark:bg-zinc-800 dark:text-zinc-400"
+              >
+                {tg}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Gallery strip ─────────────────────── */}
+      {gallery.length > 0 && (
+        <div class="gallery-strip border-b flex gap-3 overflow-x-auto px-6 py-4 md:px-10" style="border-color: var(--glass-border);">
+          {gallery.map((src, i) => (
+            <button type="button" class="gallery-thumb shrink-0" data-lightbox-index={i}>
+              <img src={src} alt={`${title} screenshot ${i + 1}`} loading="lazy" decoding="async" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Lightbox overlay ──────────────────── */}
+      {gallery.length > 0 && (
+        <div id="lightbox" class="lightbox" aria-hidden="true">
+          <button type="button" class="lightbox-close" aria-label="Close">✕</button>
+          {gallery.length > 1 && (
+            <>
+              <button type="button" class="lightbox-prev" aria-label="Previous">‹</button>
+              <button type="button" class="lightbox-next" aria-label="Next">›</button>
+            </>
+          )}
+          <div class="lightbox-img-wrap">
+            <img id="lightboxImg" src="" alt="" />
+          </div>
+          <div class="lightbox-counter" id="lightboxCounter"></div>
+        </div>
+      )}
+
+      <div class="grid gap-0 divide-y dark:divide-zinc-800 lg:grid-cols-[1fr_320px] lg:divide-x lg:divide-y-0">
+        <div class="p-6 md:p-10">
+          <div class="prose prose-zinc max-w-none dark:prose-invert prose-a:no-underline hover:prose-a:underline prose-lead:text-base prose-lead:font-normal">
+            <h3 class="font-mono text-xs uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+              {t("Description", "Beschreibung")}
+            </h3>
+
+            <p class="lead">{description}</p>
+
+            <hr class="my-8 border-zinc-200 dark:border-zinc-800" />
+            <Content />
+          </div>
+        </div>
+
+        <aside class="p-6 lg:p-8" style="background: rgba(255,255,255,.06);">
+          <div class="font-mono text-xs uppercase tracking-widest text-zinc-500 dark:text-zinc-400 mb-4">
+            {t("Details", "Details")}
+          </div>
+
+          <dl class="grid gap-4 text-sm">
+            <div>
+              <dt class="font-semibold text-zinc-600 dark:text-zinc-400">{t("Date", "Datum")}</dt>
+              <dd class="mt-1 font-mono text-zinc-900 dark:text-zinc-200">{dateStr}</dd>
+            </div>
+
+            <div>
+              <dt class="font-semibold text-zinc-600 dark:text-zinc-400">{t("Links", "Links")}</dt>
+              <dd class="mt-2 grid gap-2">
+                {(entry.data.links ?? []).map((link, i) => (
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="flex items-center justify-between rounded-xl border px-3 py-2 transition hover:-translate-y-0.5"
+                    style="border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.08);"
+                  >
+                    <span class="font-semibold">{link.label || `Link ${i + 1}`}</span>
+                    <span class="font-mono text-xs opacity-70">↗</span>
+                  </a>
+                ))}
+                {(entry.data.links ?? []).length === 0 ? (
+                  <span class="font-mono text-xs opacity-60">
+                    {t("No external links", "Keine externen Links")}
+                  </span>
+                ) : null}
+              </dd>
+            </div>
+          </dl>
+
+          <div class="mt-10 grid gap-3 border-t pt-5" style="border-color: rgba(255,255,255,.14);">
+            {prev ? (
+              <a
+                href={localePath(`/projects/${cleanSlugLocal(prev.data.slug ?? prev.id)}/`, locale)}
+                class="rounded-xl border px-4 py-3 text-sm font-semibold transition hover:-translate-y-0.5"
+                style="border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.08);"
+              >
+                ← {locale === "de" ? (prev.data.title_de || prev.data.title) : prev.data.title}
+              </a>
+            ) : null}
+
+            {next ? (
+              <a
+                href={localePath(`/projects/${cleanSlugLocal(next.data.slug ?? next.id)}/`, locale)}
+                class="rounded-xl border px-4 py-3 text-sm font-semibold transition hover:-translate-y-0.5 text-right"
+                style="border-color: rgba(255,255,255,.16); background: rgba(255,255,255,.08);"
+              >
+                {locale === "de" ? (next.data.title_de || next.data.title) : next.data.title} →
+              </a>
+            ) : null}
+          </div>
+        </aside>
+      </div>
+    </article>
+  </div>
+</BaseLayout>
+
+<style is:global>
+  /* ── Detail hero ──────────────────────────── */
+  .detail-hero{
+    border-bottom: 1px solid var(--glass-border);
+  }
+
+  .detail-hero--cover{
+    height: auto;
+    max-height: 420px;
+    background: #18181b;
+  }
+
+  .detail-hero-cover{
+    width: 100%;
+    height: auto;
+    max-height: 420px;
+    object-fit: cover;
+    object-position: top center;
+    display: block;
+  }
+
+  .detail-hero--logo{
+    height: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    background: linear-gradient(145deg, #f9fafb 0%, #f1f5f9 60%, #ecfdf5 100%);
+  }
+  .dark .detail-hero--logo{
+    background: linear-gradient(145deg, #18181b 0%, #1c1c22 60%, #121e1a 100%);
+  }
+
+  .detail-hero-logo-wrap{
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+  }
+
+  .detail-hero-logo{
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    position: relative;
+    z-index: 1;
+    filter: drop-shadow(0 10px 32px rgba(0,0,0,.12));
+  }
+  .dark .detail-hero-logo{
+    filter: drop-shadow(0 10px 32px rgba(0,0,0,.4));
+  }
+
+  .detail-hero-empty{
+    height: 200px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(145deg, #f9fafb, #f1f5f9);
+  }
+  .dark .detail-hero-empty{
+    background: linear-gradient(145deg, #18181b, #1c1c22);
+  }
+
+  /* ── Gallery strip ─────────────────────────── */
+  .gallery-strip{
+    background: rgba(0,0,0,.02);
+    scrollbar-width: thin;
+  }
+  .dark .gallery-strip{
+    background: rgba(255,255,255,.02);
+  }
+
+  .gallery-thumb{
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+  }
+  .gallery-thumb img{
+    height: 80px;
+    width: auto;
+    border-radius: 8px;
+    border: 1px solid rgba(0,0,0,.08);
+    object-fit: cover;
+    transition: transform .2s ease, box-shadow .2s ease;
+  }
+  .dark .gallery-thumb img{
+    border-color: rgba(255,255,255,.1);
+  }
+  .gallery-thumb:hover img{
+    transform: scale(1.04);
+    box-shadow: 0 4px 16px rgba(0,0,0,.15);
+  }
+
+  /* ── Lightbox ─────────────────────────────── */
+  .lightbox{
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,.88);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s ease;
+  }
+  .lightbox[aria-hidden="false"]{
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .lightbox-img-wrap{
+    max-width: 90vw;
+    max-height: 85vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lightbox-img-wrap img{
+    max-width: 90vw;
+    max-height: 85vh;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.4);
+    user-select: none;
+  }
+  .lightbox-close{
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 28px;
+    cursor: pointer;
+    opacity: .7;
+    transition: opacity .2s;
+    z-index: 1;
+    line-height: 1;
+    padding: 4px 8px;
+  }
+  .lightbox-close:hover{ opacity: 1; }
+  .lightbox-prev,
+  .lightbox-next{
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,.1);
+    border: 1px solid rgba(255,255,255,.2);
+    color: #fff;
+    font-size: 32px;
+    line-height: 1;
+    padding: 8px 14px;
+    border-radius: 12px;
+    cursor: pointer;
+    opacity: .7;
+    transition: opacity .2s, background .2s;
+    z-index: 1;
+  }
+  .lightbox-prev{ left: 16px; }
+  .lightbox-next{ right: 16px; }
+  .lightbox-prev:hover,
+  .lightbox-next:hover{
+    opacity: 1;
+    background: rgba(255,255,255,.2);
+  }
+  .lightbox-counter{
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,.6);
+    font-size: 13px;
+    font-family: ui-monospace, monospace;
+  }
+
+  @media (min-width: 768px){
+    .detail-hero--cover{ max-height: 480px; }
+    .detail-hero-cover{ max-height: 480px; }
+    .detail-hero--logo{ height: 340px; }
+    .gallery-thumb img{ height: 96px; }
+  }
+</style>
+
+<script is:inline>
+  (function() {
+    const lightbox = document.getElementById("lightbox");
+    if (!lightbox) return;
+
+    const img = document.getElementById("lightboxImg");
+    const counter = document.getElementById("lightboxCounter");
+    const thumbs = document.querySelectorAll("[data-lightbox-index]");
+    const sources = Array.from(thumbs).map(btn => btn.querySelector("img").src);
+    let current = 0;
+
+    function show(i) {
+      current = i;
+      img.src = sources[current];
+      img.alt = "Screenshot " + (current + 1);
+      if (counter && sources.length > 1) {
+        counter.textContent = (current + 1) + " / " + sources.length;
+      }
+    }
+
+    function open(i) {
+      show(i);
+      lightbox.setAttribute("aria-hidden", "false");
+      document.body.style.overflow = "hidden";
+    }
+
+    function close() {
+      lightbox.setAttribute("aria-hidden", "true");
+      document.body.style.overflow = "";
+    }
+
+    thumbs.forEach(btn => {
+      btn.addEventListener("click", () => open(Number(btn.getAttribute("data-lightbox-index"))));
+    });
+
+    lightbox.querySelector(".lightbox-close").addEventListener("click", close);
+
+    const prevBtn = lightbox.querySelector(".lightbox-prev");
+    const nextBtn = lightbox.querySelector(".lightbox-next");
+    if (prevBtn) prevBtn.addEventListener("click", () => show((current - 1 + sources.length) % sources.length));
+    if (nextBtn) nextBtn.addEventListener("click", () => show((current + 1) % sources.length));
+
+    lightbox.addEventListener("click", (e) => {
+      if (e.target === lightbox || e.target.classList.contains("lightbox-img-wrap")) close();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (lightbox.getAttribute("aria-hidden") !== "false") return;
+      if (e.key === "Escape") close();
+      if (e.key === "ArrowLeft" && sources.length > 1) show((current - 1 + sources.length) % sources.length);
+      if (e.key === "ArrowRight" && sources.length > 1) show((current + 1) % sources.length);
+    });
+  })();
+</script>

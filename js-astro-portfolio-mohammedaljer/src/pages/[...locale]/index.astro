@@ -1,0 +1,429 @@
+---
+// SPDX-License-Identifier: MIT
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { getCollection } from "astro:content";
+import { Image } from "astro:assets";
+import SkillsWorkflow from "../../components/SkillsWorkflow.astro";
+import me from "../../assets/me.svg";
+import { profile, locationLabel, languages, timeline, volunteering, exploring } from "../../data/cv.js";
+import { localePath } from "../../utils/i18n";
+
+export function getStaticPaths() {
+  return [
+    { params: { locale: undefined } },
+    { params: { locale: "de" } },
+  ];
+}
+
+const locale = (Astro.params.locale as string) || "en";
+const t = (en: string, de: string) => (locale === "de" ? de : en);
+
+const allProjects = await getCollection("projects");
+const projects = allProjects.filter((p) => p.data.ready !== false);
+// Featured first, then by date descending within each group
+const sorted = [...projects].sort((a, b) => {
+  const fa = a.data.featured ? 0 : 1;
+  const fb = b.data.featured ? 0 : 1;
+  if (fa !== fb) return fa - fb;
+  return new Date(b.data.date).getTime() - new Date(a.data.date).getTime();
+});
+const latest = sorted[0];
+const latestThree = sorted.slice(0, 3);
+
+const toSlug = (p) => String(p.data.slug ?? p.id).replace(/\/+$/,"").replace(/\.mdx?$/i, "");
+
+const primaryLink = (p) => {
+  const links = p?.data?.links ?? [];
+  return links.length ? links[0] : null;
+};
+
+const timelineImages = import.meta.glob("../../assets/timeline/**/*.{png,jpg,jpeg,webp,avif,svg}", {
+  eager: true,
+  import: "default",
+});
+
+const getTimelineImage = (name) => {
+  if (!name) return null;
+  const file = String(name).split("/").pop();
+  const hitKey = Object.keys(timelineImages).find((k) => k.endsWith("/" + file));
+  return hitKey ? timelineImages[hitKey] : null;
+};
+
+const tl = locale === "de" ? timeline.de : timeline.en;
+const vol = locale === "de" ? volunteering.de : volunteering.en;
+const expl = locale === "de" ? exploring.de : exploring.en;
+const langs = locale === "de" ? languages.de : languages.en;
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Person",
+  name: profile.name,
+  url: Astro.site?.href ?? "https://example.com",
+  jobTitle: `${profile.roleTop} ${profile.roleMid}`,
+  knowsAbout: ["TypeScript", "React", "Node.js", "Docker", "Open Source", "Web Development"],
+  sameAs: Object.values(profile.links).filter((u) => !u.startsWith("mailto:")),
+};
+---
+
+<BaseLayout
+  title={`${profile.name} • Portfolio`}
+  description={t(
+    `${profile.name} — ${profile.roleTop} ${profile.roleMid}. Portfolio showcasing projects, skills, and experience.`,
+    `${profile.name} — ${profile.roleTop} ${profile.roleMid}. Portfolio mit Projekten, Skills und Erfahrung.`
+  )}
+  locale={locale}
+  jsonLd={jsonLd}
+>
+  <div id="top"></div>
+
+  <section
+    data-hero
+    class="relative isolate overflow-hidden rounded-[28px] p-8 md:p-10 shadow-sm backdrop-blur"
+    style="background: var(--glass); border: 1px solid var(--glass-border);"
+  >
+    <div
+      class="pointer-events-none absolute top-0 left-0 -translate-x-32 -translate-y-32 h-96 w-96 rounded-full blur-3xl opacity-70"
+      style="background: radial-gradient(circle, var(--a2), transparent 60%);"
+    ></div>
+    <div
+      class="pointer-events-none absolute bottom-0 right-0 translate-x-40 translate-y-40 h-[520px] w-[520px] rounded-full blur-3xl opacity-70"
+      style="background: radial-gradient(circle, var(--a1), transparent 60%);"
+    ></div>
+
+    <div class="relative grid gap-10 md:grid-cols-[1.2fr_.8fr]">
+      <div data-hero-left class="intro intro-left" data-intro data-delay="0">
+        <h1 class="mt-1 text-4xl md:text-5xl font-black leading-[1.05] tracking-tight break-words hyphens-auto">
+          <span class="block text-zinc-950 dark:text-zinc-50">{profile.name}</span>
+          <span class="mt-3 block text-emerald-700 dark:text-emerald-300 font-extrabold text-2xl md:text-3xl">{profile.roleTop}</span>
+          <span class="block text-zinc-600 dark:text-zinc-400 text-xl md:text-2xl font-bold">{profile.roleMid}</span>
+        </h1>
+        <p class="mt-5 max-w-xl text-base md:text-lg text-zinc-700 dark:text-zinc-300 leading-relaxed">{locale === "de" ? profile.tagline.de : profile.tagline.en}</p>
+
+        <div class="mt-7 flex flex-wrap gap-3 intro intro-up" data-hero-social data-intro data-delay="140">
+           <a class="rounded-xl border px-4 py-2 text-sm transition hover:-translate-y-0.5 hover:shadow-lg backdrop-blur inline-flex items-center gap-2" style="background: var(--glass); border-color: var(--glass-border);" target="_blank" rel="noopener noreferrer" href={profile.links.github}>
+             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+             GitHub
+           </a>
+           <a class="rounded-xl border px-4 py-2 text-sm transition hover:-translate-y-0.5 hover:shadow-lg backdrop-blur inline-flex items-center gap-2" style="background: var(--glass); border-color: var(--glass-border);" target="_blank" rel="noopener noreferrer" href={profile.links.linkedin}>
+             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+             LinkedIn
+           </a>
+           <a class="rounded-xl border px-4 py-2 text-sm transition hover:-translate-y-0.5 hover:shadow-lg backdrop-blur inline-flex items-center gap-2" style="background: var(--glass); border-color: var(--glass-border);" href={profile.links.email}>
+             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+             Email
+           </a>
+        </div>
+      </div>
+
+      <aside
+        data-hero-card
+        class="rounded-[26px] p-6 shadow-sm backdrop-blur intro intro-right"
+        data-intro
+        data-delay="80"
+        style="background: rgba(255,255,255,.10); border: 1px solid var(--glass-border);"
+      >
+        <div class="flex flex-col items-center text-center gap-4 sm:flex-row sm:items-center sm:text-left">
+          <div class="mx-auto w-32 aspect-square rounded-2xl overflow-hidden ring-1 ring-zinc-200 shadow-sm transition hover:scale-[1.02] dark:ring-zinc-700 sm:mx-0 sm:w-36">
+            <Image src={me} alt={t("Profile photo", "Profilfoto")} width={320} height={320} format="webp" quality={90} fit="cover" class="h-full w-full object-cover" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="text-lg font-semibold leading-tight break-words whitespace-normal">{profile.name}</div>
+            <div class="mt-1 text-sm text-zinc-700 dark:text-zinc-300 leading-tight break-words whitespace-normal">{locationLabel}</div>
+          </div>
+        </div>
+
+        <div class="mt-6">
+           <div class="text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+             {t("About", "Über mich")}
+           </div>
+           <p class="mt-2 text-sm text-zinc-800 dark:text-zinc-200" set:html={locale === "de" ? profile.about.de : profile.about.en} />
+        </div>
+
+        <div class="mt-6">
+          <div class="text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">{t("Languages", "Sprachen")}</div>
+          <div class="mt-3 min-h-[72px] min-w-0 overflow-hidden">
+            <div class="flex flex-wrap gap-1.5 max-w-full min-w-0">
+              {langs.map((l) => (
+                <span class="rounded-full border px-2 py-0.5 text-[10px] sm:px-2.5 sm:text-[11px] whitespace-nowrap" style="border-color: var(--glass-border); background: rgba(255,255,255,.08);">
+                  {l.name} • {l.level}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <div class="section-connector-box reveal-item" data-reveal data-delay="100">
+    <div class="connector-light"></div>
+  </div>
+
+  <section
+    id="journey"
+    class="rounded-[28px] p-8 md:p-10 shadow-sm backdrop-blur reveal-item"
+    data-reveal
+    data-delay="0"
+    style="background: var(--glass); border: 1px solid var(--glass-border);"
+  >
+    <div class="mb-8">
+      <h2 class="text-lg font-semibold break-words">{t("Journey", "Werdegang")}</h2>
+      <div class="text-xs text-zinc-700 dark:text-zinc-300 break-words">{t("Work • Education • Labs", "Arbeit • Studium • Lab")}</div>
+    </div>
+
+    <div id="timeline" class="relative border-l border-zinc-200 dark:border-zinc-800 ml-3 md:ml-4 space-y-10">
+      {tl.map((item, idx) => {
+        const logo = getTimelineImage(item.logo);
+        return (
+          <div class={`relative pl-8 md:pl-10 reveal-item ${idx >= 3 ? "journey-extra hidden" : ""}`} data-reveal data-delay={String(idx * 80)}>
+            <div class="absolute -left-[5px] top-2 h-2.5 w-2.5 rounded-full dot-emerald z-10"></div>
+
+            <div class="flex flex-row items-start gap-4">
+              {logo && (
+                <div class="shrink-0 mt-0.5">
+                  <div class="h-12 w-12 overflow-hidden rounded-xl border bg-white dark:bg-zinc-900 grid place-items-center shadow-sm" style="border-color: var(--glass-border);">
+                    <Image src={logo} alt="" width={48} height={48} format="webp" quality={80} class="h-full w-full object-cover" loading="lazy" />
+                  </div>
+                </div>
+              )}
+
+              <div class="flex-1 min-w-0 pt-0.5">
+                 <h3 class="text-base font-bold leading-tight text-zinc-900 dark:text-zinc-100">{item.title}</h3>
+
+                 <div class="flex flex-wrap items-center gap-2 mt-1.5 mb-2">
+                   <span class="rounded-md px-2 py-0.5 text-[10px] font-normal text-emerald-950 dark:text-emerald-100 bg-emerald-100 dark:bg-emerald-500/20 border border-emerald-200/50 dark:border-emerald-500/30">{item.kind}</span>
+                   <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">{item.date}</span>
+                 </div>
+
+                 <p class="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{item.text}</p>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+
+    <div class="mt-12 flex justify-center">
+      <button
+        id="journeyToggle"
+        type="button"
+        class="text-sm font-semibold text-zinc-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center gap-1 group"
+      >
+        <span>{t("Show more", "Mehr anzeigen")}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 transition-transform group-hover:translate-y-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </div>
+  </section>
+
+  <div class="section-connector-box reveal-item" data-reveal data-delay="100">
+    <div class="connector-light"></div>
+  </div>
+
+  <section
+    id="volunteering"
+    class="rounded-[28px] p-8 md:p-10 shadow-sm backdrop-blur reveal-item"
+    data-reveal
+    data-delay="0"
+    style="background: var(--glass); border: 1px solid var(--glass-border);"
+  >
+    <div class="mb-8">
+      <h2 class="text-lg font-semibold break-words">{t("Volunteering", "Ehrenamt")}</h2>
+      <div class="text-xs text-zinc-700 dark:text-zinc-300 break-words">{t("AI • Automation • Community", "AI • Automatisierung • Engagement")}</div>
+    </div>
+
+    <div class="relative border-l border-zinc-200 dark:border-zinc-800 ml-3 md:ml-4 space-y-10">
+      {vol.map((item, idx) => {
+        const logo = getTimelineImage(item.logo);
+        return (
+          <div class="relative pl-8 md:pl-10 reveal-item" data-reveal data-delay={String(idx * 80)}>
+            <div class="absolute -left-[5px] top-2 h-2.5 w-2.5 rounded-full dot-cyan z-10"></div>
+
+            <div class="flex flex-row items-start gap-4">
+              {logo && (
+                <div class="shrink-0 mt-0.5">
+                  <div class="h-12 w-12 overflow-hidden rounded-xl border bg-white dark:bg-zinc-900 grid place-items-center shadow-sm" style="border-color: var(--glass-border);">
+                    <Image src={logo} alt="" width={48} height={48} format="webp" quality={80} class="h-full w-full object-cover" loading="lazy" />
+                  </div>
+                </div>
+              )}
+
+              <div class="flex-1 min-w-0 pt-0.5">
+                 <h3 class="text-base font-bold leading-tight text-zinc-900 dark:text-zinc-100">{item.title}</h3>
+
+                 <div class="flex flex-wrap items-center gap-2 mt-1.5 mb-2">
+                   <span class="rounded-md px-2 py-0.5 text-[10px] font-normal text-cyan-950 dark:text-cyan-100 bg-cyan-100 dark:bg-cyan-500/20 border border-cyan-200/50 dark:border-cyan-500/30">{item.kind}</span>
+                   <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">{item.date}</span>
+                 </div>
+
+                 <p class="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{item.text}</p>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </section>
+
+  <div class="section-connector-box reveal-item" data-reveal data-delay="100">
+    <div class="connector-light"></div>
+  </div>
+
+  <section
+    id="exploring"
+    class="rounded-[28px] p-8 md:p-10 shadow-sm backdrop-blur reveal-item"
+    data-reveal
+    data-delay="0"
+    style="background: var(--glass); border: 1px solid var(--glass-border);"
+  >
+    <div class="mb-8">
+      <h2 class="text-lg font-semibold break-words">{t("What I'm Exploring", "Was mich gerade beschäftigt")}</h2>
+      <div class="text-xs text-zinc-700 dark:text-zinc-300 break-words">{t("Growing as an engineer, one topic at a time", "Als Ingenieur wachsen, ein Thema nach dem anderen")}</div>
+    </div>
+
+    <div class="grid gap-5 md:grid-cols-3">
+      {expl.map((item, idx) => (
+        <div
+          class="rounded-2xl p-6 backdrop-blur reveal-item"
+          data-reveal
+          data-delay={String(idx * 90)}
+          style="background: rgba(255,255,255,.08); border: 1px solid var(--glass-border);"
+        >
+          <div class="text-2xl mb-3">{item.icon}</div>
+          <h3 class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{item.title}</h3>
+          <p class="mt-2 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{item.text}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <div class="section-connector-box reveal-item" data-reveal data-delay="100">
+    <div class="connector-light"></div>
+  </div>
+
+  <SkillsWorkflow locale={locale} />
+
+  <div class="section-connector-box reveal-item" data-reveal data-delay="100">
+    <div class="connector-light"></div>
+  </div>
+
+  <section id="latest-project" class="rounded-[28px] p-8 md:p-10 shadow-sm backdrop-blur reveal-item" data-reveal data-delay="0" style="background: var(--glass); border: 1px solid var(--glass-border);">
+    <div class="flex items-center justify-between gap-3">
+      <h2 class="text-lg font-semibold">
+        {t("Last Project", "Letztes Projekt")}
+      </h2>
+      <a class="text-sm underline text-zinc-800 dark:text-zinc-200" href={localePath("/projects", locale)}>
+        {t("View all", "Alle ansehen")}
+      </a>
+    </div>
+
+    {latest ? (() => {
+      const latestCover = latest.data.coverImage;
+      const latestLogo = latest.data.image;
+      const latestHasCover = !!latestCover;
+      return (
+        <div class="mt-5 grid gap-6 md:grid-cols-[1fr_1.2fr] items-start reveal-item" data-reveal data-delay="120">
+          <a
+            class="featured-media overflow-hidden rounded-2xl border block"
+            href={localePath(`/projects/${toSlug(latest)}/`, locale)}
+            style="border-color: var(--glass-border);"
+          >
+            {latestHasCover ? (
+              <img
+                src={latestCover}
+                alt={latest.data.title}
+                class="featured-cover"
+                loading="lazy"
+                decoding="async"
+              />
+            ) : latestLogo ? (
+              <div class="featured-logo-wrap">
+                <img
+                  src={latestLogo}
+                  alt={latest.data.title}
+                  class="featured-logo"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </div>
+            ) : (
+              <div class="featured-empty">
+                {t("No image yet", "Noch kein Bild")}
+              </div>
+            )}
+          </a>
+
+          <div class="min-w-0">
+            <div class="text-xs text-zinc-500 dark:text-zinc-400">{latest.data.date.toISOString().slice(0, 10)}</div>
+            <div class="mt-2 text-2xl font-bold break-words text-zinc-900 dark:text-zinc-100">
+              {locale === "de" ? (latest.data.title_de || latest.data.title) : latest.data.title}
+            </div>
+            <p class="mt-2 text-sm text-zinc-700 dark:text-zinc-300 break-words leading-relaxed">
+              {locale === "de" ? (latest.data.description_de || latest.data.description) : latest.data.description}
+            </p>
+            <div class="mt-4 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              {latest.data.tags?.slice(0, 5).map((tg, i) => (
+                <>
+                  {i > 0 && <span class="text-[11px] text-zinc-400 dark:text-zinc-600">·</span>}
+                  <span class="text-[11px] font-medium font-mono text-zinc-500 dark:text-zinc-400">{tg}</span>
+                </>
+              ))}
+            </div>
+            <div class="mt-5 flex flex-wrap gap-3">
+              <a class="inline-block rounded-xl border px-4 py-2 text-sm font-semibold transition hover:-translate-y-0.5 hover:shadow-lg backdrop-blur" style="background: rgba(255,255,255,.10); border-color: var(--glass-border);" href={localePath(`/projects/${toSlug(latest)}/`, locale)}>
+                {t("Read →", "Lesen →")}
+              </a>
+              {primaryLink(latest) ? (
+                <a class="inline-block rounded-xl border px-4 py-2 text-sm transition hover:-translate-y-0.5 hover:shadow-lg backdrop-blur" style="background: rgba(255,255,255,.10); border-color: var(--glass-border);" target="_blank" rel="noopener noreferrer" href={primaryLink(latest).url}>{primaryLink(latest).label} →</a>
+              ) : null}
+            </div>
+        </div>
+      </div>
+      );
+    })() : (
+      <p class="mt-4 text-zinc-800 dark:text-zinc-200">
+        {t("No projects found.", "Keine Projekte gefunden.")}
+      </p>
+    )}
+
+    <h3 id="recent-projects" class="mt-8 text-sm font-semibold text-zinc-800 dark:text-zinc-200 reveal-item" data-reveal data-delay="200">
+      {t("Recent Projects", "Weitere Projekte")}
+    </h3>
+
+    <div class="mt-4 grid gap-4 md:grid-cols-3">
+      {latestThree.map((p, idx) => (
+        <a href={localePath(`/projects/${toSlug(p)}/`, locale)} class="rounded-2xl p-5 transition hover:-translate-y-1 hover:shadow-lg reveal-item" data-reveal data-delay={String(240 + idx * 90)} style="background: rgba(255,255,255,.10); border: 1px solid var(--glass-border);">
+          <div class="text-xs text-zinc-700 dark:text-zinc-300">{p.data.date.toISOString().slice(0, 10)}</div>
+          <div class="mt-2 font-semibold break-words">
+            {locale === "de" ? (p.data.title_de || p.data.title) : p.data.title}
+          </div>
+          <p class="mt-2 text-sm text-zinc-800 dark:text-zinc-200 line-clamp-3 break-words">
+            {locale === "de" ? (p.data.description_de || p.data.description) : p.data.description}
+          </p>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <script src="../../scripts/indexPage.js"></script>
+
+<script is:inline>
+  const initFlowObservers = () => {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        entry.target.classList.toggle("animate-flow", entry.isIntersecting);
+      });
+    }, { threshold: 0.05 });
+
+    document.querySelectorAll(".section-connector-box, #skills").forEach((el) => observer.observe(el));
+  };
+
+  const init = () => {
+    window.initIndexPage?.();
+    initFlowObservers();
+  };
+
+  document.addEventListener("DOMContentLoaded", init);
+  document.addEventListener("astro:page-load", init);
+</script>
+
+</BaseLayout>

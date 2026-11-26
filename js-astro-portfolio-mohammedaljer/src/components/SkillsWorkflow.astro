@@ -1,0 +1,615 @@
+---
+// SPDX-License-Identifier: MIT
+import { Image } from "astro:assets";
+import { skills } from "../data/cv.js";
+
+const { locale = "en" } = Astro.props;
+const t = (en, de) => (locale === "de" ? de : en);
+
+const skillIcons = import.meta.glob("../assets/skills/**/*.{png,jpg,jpeg,webp,avif,svg}", {
+  eager: true,
+  import: "default",
+});
+
+const getSkillIcon = (skillName) => {
+  if (!skillName) return null;
+  const slug = skillName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const path = Object.keys(skillIcons).find((k) => k.split("/").pop()?.split(".")[0] === slug);
+  return path ? skillIcons[path] : null;
+};
+
+const groupColors = {
+  core: "#10b981",
+  auto: "#ec4899",
+  infra: "#f97316",
+  mon: "#8b5cf6",
+  dev: "#3b82f6",
+};
+
+const skillGroups = [
+  { id: "core", name: t("Core Stack", "Kernstack"), items: skills.core ?? [], color: groupColors.core },
+  { id: "auto", name: t("Automation", "Automatisierung"), items: skills.automation ?? [], color: groupColors.auto },
+  { id: "infra", name: t("Infrastructure", "Infrastruktur"), items: skills.infrastructure ?? [], color: groupColors.infra },
+  { id: "mon", name: t("Monitoring", "\u00dcberwachung"), items: skills.monitoring ?? [], color: groupColors.mon },
+  { id: "dev", name: t("Development", "Entwicklung"), items: skills.dev ?? [], color: groupColors.dev },
+];
+
+const COLS = 7;
+
+const rgba = (hex, a) => {
+  const h = String(hex).replace("#", "");
+  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = parseInt(full, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+};
+
+let nodes = [];
+let i = 0;
+
+nodes.push({
+  idx: i++,
+  type: "start",
+  skill: "Schedule Trigger",
+  group: "Start",
+  color: groupColors.core,
+});
+
+for (const group of skillGroups) {
+  const firstIdxInGroup = i;
+  for (const skill of group.items) {
+    const row = Math.floor(i / COLS);
+    const col = i % COLS;
+
+    nodes.push({
+      idx: i,
+      type: "skill",
+      group: group.name,
+      groupId: group.id,
+      skill,
+      color: group.color,
+      row,
+      col,
+      isFirstInGroup: i === firstIdxInGroup,
+    });
+
+    i++;
+  }
+}
+const highlightJson = (obj) => {
+  const esc = (s) =>
+    String(s)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+
+  const json = JSON.stringify(obj, null, 2);
+
+  return esc(json)
+    .replace(/"([^"]+)"(?=\s*:)/g, '<span class="json-key">"$1"</span>')
+    .replace(/:\s*"([^"]*)"/g, ': <span class="json-string">"$1"</span>')
+    .replace(/[{}[\]]/g, (m) => `<span class="json-brace">${m}</span>`);
+};
+
+const popupJsonHtml = highlightJson({
+  status: "completed",
+  engineer: "Your Name",
+  focus: ["Web Development", "Open Source", "Developer Tooling"],
+  tools: ["TypeScript", "React", "Node.js", "Docker"],
+  message: "Workflow executed successfully."
+});
+
+---
+
+<section
+  id="skills"
+  class="rounded-[28px] p-0 shadow-sm backdrop-blur reveal-item"
+  data-reveal
+  data-delay="0"
+  style="background: var(--glass); border: 1px solid var(--glass-border);"
+>
+  <div class="n8n-canvas">
+    <div class="flex items-center justify-between gap-3 px-6 py-4 absolute top-0 left-0 z-50 w-full pointer-events-none">
+      <h2 class="text-lg font-semibold text-zinc-800 dark:text-zinc-200 pointer-events-auto">
+        {t("My Skills Workflow", "Mein Skills-Workflow")}
+      </h2>
+    </div>
+
+    <div id="wfStage" class="hidden md:block relative overflow-visible" style="height: 520px;">
+      <svg class="workflow-svg-layer" id="wfSvg" aria-hidden="true">
+        <path id="wfPathBase" class="conn-line" d="" />
+        <path id="wfPathPulse1" class="conn-pulse-main" d="" stroke="#10b981" />
+      </svg>
+
+      {nodes.map((node) => {
+        const icon = node.type === "skill" ? getSkillIcon(node.skill) : null;
+        const showUnder = node.type === "start" || !!icon;
+        const accent = node.color;
+        const accentSoft = rgba(node.color, 0.14);
+
+        return (
+          <div
+            class="wf-node"
+            data-idx={String(node.idx)}
+            data-type={node.type}
+            data-hasicon={String(!!icon)}
+            style={`--row:${node.row ?? 0}; --col:${node.col ?? 0};`}
+          >
+            {node.isFirstInGroup && (
+              <div
+                class="cat-label !font-normal text-white"
+                style={`--group-color:${node.color}; background:${node.color}; border:1px solid ${rgba(node.color, 0.35)};`}
+              >
+                {node.group}
+              </div>
+            )}
+
+
+
+            <div
+              class="n8n-node-glass"
+              data-accent="1"
+              style={`--accent:${accent}; --accent-soft:${accentSoft};`}
+            >
+              <div class="node-accent-dot" style={`background:${accent};`} />
+
+              {node.idx < nodes.length - 1 && (
+                <div class="n8n-port-dot" style="right:-6px; top:50%; margin-top:-6px;"></div>
+              )}
+              {node.idx > 0 && (
+                <div class="n8n-port-dot" style="left:-6px; top:50%; margin-top:-6px;"></div>
+              )}
+
+              {node.type === "start" ? (
+                <svg class="w-8 h-8 text-zinc-800 dark:text-zinc-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              ) : icon ? (
+                <div class="w-[42px] h-[42px] flex items-center justify-center overflow-hidden">
+                  <Image src={icon} alt={node.skill} width={42} height={42} class="w-full h-full object-contain" />
+                </div>
+              ) : (
+                <div class="wf-text-only">{node.skill}</div>
+              )}
+            </div>
+
+            {showUnder && <div class="wf-under-label">{node.skill}</div>}
+          </div>
+        );
+      })}
+<div
+  id="wfPopup"
+  class="hidden fixed inset-0 z-[200] flex items-center justify-center p-4"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Workflow output"
+>
+  <div id="wfPopupBackdrop" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+  <div
+    id="wfPopupCard"
+    class="relative w-[520px] max-w-full max-h-[80vh] rounded-2xl border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-800 shadow-2xl overflow-y-auto opacity-0 scale-95 transition-all duration-300"
+  >
+    <div class="px-5 py-4">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 leading-tight">output.json</div>
+          <div class="text-[11px] text-zinc-600 dark:text-zinc-300">
+            {t("Workflow completed", "Workflow abgeschlossen")}
+          </div>
+        </div>
+
+        <button
+          id="wfPopupClose"
+          type="button"
+          class="rounded-lg border border-zinc-200 dark:border-zinc-600 px-2.5 py-1 text-[11px] font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition"
+        >
+          {t("Close", "Schlie\u00dfen")}
+        </button>
+      </div>
+
+      <div class="mt-3 text-[11px] font-mono text-zinc-500 dark:text-zinc-400">
+        {t("Press Esc or click outside to close", "Esc dr\u00fccken oder au\u00dferhalb klicken")}
+      </div>
+
+<pre
+  class="mt-3 text-xs font-mono leading-relaxed whitespace-pre text-zinc-900 dark:text-zinc-100 overflow-x-auto"
+  set:html={popupJsonHtml}
+></pre>
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+
+
+      <div class="exec-btn-container">
+        <button id="execBtn" class="exec-btn" type="button">
+          <div class="exec-spinner"></div>
+          <svg class="exec-btn-icon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span id="execBtnText">
+            {t("Execute workflow", "Workflow ausf\u00fchren")}
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <div class="md:hidden px-5 pt-14 pb-6 space-y-8">
+      {skillGroups.map((grp) => (
+        <div>
+          <div class="flex items-center gap-2.5 mb-4">
+            <span
+              class="inline-block w-2.5 h-2.5 rounded-full shrink-0"
+              style={`background:${grp.color}; box-shadow: 0 0 0 3px ${rgba(grp.color, 0.2)};`}
+            ></span>
+            <span class="text-xs font-bold uppercase tracking-wider" style={`color:${grp.color};`}>
+              {grp.name}
+            </span>
+          </div>
+          <div class="flex flex-wrap gap-3">
+            {grp.items.map((skill) => {
+              const icon = getSkillIcon(skill);
+              return (
+                <div class="flex items-center gap-2 rounded-xl px-3 py-2 text-sm" style="background: rgba(255,255,255,.08); border: 1px solid var(--glass-border);">
+                  {icon ? (
+                    <div class="w-6 h-6 shrink-0 flex items-center justify-center overflow-hidden">
+                      <Image src={icon} alt={skill} width={24} height={24} class="w-full h-full object-contain" />
+                    </div>
+                  ) : null}
+                  <span class="font-semibold text-zinc-800 dark:text-zinc-200 text-[13px] leading-tight">{skill}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <script is:inline>
+      const initSkillsWorkflow = () => {
+        const skillsSection = document.getElementById("skills");
+        const stage = document.getElementById("wfStage");
+        const base = document.getElementById("wfPathBase");
+        const pulse1 = document.getElementById("wfPathPulse1");
+        const execBtn = document.getElementById("execBtn");
+        const execBtnText = document.getElementById("execBtnText");
+        const popup = document.getElementById("wfPopup");
+        
+        if (!skillsSection || !stage || !base || !pulse1 || !execBtn || !execBtnText || !popup) return;
+
+        /* Move modal to body so backdrop-filter ancestors can't trap it */
+        if (popup.parentElement !== document.body) {
+          document.body.appendChild(popup);
+        }
+        const popupCard = document.getElementById("wfPopupCard");
+        const popupBackdrop = document.getElementById("wfPopupBackdrop");
+
+        const canvas = skillsSection.querySelector(".n8n-canvas");
+        if (!canvas) return;
+
+        const KEY_ID = "wfPulseKey";
+        const DURATION = 18; 
+        let running = false;
+        let endTimer = null;
+        let popupTimerShow = null;
+        let popupTimerHide = null;
+
+        const getPx = (el, name) => {
+          const v = getComputedStyle(el).getPropertyValue(name).trim();
+          return v.endsWith("px") ? parseFloat(v) : parseFloat(v);
+        };
+
+        const clearKeyStyle = () => {
+          const s = document.getElementById(KEY_ID);
+          if (s) s.remove();
+        };
+
+        const hidePopupNow = () => {
+          if (popupCard) {
+            popupCard.classList.remove("opacity-100", "scale-100");
+            popupCard.classList.add("opacity-0", "scale-95");
+          }
+          setTimeout(() => popup.classList.add("hidden"), 220);
+        };
+        const popupClose = document.getElementById("wfPopupClose");
+
+const hidePopup = () => {
+  if (popupTimerHide) window.clearTimeout(popupTimerHide);
+  popupTimerHide = null;
+  hidePopupNow();
+};
+
+if (!popup.dataset.bound) {
+  /* close on backdrop click */
+  if (popupBackdrop) popupBackdrop.addEventListener("click", hidePopup);
+  /* prevent card clicks from closing */
+  if (popupCard) popupCard.addEventListener("click", (e) => e.stopPropagation());
+  popup.dataset.bound = "1";
+}
+
+if (popupClose && !popupClose.dataset.bound) {
+  popupClose.addEventListener("click", (e) => {
+    e.stopPropagation();
+    hidePopup();
+  });
+  popupClose.dataset.bound = "1";
+}
+
+if (!window.__wfPopupEscBound) {
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hidePopup();
+  });
+  window.__wfPopupEscBound = true;
+}
+
+
+        const showPopupAtEnd = () => {
+          popup.classList.remove("hidden");
+          requestAnimationFrame(() => {
+            if (popupCard) {
+              popupCard.classList.remove("opacity-0", "scale-95");
+              popupCard.classList.add("opacity-100", "scale-100");
+            }
+          });
+
+          popupTimerHide = window.setTimeout(() => {
+            hidePopupNow();
+          }, 15000);
+        };
+
+
+
+        const clearAnimations = () => {
+          clearKeyStyle();
+          if (pulse1) {
+            pulse1.style.animation = "none";
+            pulse1.style.opacity = "0";
+          }
+          const dots = Array.from(stage.querySelectorAll(".node-accent-dot"));
+          dots.forEach((d) => {
+            d.style.animation = "none";
+            d.style.animationDelay = "0s";
+          });
+          const labels = Array.from(stage.querySelectorAll(".cat-label"));
+          labels.forEach((l) => {
+            l.style.animation = "none";
+            l.style.animationDelay = "0s";
+          });
+          //hidePopupNow();
+        };
+
+        const buildAllPath = () => {
+          const padX = getPx(canvas, "--wf-pad-x");
+          const nodeSize = getPx(canvas, "--wf-node-size");
+          const cols = parseInt(getComputedStyle(canvas).getPropertyValue("--wf-cols")) || 7;
+
+          const width = canvas.clientWidth;
+          const colStep = (width - 2 * padX - nodeSize) / (cols - 1);
+          canvas.style.setProperty("--wf-col-step", `${Math.max(92, colStep)}px`);
+
+          const nodeEls = Array.from(stage.querySelectorAll(".wf-node")).sort(
+            (a, b) => Number(a.dataset.idx) - Number(b.dataset.idx)
+          );
+
+          if (nodeEls.length < 2) return;
+
+          const segs = [];
+          for (let i = 0; i < nodeEls.length - 1; i++) {
+            const a = nodeEls[i];
+            const b = nodeEls[i + 1];
+
+            const ax = a.offsetLeft;
+            const ay = a.offsetTop;
+            const bx = b.offsetLeft;
+            const by = b.offsetTop;
+
+            const startX = ax + nodeSize;
+            const startY = ay + nodeSize / 2;
+            const endX = bx;
+            const endY = by + nodeSize / 2;
+
+            const bend = 30;
+
+            if (Math.abs(ay - by) < 2) {
+              segs.push(`M ${startX},${startY} L ${endX},${endY}`);
+            } else {
+              const midY = startY + (endY - startY) / 2;
+              segs.push(`M ${startX},${startY} L ${startX + bend},${startY} L ${startX + bend},${midY} L ${endX - bend},${midY} L ${endX - bend},${endY} L ${endX},${endY}`);
+            }
+          }
+
+          const stripMove = (d) => d.replace(/^M\s+[-0-9.]+,[-0-9.]+\s*/, "");
+          const dAll = segs[0] + segs.slice(1).map(stripMove).join(" ");
+
+          base.setAttribute("d", dAll);
+          pulse1.setAttribute("d", dAll);
+
+          const last = nodeEls[nodeEls.length - 1];
+          stage.style.height = `${last.offsetTop + nodeSize + 90}px`;
+        };
+
+        const syncNodeDelaysToPath = () => {
+          const nodes = Array.from(stage.querySelectorAll(".wf-node")).sort(
+            (a, b) => Number(a.dataset.idx) - Number(b.dataset.idx)
+          );
+
+          if (!nodes.length) return;
+
+          const len = pulse1.getTotalLength();
+          const nodeSize = getPx(canvas, "--wf-node-size");
+          const headMain = Math.max(80, Math.min(140, len * 0.05)); 
+
+          const samples = 200;
+          const step = len / samples;
+          const pts = [];
+          for (let i = 0; i <= samples; i++) pts.push(pulse1.getPointAtLength(i * step));
+
+          nodes.forEach((node) => {
+            const dot = node.querySelector(".node-accent-dot");
+            const label = node.querySelector(".cat-label");
+            if (!dot) return;
+
+            const x = node.offsetLeft + nodeSize / 2;
+            const y = node.offsetTop + nodeSize / 2;
+
+            let bestI = 0;
+            let bestD = Infinity;
+
+            for (let i = 0; i < pts.length; i++) {
+              const dx = pts[i].x - x;
+              const dy = pts[i].y - y;
+              const d = dx * dx + dy * dy;
+              if (d < bestD) {
+                bestD = d;
+                bestI = i;
+              }
+            }
+
+            const distAlongPath = bestI * step;
+            const progress = (headMain + distAlongPath) / (headMain + len);
+            const delay = Math.max(0, progress * DURATION - 0.2); 
+            
+            dot.style.animationDelay = `${delay}s`;
+            if (label) {
+               label.style.animationDelay = `${delay}s`;
+            }
+          });
+        };
+
+        const applyRunAnimations = () => {
+          const len = pulse1.getTotalLength();
+          const headMain = Math.max(80, Math.min(140, len * 0.05)); 
+          const gap = len + 6000;
+
+          pulse1.style.strokeDasharray = `${headMain} ${gap}`;
+          
+          clearKeyStyle();
+
+          const style = document.createElement("style");
+          style.id = KEY_ID;
+          style.textContent = `
+            @keyframes wfPulseOnce {
+              0% { stroke-dashoffset: ${headMain}px; opacity: 1; }
+              100% { stroke-dashoffset: -${len}px; opacity: 1; }
+            }
+            @keyframes wfDotHit {
+              0% { transform: scale(1); filter: brightness(1); box-shadow: 0 0 0 2px rgba(255,255,255,0.7); }
+              20% { transform: scale(1.5); filter: brightness(1.6); box-shadow: 0 0 14px var(--accent); }
+              100% { transform: scale(1.3); filter: brightness(1.3); box-shadow: 0 0 8px var(--accent); }
+            }
+            @keyframes wfLabelHit {
+              0% { transform: scale(1); box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+              15% { transform: scale(1.15); box-shadow: 0 0 15px var(--group-color); border-color: var(--group-color); background: var(--group-color); color: #fff; }
+              80% { transform: scale(1.15); box-shadow: 0 0 15px var(--group-color); border-color: var(--group-color); background: var(--group-color); color: #fff; }
+              100% { transform: scale(1); box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+            }
+          `;
+          document.head.appendChild(style);
+
+          pulse1.style.opacity = "1";
+          pulse1.style.animation = `wfPulseOnce ${DURATION}s linear 1 forwards`;
+
+          const dots = Array.from(stage.querySelectorAll(".node-accent-dot"));
+          dots.forEach((dot) => {
+            dot.style.animation = `wfDotHit 0.8s ease-out 1 forwards`;
+          });
+          
+          const labels = Array.from(stage.querySelectorAll(".cat-label"));
+          labels.forEach((l) => {
+            l.style.animation = `wfLabelHit 1.5s ease-out 1 forwards`;
+          });
+
+          syncNodeDelaysToPath();
+        };
+
+          const stopRun = () => {
+            running = false;
+            skillsSection.classList.remove("force-flow");
+            const _lang = document.documentElement.lang || "en";
+            execBtnText.textContent = _lang === "de" ? "Workflow ausf\u00fchren" : "Execute workflow";
+            if (endTimer) window.clearTimeout(endTimer);
+            endTimer = null;
+
+            if (popupTimerShow) window.clearTimeout(popupTimerShow);
+            //if (popupTimerHide) window.clearTimeout(popupTimerHide);
+            popupTimerShow = null;
+            popupTimerHide = null;
+
+            clearKeyStyle();
+            if (pulse1) {
+              pulse1.style.animation = "none";
+              pulse1.style.opacity = "0";
+            }
+            const dots = Array.from(stage.querySelectorAll(".node-accent-dot"));
+            dots.forEach((d) => {
+              d.style.animation = "none";
+              d.style.animationDelay = "0s";
+            });
+            const labels = Array.from(stage.querySelectorAll(".cat-label"));
+            labels.forEach((l) => {
+              l.style.animation = "none";
+              l.style.animationDelay = "0s";
+            });
+          };
+
+
+        const startRun = () => {
+          if (running) return;
+          running = true;
+          const _lang2 = document.documentElement.lang || "en";
+          execBtnText.textContent = _lang2 === "de" ? "Workflow wird ausgef\u00fchrt" : "Executing workflow";
+          skillsSection.classList.add("force-flow");
+          
+
+          buildAllPath();
+          clearAnimations();
+
+          const svg = document.getElementById("wfSvg");
+          if (svg) void svg.getBoundingClientRect();
+
+          applyRunAnimations();
+          popupTimerShow = window.setTimeout(() => {
+            showPopupAtEnd();
+          }, Math.round(DURATION * 1000));
+
+          endTimer = window.setTimeout(() => {
+            stopRun();
+          }, Math.round(DURATION * 1000 + 1500));
+        };
+
+        const toggleRun = () => {
+          if (running) stopRun();
+          else startRun();
+        };
+
+        if (!execBtn.dataset.bound) {
+          execBtn.addEventListener("click", toggleRun);
+          execBtn.dataset.bound = "1";
+        }
+
+        if (!skillsSection.dataset.inited) {
+          const ro = new ResizeObserver(() => {
+            if (running) stopRun();
+            buildAllPath();
+          });
+          ro.observe(canvas);
+          skillsSection.dataset.inited = "1";
+        }
+
+        buildAllPath();
+        stopRun();
+      };
+
+      document.addEventListener("astro:page-load", initSkillsWorkflow);
+      document.addEventListener("DOMContentLoaded", initSkillsWorkflow, { once: true });
+    </script>
+  </div>
+</section>

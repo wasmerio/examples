@@ -1,0 +1,268 @@
+---
+// SPDX-License-Identifier: MIT
+const { size = 560, opacity = 0.95 } = Astro.props;
+---
+
+<div class="relative" style={`width:${size}px;height:${size}px;`}>
+  <div
+    class="pointer-events-none absolute inset-[-20%] rounded-full blur-[60px] opacity-70 dark:opacity-45"
+    style="
+      background:
+        radial-gradient(circle at 35% 35%, var(--a2), transparent 60%),
+        radial-gradient(circle at 70% 30%, var(--a1), transparent 62%),
+        radial-gradient(circle at 45% 70%, var(--a3), transparent 64%);
+    "
+  ></div>
+
+  <div
+    class="pointer-events-none absolute inset-[-6%] rounded-full opacity-60 blur-[14px]"
+    style="
+      -webkit-mask-image: radial-gradient(circle, transparent 66%, #000 74%, transparent 92%);
+      mask-image: radial-gradient(circle, transparent 66%, #000 74%, transparent 92%);
+      background: radial-gradient(circle, rgba(255,255,255,.9), transparent 70%);
+    "
+  ></div>
+
+  <div class="relative h-full w-full overflow-hidden rounded-full">
+    <canvas class="block h-full w-full" data-orb-canvas data-opacity={opacity}></canvas>
+  </div>
+</div>
+
+<script>
+  async function initOne(canvas) {
+    canvas.setAttribute("data-inited", "1");
+
+    const THREE = await import("three");
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const OPACITY = Number(canvas.dataset.opacity || "0.95");
+    const isMobile = window.matchMedia("(max-width: 768px)").matches;
+    const isCoarse = window.matchMedia("(pointer: coarse)").matches;
+    const saveData = navigator.connection?.saveData === true;
+    const lowPower = reduceMotion || saveData || (isMobile && isCoarse);
+
+    const MAX_FPS = lowPower ? 12 : isMobile ? 18 : 24;
+    const FRAME_MS = 1000 / MAX_FPS;
+
+    function cssVarToColor(varName, fallbackHex) {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+      const m = v.match(/rgba?\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)/i);
+      if (m) return new THREE.Color(`rgb(${m[1]},${m[2]},${m[3]})`);
+      return new THREE.Color(fallbackHex);
+    }
+
+    const c1 = cssVarToColor("--a1", "#10b981");
+    const c2 = cssVarToColor("--a2", "#14b8a6");
+    const c3 = cssVarToColor("--a3", "#22d3ee");
+
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: !lowPower,
+      alpha: true,
+      powerPreference: lowPower ? "low-power" : "high-performance",
+    });
+
+    const dprCap = lowPower ? 1 : isMobile ? 1.25 : 1.75;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, dprCap));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+    camera.position.set(0, 0, 6);
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envScene = new THREE.Scene();
+    envScene.add(new THREE.AmbientLight(0xffffff, 0.9));
+    const e1 = new THREE.DirectionalLight(0xffffff, 1.2);
+    e1.position.set(3, 2, 4);
+    envScene.add(e1);
+    const e2 = new THREE.DirectionalLight(new THREE.Color(c1), 0.9);
+    e2.position.set(-3, 1, 2);
+    envScene.add(e2);
+    const e3 = new THREE.DirectionalLight(new THREE.Color(c3), 0.8);
+    e3.position.set(1, -2, 3);
+    envScene.add(e3);
+
+    const envRT = pmrem.fromScene(envScene, 0.5);
+    scene.environment = envRT.texture;
+    pmrem.dispose();
+
+    const detail = lowPower ? 2 : isMobile ? 3 : 4;
+
+    const mainGeo = new THREE.IcosahedronGeometry(2.1, detail);
+    const mainMat = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(c2),
+      roughness: 0.08,
+      metalness: 0.0,
+      transmission: 1.0,
+      ior: 1.45,
+      thickness: lowPower ? 0.65 : 0.9,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.08,
+      opacity: OPACITY,
+      transparent: true,
+    });
+
+    const orb = new THREE.Mesh(mainGeo, mainMat);
+    scene.add(orb);
+
+    const wire = new THREE.LineSegments(
+      new THREE.WireframeGeometry(mainGeo),
+      new THREE.LineBasicMaterial({
+        color: new THREE.Color(c1),
+        transparent: true,
+        opacity: lowPower ? 0.22 : 0.35,
+        blending: THREE.AdditiveBlending,
+        depthTest: false,
+        depthWrite: false,
+      })
+    );
+    scene.add(wire);
+
+    const shellGeo = new THREE.IcosahedronGeometry(2.38, 1);
+    const shellMat = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(0xffffff),
+      roughness: 0.18,
+      metalness: 0.0,
+      transmission: 1.0,
+      ior: 1.35,
+      thickness: lowPower ? 0.25 : 0.35,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.12,
+      transparent: true,
+      opacity: lowPower ? 0.2 : 0.28,
+    });
+
+    const shell = new THREE.Mesh(shellGeo, shellMat);
+    scene.add(shell);
+
+    const shellWire = new THREE.LineSegments(
+      new THREE.WireframeGeometry(shellGeo),
+      new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: lowPower ? 0.14 : 0.2,
+        depthTest: false,
+        depthWrite: false,
+      })
+    );
+    scene.add(shellWire);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    const key = new THREE.DirectionalLight(0xffffff, 1.0);
+    key.position.set(3, 2, 4);
+    scene.add(key);
+
+    function resize() {
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas);
+
+    let t = 0;
+    let last = 0;
+    let lastFrame = 0;
+
+    let raf = 0;
+    let running = false;
+    let pageVisible = true;
+    let inView = true;
+
+    const SPEED = lowPower ? 0.18 : 0.25;
+
+    function renderFrame(now) {
+      if (!running) return;
+
+      if (now - lastFrame < FRAME_MS) {
+        raf = requestAnimationFrame(renderFrame);
+        return;
+      }
+      lastFrame = now;
+
+      const dt = last ? (now - last) / 1000 : 0;
+      last = now;
+
+      if (!reduceMotion) {
+        t += dt * 0.8 * SPEED;
+        orb.rotation.y += dt * 0.45 * SPEED;
+        orb.rotation.x = Math.sin(t * 0.7) * 0.1;
+        wire.rotation.copy(orb.rotation);
+        shell.rotation.y = orb.rotation.y * 0.62;
+        shellWire.rotation.copy(shell.rotation);
+      }
+
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(renderFrame);
+    }
+
+    function start() {
+      if (running || !pageVisible || !inView) return;
+      running = true;
+      last = 0;
+      lastFrame = 0;
+      raf = requestAnimationFrame(renderFrame);
+    }
+
+    function stop() {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+    }
+
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        inView = entry.isIntersecting;
+        if (inView) start();
+        else stop();
+      },
+      { threshold: 0.01, rootMargin: "200px 0px 200px 0px" }
+    );
+    io.observe(canvas);
+
+    function disposeAll() {
+      stop();
+      io.disconnect();
+      ro.disconnect();
+      mainGeo.dispose();
+      mainMat.dispose();
+      wire.geometry.dispose();
+      wire.material.dispose();
+      shellGeo.dispose();
+      shellMat.dispose();
+      shellWire.geometry.dispose();
+      shellWire.material.dispose();
+      if (envRT) envRT.dispose();
+      renderer.dispose();
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      pageVisible = !document.hidden;
+      if (!pageVisible) stop();
+      else start();
+    });
+
+    window.addEventListener("pagehide", disposeAll, { once: true });
+    start();
+  }
+
+  function initAllOrbs() {
+    const canvases = document.querySelectorAll("canvas[data-orb-canvas]:not([data-inited='1'])");
+    canvases.forEach((c) => {
+      const lazyObs = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting) {
+          lazyObs.disconnect();
+          initOne(c);
+        }
+      }, { rootMargin: "400px 0px" });
+      lazyObs.observe(c);
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", initAllOrbs);
+  document.addEventListener("astro:page-load", initAllOrbs);
+</script>

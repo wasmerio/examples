@@ -1,0 +1,153 @@
+<script>
+    class FilterBar extends HTMLElement {
+        private stateFilter?: HTMLSelectElement;
+        private typeFilter?: HTMLSelectElement;
+        private filterButton?: HTMLButtonElement;
+        private labelSelect?: HTMLElement;
+        private labelDropdown?: HTMLElement;
+        private labelSearch?: HTMLInputElement;
+        private labelOptions?: HTMLElement;
+        private outsideClickHandler?: (e: MouseEvent) => void;
+
+        connectedCallback() {
+            this.initializeElements();
+            this.attachEventListeners();
+        }
+
+        disconnectedCallback() {
+            // Clean up event listeners
+            if (this.outsideClickHandler) {
+                document.removeEventListener("click", this.outsideClickHandler);
+            }
+        }
+
+        private initializeElements() {
+            this.stateFilter = this.querySelector(
+                "#state-filter",
+            ) as HTMLSelectElement;
+            this.typeFilter = this.querySelector(
+                "#type-filter",
+            ) as HTMLSelectElement;
+            this.filterButton = this.querySelector(
+                ".filter-button",
+            ) as HTMLButtonElement;
+            this.labelSelect = this.querySelector(
+                "#label-select",
+            ) as HTMLElement;
+            this.labelDropdown = this.querySelector(
+                "#label-dropdown",
+            ) as HTMLElement;
+            this.labelSearch = this.querySelector(
+                "#label-search",
+            ) as HTMLInputElement;
+            this.labelOptions = this.querySelector(
+                "#label-options",
+            ) as HTMLElement;
+        }
+
+        private attachEventListeners() {
+            // Toggle label dropdown
+            if (this.labelSelect && this.labelDropdown) {
+                this.labelSelect.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    this.labelDropdown!.classList.toggle("show");
+                });
+
+                // Close dropdown when clicking outside
+                this.outsideClickHandler = (e: MouseEvent) => {
+                    if (
+                        !this.labelDropdown!.contains(e.target as Node) &&
+                        e.target !== this.labelSelect
+                    ) {
+                        this.labelDropdown!.classList.remove("show");
+                    }
+                };
+                document.addEventListener("click", this.outsideClickHandler);
+
+                // Prevent dropdown from closing when clicking inside
+                this.labelDropdown.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                });
+            }
+
+            // Label search functionality
+            if (this.labelSearch && this.labelOptions) {
+                this.labelSearch.addEventListener("input", (e) => {
+                    this.handleLabelSearch(
+                        (e.target as HTMLInputElement).value,
+                    );
+                });
+            }
+
+            // Update selected count
+            if (this.labelOptions && this.labelSelect) {
+                this.labelOptions.addEventListener("change", () => {
+                    this.updateSelectedCount();
+                });
+            }
+
+            // Apply filters button
+            if (this.filterButton) {
+                this.filterButton.addEventListener("click", () => {
+                    this.applyFilters();
+                });
+            }
+        }
+
+        private handleLabelSearch(searchTerm: string) {
+            const term = searchTerm.toLowerCase();
+            const options =
+                this.labelOptions!.querySelectorAll(".label-option");
+
+            options.forEach((option) => {
+                const labelName =
+                    option
+                        .querySelector(".label-name")
+                        ?.textContent?.toLowerCase() || "";
+                (option as HTMLElement).style.display = labelName.includes(term)
+                    ? ""
+                    : "none";
+            });
+        }
+
+        private updateSelectedCount() {
+            const checkedCount = this.labelOptions!.querySelectorAll(
+                'input[type="checkbox"]:checked',
+            ).length;
+            const placeholder =
+                this.labelSelect!.querySelector(".label-placeholder");
+            if (placeholder) {
+                placeholder.textContent =
+                    checkedCount === 0
+                        ? "All labels"
+                        : `${checkedCount} selected`;
+            }
+        }
+
+        private applyFilters() {
+            const params = new URLSearchParams();
+            params.set("state", this.stateFilter!.value);
+            params.set("type", this.typeFilter!.value);
+
+            // Get selected labels
+            if (this.labelOptions) {
+                const selectedLabels = Array.from(
+                    this.labelOptions.querySelectorAll(
+                        'input[type="checkbox"]:checked',
+                    ),
+                ).map((checkbox) => (checkbox as HTMLInputElement).value);
+
+                if (selectedLabels.length > 0) {
+                    params.set("labels", selectedLabels.join(","));
+                }
+            }
+
+            window.location.href = `/?${params.toString()}`;
+        }
+    }
+
+    // Register the custom element
+    if (!customElements.get("filter-bar")) {
+        customElements.define("filter-bar", FilterBar);
+    }
+</script>

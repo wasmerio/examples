@@ -1,0 +1,110 @@
+---
+import { config } from "src/config";
+import {
+    fetchDiscussions,
+    fetchIssues,
+    fetchPullRequests,
+    fetchReadme,
+} from "src/lib/github";
+import MarkdownIt from "markdown-it";
+import markdownItAnchor from "markdown-it-anchor";
+import GitHubItem from "./GitHubItem.astro";
+
+// Initialize markdown-it with anchor plugin
+const md = new MarkdownIt({
+    html: true,
+    linkify: true,
+    typographer: true,
+}).use(markdownItAnchor, {
+    permalink: false,
+    slugify: (s: string) =>
+        s
+            .toLowerCase()
+            // Replace non-alphanumeric characters with dashes
+            .replace(/[^\w]+/g, "-")
+            // Remove leading/trailing dashes
+            .replace(/^-+|-+$/g, ""),
+});
+
+const org = config.organization;
+const roadmapRepo = config.roadmapRepository;
+
+// Fetch README
+const readmeContent = await fetchReadme(org, roadmapRepo);
+const readmeHtml = md.render(readmeContent || "No README found");
+
+// Fetch all items from roadmap repo regardless of state
+const [discussions, issues, prs] = await Promise.all([
+    fetchDiscussions(org, [roadmapRepo]),
+    fetchIssues(org, "all", [roadmapRepo]),
+    fetchPullRequests(org, "all", [roadmapRepo]),
+]);
+
+// Filter to only roadmap repo items
+const roadmapDiscussions = discussions.filter(
+    (d) => d.repository === roadmapRepo,
+);
+const roadmapIssues = issues.filter((i) => i.repository === roadmapRepo);
+const roadmapPRs = prs.filter((p) => p.repository === roadmapRepo);
+---
+
+<dialog id="readme-dialog" class="readme-dialog">
+    <div class="dialog-header">
+        <h2>Roadmap README</h2>
+        <button id="close-dialog" class="close-button" aria-label="Close"
+            >✕</button
+        >
+    </div>
+    <div class="dialog-content" set:html={readmeHtml} />
+</dialog>
+
+<div class="roadmap-board">
+    <div class="roadmap-column">
+        <div class="column-header discussions">
+            <h2>
+                {config.roadmapCategoryLabels?.discussions || "Discussions"}
+            </h2>
+            <span class="count">{roadmapDiscussions.length}</span>
+        </div>
+        <div class="column-content">
+            {roadmapDiscussions.map((item) => <GitHubItem item={item} />)}
+            {
+                roadmapDiscussions.length === 0 && (
+                    <div class="empty-column">No discussions</div>
+                )
+            }
+        </div>
+    </div>
+
+    <div class="roadmap-column">
+        <div class="column-header issues">
+            <h2>{config.roadmapCategoryLabels?.issues || "Issues"}</h2>
+            <span class="count">{roadmapIssues.length}</span>
+        </div>
+        <div class="column-content">
+            {roadmapIssues.map((item) => <GitHubItem item={item} />)}
+            {
+                roadmapIssues.length === 0 && (
+                    <div class="empty-column">No issues</div>
+                )
+            }
+        </div>
+    </div>
+
+    <div class="roadmap-column">
+        <div class="column-header prs">
+            <h2>
+                {config.roadmapCategoryLabels?.pullRequests || "Pull Requests"}
+            </h2>
+            <span class="count">{roadmapPRs.length}</span>
+        </div>
+        <div class="column-content">
+            {roadmapPRs.map((item) => <GitHubItem item={item} />)}
+            {
+                roadmapPRs.length === 0 && (
+                    <div class="empty-column">No pull requests</div>
+                )
+            }
+        </div>
+    </div>
+</div>

@@ -1,0 +1,107 @@
+---
+import type { GetStaticPaths } from 'astro';
+
+import Base from '../../../layouts/Base.astro';
+import Glyph from '../../../components/Glyph.astro';
+import Notice from '../../../components/Notice.astro';
+import { defaultLocale, localeConfig, localizedPath, locales, type Locale } from '../../../i18n/config';
+import { hasSection, interpolate, ui } from '../../../i18n/ui';
+import { localizedPosts } from '../../../i18n/blog';
+
+export const getStaticPaths = (() =>
+  locales.map((locale) => ({
+    params: { locale: locale === defaultLocale ? undefined : locale },
+    props: { locale },
+  }))) satisfies GetStaticPaths;
+
+const { locale } = Astro.props as { locale: Locale };
+const copy = ui(locale);
+const translated = hasSection(locale, 'blog');
+const posts = await localizedPosts(locale);
+
+const dateFormat = new Intl.DateTimeFormat(localeConfig[locale].language, {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
+---
+
+<Base
+  locale={locale}
+  path="/blog"
+  title={copy.blog.meta.title}
+  description={copy.blog.meta.description}
+  translated={translated}
+>
+  <section class="section page">
+    {
+      !translated && (
+        <Notice text={interpolate(copy.notice.untranslated, { language: localeConfig[locale].name })} />
+      )
+    }
+    <p class="eyebrow">{copy.nav.blog}</p>
+    <h1>{copy.blog.title}</h1>
+    <p class="lead measure" style="margin-top:1.5rem">{copy.blog.lead}</p>
+  </section>
+
+  <section class="section page">
+    {posts.length === 0 && <p class="meta">{copy.blog.empty}</p>}
+
+    <ul class="posts">
+      {
+        posts.map((post) => (
+          <li>
+            <a href={localizedPath(locale, `/blog/${post.slug}`)}>
+              <Glyph name={post.source.data.glyph} size={44} />
+              <div>
+                <h2 style="font-size:1.25rem">{post.entry.data.title}</h2>
+                <p class="meta">{post.entry.data.description}</p>
+                <p class="meta byline">
+                  {/* The date comes from the English file for every locale: a
+                      post has one publication date, whatever language you read
+                      it in. Only the formatting is localized. */}
+                  {dateFormat.format(post.source.data.date)}
+                  {post.source.data.author && <> · {post.source.data.author}</>}
+                  {!post.translated && <em>EN</em>}
+                </p>
+              </div>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </section>
+</Base>
+
+<style>
+  .posts { list-style: none; margin: 0; padding: 0; }
+
+  .posts li + li { border-top: 1px solid var(--line); }
+
+  .posts a {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+    padding: 1.75rem 0;
+    text-decoration: none;
+  }
+
+  .posts a:hover h2 { text-decoration: underline; }
+  .posts :global(svg) { flex: none; opacity: 0.85; }
+
+  .byline { margin-bottom: 0; }
+
+  .byline em {
+    font-style: normal;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 0 0.25rem;
+    margin-left: 0.5rem;
+  }
+
+  @media (max-width: 34rem) {
+    .posts :global(svg) { display: none; }
+  }
+</style>

@@ -1,0 +1,92 @@
+---
+import {
+  defaultLocale,
+  localeConfig,
+  localizedPath,
+  locales,
+  type Locale,
+} from '../i18n/config';
+import { ui } from '../i18n/ui';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import '../styles/global.css';
+
+interface Props {
+  locale: Locale;
+  /** The English path of this page: `/`, `/about`, `/blog/quiet-tools`. */
+  path: string;
+  title: string;
+  description: string;
+  /** False when this locale is serving the English original in place of a translation. */
+  translated?: boolean;
+  /** Locales that really have this page. Defaults to all of them. */
+  availableIn?: Locale[];
+}
+
+const {
+  locale,
+  path,
+  title,
+  description,
+  translated = true,
+  availableIn = locales,
+} = Astro.props;
+
+const copy = ui(locale);
+const site = Astro.site ?? new URL('http://localhost:4321');
+const url = (code: Locale) => new URL(localizedPath(code, path), site).href;
+
+/*
+ * A fallback page is a duplicate, and must say so.
+ *
+ * `/de/about` serving English text is the same document as `/about`. Published
+ * with a self-referencing canonical and its own hreflang, you have told search
+ * engines that one page exists at four URLs in four languages: the rankings
+ * split and the wrong URL wins. So a fallback page canonicalises home and is
+ * never advertised as the German alternate of anything.
+ *
+ * It also says `noindex, follow`: the canonical asks for consolidation, the
+ * robots meta keeps the duplicate out of the index while links on it are still
+ * followed. The two together are slightly redundant by design. (Google treats a
+ * canonical as a hint and noindex as a directive, so the directive is the one
+ * that holds if the hint is ignored.)
+ */
+const canonical = translated ? url(locale) : url(defaultLocale);
+const alternates = availableIn;
+---
+
+<!doctype html>
+<html lang={localeConfig[locale].language} dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {!translated && <meta name="robots" content="noindex, follow" />}
+    <link rel="canonical" href={canonical} />
+
+    {alternates.map((code) => <link rel="alternate" hreflang={localeConfig[code].language} href={url(code)} />)}
+    <link rel="alternate" hreflang="x-default" href={url(defaultLocale)} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={localeConfig[locale].locale} />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+    />
+  </head>
+
+  <body>
+    <a class="skip" href="#main">{copy.nav.skipToContent}</a>
+    <Nav locale={locale} path={path} availableIn={availableIn} />
+    <main id="main"><slot /></main>
+    <Footer locale={locale} path={path} />
+  </body>
+</html>

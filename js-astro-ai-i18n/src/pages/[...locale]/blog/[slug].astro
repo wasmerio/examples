@@ -1,0 +1,107 @@
+---
+import type { GetStaticPaths } from 'astro';
+import { render } from 'astro:content';
+
+import Base from '../../../layouts/Base.astro';
+import Redirect from '../../../layouts/Redirect.astro';
+import Notice from '../../../components/Notice.astro';
+import {
+  defaultLocale,
+  localeConfig,
+  localizedPath,
+  locales,
+  untranslated,
+  type Locale,
+} from '../../../i18n/config';
+import { interpolate, ui } from '../../../i18n/ui';
+import { localizedPosts } from '../../../i18n/blog';
+
+/**
+ * Every post in every locale, including the locales that have not translated
+ * it: `/de/blog/quiet-tools` exists whether or not `de/quiet-tools.md` does.
+ *
+ * That is the decision the whole site turns on. A reader arriving from a
+ * search result or a colleague's link meets the page they were promised, in
+ * English, with a line saying so — rather than a 404 for a page that plainly
+ * exists. Set `untranslated: 'redirect'` in `src/i18n/config.ts` to send them
+ * to the English URL instead; nothing else has to change.
+ */
+export const getStaticPaths = (async () => {
+  const paths = [];
+  for (const locale of locales) {
+    for (const post of await localizedPosts(locale)) {
+      paths.push({
+        params: {
+          locale: locale === defaultLocale ? undefined : locale,
+          slug: post.slug,
+        },
+        props: { locale, slug: post.slug },
+      });
+    }
+  }
+  return paths;
+}) satisfies GetStaticPaths;
+
+const { locale, slug } = Astro.props as { locale: Locale; slug: string };
+
+const posts = await localizedPosts(locale);
+const post = posts.find((candidate) => candidate.slug === slug)!;
+
+/* Which locales really have this post, for the picker and for hreflang. Asked
+   of the collection rather than of a manifest, so it cannot go stale. */
+const availableIn: Locale[] = [];
+for (const code of locales) {
+  const inThatLocale = (await localizedPosts(code)).find((candidate) => candidate.slug === slug);
+  if (inThatLocale?.translated) availableIn.push(code);
+}
+
+const leaving = !post.translated && untranslated === 'redirect';
+const copy = ui(locale);
+const { Content } = await render(post.entry);
+
+const dateFormat = new Intl.DateTimeFormat(localeConfig[locale].language, {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
+---
+
+{
+  leaving ? (
+    <Redirect locale={locale} to={localizedPath(defaultLocale, `/blog/${slug}`)} />
+  ) : (
+    <Base
+      locale={locale}
+      path={`/blog/${slug}`}
+      title={`${post.entry.data.title} · ${copy.site.name}`}
+      description={post.entry.data.description}
+      translated={post.translated}
+      availableIn={availableIn}
+    >
+      <article class="section page">
+        {!post.translated && (
+          <Notice text={interpolate(copy.notice.untranslated, { language: localeConfig[locale].name })} />
+        )}
+
+        <header class="measure">
+          <p class="meta">
+            {copy.blog.published} {dateFormat.format(post.source.data.date)}
+            {post.source.data.author && <> · {post.source.data.author}</>}
+          </p>
+          <h1 style="margin-top:0.75rem">{post.entry.data.title}</h1>
+          <p class="lead" style="margin-top:1.25rem">{post.entry.data.description}</p>
+        </header>
+
+        <hr />
+
+        <div class="prose">
+          <Content />
+        </div>
+
+        <p style="margin-top:3rem">
+          <a href={localizedPath(locale, '/blog')}>&larr; {copy.blog.back}</a>
+        </p>
+      </article>
+    </Base>
+  )
+}

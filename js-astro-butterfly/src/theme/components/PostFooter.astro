@@ -1,0 +1,341 @@
+---
+import { url } from '@/lib/url';
+import { Icon } from 'astro-icon/components';
+import { site, copyright } from '@/config';
+import { postUrl, tagUrl, coverOf, getNeighbours, getRelated, type Post } from '@/lib/posts';
+import { optimize, imagePresets, type Img } from '@/lib/images';
+import { formatDate } from '@/lib/date';
+
+interface Props {
+  post: Post;
+}
+const { post } = Astro.props;
+const permalink = new URL(postUrl(post), Astro.site).href;
+const { newer, older } = await getNeighbours(post);
+const related = await getRelated(post);
+const covers = new Map<string, Img>(
+  await Promise.all([newer, older, ...related].filter((p): p is Post => !!p).map(async (p) => [p.id, await optimize(coverOf(p), imagePresets.pager)] as const)),
+);
+const cover = (p: Post) => covers.get(p.id)!;
+
+const enc = encodeURIComponent;
+const shares = [
+  { name: '微博', icon: 'fa6-brands:weibo', color: '#ff763b', href: `https://service.weibo.com/share/share.php?url=${enc(permalink)}&title=${enc(post.data.title)}` },
+  { name: 'QQ', icon: 'fa6-brands:qq', color: '#56b6e7', href: `https://connect.qq.com/widget/shareqq/index.html?url=${enc(permalink)}&title=${enc(post.data.title)}` },
+  { name: 'X', icon: 'fa6-brands:x-twitter', color: '#000', href: `https://x.com/intent/post?url=${enc(permalink)}&text=${enc(post.data.title)}` },
+  { name: 'Facebook', icon: 'fa6-brands:facebook', color: '#44619d', href: `https://www.facebook.com/sharer/sharer.php?u=${enc(permalink)}` },
+];
+---
+
+<div class="post-copyright">
+  <dl>
+    <div><dt>文章作者:</dt><dd><a href={url('/')}>{site.author}</a></dd></div>
+    <div><dt>文章链接:</dt><dd><a href={permalink}>{decodeURI(permalink)}</a></dd></div>
+    <div>
+      <dt>版权声明:</dt>
+      <dd>
+        本博客所有文章除特别声明外，均采用 <a href={copyright.licenseUrl} target="_blank" rel="noopener">{copyright.license}</a> 许可协议。转载请注明来自
+        <a href={url('/')}>{site.title}</a>！
+      </dd>
+    </div>
+  </dl>
+</div>
+
+<div class="tag_share">
+  <div class="post-meta__tag-list">
+    {post.data.tags.map((t) => <a class="post-meta__tags" href={tagUrl(t)}>{t}</a>)}
+  </div>
+  <div class="post-share" data-share data-url={permalink} data-title={post.data.title}>
+    {
+      shares.map((s) => (
+        <a class="share-btn" href={s.href} target="_blank" rel="noopener nofollow" title={`分享到 ${s.name}`} aria-label={`分享到 ${s.name}`} style={`--c:${s.color}`}>
+          <Icon name={s.icon} />
+        </a>
+      ))
+    }
+    <button type="button" class="share-btn" data-copy-link title="复制链接" aria-label="复制文章链接" style="--c:var(--theme-color)">
+      <Icon name="fa6-solid:link" />
+    </button>
+  </div>
+</div>
+
+<nav class="pagination-post" aria-label="上下篇">
+  {
+    newer && (
+      <a class:list={['pagination-related', 'prev-post', { full: !older }]} href={postUrl(newer)}>
+        <img class="cover" src={cover(newer).src} srcset={cover(newer).srcset} sizes={cover(newer).sizes} alt="" loading="lazy" decoding="async" />
+        <span class="pagination-info">
+          <span class="label">上一篇</span>
+          <span class="info-item">{newer.data.title}</span>
+        </span>
+      </a>
+    )
+  }
+  {
+    older && (
+      <a class:list={['pagination-related', 'next-post', { full: !newer }]} href={postUrl(older)}>
+        <img class="cover" src={cover(older).src} srcset={cover(older).srcset} sizes={cover(older).sizes} alt="" loading="lazy" decoding="async" />
+        <span class="pagination-info">
+          <span class="label">下一篇</span>
+          <span class="info-item">{older.data.title}</span>
+        </span>
+      </a>
+    )
+  }
+</nav>
+
+{
+  related.length > 0 && (
+    <section class="relatedPosts">
+      <h2 class="headline">
+        <Icon name="fa6-solid:thumbs-up" />
+        <span>相关推荐</span>
+      </h2>
+      <div class="relatedPosts-list">
+        {related.map((p) => (
+          <a class="pagination-related" href={postUrl(p)} title={p.data.title}>
+            <img class="cover" src={cover(p).src} srcset={cover(p).srcset} sizes={cover(p).sizes} alt="" loading="lazy" decoding="async" />
+            <span class="pagination-info center">
+              <span class="date">
+                <Icon name="fa6-regular:calendar-days" /> {formatDate(p.data.date)}
+              </span>
+              <span class="info-item">{p.data.title}</span>
+            </span>
+          </a>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+<script>
+  import { toast } from '../scripts/store';
+  document.addEventListener('click', async (e) => {
+    const btn = (e.target as Element).closest('[data-copy-link]');
+    if (!btn) return;
+    const box = btn.closest<HTMLElement>('[data-share]')!;
+    const url = box.dataset.url!;
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+      navigator.share({ title: box.dataset.title, url }).catch(() => {});
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('链接已复制');
+    } catch {
+      prompt('复制文章链接', url);
+    }
+  });
+</script>
+
+<style>
+  .post-copyright {
+    position: relative;
+    margin: 40px 0 10px;
+    padding: 10px 16px;
+    border: 1px solid var(--light-grey);
+    border-radius: 6px;
+    transition: box-shadow 0.3s;
+  }
+  .post-copyright:hover {
+    box-shadow: 0 0 8px 0 rgba(232, 237, 250, 0.6), 0 2px 4px 0 rgba(232, 237, 250, 0.5);
+  }
+  .post-copyright dl {
+    margin: 0;
+  }
+  .post-copyright dl > div {
+    display: flex;
+    gap: 6px;
+  }
+  .post-copyright dt {
+    flex: none;
+    font-weight: 700;
+    color: var(--theme-color);
+  }
+  .post-copyright dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .post-copyright a {
+    color: var(--theme-color);
+  }
+  .post-copyright a:hover {
+    text-decoration: underline;
+  }
+  @media (max-width: 768px) {
+    .post-copyright dl > div {
+      flex-direction: column;
+      gap: 0;
+    }
+  }
+
+  .tag_share {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin: 20px 0 40px;
+  }
+  .post-meta__tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .post-meta__tags {
+    padding: 0 12px;
+    border: 1px solid var(--theme-color);
+    border-radius: 12px;
+    font-size: 0.85em;
+    line-height: 1.8;
+    color: var(--theme-color);
+    transition: all 0.2s;
+  }
+  .post-meta__tags:hover {
+    background: var(--theme-color);
+    color: #fff;
+  }
+  .post-share {
+    display: flex;
+    gap: 6px;
+  }
+  .share-btn {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--c);
+    color: #fff;
+    transition: transform 0.3s, opacity 0.3s;
+  }
+  .share-btn:hover {
+    color: #fff;
+    opacity: 0.85;
+    transform: rotate(360deg);
+  }
+  .share-btn :global(svg) {
+    width: 14px;
+    height: 14px;
+  }
+
+  .pagination-post {
+    display: flex;
+    overflow: hidden;
+    border-radius: 6px;
+    margin-bottom: 40px;
+  }
+  .pagination-related {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    height: 150px;
+    background: #000;
+  }
+  .pagination-post .pagination-related {
+    width: 50%;
+  }
+  .pagination-post .pagination-related.full {
+    width: 100%;
+  }
+  .pagination-related .cover {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    object-fit: cover;
+    opacity: 0.4;
+    transition: all 0.6s;
+  }
+  .pagination-related:hover .cover {
+    opacity: 0.8;
+    transform: scale(1.1);
+  }
+  .pagination-info {
+    position: absolute;
+    top: 50%;
+    width: 100%;
+    padding: 20px 40px;
+    transform: translateY(-50%);
+    color: #eee;
+    line-height: 1.6;
+  }
+  .next-post .pagination-info {
+    text-align: right;
+  }
+  .pagination-info.center {
+    text-align: center;
+    padding: 0 20px;
+  }
+  .pagination-info .label {
+    display: block;
+    font-size: 90%;
+    color: #eee;
+  }
+  .pagination-info .info-item {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    color: #fff;
+    font-weight: 500;
+  }
+  .pagination-info .date {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    font-size: 90%;
+    color: #eee;
+  }
+  .pagination-info .date :global(svg) {
+    width: 0.9em;
+    height: 0.9em;
+  }
+  @media (max-width: 768px) {
+    .pagination-post {
+      flex-direction: column;
+    }
+    .pagination-post .pagination-related {
+      width: 100%;
+    }
+    .next-post .pagination-info {
+      text-align: left;
+    }
+  }
+
+  .relatedPosts {
+    margin-top: 40px;
+  }
+  .relatedPosts .headline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    font-size: 1.43em;
+    font-weight: 400;
+    color: var(--font-color);
+  }
+  .relatedPosts .headline :global(svg) {
+    width: 1em;
+    height: 1em;
+  }
+  .relatedPosts-list {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .relatedPosts-list .pagination-related {
+    border-radius: 6px;
+    height: 200px;
+  }
+  @media (max-width: 768px) {
+    .relatedPosts-list {
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .relatedPosts-list .pagination-related {
+      height: 150px;
+    }
+  }
+</style>

@@ -1,0 +1,198 @@
+---
+import { clock } from '@/config';
+---
+
+<!--
+  Clock + weather card (hexo-butterfly-clock, redrawn). Persisted across
+  client-side navigations so the clock keeps ticking and weather isn't refetched.
+  Logic: scripts/clock.ts. Font: scripts/build-led-font.py (tabular LED digits).
+
+  Fonts: every reading (date, time, AM/PM, temperature with its unit, humidity)
+  is set entirely in the LED face; words (weather, wind, city) in WenKai. One
+  reading never mixes the two, so rows line up by flex centring alone instead
+  of per-glyph offsets that drift between platforms' font rasterisers.
+-->
+<section
+  class="card card-widget card-clock"
+  id="card-clock"
+  transition:persist="card-clock"
+  aria-label="时钟与天气"
+  data-clock
+  data-weather-endpoint={clock.weatherEndpoint || undefined}
+  data-amap-key={clock.weatherEndpoint ? undefined : clock.amapKey}
+  data-qweather-key={clock.weatherEndpoint ? undefined : clock.qweatherKey}
+  data-qweather-host={clock.qweatherHost}
+  data-geo-host={clock.geoHost}
+  data-ip-lookup={clock.ipLookup.join(',')}
+  data-fallback-city={clock.fallback.city}
+  data-fallback-location={clock.fallback.location}
+  data-fixed={clock.fixedLocation ? '' : undefined}
+  data-cache-minutes={clock.cacheMinutes}
+>
+  <!-- Three rows: date / weather, time, wind / humidity / city / AM-PM. -->
+  <div class="clock-row">
+    <span class="clock-date led" data-clock-date>----------</span>
+    <span class="clock-weather" data-wx-weather>
+      <i class="clock-icon wx-icon" data-wx-icon aria-hidden="true"></i>
+      <span data-wx-text>天气加载中</span>
+      <span class="clock-temp led" data-wx-temp hidden><span data-wx-temp-value></span>°C</span>
+    </span>
+  </div>
+
+  <time class="clock-time led" data-clock-time aria-live="off">
+    <span data-clock-hm>--:--</span><span class="clock-sec" data-clock-sec>:--</span>
+  </time>
+
+  <div class="clock-row clock-meta">
+    <span class="clock-chip" data-wx-wind hidden><i class="clock-icon wind" aria-hidden="true"></i><span></span></span>
+    <span class="clock-chip" data-wx-humidity hidden><i class="clock-icon droplet" aria-hidden="true"></i><span class="led"></span></span>
+    <span class="clock-chip clock-city" data-wx-city><i class="clock-icon pin" aria-hidden="true"></i><span>定位中</span></span>
+    <span class="clock-ampm led" data-clock-ampm>--</span>
+  </div>
+</section>
+
+<style is:global>
+  @font-face {
+    font-family: 'UnidreamLED';
+    src: url('../../assets/fonts/unidream-led.woff2') format('woff2');
+    font-display: swap;
+    /* LXGW WenKai's hhea line box (.928 / .244): rows align on baselines, this only
+       keeps the LED line box the same height as the text around it */
+    ascent-override: 92.8%;
+    descent-override: 24.4%;
+    line-gap-override: 0%;
+  }
+</style>
+
+<style>
+  /*
+   * Three rows like the original plugin. Each row is a vertically centred flex
+   * line; only the city may shrink (ellipsis), so nothing ever overlaps.
+   * Icons are centred integer-pixel boxes.
+   */
+  .card-clock {
+    display: grid;
+    row-gap: 2px;
+    color: var(--text-highlight-color);
+    background: linear-gradient(135deg, #f9edf5 0%, #e9f3fd 50%, #def6f2 100%);
+    font-size: 13px;
+    line-height: 20px;
+    white-space: nowrap;
+  }
+  .led {
+    font-family: 'UnidreamLED', var(--code-font-family);
+  }
+  /* Readings and words line up on their baselines, not their boxes. The LED
+     font and LXGW WenKai have equal ink centres above the baseline, but which
+     metrics a platform reads for WenKai differs (Windows: usWin 1.048/.271,
+     elsewhere hhea .928/.244), so centring line boxes put the LED text 1px
+     high on Windows. Icons centre on the row instead (`.clock-icon`). */
+  .clock-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+  }
+  .clock-icon {
+    flex: none;
+    align-self: center;
+    width: 14px;
+    height: 14px;
+    background: currentColor;
+    -webkit-mask: var(--m) center / contain no-repeat;
+    mask: var(--m) center / contain no-repeat;
+  }
+
+  .clock-date {
+    flex: none;
+    font-size: 14px;
+  }
+  .clock-weather {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    min-width: 0;
+    color: var(--font-color);
+  }
+  .clock-weather > [data-wx-text] {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wx-icon {
+    --m: var(--wx-icon, var(--icon-wx-cloud));
+    width: 16px;
+    height: 16px;
+    background: var(--wx-color, var(--muted));
+  }
+  .clock-temp {
+    flex: none;
+    color: var(--text-highlight-color);
+  }
+  .clock-temp[hidden],
+  .clock-weather[hidden],
+  .clock-chip[hidden] {
+    display: none;
+  }
+
+  .clock-time {
+    justify-self: center;
+    padding: 4px 0 6px;
+    font-size: 40px;
+    line-height: 1;
+  }
+  .clock-sec {
+    font: inherit;
+    color: inherit;
+  }
+  :global(:root[data-theme='dark']) .card-clock {
+    background: linear-gradient(135deg, #231f2b 0%, #192733 50%, #17312f 100%);
+  }
+
+  .clock-meta {
+    justify-content: flex-start;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .clock-chip {
+    flex: none;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+  }
+  .clock-chip[hidden] {
+    display: none;
+  }
+  .clock-chip .clock-icon {
+    width: 12px;
+    height: 12px;
+  }
+  /* In a narrow aside (901-1024px) wind and city share what is left; wind gives
+     way first (its full text is in the title tooltip), so the city never
+     collapses to just its pin. */
+  .clock-city,
+  .clock-chip[data-wx-wind] {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .clock-chip[data-wx-wind] {
+    flex-shrink: 3;
+  }
+  .clock-city > span,
+  .clock-chip[data-wx-wind] > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .clock-icon.wind { --m: var(--icon-wx-wind); }
+  .clock-icon.droplet { --m: var(--icon-droplet); color: var(--theme-color); }
+  .clock-icon.pin { --m: var(--icon-location-dot); color: var(--theme-hover); }
+
+  .clock-ampm {
+    flex: none;
+    margin-left: auto;
+    color: var(--theme-color);
+    font-size: 13px;
+  }
+</style>

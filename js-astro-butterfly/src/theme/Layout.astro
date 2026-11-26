@@ -1,0 +1,160 @@
+---
+import { url } from '@/lib/url';
+import { optimize, imagePresets, type ImageSource } from '@/lib/images';
+import { ClientRouter } from 'astro:transitions';
+import './generated/lxgw.css';
+import font from './generated/font.json';
+import './styles/global.css';
+import { iconCss } from './icons-css';
+import { site, features } from '@/config';
+import Header from './components/Header.astro';
+import Footer from './components/Footer.astro';
+import Aside from './components/Aside.astro';
+import Rightside from './components/Rightside.astro';
+import Search from './components/Search.astro';
+import MusicPlayer from './components/MusicPlayer.astro';
+
+export interface Props {
+  title?: string;
+  description?: string;
+  image?: ImageSource;
+  /** 'home' = no banner; 'page' = banner with centered title; 'post' = banner with post info (slot "post-info") */
+  header?: 'home' | 'page' | 'post';
+  topImg?: ImageSource;
+  aside?: boolean;
+  ogType?: 'website' | 'article';
+  noindex?: boolean;
+  published?: Date;
+  modified?: Date;
+}
+
+const {
+  title,
+  description = site.description,
+  image = site.avatar,
+  header = 'page',
+  topImg = site.topImg,
+  aside = true,
+  ogType = 'website',
+  noindex = false,
+  published,
+  modified,
+} = Astro.props;
+
+const fullTitle = title ? `${title} | ${site.title}` : site.title;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const ogImage = new URL((await optimize(image, imagePresets.social)).src, Astro.site).href;
+---
+
+<!doctype html>
+<html lang={site.lang} data-theme="light" data-fallback-font={font.preload ? url('/fonts/lxgw/fallback.css') : undefined} data-body-font={font.body ? url(font.body) : undefined}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    {/* Cascade layer order, ahead of every stylesheet: the first stylesheet to
+        name a layer fixes its priority, and route-split CSS (content.css on post
+        pages) can be linked before global.css. Keep in sync with global.css. */}
+    <style is:inline>@layer reset, tokens, base, layout, content, components, utilities;</style>
+    <meta name="generator" content={Astro.generator} />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="keywords" content={site.keywords.join(',')} />
+    <meta name="author" content={site.author} />
+    {font.preload && <link rel="preload" href={url(font.preload)} as="font" type="font/woff2" crossorigin="anonymous" />}
+    {font.body && <noscript><link rel="stylesheet" href={url(font.body)} /></noscript>}
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href={url(site.logo)} />
+    <link rel="apple-touch-icon" href={url(site.logo)} />
+    <link rel="manifest" href={url('/manifest.webmanifest')} />
+    <link rel="alternate" type="application/atom+xml" title={site.title} href={url('/atom.xml')} />
+    <link rel="sitemap" href={url('/sitemap.xml')} />
+    {noindex && <meta name="robots" content="noindex" />}
+    <meta name="theme-color" content="#f6f1f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)" />
+
+    <meta property="og:type" content={ogType} />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content={site.title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:image" content={ogImage} />
+    {published && <meta property="article:published_time" content={published.toISOString()} />}
+    {modified && <meta property="article:modified_time" content={modified.toISOString()} />}
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:image" content={ogImage} />
+    <slot name="head" />
+
+    <style set:html={iconCss}></style>
+
+    {/* Apply saved theme / aside / read-mode before first paint (also after every client-side navigation). */}
+    <script is:inline>
+      (() => {
+        const read = (key) => {
+          try {
+            const raw = localStorage.getItem(key);
+            if (raw == null) return undefined;
+            try {
+              // Butterfly stored {value, expiry}; keep honouring it
+              const o = JSON.parse(raw);
+              if (o && typeof o === 'object' && 'value' in o) {
+                if (o.expiry && Date.now() > o.expiry) return undefined;
+                return o.value;
+              }
+              return o;
+            } catch {
+              return raw;
+            }
+          } catch {
+            return undefined;
+          }
+        };
+        const apply = (doc) => {
+          const root = doc.documentElement;
+          const saved = read('theme');
+          const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+          root.dataset.theme = dark ? 'dark' : 'light';
+          root.classList.toggle('hide-aside', read('aside-status') === 'hide');
+        };
+        apply(document);
+        document.addEventListener('astro:before-swap', (e) => apply(e.newDocument));
+      })();
+    </script>
+    <ClientRouter fallback="swap" />
+  </head>
+  <body
+    data-power-mode={features.powerMode.enable ? JSON.stringify(features.powerMode) : undefined}
+    data-busuanzi={typeof features.busuanzi === 'string' ? features.busuanzi : features.busuanzi ? '' : undefined}
+    data-stats-endpoint={typeof features.busuanzi === 'object' ? features.busuanzi.endpoint : undefined}
+  >
+    <a class="skip-link" href="#main-content">跳到正文</a>
+    <div id="web_bg" aria-hidden="true"></div>
+
+    <Header kind={header} topImg={topImg} title={title}>
+      <slot name="post-info" slot="post-info" />
+    </Header>
+
+    <div class:list={['layout', { 'no-aside': !aside }]}>
+      <main id="main-content" tabindex="-1">
+        <slot />
+      </main>
+      {
+        aside && (
+          <Aside>
+            <slot name="aside-top" slot="top" />
+            <slot name="aside-sticky" slot="sticky" />
+          </Aside>
+        )
+      }
+    </div>
+
+    <Footer />
+    <Rightside />
+    <Search />
+    <MusicPlayer />
+
+    <script>
+      import './scripts/main';
+    </script>
+  </body>
+</html>

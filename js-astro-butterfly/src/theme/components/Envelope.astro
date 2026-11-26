@@ -1,0 +1,248 @@
+---
+import { url } from '@/lib/url';
+import { envelope, site } from '@/config';
+---
+
+<!--
+  hexo-butterfly-envelope, same geometry as the original plugin:
+  a 447px window clips a letter that sits inside the envelope (back image behind it,
+  front pocket in front). On hover/focus the window grows to 1050px and moves up
+  200px; the envelope stays pinned to the bottom, so it slides down and the letter
+  rises out. Keyboard focus and touch focus also open it. Below 600px: letter only.
+-->
+<guestbook-envelope class="envelope" data-letter-art="pending" data-envelope-art="pending" tabindex="0" aria-label={`来自${site.author}的留言`}>
+  <div class="envelope-window">
+    <img class="envelope-back" src={url(envelope.before)} alt="" width="530" height="316" loading="lazy" decoding="async" />
+    <div class="envelope-inner">
+      <div class="letter">
+        <img class="letter-cover" src={url(envelope.cover)} alt="" width="960" height="590" loading="lazy" decoding="async" />
+        <div class="letter-body">
+          <p class="letter-title">来自{site.author}的留言:</p>
+          <div class="letter-message">
+            {envelope.message.map((m) => <p>{m}</p>)}
+          </div>
+          <img class="letter-line" src={url(envelope.line)} alt="" width="1920" height="95" loading="lazy" decoding="async" />
+          <p class="letter-bottom">{envelope.bottom}</p>
+        </div>
+      </div>
+    </div>
+    <img class="envelope-front" src={url(envelope.after)} alt="" width="530" height="260" loading="lazy" decoding="async" />
+  </div>
+</guestbook-envelope>
+
+<script>
+  class GuestbookEnvelope extends HTMLElement {
+    private desktop = window.matchMedia('(min-width: 600px)');
+
+    private letterImages?: Promise<boolean[]>;
+    private shellImages?: Promise<boolean[]>;
+
+    connectedCallback() {
+      if (!this.letterImages) {
+        this.letterImages = this.decodeImages('.letter-cover, .letter-line');
+        void this.letterImages.then(() => { this.dataset.letterArt = 'ready'; });
+      }
+      if (!this.shellImages) {
+        this.desktop.addEventListener('change', this.prepareEnvelope);
+        this.prepareEnvelope();
+      }
+      if (!this.hasAttribute('data-pointer-active')) {
+        this.addEventListener('pointermove', this.enableHover, { passive: true });
+      }
+    }
+
+    disconnectedCallback() {
+      this.desktop.removeEventListener('change', this.prepareEnvelope);
+      this.removeEventListener('pointermove', this.enableHover);
+    }
+
+    private decodeImages(selector: string) {
+      const images = this.querySelectorAll<HTMLImageElement>(selector);
+      return Promise.all(Array.from(images, async (image) => {
+        // The closing flap can clip some artwork below the lazy-load viewport.
+        image.loading = 'eager';
+        try {
+          await image.decode();
+          return true;
+        } catch {
+          image.hidden = true;
+          return false;
+        }
+      }));
+    }
+
+    private prepareEnvelope = () => {
+      if (!this.desktop.matches || this.shellImages) return;
+      this.desktop.removeEventListener('change', this.prepareEnvelope);
+      this.shellImages = this.decodeImages('.envelope-back, .envelope-front');
+      void Promise.all([this.shellImages, this.letterImages]).then(([shell]) => {
+        this.dataset.envelopeArt = shell.every(Boolean) ? 'ready' : 'unavailable';
+      });
+    };
+
+    private enableHover = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') return;
+      // Layout can put the envelope under a stationary pointer on first paint.
+      this.setAttribute('data-pointer-active', '');
+      this.removeEventListener('pointermove', this.enableHover);
+    };
+  }
+
+  if (!customElements.get('guestbook-envelope')) {
+    customElements.define('guestbook-envelope', GuestbookEnvelope);
+  }
+</script>
+
+<style>
+  .envelope {
+    display: block;
+    width: min(100%, 530px);
+    margin: 0 auto 30px;
+  }
+  .envelope img {
+    display: block;
+    max-width: none;
+    margin: 0;
+    border-radius: 0;
+    pointer-events: none;
+    user-select: none;
+  }
+  .letter {
+    overflow: hidden;
+    border: 1px solid var(--light-grey);
+    border-radius: 5px;
+    background: #fff;
+    color: #555;
+    text-align: center;
+  }
+  .letter-cover {
+    width: 100%;
+    height: auto;
+  }
+  .letter-title {
+    margin: 14px 0 0;
+    color: var(--theme-color);
+    font-size: 1.15em;
+    font-weight: 700;
+  }
+  .letter-message {
+    margin: 15px 0;
+    padding: 20px;
+    border-block: 1px solid #ddd;
+    background: #eee;
+    line-height: 2;
+  }
+  .letter-message p {
+    margin: 0;
+  }
+  .envelope .letter-line {
+    width: 100%;
+    height: auto;
+    margin: 40px auto 5px;
+  }
+  .letter-bottom {
+    margin: 0 0 12px;
+    color: #999;
+    font-size: 12px;
+  }
+  :global(:root[data-theme='dark']) .letter {
+    background: #323232;
+    color: rgba(255, 255, 255, 0.78);
+  }
+  :global(:root[data-theme='dark']) .letter-message {
+    border-color: rgba(255, 255, 255, 0.08);
+    background: #5a5a5a;
+  }
+
+  .envelope .envelope-back,
+  .envelope .envelope-front {
+    display: none;
+  }
+
+  .envelope img[hidden] {
+    display: none;
+  }
+
+  @media (scripting: enabled) {
+    .envelope[data-letter-art='pending'] .envelope-window {
+      visibility: hidden;
+    }
+  }
+
+  @media (min-width: 600px) and (scripting: enabled) {
+    .envelope-window {
+      position: relative;
+      top: 0;
+      z-index: 1;
+      isolation: isolate;
+      height: 447px;
+      overflow: hidden;
+      transition: top 1s ease-in-out 0.3s, height 1s ease-in-out 0.3s, margin-bottom 1s ease-in-out 0.3s;
+    }
+    /* Paint the letter and the shell together. */
+    .envelope[data-envelope-art='pending'] .envelope-window {
+      visibility: hidden;
+    }
+    .envelope[data-envelope-art='unavailable'] .envelope-window {
+      height: auto;
+      overflow: visible;
+      transition: none;
+    }
+    .envelope[data-envelope-art='unavailable'] :is(.envelope-back, .envelope-front) {
+      display: none;
+    }
+    .envelope[data-envelope-art='unavailable'] .envelope-inner {
+      width: auto;
+      padding-top: 0;
+    }
+    .envelope[data-envelope-art='ready']:is([data-pointer-active]:hover, :focus-visible) .envelope-window {
+      top: -200px;
+      height: 1050px;
+      /* the window moved up 200px: take the gap below back as well */
+      margin-bottom: -200px;
+    }
+    @media (hover: none), (pointer: coarse) {
+      .envelope[data-envelope-art='ready']:focus-within .envelope-window {
+        top: -200px;
+        height: 1050px;
+        margin-bottom: -200px;
+      }
+    }
+    .envelope .envelope-back,
+    .envelope .envelope-front {
+      display: block;
+      position: absolute;
+      left: 0;
+      width: 530px;
+    }
+    .envelope .envelope-back {
+      bottom: 126px;
+      z-index: 0;
+      height: 316px;
+    }
+    .envelope .envelope-front {
+      bottom: -2px;
+      z-index: 2;
+      height: 260px;
+    }
+    .envelope-inner {
+      position: relative;
+      z-index: 1;
+      width: 500px;
+      margin: 0 auto;
+      padding-top: 200px;
+    }
+    .letter {
+      width: 95%;
+      margin: 0 auto;
+      border-color: rgba(0, 0, 0, 0.6);
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.55);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .envelope-window {
+      transition: none !important;
+    }
+  }
+</style>

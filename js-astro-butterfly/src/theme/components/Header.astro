@@ -1,0 +1,462 @@
+---
+import { url } from '@/lib/url';
+import { Icon } from 'astro-icon/components';
+import { optimize, imagePresets, type ImageSource } from '@/lib/images';
+import { site, nav } from '@/config';
+import { getPosts, getTags, getCategories } from '@/lib/posts';
+
+interface Props {
+  kind: 'home' | 'page' | 'post';
+  topImg: ImageSource;
+  title?: string;
+}
+const { kind, topImg, title } = Astro.props;
+const path = Astro.url.pathname;
+const local = url('/') === '/' ? path : '/' + path.slice(url('/').length); // path without the base
+const isActive = (href?: string) => !!href && (href === '/' ? local === '/' || local.startsWith('/page/') : local.startsWith(href));
+
+const [posts, tags, cats, top, logo, avatar] = await Promise.all([
+  getPosts(),
+  getTags(),
+  getCategories(),
+  kind !== 'home' ? optimize(topImg, imagePresets.header) : undefined,
+  optimize(site.logo, imagePresets.logo),
+  optimize(site.avatar, imagePresets.avatar),
+]);
+---
+
+<header
+  id="page-header"
+  class:list={[kind === 'home' ? 'not-top-img' : 'has-top-img', kind === 'post' && 'post-bg']}
+>
+  {top && <img class="top-img" src={top.src} srcset={top.srcset} sizes={top.sizes} alt="" fetchpriority="high" decoding="async" />}
+  <nav id="nav" aria-label="主导航">
+    <a id="blog-info" href={url('/')} aria-label={`${site.title} 首页`}>
+      <img class="site-icon" src={logo.src} srcset={logo.srcset} alt="" width="36" height="36" />
+      <span class="site-name">{site.title}</span>
+    </a>
+    <div class="menus">
+      <button type="button" class="menu-item search-trigger" data-search-open aria-label="搜索">
+        <Icon name="fa6-solid:magnifying-glass" /><span class="menu-text">搜索</span>
+      </button>
+      <ul class="menus-items">
+        {
+          nav.map((item, i) =>
+            item.children ? (
+              <li class="menu-item has-child">
+                <button type="button" class="menu-link" aria-expanded="false" aria-controls={`nav-menu-${i}`}>
+                  <Icon name={item.icon} />
+                  <span>{item.label}</span>
+                  <Icon name="fa6-solid:chevron-down" class="expand" />
+                </button>
+                <ul class="menu-child" id={`nav-menu-${i}`}>
+                  {item.children.map((c) => (
+                    <li>
+                      <a href={url(c.href!)} aria-current={isActive(c.href) ? 'page' : undefined}>
+                        <Icon name={c.icon} />
+                        <span>{c.label}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ) : (
+              <li class="menu-item">
+                <a class="menu-link" href={item.href && url(item.href)} aria-current={isActive(item.href) ? 'page' : undefined}>
+                  <Icon name={item.icon} />
+                  <span>{item.label}</span>
+                </a>
+              </li>
+            ),
+          )
+        }
+      </ul>
+      <button type="button" class="menu-item toggle-menu" data-sidebar-open aria-label="打开菜单" aria-haspopup="dialog" aria-controls="sidebar">
+        <Icon name="fa6-solid:bars" />
+      </button>
+    </div>
+  </nav>
+
+  {
+    kind === 'page' && (
+      <div id="page-site-info">
+        <h1 id="site-title">{title ?? site.title}</h1>
+      </div>
+    )
+  }
+  {
+    kind === 'post' && (
+      <div id="post-info">
+        <slot name="post-info" />
+      </div>
+    )
+  }
+</header>
+
+<!-- mobile drawer -->
+<dialog id="sidebar" class="sidebar" aria-label="菜单">
+  <div class="sidebar-menus">
+    <div class="avatar-img"><img src={avatar.src} srcset={avatar.srcset} alt={site.author} width="110" height="110" loading="lazy" decoding="async" /></div>
+    <div class="sidebar-site-data">
+      <a href={url('/archives/')}><span class="headline">文章</span><span class="length-num">{posts.length}</span></a>
+      <a href={url('/tags/')}><span class="headline">标签</span><span class="length-num">{tags.length}</span></a>
+      <a href={url('/categories/')}><span class="headline">分类</span><span class="length-num">{cats.length}</span></a>
+    </div>
+    <hr />
+    <ul class="sidebar-links">
+      {
+        nav.flatMap((item) => (item.children ? item.children : [item])).map((item) => (
+          <li>
+            <a href={item.href && url(item.href)} aria-current={isActive(item.href) ? 'page' : undefined}>
+              <Icon name={item.icon} />
+              <span>{item.label}</span>
+            </a>
+          </li>
+        ))
+      }
+    </ul>
+  </div>
+</dialog>
+
+<style>
+  #page-header {
+    position: relative;
+    /* Keep the isolated banner's fixed navigation above cards and tools.
+       The drawer and search are modal dialogs in the top layer, above it all. */
+    z-index: 105;
+    width: 100%;
+  }
+  #page-header.not-top-img { height: var(--nav-height); }
+  #page-header.has-top-img {
+    height: var(--header-height);
+    background: var(--theme-color);
+    isolation: isolate;
+  }
+  .top-img {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  #page-header.has-top-img::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--header-mask);
+    transition: background 0.3s;
+  }
+  @media (max-width: 768px) {
+    #page-header.post-bg { height: 340px; }
+  }
+
+  /* ---------------- nav ---------------- */
+  #nav {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: var(--nav-height);
+    padding: 0 36px;
+    font-size: 1.3em;
+    transition: transform 0.25s var(--ease), background 0.3s, box-shadow 0.3s, opacity 0.2s, backdrop-filter 0.3s, -webkit-backdrop-filter 0.3s;
+  }
+  .not-top-img #nav {
+    position: relative;
+    background: var(--nav-bg);
+    box-shadow: var(--nav-shadow);
+  }
+  /* Text fades along with the bar's background when it settles at the top. */
+  #nav :is(#blog-info, .menu-link, .menu-item) {
+    transition: color 0.3s, text-shadow 0.3s;
+  }
+  :global(html:not(.nav-fixed)) .has-top-img #nav :is(#blog-info, .menu-link, .menu-item) {
+    color: #eee;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.15);
+  }
+  :global(html.nav-fixed) #page-header #nav {
+    position: fixed;
+    background: var(--nav-bg);
+    box-shadow: var(--nav-shadow);
+    /* Prefixed first: the CSS minifier keeps only the last of the two. */
+    -webkit-backdrop-filter: saturate(1.4) blur(12px);
+    backdrop-filter: saturate(1.4) blur(12px);
+  }
+  :global(html.nav-fixed) #nav :is(#blog-info, .menu-link, .menu-item) {
+    color: var(--nav-font-color);
+    text-shadow: none;
+  }
+  :global(html.nav-fixed:not(.nav-visible)) #nav {
+    transform: translateY(-100%);
+    box-shadow: none;
+  }
+  /* Becoming fixed happens out of view (scroll.ts): nothing there should animate. */
+  :global(html.nav-entering) #page-header #nav,
+  :global(html.nav-entering) #nav :is(#blog-info, .menu-link, .menu-item) {
+    transition: none;
+  }
+  @media (max-width: 768px) {
+    #nav { padding: 0 12px; font-size: 1.15em; }
+    .site-icon { width: 30px; height: 30px; }
+  }
+
+  #blog-info {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-weight: 700;
+  }
+  .site-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+  .site-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .menus {
+    display: flex;
+    align-items: center;
+    font-size: 0.78em;
+  }
+  .menus-items {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .menu-item {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 0 0 14px;
+  }
+  .menu-link,
+  .search-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: inherit;
+    line-height: var(--nav-height);
+  }
+  .menu-link::after {
+    content: '';
+    position: absolute;
+    bottom: 14px;
+    left: 14px;
+    width: 0;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--theme-color);
+    transition: width 0.3s;
+  }
+  .menu-link:hover::after,
+  .menu-link[aria-current='page']::after {
+    width: calc(100% - 14px);
+  }
+  .menu-item :global(svg) {
+    width: 1em;
+    height: 1em;
+  }
+  .menu-item :global(.expand) {
+    width: 0.8em;
+    transition: transform 0.3s;
+  }
+  /* Open state lives on the button (nav-menu.ts), so screen and aria never disagree. */
+  .menu-link[aria-expanded='true'] :global(.expand) {
+    transform: rotate(180deg);
+  }
+  .menu-child {
+    position: absolute;
+    top: calc(var(--nav-height) - 8px);
+    right: 0;
+    display: none;
+    width: max-content;
+    margin: 0;
+    padding: 6px 0;
+    list-style: none;
+    border-radius: 6px;
+    background: var(--dropdown-bg);
+    box-shadow: 0 5px 20px -4px rgba(0, 0, 0, 0.5);
+    animation: fade-in-up 0.25s;
+  }
+  .menu-child::before {
+    content: '';
+    position: absolute;
+    top: -12px;
+    left: 0;
+    width: 100%;
+    height: 12px;
+  }
+  .menu-link[aria-expanded='true'] + .menu-child {
+    display: block;
+  }
+  /* Without scripts nothing sets aria-expanded: fall back to hover and focus. */
+  @media (scripting: none) {
+    .has-child:is(:hover, :focus-within) .menu-child { display: block; }
+  }
+  .menu-child a {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 16px;
+    color: var(--font-color);
+    text-shadow: none;
+    line-height: 2.2;
+  }
+  .menu-child a:hover {
+    background: var(--text-bg-hover);
+    color: #fff;
+  }
+  .toggle-menu {
+    display: none;
+  }
+  @media (max-width: 900px) {
+    .menus-items,
+    .search-trigger .menu-text {
+      display: none;
+    }
+    .toggle-menu {
+      display: inline-flex;
+      font-size: 1.15em;
+    }
+  }
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(10px); }
+  }
+
+  /* ---------------- banner text ---------------- */
+  #page-site-info {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    padding: 0 10px;
+    transform: translateY(-50%);
+  }
+  #site-title {
+    margin: 0;
+    text-align: center;
+    font-size: 2.85em;
+    font-weight: 700;
+    line-height: 1.5;
+    color: var(--white);
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.15);
+  }
+  #post-info {
+    position: absolute;
+    bottom: 100px;
+    left: 0;
+    width: 100%;
+    padding: 0 8%;
+    text-align: center;
+    color: var(--white);
+  }
+  @media (max-width: 768px) {
+    #site-title { font-size: 1.9em; }
+    #post-info { bottom: 28px; padding: 0 18px; text-align: left; }
+  }
+
+  /* ---------------- mobile drawer ---------------- */
+  /* Native modal <dialog>: the rest of the page is inert while it is open, so Tab
+     stays inside, Escape closes it, and focus returns to the menu button. */
+  .sidebar {
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: min(300px, 85vw);
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: var(--card-solid-bg);
+    overscroll-behavior: contain;
+    transform: translateX(100%);
+    transition: transform 0.3s var(--ease), overlay 0.3s allow-discrete, display 0.3s allow-discrete;
+  }
+  .sidebar[open] { transform: none; }
+  .sidebar::backdrop {
+    background: rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    transition: opacity 0.3s, overlay 0.3s allow-discrete, display 0.3s allow-discrete;
+  }
+  .sidebar[open]::backdrop { opacity: 1; }
+  @starting-style {
+    .sidebar[open] { transform: translateX(100%); }
+    .sidebar[open]::backdrop { opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar, .sidebar::backdrop { transition: none; }
+  }
+  .sidebar-menus {
+    height: 100%;
+    overflow-y: auto;
+    padding: 20px 0;
+  }
+  .avatar-img {
+    margin: 10px auto;
+    width: 110px;
+    height: 110px;
+    overflow: hidden;
+    border-radius: 50%;
+  }
+  .avatar-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.5s;
+  }
+  .avatar-img:hover img { transform: rotate(360deg); }
+  .sidebar-site-data {
+    display: flex;
+    padding: 0 10px;
+    text-align: center;
+  }
+  .sidebar-site-data a {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.5;
+  }
+  .sidebar-site-data .length-num {
+    font-size: 1.3em;
+    font-weight: 700;
+    color: var(--text-highlight-color);
+  }
+  .sidebar hr {
+    margin: 20px auto;
+    border: 1px dashed var(--hr-border);
+    width: calc(100% - 40px);
+  }
+  .sidebar-links {
+    margin: 0;
+    padding: 0 22px;
+    list-style: none;
+    font-size: 1.1em;
+  }
+  .sidebar-links a {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 4px 18px;
+    border-radius: 6px;
+  }
+  .sidebar-links a:hover,
+  .sidebar-links a[aria-current='page'] {
+    background: var(--text-bg-hover);
+    color: #fff;
+  }
+  .sidebar-links :global(svg) { width: 1em; height: 1em; }
+</style>

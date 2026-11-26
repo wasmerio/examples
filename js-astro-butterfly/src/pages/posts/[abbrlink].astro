@@ -1,0 +1,103 @@
+---
+import type { GetStaticPaths } from 'astro';
+import { render } from 'astro:content';
+import 'katex/dist/katex.min.css';
+import '@/theme/styles/content.css';
+import '@/theme/styles/tag-plugins.css';
+import Layout from '@/theme/Layout.astro';
+import PostInfo from '@/theme/components/PostInfo.astro';
+import PostFooter from '@/theme/components/PostFooter.astro';
+import Toc from '@/theme/components/Toc.astro';
+import Comments from '@/theme/components/Comments.astro';
+import { getPosts, postUrl, topImgOf, coverOf, excerpt } from '@/lib/posts';
+import { features } from '@/config';
+
+export const getStaticPaths = (async () => {
+  return (await getPosts()).map((post) => ({ params: { abbrlink: post.data.abbrlink }, props: { post } }));
+}) satisfies GetStaticPaths;
+
+const { post } = Astro.props;
+const { Content, headings, remarkPluginFrontmatter } = await render(post);
+const { wordcount = 0, minutes = 1 } = remarkPluginFrontmatter as { wordcount?: number; minutes?: number };
+// Rendered when the post is already outdated at build time (most are), so the
+// notice doesn't push the article down after load; content.ts only refreshes the
+// day count, and shows it for a post that crossed the limit since the build.
+const outdatedDays = Math.floor((Date.now() - post.data.updated.getTime()) / 86_400_000);
+const outdated = features.outdatedNoticeDays > 0 && outdatedDays >= features.outdatedNoticeDays;
+---
+
+<Layout
+  header="post"
+  title={post.data.title}
+  description={excerpt(post, 120)}
+  image={coverOf(post)}
+  topImg={topImgOf(post)}
+  ogType="article"
+  published={post.data.date}
+  modified={post.data.updated}
+>
+  <PostInfo slot="post-info" post={post} words={wordcount} minutes={minutes} />
+
+  <article id="post" class="card page-card">
+    {
+      features.outdatedNoticeDays > 0 && (
+        <div
+          id="post-outdate-notice"
+          data-outdated={post.data.updated.toISOString()}
+          data-limit={features.outdatedNoticeDays}
+          role="note"
+          hidden={!outdated}
+        >
+          {outdated && `文章最后更新于 ${outdatedDays} 天前，其中的信息可能已经过时。`}
+        </div>
+      )
+    }
+    <div id="article-container" class="article-container" data-pagefind-body>
+      <Content />
+    </div>
+    <div class="post-footer-extras">
+      <PostFooter post={post} />
+    </div>
+    {post.data.comments && <Comments path={postUrl(post)} />}
+  </article>
+
+  <Toc slot="aside-sticky" headings={headings} />
+</Layout>
+
+<style>
+  #post-outdate-notice {
+    position: relative;
+    margin: 0 0 20px;
+    padding: 0.5em 1.2em 0.5em 2.6em;
+    border-left: 5px solid #ff6a6a;
+    border-radius: 3px;
+    background: #ffe6e6;
+    color: #ff6a6a;
+    font-size: 0.95em;
+  }
+  #post-outdate-notice::before {
+    content: '';
+    position: absolute;
+    top: calc(50% - 0.5em);
+    left: 0.9em;
+    width: 1em;
+    height: 1em;
+    background: currentColor;
+    -webkit-mask: var(--icon-warning) no-repeat center;
+    -webkit-mask-size: contain;
+    mask: var(--icon-warning) no-repeat center;
+    mask-size: contain;
+  }
+  @media (max-width: 768px) {
+    #post-outdate-notice {
+      padding: 0.4em 0.8em 0.4em 2.3em;
+      font-size: 0.88em;
+    }
+    #post-outdate-notice::before {
+      left: 0.7em;
+    }
+  }
+  :global(:root[data-theme='dark']) #post-outdate-notice {
+    background: rgba(255, 106, 106, 0.12);
+  }
+</style>

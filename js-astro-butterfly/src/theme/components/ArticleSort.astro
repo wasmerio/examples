@@ -1,0 +1,191 @@
+---
+import { postUrl, coverOf, type Post } from '@/lib/posts';
+import { optimize, imagePresets } from '@/lib/images';
+import { formatDate, yearOf } from '@/lib/date';
+
+interface Props {
+  title: string;
+  count: number;
+  posts: Post[];
+}
+const { title, count, posts } = Astro.props;
+const thumbs = new Map(await Promise.all(posts.map(async (p) => [p.id, await optimize(coverOf(p), imagePresets.thumb)] as const)));
+
+// insert a year marker whenever the year changes
+const rows: ({ year: string } | { post: Post })[] = [];
+let last = '';
+for (const p of posts) {
+  const y = yearOf(p.data.date);
+  if (y !== last) rows.push({ year: (last = y) });
+  rows.push({ post: p });
+}
+---
+
+<div class="article-sort">
+  <h1 class="article-sort-title">{title} - {count}</h1>
+  {
+    rows.map((r) =>
+      'year' in r ? (
+        <h2 class="article-sort-item year">{r.year}</h2>
+      ) : (
+        <article class="article-sort-item">
+          <a class="article-sort-item-img" href={postUrl(r.post)} tabindex="-1" aria-hidden="true">
+            <img src={thumbs.get(r.post.id)!.src} srcset={thumbs.get(r.post.id)!.srcset} alt="" loading="lazy" decoding="async" width="80" height="80" />
+          </a>
+          <div class="article-sort-item-info">
+            <time datetime={r.post.data.date.toISOString()}>{formatDate(r.post.data.date)}</time>
+            <a class="article-sort-item-title" href={postUrl(r.post)} title={r.post.data.title}>
+              {r.post.data.title}
+            </a>
+          </div>
+        </article>
+      ),
+    )
+  }
+</div>
+
+<style>
+  /*
+   * Timeline: one rail + dots that are all centred on it by construction
+   * (left = rail centre, translate -50%), instead of per-element magic offsets.
+   * Headings centre their dot on the first text line (0.5lh); posts on the row.
+   */
+  .article-sort {
+    --rail-x: 10px; /* rail centre, from the container's left edge */
+    --indent: 32px; /* rail → content */
+    position: relative;
+    padding-left: calc(var(--rail-x) + var(--indent));
+  }
+  .article-sort::before {
+    content: '';
+    position: absolute;
+    top: 0.6em;
+    bottom: 0;
+    left: calc(var(--rail-x) - 1px);
+    width: 2px;
+    border-radius: 1px;
+    background: var(--timeline-color);
+  }
+  .article-sort-title,
+  .article-sort-item {
+    position: relative;
+  }
+  .article-sort-title::before,
+  .article-sort-item::before {
+    content: '';
+    position: absolute;
+    left: calc(-1 * var(--indent));
+    width: var(--dot);
+    height: var(--dot);
+    border: var(--ring) solid var(--theme-color);
+    border-radius: 50%;
+    background: var(--card-solid-bg);
+    box-sizing: border-box;
+    transform: translate(-50%, -50%);
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .article-sort-title {
+    --dot: 20px;
+    --ring: 5px;
+    margin: 0 0 20px;
+    font-size: 1.72em;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--font-color);
+  }
+  .article-sort-title::before,
+  .article-sort-item.year::before {
+    top: 0.5lh;
+  }
+  .article-sort-item {
+    --dot: 12px;
+    --ring: 3px;
+    display: flex;
+    align-items: center;
+    margin: 0 0 20px;
+  }
+  .article-sort-item:not(.year)::before {
+    top: 50%;
+  }
+  .article-sort-item:not(.year):hover::before {
+    border-color: var(--theme-hover);
+    transform: translate(-50%, -50%) scale(1.2);
+  }
+  .article-sort-item.year {
+    --dot: 14px;
+    margin-bottom: 16px;
+    font-size: 1.43em;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--font-color);
+  }
+  .article-sort-item.year::before {
+    border-color: var(--theme-hover);
+  }
+  .article-sort-item-img {
+    flex: none;
+    width: 80px;
+    height: 80px;
+    overflow: hidden;
+    border-radius: 6px;
+    background: var(--light-grey);
+  }
+  .article-sort-item-img img {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    object-fit: cover;
+    transition: transform 0.6s;
+  }
+  .article-sort-item-img:hover img {
+    transform: scale(1.1);
+  }
+  .article-sort-item-info {
+    flex: 1;
+    min-width: 0;
+    padding-left: 16px;
+    line-height: 1.6;
+  }
+  .article-sort-item-info time {
+    display: block;
+    font-size: 0.85em;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .article-sort-item-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 1.1em;
+    transition: color 0.2s, transform 0.2s;
+  }
+  .article-sort-item-title:hover {
+    color: var(--theme-color);
+    transform: translateX(4px);
+  }
+  @media (max-width: 768px) {
+    .article-sort {
+      --rail-x: 8px;
+      --indent: 22px;
+    }
+    .article-sort-title {
+      --dot: 16px;
+      --ring: 4px;
+      font-size: 1.4em;
+    }
+    .article-sort-item.year {
+      font-size: 1.25em;
+    }
+    .article-sort-item-img {
+      width: 64px;
+      height: 64px;
+    }
+    .article-sort-item-info {
+      padding-left: 12px;
+    }
+    .article-sort-item-title {
+      font-size: 1em;
+    }
+  }
+</style>

@@ -1,0 +1,418 @@
+---
+import { url } from '@/lib/url';
+import { Icon } from 'astro-icon/components';
+import { site, social, aside, comments, clock, features } from '@/config';
+import ClockWidget from './ClockWidget.astro';
+import { getPosts, getTags, getCategories, postUrl, coverOf, groupByMonth } from '@/lib/posts';
+import { optimize, imagePresets } from '@/lib/images';
+import { formatDate } from '@/lib/date';
+import { countWords, formatCount } from '@/lib/wordcount';
+
+const posts = await getPosts();
+const [tags, cats] = await Promise.all([getTags(), getCategories()]);
+// Layout always forwards this slot, so `Astro.slots.has` is true on every page; only a
+// page that actually puts something in it (the post TOC) should swap out the list cards.
+const sticky = Astro.slots.has('sticky') ? (await Astro.slots.render('sticky')).trim() : '';
+const hasSticky = sticky !== '';
+
+const recent = [...posts].sort((a, b) => b.data.updated.getTime() - a.data.updated.getTime()).slice(0, aside.recentPosts);
+
+const [avatar, ...thumbs] = await Promise.all([
+  optimize(site.avatar, imagePresets.avatar),
+  ...recent.map((p) => optimize(coverOf(p), imagePresets.thumb)),
+]);
+
+// top-level categories, most posts first
+const topCats = cats
+  .filter((c) => c.path.length === 1)
+  .sort((a, b) => b.posts.length - a.posts.length || a.name.localeCompare(b.name))
+  .slice(0, aside.categories);
+
+// tag cloud: size & colour by frequency (deterministic, unlike Butterfly's random order)
+const maxCount = Math.max(...tags.map((t) => t.posts.length));
+const minCount = Math.min(...tags.map((t) => t.posts.length));
+const cloud = [...tags]
+  .sort((a, b) => b.posts.length - a.posts.length || a.name.localeCompare(b.name))
+  .slice(0, aside.tags)
+  .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  .map((t) => {
+    const ratio = maxCount === minCount ? 0.5 : (t.posts.length - minCount) / (maxCount - minCount);
+    return { ...t, size: (1.15 + ratio * 0.35).toFixed(2), mix: Math.round(ratio * 100) };
+  });
+
+const months = groupByMonth(posts).slice(0, aside.archives);
+const MONTH_NAMES = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'];
+
+const totalWords = posts.reduce((n, p) => n + countWords(p.body ?? '').words, 0);
+const runDays = Math.floor((Date.now() - new Date(`${site.publishDate}T00:00:00+08:00`).getTime()) / 86_400_000);
+const buildDate = formatDate(new Date());
+---
+
+<aside id="aside-content" aria-label="侧栏">
+  <section class="card card-widget card-info">
+    <div class="avatar-img">
+      <img src={avatar.src} srcset={avatar.srcset} alt={site.author} width="110" height="110" decoding="async" />
+    </div>
+    <div class="author-info__name">{site.author}</div>
+    <div class="author-info__description">{site.description}</div>
+    <div class="card-info-data">
+      <a href={url('/archives/')}><span class="headline">文章</span><span class="length-num">{posts.length}</span></a>
+      <a href={url('/tags/')}><span class="headline">标签</span><span class="length-num">{tags.length}</span></a>
+      <a href={url('/categories/')}><span class="headline">分类</span><span class="length-num">{cats.length}</span></a>
+    </div>
+    <a class="btn follow-btn" href={aside.followMe.href} target="_blank" rel="noopener">
+      <Icon name={aside.followMe.icon} />
+      <span>{aside.followMe.text}</span>
+    </a>
+    <div class="card-info-social-icons">
+      {
+        social.map((s) => (
+          <a class="social-icon" href={url(s.href)} title={s.label} aria-label={s.label} target={s.href.startsWith('http') ? '_blank' : undefined} rel="noopener" style={`--c:${s.color}`}>
+            <Icon name={s.icon} />
+          </a>
+        ))
+      }
+    </div>
+  </section>
+
+  <section class="card card-widget card-announcement">
+    <h2 class="item-headline"><Icon name="fa6-solid:bullhorn" class="announce-icon" /><span>公告</span></h2>
+    <div class="announcement_content" set:html={aside.announcement} />
+  </section>
+
+  <slot name="top" />
+
+  <div class="sticky_layout">
+    {hasSticky && <Fragment set:html={sticky} />}
+
+    {clock.enable && <ClockWidget />}
+
+    <section class="card card-widget card-recent-post">
+      <h2 class="item-headline"><Icon name="fa6-solid:clock-rotate-left" /><span>最新文章</span></h2>
+      <ul class="aside-list">
+        {
+          recent.map((p, i) => (
+            <li class="aside-list-item">
+              <a class="thumbnail" href={postUrl(p)} title={p.data.title} tabindex="-1" aria-hidden="true">
+                <img src={thumbs[i].src} srcset={thumbs[i].srcset} alt="" loading="lazy" decoding="async" width="64" height="64" />
+              </a>
+              <div class="content">
+                <a class="title line-clamp-2" href={postUrl(p)} title={p.data.title}>{p.data.title}</a>
+                <time datetime={p.data.updated.toISOString()}>{formatDate(p.data.updated)}</time>
+              </div>
+            </li>
+          ))
+        }
+      </ul>
+    </section>
+
+    {comments.twikoo.envId && (
+    <section class="card card-widget card-newest-comments" data-newest-comments data-twikoo-env={comments.twikoo.envId}>
+      <h2 class="item-headline"><Icon name="fa6-solid:comment-dots" /><span>最新评论</span></h2>
+      <ul class="aside-list" aria-live="polite"><li class="aside-list-empty">正在加载…</li></ul>
+    </section>
+    )}
+
+    {
+      !hasSticky && (
+        <>
+          <section class="card card-widget card-categories">
+            <h2 class="item-headline"><Icon name="fa6-solid:folder-open" /><span>分类</span></h2>
+            <ul class="card-list">
+              {topCats.map((c) => (
+                <li>
+                  <a href={c.url}><span class="card-list-name">{c.name}</span><span class="card-list-count">{c.posts.length}</span></a>
+                </li>
+              ))}
+            </ul>
+            {cats.length > aside.categories && <a class="card-more" href={url('/categories/')}>查看更多</a>}
+          </section>
+
+          <section class="card card-widget card-tags">
+            <h2 class="item-headline"><Icon name="fa6-solid:tags" /><span>标签</span></h2>
+            <div class="card-tag-cloud">
+              {cloud.map((t) => (
+                <a href={t.url} style={`font-size:${t.size}em;color:color-mix(in oklch, var(--theme-pink) ${t.mix}%, var(--theme-color))`} title={`${t.name}（${t.posts.length}）`}>
+                  {t.name}
+                </a>
+              ))}
+            </div>
+          </section>
+
+          <section class="card card-widget card-archives">
+            <h2 class="item-headline"><Icon name="fa6-solid:box-archive" /><span>归档</span></h2>
+            <ul class="card-list">
+              {months.map((m) => (
+                <li>
+                  <a href={url(`/archives/${m.year}/${m.month}/`)}>
+                    <span class="card-list-name">{`${MONTH_NAMES[Number(m.month) - 1]} ${m.year}`}</span>
+                    <span class="card-list-count">{m.posts.length}</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <a class="card-more" href={url('/archives/')}>查看更多</a>
+          </section>
+
+          <section class="card card-widget card-webinfo">
+            <h2 class="item-headline"><Icon name="fa6-solid:chart-line" /><span>网站资讯</span></h2>
+            <dl class="webinfo">
+              <div><dt>文章数目</dt><dd>{posts.length}</dd></div>
+              <div><dt>已运行时间</dt><dd>{runDays} 天</dd></div>
+              <div><dt>本站总字数</dt><dd>{formatCount(totalWords)}</dd></div>
+              {features.busuanzi && <div><dt>本站访客数</dt><dd><span data-bsz="site_uv" aria-busy="true">…</span></dd></div>}
+              {features.busuanzi && <div><dt>本站总访问量</dt><dd><span data-bsz="site_pv" aria-busy="true">…</span></dd></div>}
+              <div><dt>最后更新时间</dt><dd><time datetime={buildDate}>{buildDate}</time></dd></div>
+            </dl>
+          </section>
+        </>
+      )
+    }
+  </div>
+</aside>
+
+<style>
+  #aside-content {
+    flex: none;
+    width: 26%;
+    padding-left: 15px;
+  }
+  @media (max-width: 900px) {
+    #aside-content {
+      width: 100%;
+      padding-left: 0;
+      margin-top: 20px;
+    }
+  }
+  .sticky_layout {
+    position: sticky;
+    top: 20px;
+    transition: top 0.3s;
+  }
+  :global(html.nav-fixed.nav-visible) .sticky_layout {
+    top: calc(var(--nav-height) + 20px);
+  }
+  @media (max-width: 900px) {
+    .sticky_layout { position: static; }
+  }
+  .card-announcement :global(.announce-icon) {
+    color: red;
+    animation: announce 1.2s ease-in-out infinite;
+  }
+  @keyframes announce {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+  }
+
+  /* author */
+  .card-info {
+    text-align: center;
+  }
+  .avatar-img {
+    width: 110px;
+    height: 110px;
+    margin: 0 auto;
+    overflow: hidden;
+    border-radius: 50%;
+  }
+  .avatar-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: filter 375ms ease-in 0.2s, transform 0.3s;
+  }
+  .avatar-img img:hover {
+    transform: rotate(360deg);
+  }
+  .author-info__name {
+    font-weight: 500;
+    font-size: 1.57em;
+  }
+  .author-info__description {
+    margin-top: -0.42em;
+  }
+  .card-info-data {
+    display: flex;
+    margin: 14px 0 4px;
+  }
+  .card-info-data a {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.6;
+  }
+  .card-info-data .headline {
+    font-size: 0.95em;
+  }
+  .card-info-data .length-num {
+    font-size: 1.4em;
+    margin-top: -0.32em;
+  }
+  .follow-btn {
+    display: flex;
+    margin-top: 14px;
+  }
+  .follow-btn :global(svg) { width: 1.1em; height: 1.1em; }
+  .card-info-social-icons {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    margin: 6px 0 -6px;
+  }
+  .social-icon {
+    display: inline-flex;
+    padding: 6px;
+    color: var(--c);
+    font-size: 1.4em;
+  }
+  .social-icon :global(svg) {
+    width: 1em;
+    height: 1em;
+    transition: transform 0.3s;
+  }
+  .social-icon:hover :global(svg) {
+    transform: rotate(360deg);
+  }
+
+  .announcement_content {
+    line-height: 2;
+  }
+
+  /* lists */
+  .aside-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .aside-list-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 0;
+  }
+  .aside-list-item:not(:last-child) {
+    border-bottom: 1px dashed rgba(0, 0, 0, 0.05);
+  }
+  .thumbnail {
+    flex: none;
+    width: 4.2em;
+    height: 4.2em;
+    overflow: hidden;
+    border-radius: 6px;
+  }
+  .thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.6s;
+  }
+  .thumbnail:hover img {
+    transform: scale(1.1);
+  }
+  .aside-list-item .content {
+    flex: 1;
+    min-width: 0;
+    padding-left: 10px;
+    line-height: 1.5;
+  }
+  .aside-list-item .title {
+    font-size: 0.95em;
+  }
+  .aside-list-item time {
+    display: block;
+    font-size: 0.85em;
+    color: var(--muted);
+  }
+  /* injected by the newest-comments script */
+  .card-newest-comments :global(.aside-list-item) {
+    display: flex;
+    align-items: center;
+    padding: 6px 0;
+  }
+  .card-newest-comments :global(.thumbnail) {
+    flex: none;
+    width: 3.6em;
+    height: 3.6em;
+    overflow: hidden;
+    border-radius: 50%;
+  }
+  .card-newest-comments :global(.thumbnail img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .card-newest-comments :global(.content) {
+    flex: 1;
+    min-width: 0;
+    padding-left: 10px;
+    line-height: 1.5;
+  }
+  .card-newest-comments :global(.comment) {
+    font-size: 0.95em;
+  }
+  .card-newest-comments :global(.name) {
+    font-size: 0.85em;
+    color: var(--muted);
+  }
+  .card-newest-comments :global(.name time) {
+    display: inline;
+  }
+  .aside-list-empty {
+    text-align: center;
+    color: var(--muted);
+  }
+
+  .card-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .card-list a {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 3px 10px;
+    margin: 2px -10px;
+    border-radius: 6px;
+    transition: all 0.2s;
+  }
+  .card-list a:hover {
+    padding-left: 15px;
+    background: var(--text-bg-hover);
+    color: #fff;
+  }
+  .card-list-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .card-more {
+    display: block;
+    margin-top: 6px;
+    text-align: center;
+    font-size: 0.9em;
+    color: var(--muted);
+  }
+
+  .card-tag-cloud {
+    line-height: 1.8;
+  }
+  .card-tag-cloud a {
+    display: inline-block;
+    padding: 0 4px;
+  }
+  .card-tag-cloud a:hover {
+    color: var(--theme-color) !important;
+  }
+
+  .webinfo {
+    margin: 0;
+  }
+  .webinfo > div {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+  }
+  .webinfo dd {
+    margin: 0;
+  }
+</style>

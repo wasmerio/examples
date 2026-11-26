@@ -1,0 +1,131 @@
+---
+import { Icon } from 'astro-icon/components';
+import type { MarkdownHeading } from 'astro';
+
+interface Props {
+  headings: MarkdownHeading[];
+}
+type Node = MarkdownHeading & { children: Node[] };
+
+const { headings } = Astro.props;
+const minDepth = Math.min(...headings.map((h) => h.depth));
+
+// build a tree so nested levels can collapse/expand (Butterfly toc.expand = false)
+const roots: Node[] = [];
+const stack: Node[] = [];
+for (const h of headings.filter((h) => h.depth <= minDepth + 3)) {
+  const node: Node = { ...h, children: [] };
+  while (stack.length && stack[stack.length - 1].depth >= h.depth) stack.pop();
+  (stack.length ? stack[stack.length - 1].children : roots).push(node);
+  stack.push(node);
+}
+---
+
+{
+  headings.length > 0 && (
+    <section class="card card-widget card-toc" id="card-toc" data-toc aria-label="文章目录">
+      <h2 class="item-headline">
+        <Icon name="fa6-solid:bars-staggered" />
+        <span>目录</span>
+        <span class="toc-percentage" data-toc-percent aria-label="阅读进度" />
+      </h2>
+      <nav class="toc-content">
+        {(function render(nodes: Node[], prefix: string): any {
+          return (
+            <ol class="toc">
+              {nodes.map((n, i) => {
+                const num = `${prefix}${i + 1}.`;
+                return (
+                  <li class={`toc-item toc-level-${n.depth}`}>
+                    <a class="toc-link" href={`#${n.slug}`}>
+                      <span class="toc-number">{num}</span> <span class="toc-text">{n.text}</span>
+                    </a>
+                    {n.children.length > 0 && render(n.children, num)}
+                  </li>
+                );
+              })}
+            </ol>
+          );
+        })(roots, '')}
+      </nav>
+    </section>
+  )
+}
+
+<style>
+  .card-toc {
+    padding-right: 4px;
+  }
+  .toc-percentage {
+    margin-left: auto;
+    padding-right: 20px;
+    font-style: italic;
+    font-size: 1.4em;
+    color: var(--muted);
+  }
+  .toc-percentage:not(:empty)::after {
+    content: '';
+  }
+  .toc-content {
+    max-height: calc(100vh - 160px);
+    overflow-y: auto;
+    padding-right: 20px;
+    overscroll-behavior: contain;
+  }
+  .toc-content :global(ol) {
+    margin: 0;
+    padding-left: 0.4em;
+    list-style: none;
+  }
+  .toc-content > :global(ol) {
+    padding-left: 0;
+  }
+  /* collapse nested levels except along the active path */
+  .toc-content :global(ol ol) {
+    display: none;
+  }
+  .toc-content :global(li.expand > ol) {
+    display: block;
+  }
+  .toc-content :global(.toc-link) {
+    display: block;
+    padding: 0 6px;
+    margin: 2px 0;
+    border-radius: 6px;
+    line-height: 1.8;
+    color: var(--toc-link-color);
+    border-left: 0;
+    transition: all 0.2s;
+  }
+  .toc-content :global(.toc-link:hover) {
+    color: var(--theme-color);
+  }
+  .toc-content :global(.toc-link.active) {
+    background: var(--theme-color);
+    color: #fff;
+  }
+  @media (max-width: 900px) {
+    /* bottom sheet opened from the rightside button */
+    .card-toc {
+      position: fixed;
+      right: calc(52px + env(safe-area-inset-right));
+      bottom: calc(24px + env(safe-area-inset-bottom));
+      z-index: 100;
+      width: min(300px, 80vw);
+      max-height: 70vh;
+      margin: 0;
+      background: var(--card-solid-bg);
+      transform: scale(0);
+      transform-origin: right bottom;
+      opacity: 0;
+      transition: transform 0.25s var(--ease), opacity 0.25s;
+    }
+    .toc-content {
+      max-height: calc(70vh - 80px);
+    }
+    :global(html.toc-open) .card-toc {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+</style>

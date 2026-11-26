@@ -1,0 +1,38 @@
+---
+import { url } from '@/lib/url';
+import type { GetStaticPaths } from 'astro';
+import Layout from '@/theme/Layout.astro';
+import ArticleSort from '@/theme/components/ArticleSort.astro';
+import Comments from '@/theme/components/Comments.astro';
+import Pagination from '@/theme/components/Pagination.astro';
+import { getPosts, groupByYear, groupByMonth, paginate, type Post } from '@/lib/posts';
+import { pagination } from '@/config';
+
+/** Same URL set as hexo-generator-archive: /archives/, /YYYY/, /YYYY/MM/, each paginated. */
+export const getStaticPaths = (async () => {
+  const posts = await getPosts();
+  const routes: { params: { path: string | undefined }; props: { base: string; label: string; all: Post[]; page: number; total: number; items: Post[] } }[] = [];
+
+  const add = (base: string, label: string, all: Post[]) => {
+    for (const p of paginate(all, pagination.list)) {
+      const sub = `${base}${p.page > 1 ? `page/${p.page}/` : ''}`.replace(/^\/archives\/|\/$/g, '');
+      routes.push({ params: { path: sub || undefined }, props: { base, label, all, page: p.page, total: p.total, items: p.items } });
+    }
+  };
+
+  add('/archives/', '文章总览', posts);
+  for (const y of groupByYear(posts)) add(`/archives/${y.year}/`, y.year, y.posts);
+  for (const m of groupByMonth(posts)) add(`/archives/${m.year}/${m.month}/`, `${m.year}-${m.month}`, m.posts);
+  return routes;
+}) satisfies GetStaticPaths;
+
+const { base, label, all, page, total, items } = Astro.props;
+---
+
+<Layout title="归档" header="page">
+  <div class="card page-card">
+    <ArticleSort title={label} count={all.length} posts={items} />
+    <Pagination base={url(base)} current={page} total={total} />
+    {base === '/archives/' && page === 1 && <Comments path={url(base)} />}
+  </div>
+</Layout>

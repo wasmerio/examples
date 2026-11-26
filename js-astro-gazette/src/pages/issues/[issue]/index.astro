@@ -1,0 +1,112 @@
+---
+// Screen C: one issue. The cover again, small, then the whole contents grouped by department,
+// then the issues either side of it.
+import { Image } from 'astro:assets';
+import Base from '../../../layouts/Base.astro';
+import LeaderContents from '../../../components/issue/LeaderContents.astro';
+import { fmt, useT } from '../../../i18n/t';
+import {
+  formatDate,
+  getIssueArticles,
+  getIssues,
+  issueHref,
+  pad,
+  type Article,
+  type Issue,
+} from '../../../lib/content';
+
+export async function getStaticPaths() {
+  const issues = await getIssues(); // newest first, so the older issue is the next entry
+  return issues.map((issue, i) => ({
+    params: { issue: String(issue.data.number) },
+    props: { issue, older: issues[i + 1], newer: issues[i - 1] },
+  }));
+}
+
+const { issue, older, newer } = Astro.props as {
+  issue: Issue;
+  older?: Issue;
+  newer?: Issue;
+};
+const t = useT();
+const text = issue.data;
+const articles = await getIssueArticles(issue);
+
+// Departments in the order the contents reaches them, not in schema order.
+const groups = new Map<Article['data']['department'], Article[]>();
+for (const article of articles)
+  groups.set(article.data.department, [...(groups.get(article.data.department) ?? []), article]);
+---
+
+<Base title={fmt(t.issueNumber, { n: pad(issue.data.number) })} description={text.coverLine}>
+  <div class="max-w-wide mx-auto px-4">
+    <header class="border-foreground border-b-[3px] pt-8 pb-8 sm:pt-12">
+      <div class="flex flex-wrap items-start gap-6 sm:gap-10">
+        <div class="w-full sm:w-64">
+          {issue.data.coverImage ? (
+            <Image
+              src={issue.data.coverImage}
+              alt={issue.data.coverImageAlt!}
+              widths={[320, 640]}
+              sizes="(min-width: 40rem) 16rem, 100vw"
+              class="w-full object-cover"
+            />
+          ) : (
+            <p class="bg-primary text-on-primary font-cover p-5 text-xl leading-tight font-bold italic">
+              {text.coverLine}
+            </p>
+          )}
+        </div>
+        <div class="max-w-content flex-1">
+          <p class="font-ui text-muted text-sm tabular-nums">
+            {formatDate(issue.data.date)} &middot; {fmt(t.pieces, { n: articles.length })}
+          </p>
+          <h1 class="font-cover mt-1 text-[clamp(2rem,9vw,3.5rem)] leading-[0.95] font-bold">
+            {fmt(t.issueNumber, { n: pad(issue.data.number) })}
+          </h1>
+          {issue.data.coverImage && (
+            <p class="font-cover mt-3 text-xl leading-tight font-bold italic">{text.coverLine}</p>
+          )}
+          {text.editorsNote && (
+            <p class="font-prose mt-4 text-sm leading-relaxed">{text.editorsNote}</p>
+          )}
+        </div>
+      </div>
+    </header>
+
+    <section class="mt-10 sm:mt-14" aria-label={t.contents}>
+      {[...groups].map(([department, list]) => (
+        <div class="mt-8 first:mt-0">
+          <h2 class="font-ui mb-3 text-sm font-medium">
+            {t.departments[department]}
+            <span class="text-muted tabular-nums"> ({list.length})</span>
+          </h2>
+          <LeaderContents issue={issue} articles={list} showDepartment={false} />
+        </div>
+      ))}
+    </section>
+
+    <nav
+      class="font-ui border-foreground mt-12 flex items-baseline justify-between gap-4 border-t pt-4 text-sm"
+      aria-label={t.issuesNav}
+    >
+      {older ? (
+        <a class="hover:text-primary no-underline" href={issueHref(older)}>
+          &larr; {fmt(t.issueNumber, { n: pad(older.data.number) })}
+        </a>
+      ) : (
+        <span class="text-muted">{t.earliestIssue}</span>
+      )}
+      <a class="hover:text-primary no-underline" href="/issues">
+        {t.allIssues}
+      </a>
+      {newer ? (
+        <a class="hover:text-primary no-underline" href={issueHref(newer)}>
+          {fmt(t.issueNumber, { n: pad(newer.data.number) })} &rarr;
+        </a>
+      ) : (
+        <span class="text-muted">{t.latestIssue}</span>
+      )}
+    </nav>
+  </div>
+</Base>

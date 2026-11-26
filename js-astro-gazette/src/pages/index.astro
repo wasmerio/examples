@@ -1,0 +1,134 @@
+---
+// Screen A: the cover. This issue only -- the nameplate, the cover, the contents, the editor's
+// note, and the last few issues as rows. Not a front page to scan.
+import { Image } from 'astro:assets';
+import Base from '../layouts/Base.astro';
+import LeaderContents from '../components/issue/LeaderContents.astro';
+import { site } from '../config';
+import { fmt, useT } from '../i18n/t';
+import {
+  articleHref,
+  byline,
+  formatDate,
+  getIssueArticles,
+  getIssues,
+  issueHref,
+  pad,
+} from '../lib/content';
+
+const t = useT();
+const issues = await getIssues();
+const [current, ...past] = issues;
+if (!current) throw new Error('No published issue. Add one to src/content/issues.json.');
+
+const cover = current.data;
+const articles = await getIssueArticles(current);
+const lead = articles.find((a) => a.id === current.data.coverArticle.id);
+const leadBy = lead ? await byline(lead) : '';
+const recent = await Promise.all(
+  past.slice(0, 3).map(async (issue) => ({
+    issue,
+    count: (await getIssueArticles(issue)).length,
+    coverLine: issue.data.coverLine,
+  })),
+);
+---
+
+<Base description={site.description} nameplate={false}>
+  <div class="max-w-wide mx-auto px-4">
+    <!-- 1. Nameplate -->
+    <div class="border-foreground border-b-[3px] pt-8 sm:pt-12">
+      <p class="font-ui text-muted flex justify-between text-xs tabular-nums">
+        <span>{fmt(t.issueNumber, { n: pad(current.data.number) })}</span>
+        <span>{formatDate(current.data.date)}</span>
+      </p>
+      <h1 class="font-cover mt-1 text-[clamp(2.5rem,13vw,7rem)] leading-[0.9] font-bold">
+        {site.name}
+      </h1>
+    </div>
+
+    <!-- 2. Cover: the image if there is one, the spot colour if there is not -->
+    <section class="mt-8 sm:mt-10" aria-labelledby="cover-line">
+      {current.data.coverImage ? (
+        <Image
+          src={current.data.coverImage}
+          alt={current.data.coverImageAlt!}
+          widths={[640, 960, 1280]}
+          sizes="(min-width: 72rem) 68rem, 100vw"
+          class="w-full object-cover"
+        />
+      ) : null}
+      <div
+        class:list={[
+          'p-6 sm:p-12',
+          current.data.coverImage ? 'bg-surface' : 'bg-primary text-on-primary',
+        ]}
+      >
+        <p class="font-ui text-sm font-medium opacity-80">{t.onTheCover}</p>
+        <p
+          id="cover-line"
+          class="font-cover mt-2 max-w-[20ch] text-3xl leading-tight font-bold italic sm:text-5xl"
+        >
+          {cover.coverLine}
+        </p>
+        {lead && (
+          <p class="font-ui mt-6 text-sm">
+            <a href={articleHref(current, lead)}>{lead.data.title}</a>
+            <span class="opacity-80"> {fmt(t.by, { name: leadBy })}</span>
+          </p>
+        )}
+      </div>
+    </section>
+
+    <!-- 3. The contents -->
+    <section class="mt-12 sm:mt-16" aria-labelledby="contents-heading">
+      <h2 id="contents-heading" class="font-ui mb-3 text-sm font-medium">
+        {t.inThisIssue} <span class="text-muted tabular-nums">({articles.length})</span>
+      </h2>
+      <LeaderContents issue={current} articles={articles} />
+    </section>
+
+    <!-- 4. The editor's note, when the issue carries one -->
+    {cover.editorsNote && (
+      <section class="max-w-content mt-12 sm:mt-16" aria-labelledby="note-heading">
+        <h2 id="note-heading" class="font-ui mb-3 text-sm font-medium">
+          {t.fromTheEditor}
+        </h2>
+        <p class="font-prose border-foreground border-t pt-4">{cover.editorsNote}</p>
+        <p class="font-ui text-muted mt-3 text-sm">{site.author}</p>
+      </section>
+    )}
+
+    <!-- 5. Back issues as rows. Never three cards side by side. -->
+    {recent.length > 0 && (
+      <section class="mt-12 sm:mt-16" aria-labelledby="back-heading">
+        <div class="mb-3 flex items-baseline justify-between gap-4">
+          <h2 id="back-heading" class="font-ui text-sm font-medium">
+            {t.backIssues}
+          </h2>
+          <a class="font-ui hover:text-primary text-sm no-underline" href="/issues">
+            {t.allIssues} &rarr;
+          </a>
+        </div>
+        <ol class="border-foreground border-t">
+          {recent.map(({ issue, count, coverLine }) => (
+            <li class="border-border border-b">
+              <a
+                class="flex flex-wrap items-baseline gap-x-4 gap-y-1 py-4 no-underline"
+                href={issueHref(issue)}
+              >
+                <span class="font-ui text-primary w-16 shrink-0 text-sm tabular-nums">
+                  {fmt(t.issueNumber, { n: pad(issue.data.number) })}
+                </span>
+                <span class="font-cover text-lg leading-tight font-bold">{coverLine}</span>
+                <span class="font-ui text-muted shrink-0 text-sm tabular-nums max-sm:basis-full sm:ms-auto">
+                  {fmt(t.pieces, { n: count })} &middot; {formatDate(issue.data.date)}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </section>
+    )}
+  </div>
+</Base>

@@ -1,0 +1,178 @@
+---
+// Screen B: one piece. The contents page is dense; inside a feature the page opens up --
+// one column, 65ch, and nothing in the margins but the folio.
+import { Image } from 'astro:assets';
+import { render } from 'astro:content';
+import Base from '../../../layouts/Base.astro';
+import LeaderContents from '../../../components/issue/LeaderContents.astro';
+import { archive, issues as issueSettings, site } from '../../../config';
+import { fmt, useT } from '../../../i18n/t';
+import {
+  byline,
+  formatDate,
+  getAuthors,
+  getIssueArticles,
+  getIssues,
+  issueHref,
+  pad,
+  readingTime,
+} from '../../../lib/content';
+
+export async function getStaticPaths() {
+  const paths = [];
+  for (const issue of await getIssues()) {
+    const articles = await getIssueArticles(issue);
+    for (const article of articles)
+      paths.push({
+        params: { issue: String(issue.data.number), slug: article.id },
+        props: { issue, article, articles },
+      });
+  }
+  return paths;
+}
+
+const { issue, article, articles } = Astro.props;
+const t = useT();
+const department = t.departments[article.data.department];
+const { Content } = await render(article);
+const authors = await getAuthors(article);
+const by = await byline(article);
+// The pieces that follow this one, wrapping round to the front of the issue.
+const at = articles.indexOf(article);
+const others = [...articles.slice(at + 1), ...articles.slice(0, at)].slice(0, 4);
+const dropCap = article.data.dropCap || issueSettings.dropCap;
+// Joined into one string: Astro drops the whitespace between an expression and the next tag,
+// so separators written as markup lose the space in front of them.
+const meta = [
+  formatDate(issue.data.date),
+  archive.showReadingTime && fmt(t.minRead, { n: readingTime(article) }),
+]
+  .filter(Boolean)
+  .join(' \u00b7 ');
+const folio = [
+  fmt(t.issueNumber, { n: pad(issue.data.number) }),
+  department,
+  `${pad(article.data.order)} / ${pad(articles.length)}`,
+].join(' \u00b7 ');
+
+const jsonLd = [
+  {
+    '@type': 'Article',
+    headline: article.data.title,
+    description: article.data.subtitle,
+    datePublished: issue.data.date.toISOString(),
+    author: authors.map((a) => ({ '@type': 'Person', name: a.data.name })),
+    isPartOf: { '@type': 'PublicationIssue', issueNumber: issue.data.number },
+  },
+];
+---
+
+<Base
+  title={article.data.title}
+  description={article.data.subtitle ?? site.description}
+  type="article"
+  jsonLd={jsonLd}
+>
+  <div class="max-w-wide mx-auto px-4">
+    <article>
+      <!-- 2. Kicker, title, deck, byline -->
+      <header class="max-w-content pt-8 sm:pt-12">
+        <p class="font-ui text-sm font-medium">
+          <!-- Underlined on purpose: a link inside a line of text may not rely on colour alone (WCAG 1.4.1). -->
+          <a class="text-primary hover:text-primary-hover" href={issueHref(issue)}>
+            {fmt(t.issueNumber, { n: pad(issue.data.number) })}
+          </a>{' '}
+          <span class="text-muted">&middot; {department}</span>
+        </p>
+        <h1 class="font-cover mt-3 text-[clamp(2rem,8vw,3.5rem)] leading-[1.02] font-bold">
+          {article.data.title}
+        </h1>
+        {article.data.subtitle && (
+          <p class="font-prose text-muted mt-4 text-lg leading-snug">{article.data.subtitle}</p>
+        )}
+        <p class="font-ui border-border mt-6 border-t pt-3 text-sm tabular-nums">
+          {by} <span class="text-muted">&middot; {meta}</span>
+        </p>
+      </header>
+
+      <!-- 3. The opener, when the piece carries one -->
+      {article.data.image && (
+        <figure class="mt-8 sm:mt-10">
+          <Image
+            src={article.data.image}
+            alt={article.data.imageAlt!}
+            widths={[640, 960, 1280]}
+            sizes="(min-width: 72rem) 68rem, 100vw"
+            class="w-full object-cover"
+          />
+          {article.data.imageCredit && (
+            <figcaption class="font-ui text-muted mt-2 text-xs">
+              {article.data.imageCredit}
+            </figcaption>
+          )}
+        </figure>
+      )}
+
+      <!--
+        The pull quote, set as an epigraph above the body. The editor chooses the line;
+        Note: it is not spliced into the middle of the text, which would mean
+        cutting the rendered markdown in two.
+      -->
+      {article.data.pullQuote && (
+        <blockquote class="max-w-content border-foreground mt-10 border-y py-6">
+          <p class="font-cover text-2xl leading-tight font-bold italic sm:text-3xl">
+            {article.data.pullQuote}
+          </p>
+        </blockquote>
+      )}
+
+      <!-- 4. The body -->
+      <div class:list={['article-body max-w-content mt-10', dropCap && 'article-body--drop-cap']}>
+        <Content />
+      </div>
+
+      {authors.some((a) => a.data.bio) && (
+        <footer class="max-w-content border-border mt-12 space-y-4 border-t pt-4">
+          {authors.map((author) =>
+            author.data.bio ? (
+              <div class="flex items-start gap-4">
+                {author.data.image && (
+                  <Image
+                    src={author.data.image}
+                    alt=""
+                    width={48}
+                    height={48}
+                    class="size-12 shrink-0 object-cover"
+                  />
+                )}
+                <p class="font-ui text-muted text-sm">{author.data.bio}</p>
+              </div>
+            ) : null,
+          )}
+        </footer>
+      )}
+
+      <!-- 5. The folio -->
+      {issueSettings.showFolio && (
+        <p class="font-ui text-muted max-w-content border-foreground mt-12 border-t-[3px] pt-3 text-sm tabular-nums">
+          {folio}
+        </p>
+      )}
+    </article>
+
+    <!-- 6. The rest of the issue, in contents rows -->
+    {others.length > 0 && (
+      <section class="mt-12 sm:mt-16" aria-labelledby="also-heading">
+        <div class="mb-3 flex items-baseline justify-between gap-4">
+          <h2 id="also-heading" class="font-ui text-sm font-medium">
+            {t.alsoInThisIssue}
+          </h2>
+          <a class="font-ui hover:text-primary text-sm no-underline" href={issueHref(issue)}>
+            {t.fullContents} &rarr;
+          </a>
+        </div>
+        <LeaderContents issue={issue} articles={others} />
+      </section>
+    )}
+  </div>
+</Base>

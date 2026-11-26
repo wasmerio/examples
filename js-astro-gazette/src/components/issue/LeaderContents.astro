@@ -1,0 +1,81 @@
+---
+// The signature: a contents page as a list of rows. The number hangs in the left margin and a
+// dotted leader joins the title to the byline. Reused by the home page, the issue page, the
+// archive and the foot of an article. `contents` in src/config.ts turns the dots and the
+// numbers off; the .leaders rules live in src/styles/global.css.
+import { getEntry } from 'astro:content';
+import { contents } from '../../config';
+import { fmt, useT } from '../../i18n/t';
+import { articleHref, byline, issueHref, pad, type Article, type Issue } from '../../lib/content';
+
+interface Props {
+  /**
+   * The issue these rows belong to. Leave it out on a list that spans issues (a contributor,
+   * a department, the related pieces): each row then prints its issue number in the margin
+   * instead of its position in the contents.
+   */
+  issue?: Issue;
+  articles: Article[];
+  /** Off where the rows are already grouped under a department heading. */
+  showDepartment?: boolean;
+  /** Off on a contributor's own page, where every row would repeat the same name. */
+  showByline?: boolean;
+}
+const { issue, articles, showDepartment = true, showByline = true } = Astro.props;
+const t = useT();
+const rows = await Promise.all(
+  articles.map(async (article) => {
+    const home = issue ?? (await getEntry(article.data.issue))!;
+    return {
+      article,
+      home,
+      trail: [
+        showByline && (await byline(article)),
+        showDepartment && t.departments[article.data.department],
+      ]
+        .filter(Boolean)
+        .join(' · '),
+    };
+  }),
+);
+---
+
+<ol class="border-foreground border-t">
+  {rows.map(({ article, home, trail }) => (
+    <li class="leaders border-border flex-wrap border-b py-3">
+      {contents.numbering && (
+        <span class="font-ui text-muted w-8 shrink-0 text-sm tabular-nums">
+          {issue ? (
+            pad(article.data.order)
+          ) : (
+            <a
+              class="hover:text-primary no-underline"
+              href={issueHref(home)}
+              aria-label={fmt(t.issueNumber, { n: pad(home.data.number) })}
+            >
+              {pad(home.data.number)}
+            </a>
+          )}
+        </span>
+      )}
+      <a
+        class="font-cover hover:text-primary text-lg leading-tight font-bold no-underline sm:text-xl"
+        href={articleHref(home, article)}
+      >
+        {article.data.title}
+      </a>
+      {contents.style === 'leaders' && (
+        <span class="leaders__fill max-sm:hidden" aria-hidden="true" />
+      )}
+      <span
+        class:list={[
+          'font-ui text-muted ms-auto shrink-0 text-sm',
+          contents.numbering && 'max-sm:ps-10',
+          'max-sm:basis-full',
+        ]}
+      >
+        {trail}
+      </span>
+    </li>
+  ))}
+</ol>

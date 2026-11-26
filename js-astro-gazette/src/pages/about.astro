@@ -1,0 +1,84 @@
+---
+// The masthead page: how the magazine is put together and who writes it. A printed masthead
+// is a list of names, so this one is rows of names, not a grid of portraits.
+import { getCollection } from 'astro:content';
+import Base from '../layouts/Base.astro';
+import { site } from '../config';
+import { fmt, useT } from '../i18n/t';
+import { getIssueArticles, getIssues } from '../lib/content';
+
+const t = useT();
+const issues = await getIssues();
+// Pieces per contributor: computed here, the way the folio and the issue count are.
+const counts = new Map<string, number>();
+for (const issue of issues)
+  for (const article of await getIssueArticles(issue))
+    for (const ref of article.data.authors) counts.set(ref.id, (counts.get(ref.id) ?? 0) + 1);
+
+// The editor heads the masthead, as on a printed one; the rest follow by how much they wrote.
+const rank = (id: string, name: string) =>
+  name === site.author ? Infinity : (counts.get(id) ?? 0);
+const authors = (await getCollection('authors')).sort(
+  (a, b) => rank(b.id, b.data.name) - rank(a.id, a.data.name),
+);
+---
+
+<Base title={t.masthead} description={`Who makes ${site.name}, and how an issue is put together.`}>
+  <div class="max-w-wide mx-auto px-4">
+    <header class="border-foreground border-b-[3px] pt-8 pb-8 sm:pt-12">
+      <p class="font-ui text-muted text-xs tabular-nums">
+        {fmt(t.issuesPublished, { n: issues.length })}
+      </p>
+      <h1 class="font-cover mt-1 text-[clamp(2rem,9vw,3.5rem)] leading-[0.95] font-bold">
+        {t.masthead}
+      </h1>
+    </header>
+
+    <section class="max-w-content mt-10 sm:mt-14" aria-labelledby="about-heading">
+      <h2 id="about-heading" class="font-ui mb-3 text-sm font-medium">
+        {t.aboutTheMagazine}
+      </h2>
+      <div class="article-body border-foreground border-t pt-4">
+        <p>
+          {site.name} comes out once a week, in issues. An issue is edited as a whole: a cover, a
+          contents page, and a handful of pieces that were chosen to sit next to each other. Nothing
+          is published in between.
+        </p>
+        <p>
+          The work is reported. Writers go to the pumping station at four in the morning, to the
+          second shift at the bakery, to the lift shaft between floors, and write down what was
+          there. Pieces run long when the reporting earns it.
+        </p>
+      </div>
+    </section>
+
+    <section class="mt-12 sm:mt-16" aria-labelledby="staff-heading">
+      <h2 id="staff-heading" class="font-ui mb-3 text-sm font-medium">
+        {t.contributors} <span class="text-muted tabular-nums">({authors.length})</span>
+      </h2>
+      <ul class="border-foreground border-t">
+        {authors.map((author) => (
+          <li class="border-border flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b py-4">
+            <p class="font-cover w-full text-lg leading-tight font-bold sm:w-56">
+              {author.data.name}
+            </p>
+            <p class="font-prose max-w-content flex-1 text-sm leading-relaxed">{author.data.bio}</p>
+            <p class="font-ui text-muted shrink-0 text-sm tabular-nums sm:ms-auto">
+              {fmt(t.pieces, { n: counts.get(author.id) ?? 0 })}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    <section class="max-w-content mt-12 sm:mt-16" aria-labelledby="contact-heading">
+      <h2 id="contact-heading" class="font-ui mb-3 text-sm font-medium">
+        {t.editorial}
+      </h2>
+      <p class="font-prose border-foreground border-t pt-4">
+        Edited by {site.author}. Letters, corrections and pitches go to{' '}
+        <a href={`mailto:${site.email}`}>{site.email}</a>.
+      </p>
+    </section>
+  </div>
+</Base>

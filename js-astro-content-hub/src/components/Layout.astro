@@ -1,0 +1,109 @@
+---
+// src/components/Layout.astro
+import '../styles/global.css';
+import { defaultLocale, locales, siteName, stripBase, localizePath, withBase, type Locale } from '../lib/i18n';
+
+export interface Props {
+  title: string;
+  description?: string;
+  ogImage?: string;
+  locale?: Locale;
+  alternates?: Partial<Record<Locale, string>>;
+  productSlug?: string;
+}
+
+const { title, description, ogImage, locale = defaultLocale, alternates = {}, productSlug } = Astro.props;
+
+// Per-product theme axis: when set, <html data-product="<slug>"> lets a
+// product-themes/<slug>.css override the same color tokens. Omitted on
+// non-product pages so the site theme applies untouched.
+const htmlAttrs = {
+  ...(productSlug ? { 'data-product': productSlug } : {}),
+  // Deploy base the Pagefind bundle is served from; read by the search module
+  // at runtime (see lib/search.ts) to locate base/pagefind/pagefind.js.
+  'data-search-base': withBase('/'),
+};
+const fullTitle = title === siteName ? title : `${title} - ${siteName}`;
+const site = Astro.site?.toString().replace(/\/$/, '') ?? '';
+const abs = (p: string) => (p.startsWith('http') ? p : `${site}${p}`);
+// Canonical URL of the current page: strip the deploy base from the pathname,
+// then resolve against the configured `site` origin (which already includes
+// the base). Keeps canonical URLs correct under a sub-path deploy.
+const canonical = abs(stripBase(Astro.url.pathname));
+const xDefaultHref = alternates[defaultLocale];
+---
+
+<!doctype html>
+<html lang={locale} {...htmlAttrs}>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{fullTitle}</title>
+  <meta name="description" content={description || 'Open source exploring human perception, spatial intelligence, and wellness.'} />
+  <meta name="theme-color" content="#faf9f7" />
+
+  <!-- Set the color theme before first paint to prevent a flash of the wrong
+       theme (FOUC). Runs synchronously in <head> before <body> renders: reads
+       the user's saved choice, falling back to the OS prefers-color-scheme.
+       Also keeps <meta name="theme-color"> in sync for mobile browser UI. -->
+  <script is:inline>
+    (function () {
+      try {
+        var stored = localStorage.getItem('theme');
+        var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = stored || (prefersDark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', theme === 'dark' ? '#141413' : '#faf9f7');
+      } catch (e) { /* localStorage unavailable - default light */ }
+    })();
+  </script>
+
+  <!-- Open Graph -->
+  <meta property="og:title" content={fullTitle} />
+  <meta property="og:description" content={description || ''} />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content={siteName} />
+  {ogImage && <meta property="og:image" content={ogImage} />}
+
+  <!-- RSS feed discovery (locale-specific) -->
+  <link rel="alternate" type="application/rss+xml" title={`${siteName} - Posts`} href={abs(localizePath('/rss.xml', locale))} />
+
+  <!-- Canonical -->
+  <link rel="canonical" href={canonical} />
+
+  <!-- hreflang alternates (data-driven over `locales`) -->
+  {locales.map((l) => {
+    const href = alternates[l];
+    return href ? <link rel="alternate" hreflang={l} href={abs(href)} /> : null;
+  })}
+  {xDefaultHref && <link rel="alternate" hreflang="x-default" href={abs(xDefaultHref)} />}
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/x-icon" href={withBase('/favicon.ico')} />
+</head>
+<body>
+  <slot />
+
+  <script>
+    // Heading anchor links: inject a `#` link beside each h2/h3/h4 in .prose
+    // that has an id, so readers can deep-link to a section. Progressive
+    // enhancement - the ids already exist (heading-ids plugin); this only adds
+    // the clickable glyph. h1 (page title) is skipped.
+    document.querySelectorAll('.prose h2[id], .prose h3[id], .prose h4[id]').forEach((h) => {
+      if (h.querySelector('.heading-link')) return; // idempotent
+      const a = document.createElement('a');
+      a.className = 'heading-link';
+      a.href = `#${h.id}`;
+      a.setAttribute('aria-label', 'Link to this section');
+      a.textContent = '#';
+      h.appendChild(a);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+# Sync posts from an external project to a content hub built with the
+# astro-content-hub template.
+#
+# Place at: .github/workflows/sync-posts.yml
+#
+# Required secret in the external repo:
+#   <HUB_TOKEN_SECRET>  - a fine-grained PAT on
+#                         <HUB_REPO> with
+#                         "Contents: write" (push the sync branch) and
+#                         "Pull requests: write" (open the PR).
+#
+# Sync pushes to a dedicated branch (sync-posts-<repo>-<run>) and opens a
+# pull request against the hub's main, so a human reviews content before it
+# ships. No commit lands on main directly.
+#
+# Directory mapping:
+#   <external>/posts/   ->  <HUB_REPO>/src/content/posts/
+#
+# The posts/ tree uses the locale layout posts/<locale>/... (e.g. posts/en/hello.md,
+# posts/zh-Hans/hello.md), mirroring the hub's src/content/posts/<locale>/... exactly.
+# Keep filenames identical across locales so per-page fallback resolves.
+#
+# Why not use dmnemec/copy_file_to_another_repo_action? Its `cp -R src dest/`
+# behavior depends on whether `dest/` already exists on the hub: if it does,
+# contents are merged (correct); if not, the source dir is nested inside dest
+# (posts/posts/). We use a plain `cp -L posts/. dest/` so the copy is always
+# "contents of posts/ into dest/", regardless of hub state.
+#
+# Deleting retired content: the rsync copy only adds/overwrites; it never
+# removes hub-only files (to protect content from other projects). To retire
+# a page, delete it from posts/ here AND list it in sync-delete.list at the
+# repo root (one path per line, e.g. `posts/en/old-post.md`). If that file is
+# present, the workflow runs scripts/apply-delete-list.mjs after the copy to
+# remove the listed paths from the hub. See SKILL.md "Deleting content".
+
+name: Sync Posts to Hub
+
+on:
+  push:
+    branches: [main]
+    paths: ['posts/**']
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout external repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate content
+        run: node skills/site-content-sync/scripts/validate.mjs
+
+      - name: Sync posts/ to central hub via PR
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.<HUB_TOKEN_SECRET> }}
+          SOURCE_REPO: ${{ github.repository }}
+          HUB_REPO: <HUB_REPO>
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          HUB="${HUB_REPO}"
+          # Source repo is owner/name; sanitize the '/' for a branch name.
+          SRC=$(printf '%s' "${SOURCE_REPO}" | tr '/' '-')
+          BRANCH="sync-posts-${SRC}-${RUN_ID}-${RUN_ATTEMPT}"
+          CLONE_DIR=$(mktemp -d)
+
+          git config --global user.email 'syncbot@example.com'
+          git config --global user.name 'DocSyncBot'
+          git clone --single-branch --branch main \
+            "https://x-access-token:${API_TOKEN_GITHUB}@github.com/${HUB}.git" "$CLONE_DIR"
+
+          # Copy CONTENTS of posts/ into src/content/posts/ via rsync.
+          # rsync's `posts/` source means "the contents of posts", so this
+          # never creates src/content/posts/posts/, regardless of whether
+          # the destination dir already exists on the hub.
+          mkdir -p "$CLONE_DIR/src/content/posts"
+          rsync -a posts/ "$CLONE_DIR/src/content/posts/"
+
+          # Apply optional deletions from $GITHUB_WORKSPACE/sync-delete.list.
+          # Only `posts/...` entries are processed here; `docs/...` entries are
+          # handled by sync-docs.yml. Missing file = no-op. Runs after rsync so
+          # deletions win over the copy.
+          node skills/site-content-sync/scripts/apply-delete-list.mjs \
+            "$CLONE_DIR/src/content/posts" posts
+
+          cd "$CLONE_DIR"
+          git checkout -b "$BRANCH"
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes to sync."
+          else
+            git commit -m "posts: sync from ${SOURCE_REPO}"
+            git push -u origin "$BRANCH"
+
+            # Open a PR against the hub's main for human review.
+            # `gh` is preinstalled on GitHub-hosted runners.
+            export GH_TOKEN="${API_TOKEN_GITHUB}"
+            PR_BODY="$(printf 'Automated sync of `posts/` from `%s`.\n\nTriggered by workflow run [#%s](https://github.com/%s/actions/runs/%s).' \
+              "${SOURCE_REPO}" "${RUN_ID}" "${SOURCE_REPO}" "${RUN_ID}")"
+            gh pr create --repo "${HUB}" --base main --head "${BRANCH}" \
+              --title "posts: sync from ${SOURCE_REPO}" \
+              --body "${PR_BODY}"
+          fi

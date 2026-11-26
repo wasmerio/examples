@@ -1,0 +1,336 @@
+# New Features Plan - astro-content-hub
+
+Status: Phases 1-3 COMPLETE and merged. Phase 4 (selective) - the og:image
+meta slot landed; the remaining items are optional backlog with no active
+work. Kept only as the Phase 4 backlog reference.
+Last updated: 2026-08-04
+
+This document audits the current feature set, identifies the gaps a typical
+content/docs site should close, and proposes a prioritized roadmap. It is a
+plan only - nothing here is implemented yet. After the human confirms, we
+break it into tasks and execute one by one.
+
+---
+
+## 1. Current state audit
+
+What the hub already does well:
+
+- **Landing page** - hero, latest posts, feature cards, projects grid,
+  principles, CTA (`src/pages/index.astro`).
+- **Blog** - listing + catch-all article route, nested-dir slugs, draft filter,
+  per-post tags/author/source frontmatter.
+- **Product docs** - data-driven per product, sidebar nav with `order` sorting,
+  breadcrumb, dedicated `index` route.
+- **Product landing pages** - dynamic from the `products` array
+  (`src/config/products.ts`), no per-product route files.
+- **i18n** - `en` (default, no prefix) + `zh` (`/zh/...`), per-page fallback
+  (never a 404 on a missing translation), locale switcher, `hreflang`.
+- **Mobile UX** - hamburger nav overlay, collapsible docs sidebar.
+- **SEO basics** - `<title>`, meta description, Open Graph tags, hreflang.
+- **Markdown** - Shiki (`css-variables` theme), relative-`.md`-link rewriting at
+  build time, `.prose` shared typography.
+- **Deploy** - static output, GitHub Pages + Cloudflare Pages, base-path aware
+  (`withBase()`).
+- **Content sync** - external repos sync posts/docs via a PR-based GitHub Action.
+
+Confirmed gaps (by inspecting `dist/`):
+
+- Rendered headings have **no `id` attributes** (Sätteri does not auto-slug),
+  so TOC and anchor links are currently impossible.
+- **No `<link rel="canonical">`** on any page.
+- **No `og:image`** on the landing page (and no default social image).
+- **No** custom 404 page.
+- **No** `robots.txt`, `sitemap.xml`, or RSS/Atom feed.
+- **No dark mode** (light-only; `--color-bg-dark` exists but only as a fixed
+  dark surface for footer/accents, not a switchable theme).
+- **No** table of contents, heading anchor links, copy-code button, prev/next
+  nav, tag pages, search, reading time, or JSON-LD.
+
+### Architectural constraints (shape every feature below)
+
+1. **Static output, no UI framework.** Client-side behavior is vanilla `<script>`
+   tags, not React/Vue. Keep it that way.
+2. **Single global stylesheet** (`src/styles/global.css`) on CSS custom
+   properties. New theming (e.g. dark mode) extends the token system, not ad-hoc
+   colors.
+3. **Minimal deps.** `package.json` currently has only `astro` + `@astrojs/check`
+   + `typescript`. Adding a dependency requires explicit human authorization
+   (AGENTS.md). Several features below are designed to need **zero** new deps.
+4. **i18n route mirror.** Every new page route needs a `src/pages/zh/` twin
+   (the documented pattern). This is a real per-feature cost: a new route = 2
+   files. (404 is the exception - one locale-aware page.)
+5. **Build must stay green.** `npm run build` runs `astro check` (strict, 0
+   errors/warnings expected) then builds. Every feature must keep it green.
+
+---
+
+## 2. Gap catalog
+
+Organized by category. Each item is tagged with **Importance** (I), **Cost** (C,
+T-shirt size), **New dep?**, and the **i18n route tax** (does it add a zh/
+mirror?).
+
+### A. SEO & discoverability
+
+| # | Feature | I | C | New dep? | zh mirror? | Notes |
+|---|---------|---|---|----------|------------|-------|
+| A1 | `robots.txt` | High | XS | No | No | Static file in `public/`. Points to sitemap. |
+| A2 | Canonical URLs | High | XS | No | No | One `<link rel="canonical">` in `Layout.astro`. |
+| A3 | `sitemap.xml` | High | S | Optional | No | `@astrojs/sitemap` (1 dep, robust, base-aware) OR a custom `src/pages/sitemap.xml.ts` endpoint (0 dep). |
+| A4 | RSS feed | High | S | Optional | No | `@astrojs/rss` (1 dep) OR custom `rss.xml.ts` (0 dep). Posts already have date/description. |
+| A5 | Default OG image | Medium | S | No | No | A static `public/images/og-default.png` + `og:image` default in `Layout.astro`. |
+| A6 | JSON-LD structured data | Medium | S | No | No | `Article` schema on posts, `BreadcrumbList` on docs. |
+
+### B. Reading & content UX
+
+| # | Feature | I | C | New dep? | zh mirror? | Notes |
+|---|---------|---|---|----------|------------|-------|
+| B1 | Dark mode / theme toggle | High | M | No | No | Dark token block + toggle in Nav + no-FOUC inline script. Highest UX impact. |
+| B2 | Heading anchor IDs | High | S | No | No | Small mdast slug plugin (same pattern as `remark-rewrite-links.mjs`). Unlocks B3/B4. |
+| B3 | Table of contents (docs) | High | M | No | No | Right-rail TOC from Astro `render().headings` in `DocsLayout`. Needs B2. |
+| B4 | Heading anchor links | Medium | S | No | No | `#` link beside each heading. Needs B2. |
+| B5 | Copy-code button | High | S | No | No | Small client script on `<pre>` blocks. |
+| B6 | Prev/next nav (docs) | Medium | M | No | No | Uses existing `order`; compute prev/next from the sidebar list. |
+| B7 | Reading time | Low | S | No | No | Word-count at build time; show on post header + PostCard. |
+| B8 | Reading progress bar | Low | S | No | No | Cosmetic; thin top bar on article pages. |
+
+### C. Content discovery & navigation
+
+| # | Feature | I | C | New dep? | zh mirror? | Notes |
+|---|---------|---|---|----------|------------|-------|
+| C1 | Custom 404 page | High | S | No | No (1 page, locale-aware) | `src/pages/404.astro`, links home/posts. |
+| C2 | Tag pages `/posts/tags/[tag]` | Medium | M | No | Yes (×2) | Posts have `tags`; no browseable tag index yet. |
+| C3 | Related posts | Medium | M | No | No | By shared tags on the article page. |
+| C4 | Client-side search | High | L | Yes (Pagefind) | No | Pagefind runs as a post-build step; indexes all pages. Heaviest item. |
+| C5 | Breadcrumbs on posts | Low | S | No | No | Docs already have them; mirror on articles. |
+
+### D. Markdown / authoring
+
+| # | Feature | I | C | New dep? | zh mirror? | Notes |
+|---|---------|---|---|----------|------------|-------|
+| D1 | Admonitions/callouts | Medium | M | No | No | `> [!note]` GitHub-style via a custom mdast plugin. |
+| D2 | Image optimization | Low | M | No | No | `astro:assets` `<Image>`; affects content authoring. Lower priority (sample content). |
+
+### E. Site / ops
+
+| # | Feature | I | C | New dep? | zh mirror? | Notes |
+|---|---------|---|---|----------|------------|-------|
+| E1 | Analytics (Plausible/Umami) | Situational | XS | No | No | One script tag in `Layout`. Only if tracking is wanted. |
+| E2 | `/about` page | Low | S | No | Yes (×2) | Content page; needs copy. |
+
+---
+
+## 3. Prioritized roadmap (recommended)
+
+Phased so each phase delivers standalone value, keeps the build green, and
+minimizes new dependencies. Phases 1-2 are the highest-leverage work and need
+**zero** new deps.
+
+### Phase 1 - SEO & site essentials (zero deps, ~1 session)
+
+Goal: make the site discoverable and never show a bare 404.
+
+1. **A1 robots.txt** - `public/robots.txt` pointing to the sitemap (once A3
+   lands; safe to add the line now).
+2. **A2 Canonical URLs** - add `<link rel="canonical" href={abs(currentPath)}>`
+   in `Layout.astro`. ~3 lines.
+3. **C1 Custom 404** - `src/pages/404.astro`, locale-aware (detect from path),
+   links to home + posts + docs. One file, no zh mirror needed.
+4. **A3 Sitemap** - **recommend `@astrojs/sitemap`** (robust, base-aware,
+   respects the `site` config). Adds 1 dep. Fallback: custom `sitemap.xml.ts`.
+5. **A4 RSS feed** - **recommend `@astrojs/rss`** for `/rss.xml` (posts, latest
+   20, locale-aware: `/rss.xml` for en, `/zh/rss.xml` for zh). Adds 1 dep.
+   Fallback: custom endpoint.
+
+**Deliverable:** site is crawlable, has a feed, never 404s bare, every page is
+canonical.
+
+### Phase 2 - Reading UX (zero deps, ~1-2 sessions)
+
+Goal: bring docs/article reading up to modern expectations.
+
+6. **B1 Dark mode** - dark color tokens under `:root[data-theme="dark"]`, a
+   toggle button in `Nav`, and an inline `<script>` in `<head>` (runs before
+   paint) reading `localStorage` + `prefers-color-scheme` to prevent FOUC.
+   Highest single-feature UX impact.
+7. **B2 Heading anchor IDs** - a small mdast visitor plugin (same shape as
+   `remark-rewrite-links.mjs`) that slugs `h1`-`h4` `id` attributes. Unlocks
+   B3/B4.
+8. **B3 Table of contents** - `DocsLayout` gets a right-rail `<nav>` built from
+   `render().headings` (already returned by Astro, just not consumed). Active
+   section highlight via IntersectionObserver (small client script). Responsive:
+   collapses on mobile.
+9. **B5 Copy-code button** - a client script that wraps `<pre>` blocks with a
+   "Copy" button using `navigator.clipboard`. Scoped to `.prose`.
+10. **B6 Prev/next (docs)** - compute prev/next from the ordered sidebar list in
+    `renderLocalizedPage`; render at the bottom of `DocsLayout`.
+
+**Deliverable:** dark mode, navigable docs with TOC + prev/next, copyable code.
+
+### Phase 3 - Content discovery (zero deps, ~1 session)
+
+Goal: help readers find more content.
+
+11. **C2 Tag pages** - `/posts/tags/[tag]` + `/zh/posts/tags/[tag]`. Aggregate
+    tags across all published posts (incl. fallback), list PostCards. Add a
+    "Tags" link to the posts page header.
+12. **C3 Related posts** - on the article page, show 2-3 posts sharing the most
+    tags. Compute in `posts/[...slug].astro`.
+13. **B4 Heading anchor links** - `#` link beside each heading (now possible
+    after B2).
+14. **C5 Breadcrumbs on posts** - mirror the docs breadcrumb pattern.
+
+**Deliverable:** tag browsing, related posts, anchor links.
+
+### Phase 4 - Polish & advanced (selective, REMAINING)
+
+Pick what's worth the cost; these are lower ROI. Phases 1-3 are all merged.
+
+15. **D1 Admonitions** - GitHub-style `> [!note]` / `[!warning]` callouts via a
+    custom mdast plugin. Nice for docs, medium effort.
+16. **A5/A6 OG image + JSON-LD** - static default OG image; `Article` JSON-LD
+    on posts.
+17. **B7 Reading time** - word count at build time.
+18. **C4 Search (Pagefind)** - the highest-cost item. Only if the site grows
+    large enough to need it. Pagefind runs as a post-build step
+    (`pagefind --site dist`) and ships a small client bundle. Adds a build tool.
+19. **E1 Analytics** - only if tracking is wanted; one script tag.
+20. **E2 About page** - content page, needs copy.
+
+---
+
+## 4. Recommendation summary
+
+**Do Phases 1-3.** They deliver the features a typical content/docs site is
+expected to have, cost **zero new dependencies** (except Phase 1's sitemap +
+RSS, where I recommend the official integrations for robustness - 2 small
+deps), and each phase is independently shippable.
+
+**Within Phase 1, do A1/A2/C1 first** (robots, canonical, 404) - they are
+trivially small, high value, and need no deps at all. Sitemap + RSS can land
+in the same PR or a follow-up once the deps are authorized.
+
+**Phase 2 dark mode is the single highest-impact UX feature** - do it early.
+It touches `global.css` (new dark token block) and `Nav`/`Layout` (toggle +
+no-FOUC script) but no routes, so the i18n tax is zero.
+
+**Defer Phase 4** except admonitions (D1) if docs authors want callouts. Search
+(C4) is the only genuinely expensive item; add it only when the site has enough
+content to justify it.
+
+### Dependency asks to flag up front
+
+Phase 1 recommends two new dev dependencies (both official Astro integrations,
+low risk):
+
+- `@astrojs/sitemap` - generates `sitemap-index.xml` from the build, base-aware.
+- `@astrojs/rss` - generates the feed from posts.
+
+Both are opt-in: each has a zero-dep custom-endpoint fallback if the human
+prefers to avoid the deps. **Decision needed:** integrations vs. custom
+endpoints.
+
+### i18n note (not a feature, an observation)
+
+The `src/pages/zh/` route mirror is the documented pattern, but it doubles
+every new route file. Phases 1-3 add ~4 new routes (404 is exempt, tag pages
+are the only route-bearing feature), so the cost is ~6 extra files - manageable.
+If route count grows further, a future refactor to a `[locale]`-segment approach
+could eliminate the duplication, but that is a separate, higher-risk change and
+is **not** recommended now.
+
+---
+
+## 5. Open questions for the human
+
+All resolved during Phase 1 (see "Phase 1 outcome" below):
+
+1. **Sitemap/RSS deps** - RESOLVED. Used official integrations `@astrojs/sitemap`
+   + `@astrojs/rss` (per the human's tip to leverage official extensions when
+   justified). Both build clean and are base-path correct.
+2. **Dark mode default** - RESOLVED (Phase 2, merged #3). Implemented: follows
+   system `prefers-color-scheme` with a manual toggle persisted in
+   `localStorage`; no-FOUC inline `<head>` script sets `data-theme` before paint.
+3. **Search** - DEFERRED to Phase 4 (only if content grows).
+4. **Analytics** - NONE for now.
+5. **Scope** - Phases 1-3 confirmed as this round; Phase 4 selective.
+
+---
+
+## 6. Phase 1 outcome (SEO & site essentials)
+
+Implemented and verified (`npm run build` passes, 51 pages, 0 errors/warnings):
+
+- **robots.txt** - dynamic `src/pages/robots.txt.ts` endpoint; `Sitemap:`
+  directive uses `withBase('/sitemap-index.xml')` so the base path is preserved
+  (a bare relative ref dropped it - fixed).
+- **Canonical URLs** - `<link rel="canonical">` in `Layout.astro`, computed via
+  `abs(stripBase(Astro.url.pathname))` so it is correct under a sub-path deploy.
+- **Custom 404** - `src/pages/404.astro`; excluded from the sitemap via the
+  integration `filter`.
+- **Sitemap** - `@astrojs/sitemap` integration; `i18n` option groups en/zh into
+  `<xhtml:link rel="alternate" hreflang>` entries. Correct base URLs.
+- **RSS** - `@astrojs/rss`; `/rss.xml` (en) + `/zh/rss.xml` (zh), 20-item cap,
+  locale-aware links. Feed-discovery `<link>` added to `Layout.astro`.
+
+New deps: `@astrojs/sitemap`, `@astrojs/rss` (both official, low risk).
+New files: `src/pages/robots.txt.ts`, `src/pages/rss.xml.ts`,
+`src/pages/zh/rss.xml.ts`, `src/pages/404.astro`, `src/lib/feed.ts`.
+
+Pre-existing, unrelated: 4 `ts(6133)` hints (unused `withBase` import in the
+4 docs route files). Left untouched to keep this phase focused; can be cleaned in
+a separate trivial PR.
+
+Next: Phase 2 (Reading UX) - dark mode, heading anchor IDs, TOC, copy-code,
+prev/next.
+
+---
+
+## 7. Phase 2 & 3 outcome (Reading UX + Content discovery)
+
+All shipped and merged. `npm run build` passes with 0 errors / 0 warnings
+across all of these; the site is now 63 pages (was 50 at the start).
+
+**Phase 2 part 1 - dark mode (merged #3):**
+- `:root[data-theme='dark']` token block overrides page-level colors; intentional
+  dark surfaces (code blocks, buttons, CTA) stay dark via the untouched
+  `--color-bg-dark`.
+- No-FOUC inline `<head>` script sets `data-theme` before paint from
+  `localStorage`, falling back to `prefers-color-scheme`.
+- `ThemeToggle.astro` (CSS-driven icon swap, no flash) in the Nav; header bg
+  switched from hard-coded rgba to `color-mix()`.
+
+**Phase 2 part 2 - reading UX (merged #5, padding fix #6):**
+- Heading anchor IDs via a Sätteri hast plugin (`src/lib/heading-ids.mjs`);
+  the built-in heading-ids plugin populates `render().headings` (TOC data) and
+  reuses these ids.
+- `TableOfContents.astro` right rail from `render().headings` (h2/h3), with
+  IntersectionObserver active-section highlight; shown >=1180px. A follow-up
+  fix (#6) restored the content's left gap when the rail is visible.
+- Prev/next docs pagination from the ordered sidebar `navItems`.
+- Copy-code button (progressive enhancement) on each `<pre>` in `.prose`.
+
+**Phase 3 - content discovery (merged #7):**
+- Tag pages `/posts/tags/[tag]` (+ `/zh/` twin); `tagSlug()` normalizes to
+  ASCII kebab-case so en/zh tags sharing text collapse onto one page.
+- Tag chip row on the posts listing (top 12, with counts).
+- Clickable tags (PostCard + article header link to tag pages). Restructured
+  PostCard to the stretched-link `<article>` pattern so tag `<a>` are valid
+  (nested `<a>` was invalid HTML and broke the grid layout).
+- Related posts (3, by shared tags) on article pages.
+- Post breadcrumbs (Home / Posts / title).
+- Heading anchor `#` links (Layout client script) beside each h2-h4 in `.prose`.
+
+**Loose-end cleanup (this PR):**
+- Removed the unused root `favicon.ico` (the site serves `public/favicon.ico`).
+- Removed the stray root `logo.png` (byte-identical duplicate of
+  `public/images/logo.png`, which the site + README use).
+- Flagged (not removed): `assets/` is referenced nowhere - likely leftover from
+  an old static site; `.agents/plan/plan.md` is the pre-plan agent file.
+
+**Remaining for Phase 4 (selective, no active work):** admonitions (D1); a
+**default** OG image asset + JSON-LD (A5/A6 - the per-page `og:image` meta slot
+already landed in `Layout.astro`, but no default social image ships yet);
+reading time (B7); search via Pagefind (C4, the only expensive one); analytics
+(E1); about page (E2).

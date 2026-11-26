@@ -1,0 +1,824 @@
+---
+// src/components/SearchModal.astro
+// Site-wide search dialog (Pagefind-backed, custom UI). Renders an inert
+// dialog shell (hidden until opened) plus the styles for the modal, scope
+// pills, and result list. All interaction lives in the <script> below:
+//   - trigger button in the header opens/closes the dialog
+//   - typing runs debounced Pagefind searches scoped by the active pill
+//   - arrow keys move through results, Enter follows the highlighted one,
+//     Esc closes, Tab is trapped inside while open
+// The Pagefind bundle + per-language index are loaded lazily on first open
+// (see lib/search.ts). The dialog stays inert when JS fails or the bundle
+// cannot be loaded, so no-JS users simply see a non-functional button.
+import type { SearchScope } from '../lib/search';
+
+interface Props {
+  placeholder?: string;
+  hint?: string;
+  noResults?: string;
+  loading?: string;
+  error?: string;
+  resultsFor?: string; // '{query}' placeholder
+  matchCount?: string; // '{n}' placeholder
+  matchCountPlural?: string; // '{n}' placeholder (plural form)
+  scopes: { value: SearchScope; label: string }[];
+  /** Page-derived scope selected when the modal opens ('' = All, 'docs' with
+   *  `initialProduct` narrows to that product's docs). Optional — falls back
+   *  to All, keeping the default behavior when not provided. */
+  initialScope?: SearchScope;
+  /** Product the initialScope applies to (e.g. 'vite'), rendered as a
+   *  secondary chip label. Only meaningful when initialScope is 'docs'. */
+  initialProduct?: string;
+  openLabel?: string;
+}
+
+const {
+  placeholder = 'Search…',
+  hint,
+  noResults,
+  loading,
+  error,
+  resultsFor = 'Results for {query}',
+  matchCount,
+  matchCountPlural,
+  scopes,
+  initialScope,
+  initialProduct,
+  openLabel = 'Open search',
+} = Astro.props;
+
+---
+
+<button type="button" class="search-open" data-search-open aria-label={openLabel} title={openLabel}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true">
+    <circle cx="11" cy="11" r="7" />
+    <path d="M21 21l-4.35-4.35" />
+  </svg>
+  <span class="search-open-label">{placeholder}</span>
+  <kbd class="search-open-kbd">/</kbd>
+</button>
+
+<div
+  class="search-modal"
+  data-search-modal
+  role="dialog"
+  aria-modal="true"
+  aria-label={placeholder}
+  hidden
+  data-search-placeholder={placeholder}
+  data-search-no-results={noResults}
+  data-search-loading={loading}
+  data-search-results-for={resultsFor}
+  data-search-match-count={matchCount}
+  data-search-match-count-plural={matchCountPlural}
+  data-search-error={error}
+  data-search-initial-scope={initialScope}
+  data-search-initial-product={initialProduct}
+>
+  <div class="search-modal-backdrop" data-search-backdrop></div>
+  <div class="search-modal-panel" role="document">
+    <div class="search-modal-head">
+      <div class="search-modal-inputwrap">
+        <svg class="search-modal-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M21 21l-4.35-4.35" />
+        </svg>
+        {initialScope === 'docs' && initialProduct && (
+          <button
+            type="button"
+            class="search-product-chip"
+            data-search-product={initialProduct}
+            aria-pressed="true"
+            title="Click to clear the product filter"
+          >
+            <span class="search-product-chip-dot" aria-hidden="true"></span>
+            <span class="search-product-chip-label">{initialProduct}</span>
+          </button>
+        )}
+        <input
+          type="search"
+          class="search-modal-input"
+          data-search-input
+          placeholder={placeholder}
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          aria-controls="search-modal-results"
+          aria-label={placeholder}
+        />
+        <button type="button" class="search-modal-clear" data-search-clear aria-label="Clear search" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      {scopes.length > 0 && (
+        <div class="search-modal-scopes" role="group" aria-label="Scope">
+          {scopes.map((s) => (
+            <button
+              type="button"
+              class="search-scope-pill"
+              data-search-scope={s.value}
+              aria-pressed={s.value === ''}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {hint && <p class="search-modal-hint">{hint}</p>}
+    </div>
+    <div class="search-modal-body" id="search-modal-results">
+      <p class="search-modal-status" data-search-status role="status" aria-live="polite"></p>
+      <ul class="search-results" data-search-results></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+  import {
+    configureSearch,
+    initSearch,
+    search,
+    preload,
+    type SearchScope,
+    type SearchContext,
+    type ProductScope,
+  } from '../lib/search';
+
+  const root = document.querySelector<HTMLElement>('[data-search-modal]');
+  const openBtn = document.querySelector<HTMLButtonElement>('[data-search-open]');
+  if (!root || !openBtn) throw new Error('search modal markup missing');
+
+  configureSearch(
+    // Injected as a data attribute from the Astro frontmatter (build-time base).
+    (document.documentElement.dataset.searchBase as string) ?? '/',
+  );
+
+  const input = root.querySelector<HTMLInputElement>('[data-search-input]')!;
+  const clearBtn = root.querySelector<HTMLButtonElement>('[data-search-clear]')!;
+  const backdrop = root.querySelector<HTMLElement>('[data-search-backdrop]')!;
+  const resultsEl = root.querySelector<HTMLElement>('[data-search-results]')!;
+  const statusEl = root.querySelector<HTMLElement>('[data-search-status]')!;
+  const scopeBtns = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-search-scope]'));
+
+  const rootEl: HTMLElement = root;
+  const openBtnEl: HTMLButtonElement = openBtn;
+
+  // On mobile the modal is sized against the VISUAL viewport (the area the
+  // user actually sees): the on-screen keyboard shrinks it, but position:fixed
+  // and vh units are measured against the full layout viewport — so without
+  // this the results list would run behind the keyboard on a real phone
+  // (desktop device emulation has no keyboard and cannot reproduce it).
+  let modalMaxHeight: number | null = null;
+
+  function syncModalMaxHeight() {
+    // Mobile-only (narrow viewport). On desktop the CSS 70vh cap already fits;
+    // overriding it with the full window height would make the panel taller.
+    if (!isOpen || !window.matchMedia('(max-width: 768px)').matches) return;
+    const available = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    // The panel sits inside the modal's padded box, so its max height is the
+    // visible height MINUS the modal's own vertical padding. Padding values
+    // are read from computed style so env(safe-area-inset-bottom) (the Android
+    // home-indicator inset) and the vh paddings resolve to px automatically.
+    const cs = getComputedStyle(rootEl);
+    const padTop = parseFloat(cs.paddingTop) || 0;
+    const padBottom = parseFloat(cs.paddingBottom) || 0;
+    const maxh = Math.max(0, Math.round(available - padTop - padBottom));
+    if (modalMaxHeight !== maxh) {
+      modalMaxHeight = maxh;
+      rootEl.style.setProperty('--search-modal-maxh', `${maxh}px`);
+    }
+  }
+
+  function resetModalMaxHeight() {
+    modalMaxHeight = null;
+    rootEl.style.removeProperty('--search-modal-maxh');
+  }
+
+  if (window.visualViewport) {
+    // Re-sync whenever the visible area changes while the modal is open:
+    // keyboard open/close, rotation, URL bar collapse. iOS fires scroll on
+    // the visual viewport, Android fires resize — listen to both. Also sync
+    // right after opening (the keyboard may already be up from the previous
+    // session, or the URL bar may be collapsed).
+    window.visualViewport.addEventListener('resize', syncModalMaxHeight);
+    window.visualViewport.addEventListener('scroll', syncModalMaxHeight);
+  } else {
+    window.addEventListener('resize', syncModalMaxHeight);
+  }
+
+  // Portal the modal to <body>. The trigger lives inside <header class="site-header">
+  // which has backdrop-filter — and backdrop-filter makes the header a
+  // containing block for position:fixed descendants, so a modal rendered
+  // inside it would size to the ~60px header instead of the viewport (the
+  // backdrop only covered the top sliver). Moving the dialog to <body> breaks
+  // that chain; the trigger stays put and keeps working via querySelector.
+  if (rootEl.parentElement !== document.body) {
+    document.body.appendChild(rootEl);
+  }
+
+  let activeScope: SearchScope = '';
+  // Page-derived product scope (e.g. 'product:vite') when the modal opened on
+  // a docs page; empty otherwise. Selecting a non-docs pill clears it.
+  let initialProductScope: ProductScope | undefined;
+  // Set when the user clears the product chip during this session; while set,
+  // re-entering the docs scope does NOT re-adopt the product narrowing (the
+  // chip stays off until the user toggles it back).
+  let chipCleared = false;
+  let highlighted = -1;
+  let lastQuery = '';
+  let isOpen = false;
+  // When the modal opens it pushes a history entry so that the browser's
+  // back button (mobile gesture / key) closes the dialog instead of leaving
+  // the page. The flag marks the pushed entry; popstate from that entry
+  // closes the modal without another push.
+  let pushedState = false;
+
+  // Compute the initial context from the current page: 'posts' on a blog
+  // article, 'docs' (narrowed to the current product's docs when present) on
+  // a docs page, 'products' on the catalog or a product landing, '' otherwise
+  // — GitHub-style "search within what you're looking at". The Nav bakes the
+  // values into the markup at build time.
+  const initialScope = (root.dataset.searchInitialScope ?? '') as SearchScope;
+  const initialProduct = root.dataset.searchInitialProduct;
+  const initialContext: SearchContext = {
+    scope: initialScope,
+    ...(initialScope === 'docs' && initialProduct
+      ? { productScope: `product:${initialProduct}` as ProductScope }
+      : {}),
+  };
+
+  // Localized copy — injected from the Astro frontmatter.
+  const copy = {
+    placeholder: root.dataset.searchPlaceholder ?? 'Search…',
+    noResults: root.dataset.searchNoResults ?? 'No results found',
+    loading: root.dataset.searchLoading ?? 'Searching…',
+    resultsFor: root.dataset.searchResultsFor ?? 'Results for {query}',
+    matchCount: root.dataset.searchMatchCount ?? '',
+    matchCountPlural: root.dataset.searchMatchCountPlural ?? '',
+    error: root.dataset.searchError ?? 'Search is unavailable right now. Try again later.',
+  };
+
+  function setScope(scope: SearchScope) {
+    activeScope = scope;
+    scopeBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.searchScope === scope)));
+    syncProductChipVisibility();
+    if (isOpen && input.value.trim()) runSearch(input.value);
+  }
+
+  /** A product-scoped chip ('docs · vite') is a toggle for the current
+   *  product filter: click to clear it (back to all docs), click again to
+   *  restore. A type pill ('docs') re-adopts the page-derived product scope
+   *  unless the chip was manually cleared; any other pill clears the product
+   *  filter (it only applies to docs). */
+  function setScopeWithProduct(scope: SearchScope, productScope?: ProductScope) {
+    if (scope === 'docs') {
+      if (productScope && productScope !== initialProductScope) {
+        // Re-entering docs from another pill: restore the page-derived
+        // product scope (unless the chip was cleared during this session).
+        if (!chipCleared) initialProductScope = productScope;
+      }
+    } else {
+      initialProductScope = undefined;
+    }
+    setScope(scope);
+  }
+
+  /** Set the initial context on first open (also used by the docs chip when
+   *  its current product filter was cleared). */
+  function setInitialContext() {
+    activeScope = initialContext.scope;
+    initialProductScope = initialContext.productScope;
+    chipCleared = false;
+    scopeBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.searchScope === initialContext.scope)));
+  }
+
+  function esc(s: string) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function runSearch(term: string) {
+    lastQuery = term;
+    highlighted = -1;
+    const context: SearchContext = { scope: activeScope, productScope: initialProductScope };
+    search(term, context)
+      .then((results) => {
+        if (lastQuery !== term || !isOpen) return; // stale
+        renderResults(term, results);
+      })
+      .catch(() => {
+        statusEl.textContent = copy.error;
+      });
+  }
+
+  /** Map a result URL to a scope badge label (posts/docs/products), derived
+   *  from the URL structure. Falls back to a generic label. */
+  function badgeFor(url: string): string | null {
+    const clean = url.replace(/^\/+/, '').split('/').filter(Boolean);
+    const path = clean.join('/');
+    if (/^posts/.test(path)) return 'posts';
+    if (/^products/.test(path)) return 'products';
+    if (/(\/docs\/|\/docs$)/.test(path)) return 'docs';
+    if (clean.length === 1 && clean[0]) return 'products'; // product landing
+    return null;
+  }
+
+  function renderResults(term: string, results: { url: string; title: string; excerpt: string; subTitle?: string; subUrl?: string }[] | null) {
+    resultsEl.innerHTML = '';
+    if (!results || results.length === 0) {
+      statusEl.textContent = term ? copy.noResults : '';
+      return;
+    }
+    const countText = copy.matchCount
+      ? (results.length === 1 ? copy.matchCount : copy.matchCountPlural || copy.matchCount).replace('{n}', String(results.length))
+      : '';
+    statusEl.textContent = countText || copy.resultsFor.replace('{query}', esc(term));
+    for (const r of results) {
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      a.href = r.url;
+      a.className = 'search-result-link';
+      const titleRow = document.createElement('span');
+      titleRow.className = 'search-result-title-row';
+      const title = document.createElement('span');
+      title.className = 'search-result-title';
+      title.textContent = r.title;
+      const badge = badgeFor(r.url);
+      if (badge) {
+        const b = document.createElement('span');
+        b.className = 'search-result-badge';
+        b.textContent = badge;
+        titleRow.append(b, title);
+      } else {
+        titleRow.append(title);
+      }
+      const excerpt = document.createElement('span');
+      excerpt.className = 'search-result-excerpt';
+      excerpt.innerHTML = r.excerpt; // Pagefind output is pre-escaped
+      a.append(titleRow, excerpt);
+      if (r.subUrl) a.href = r.subUrl;
+      li.appendChild(a);
+      resultsEl.appendChild(li);
+    }
+  }
+
+  function moveHighlight(dir: -1 | 1) {
+    const items = resultsEl.querySelectorAll<HTMLAnchorElement>('.search-result-link');
+    if (items.length === 0) return;
+    highlighted = (highlighted + dir + items.length) % items.length;
+    items.forEach((el, i) => el.classList.toggle('search-result-highlight', i === highlighted));
+    const el = items[highlighted];
+    // Keep the highlighted row visible inside the scrollable results list;
+    // without this, pressing arrows near the bottom would move the highlight
+    // to an off-screen row while the list stays put. Do NOT move OS focus to
+    // the link (that triggers focus rings and steals it from the input).
+    // 'instant' (not smooth) so the row is guaranteed visible even when
+    // several arrow presses land in quick succession.
+    el?.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  }
+
+  async function open() {
+    if (isOpen) return;
+    isOpen = true;
+    rootEl.hidden = false;
+    document.documentElement.classList.add('search-open-lock'); // body scroll lock
+    input.value = '';
+    clearBtn.hidden = true;
+    lastQuery = '';
+    highlighted = -1;
+    statusEl.textContent = '';
+    resultsEl.innerHTML = '';
+    setInitialContext();
+    input.focus();
+    // Size the modal against the current visual viewport BEFORE the input
+    // focus brings the keyboard up (the measured height must be keyboard-free
+    // so the keyboard's later shrink leaves the panel above it).
+    syncModalMaxHeight();
+    // Push a history entry so back (gesture/key) closes the modal instead of
+    // navigating away. Must happen after the modal is shown.
+    history.pushState({ searchModalOpen: true }, '');
+    pushedState = true;
+    try {
+      await initSearch();
+      preload(''); // warm the index
+    } catch {
+      statusEl.textContent = copy.error;
+    }
+  }
+
+  function close() {
+    if (!isOpen) return;
+    isOpen = false;
+    rootEl.hidden = true;
+    document.documentElement.classList.remove('search-open-lock');
+    resetModalMaxHeight();
+    if (pushedState) {
+      // Undo the entry we pushed when opening, so closing never leaves a
+      // stale entry that would require an extra back press later.
+      pushedState = false;
+      try {
+        history.back();
+      } catch {
+        /* history.back is never blocking; guard for exotic embedders */
+      }
+    }
+    openBtnEl.focus();
+  }
+
+  openBtnEl.addEventListener('click', open);
+  backdrop.addEventListener('click', close);
+
+  // The back button (mobile gesture / key) hits the entry pushed when the
+  // modal opened; popstate closes the modal without re-pushing.
+  window.addEventListener('popstate', () => {
+    if (isOpen) {
+      pushedState = false;
+      close();
+    }
+  });
+
+  // Global '/' shortcut (when not typing in another field).
+  document.addEventListener('keydown', (e) => {
+    if ((e.key === '/' || e.key === 'n') && !isOpen && !(e.metaKey || e.ctrlKey || e.altKey)) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' && !(e.target as HTMLElement)?.isContentEditable) {
+        e.preventDefault();
+        open();
+      }
+    }
+  });
+
+  // Keyboard nav while the modal is open. Bound to document (not the modal
+  // root) so arrow keys work even if focus is still on the page behind or on
+  // the trigger — the common "many presses before anything happens" complaint
+  // happens when keydown never reaches a modal-scoped listener.
+  document.addEventListener('keydown', (e) => {
+    if (!isOpen) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      close();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveHighlight(1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveHighlight(-1);
+    } else if (e.key === 'Enter') {
+      const items = resultsEl.querySelectorAll<HTMLAnchorElement>('.search-result-link');
+      if (highlighted >= 0 && items[highlighted]) {
+        e.preventDefault();
+        items[highlighted].click();
+      }
+    }
+  });
+
+  scopeBtns.forEach((b) => b.addEventListener('click', () => setScopeWithProduct(b.dataset.searchScope as SearchScope)));
+
+  const productChip = root.querySelector<HTMLButtonElement>('[data-search-product]');
+  function syncProductChipVisibility() {
+    // The product chip only applies to the docs scope; hide it under
+    // Posts/Products/All so it never implies a filter that isn't active.
+    if (productChip) productChip.hidden = activeScope !== 'docs';
+  }
+  productChip?.addEventListener('click', () => {
+    // Toggle the product filter: on -> off (all docs), off -> on (restore
+    // the page-derived product scope). aria-pressed mirrors the state so the
+    // chip is a clear on/off control, not a one-way disable.
+    const on = initialProductScope != null;
+    initialProductScope = on ? undefined : initialContext.productScope;
+    chipCleared = !on; // a manual clear sticks until the chip is toggled back
+    productChip.setAttribute('aria-pressed', String(initialProductScope != null));
+    setScope('docs');
+    if (input.value.trim()) runSearch(input.value);
+  });
+
+  // Clear (×) button: visible only while there is input.
+  const syncClear = () => { clearBtn.hidden = !input.value; };
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    syncClear();
+    resultsEl.innerHTML = '';
+    statusEl.textContent = '';
+    lastQuery = '';
+    highlighted = -1;
+    input.focus();
+  });
+
+  input.addEventListener('input', () => {
+    const term = input.value;
+    syncClear();
+    preload(term);
+    if (!term.trim()) {
+      resultsEl.innerHTML = '';
+      statusEl.textContent = '';
+      lastQuery = '';
+      return;
+    }
+    statusEl.textContent = copy.loading;
+    runSearch(term);
+  });
+</script>
+
+<style>
+  /* Scoped styles for the search trigger + modal (static markup). Pagefind's
+     own assets (pagefind.css) are not used - the UI is fully custom. */
+  .search-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: var(--nav-control-h);
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--color-border);
+    border-radius: 100px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color var(--transition), border-color var(--transition);
+  }
+  .search-open:hover {
+    color: var(--color-text);
+    border-color: var(--color-text-muted);
+  }
+  .search-open-label {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .search-open-kbd {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    padding: 0.05rem 0.35rem;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    color: var(--color-text-muted);
+    background: var(--color-bg-alt);
+  }
+
+  .search-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 12vh 1rem 2rem;
+    /* Modal height cap. Fixed-size vh so the cap does not grow when the
+       browser chrome (URL bar, on-screen keyboard) shrinks the visual
+       viewport on a real phone: on iOS Safari 100vh units and position:fixed
+       are still measured against the full layout viewport, so a dvh/100%
+       cap would let the results list run behind the keyboard. On mobile the
+       script below overrides this with the actual visual-viewport height in
+       px (visualViewport API). */
+    --search-modal-maxh: 70vh;
+  }
+  .search-modal[hidden] {
+    display: none;
+  }
+  .search-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+  }
+  .search-modal-panel {
+    position: relative;
+    width: 100%;
+    max-width: 620px;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+  .search-modal-head {
+    padding: 0.9rem 1rem 0.6rem;
+    border-bottom: 1px solid var(--color-border-light);
+  }
+  .search-modal-inputwrap {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .search-modal-icon {
+    flex: none;
+    color: var(--color-text-muted);
+  }
+  .search-modal-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    font: inherit;
+    font-size: 1.05rem;
+    color: var(--color-text);
+  }
+  .search-modal-input::placeholder {
+    color: var(--color-text-muted);
+  }
+  /* The native clear (✕) of <input type="search"> would render a second,
+     browser-styled icon next to our custom clear button. Hide it; the custom
+     .search-modal-clear is the single clear affordance. */
+  .search-modal-input::-webkit-search-cancel-button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .search-modal-input::-webkit-search-decoration {
+    -webkit-appearance: none;
+  }
+  .search-modal-clear {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    background: var(--color-bg-alt);
+    color: var(--color-text-secondary);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: color var(--transition), background var(--transition);
+  }
+  .search-modal-clear:hover {
+    color: var(--color-text);
+    background: var(--color-border);
+  }
+  .search-modal-clear[hidden] {
+    display: none;
+  }
+  .search-modal-scopes {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.7rem;
+    flex-wrap: wrap;
+  }
+  .search-scope-pill {
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 100px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color var(--transition), border-color var(--transition), background var(--transition);
+  }
+  .search-scope-pill:hover {
+    color: var(--color-text);
+    border-color: var(--color-text-muted);
+  }
+  .search-scope-pill[aria-pressed='true'] {
+    background: var(--color-bg-dark);
+    color: var(--color-on-dark);
+    border-color: var(--color-bg-dark);
+  }
+  .search-product-chip {
+    /* Inline scope chip inside the search input row (GitHub style): fixed
+       left position, the input text starts after it and scrolls beneath it
+       as it grows — the chip is not compressed (flex: none, min-width: 0 on
+       the input). */
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.12rem 0.5rem;
+    border: 1px solid var(--color-accent);
+    border-radius: 100px;
+    background: var(--color-accent-subtle);
+    color: var(--color-accent);
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.3;
+    cursor: pointer;
+    transition: color var(--transition), background var(--transition), border-color var(--transition);
+  }
+  .search-product-chip:hover {
+    background: var(--color-accent);
+    color: var(--color-on-dark);
+  }
+  .search-product-chip[aria-pressed='false'] {
+    opacity: 0.55;
+    text-decoration: line-through;
+  }
+  .search-product-chip-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    flex: none;
+  }
+  .search-product-chip-label {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .search-modal-hint {
+    margin-top: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--color-text-muted);
+  }
+  .search-modal-body {
+    overflow-y: auto;
+    /* Stop scroll chaining: when the results list hits its bottom, further
+       wheel input must not scroll the page behind the modal. */
+    overscroll-behavior: contain;
+    padding: 0.5rem 0;
+  }
+  .search-modal-status {
+    padding: 0.6rem 1.2rem;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+  }
+
+  /* The result list is rendered by JS (renderResults) with classes that do
+     NOT carry the Astro scoping attribute, so these rules must be is:global
+     or they never match (the classic Astro + dynamic-DOM pitfall). */
+  .search-results {
+    list-style: none;
+  }
+  :global(.search-result-link) {
+    display: block;
+    padding: 0.7rem 1.2rem;
+    border-bottom: 1px solid var(--color-border-light);
+    text-decoration: none;
+    transition: background var(--transition);
+  }
+  /* Keyboard navigation calls .focus() on the highlighted row; drop the
+     browser's default focus ring in favor of our highlight background. */
+  :global(.search-result-link:focus-visible),
+  :global(.search-result-link:focus) {
+    outline: none;
+  }
+  :global(.search-result-link:hover),
+  :global(.search-result-link.search-result-highlight) {
+    background: var(--color-bg-alt);
+  }
+  /* No trailing divider under the last result. */
+  :global(.search-results li:last-child .search-result-link) {
+    border-bottom: none;
+  }
+  :global(.search-result-badge) {
+    flex: none;
+    align-self: flex-start;
+    margin-top: 0.15em;
+    margin-right: 0.45rem;
+    padding: 0.1rem 0.5rem;
+    border: 1px solid var(--color-border);
+    border-radius: 100px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+  :global(.search-result-title-row) {
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+  }
+  :global(.search-result-title) {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+  :global(.search-result-excerpt) {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+  }
+  :global(.search-result-excerpt mark) {
+    background: var(--color-accent-subtle);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 0.1em;
+  }
+
+  @media (max-width: 768px) {
+    .search-modal {
+      padding: 2vh 0.5rem calc(1rem + env(safe-area-inset-bottom, 0px));
+      /* Keep the panel hugging its content: `stretch` would force it to fill
+         the viewport height even with no results (the modal looked full-
+         screen when empty). The body scrolls within max-height below. */
+      align-items: flex-start;
+      --search-modal-maxh: 92vh;
+    }
+    .search-modal-panel {
+      width: 100%;
+      max-height: var(--search-modal-maxh);
+    }
+  }
+</style>

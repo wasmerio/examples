@@ -1,0 +1,98 @@
+---
+// src/pages/posts/[...slug].astro
+// Catch-all for posts at any directory depth (default locale: en).
+// /posts/hello-world/  → id = "hello-world"
+// /posts/mytool/2025-07-21-foo/ → id = "mytool/2025-07-21-foo"
+import Layout from '../../components/Layout.astro';
+import Nav from '../../components/Nav.astro';
+import Footer from '../../components/Footer.astro';
+import { renderLocalizedPost } from '../../lib/content';
+import { getRelatedPosts, tagSlug } from '../../lib/content';
+import PostCard from '../../components/PostCard.astro';
+import { buildAlternates, localeCode, localizePath, withBase, t } from '../../lib/i18n';
+
+export async function getStaticPaths() {
+  const { getPostLocalizedPaths } = await import('../../lib/content');
+  return getPostLocalizedPaths('en');
+}
+
+const { slug } = Astro.props;
+const page = await renderLocalizedPost('en', slug);
+if (!page) return Astro.redirect(withBase('/posts'));
+const { Content, data } = page;
+const { title, date, description, tags, author, source } = data;
+const alternates = buildAlternates(`/posts/${slug}`);
+const related = await getRelatedPosts('en', slug, 3);
+const ui = t.en;
+
+const formattedDate = date.toLocaleDateString(localeCode.en, {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
+---
+
+<Layout title={title} description={description} locale="en" alternates={alternates}>
+  <Nav alternates={alternates} />
+
+  <main data-pagefind-body>
+    <div class="container" style="padding-top: 1.5rem;">
+      <div class="docs-breadcrumb">
+        <a href={withBase(localizePath('/', 'en'))}>{ui.home}</a> / <a href={withBase(localizePath('/posts', 'en'))}>{ui.posts}</a> / <span>{title}</span>
+      </div>
+    </div>
+    <article class="article" data-pagefind-ignore={data.draft ? '' : undefined} data-pagefind-filter="scope:posts">
+      <a href={withBase(localizePath('/posts', 'en'))} class="article-back">{ui.allPostsBack}</a>
+
+      <header class="article-header">
+        <time class="article-date" datetime={date.toISOString()}>{formattedDate}</time>
+        <h1>{title}</h1>
+        <div class="article-meta" style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+          {tags.length > 0 && (
+            <div class="article-tags">
+              {tags.map(tag => (
+                <a class="tag" href={withBase(localizePath(`/posts/tags/${tagSlug(tag)}`, 'en'))}>{tag}</a>
+              ))}
+            </div>
+          )}
+          {author && <span style="font-size:0.85rem; color:var(--color-text-muted);">{ui.byAuthor.replace('{author}', author)}</span>}
+          {source && (
+            <a href={source} style="font-size:0.8rem; color:var(--color-text-muted);" target="_blank" rel="noopener">
+              {ui.viewSource}
+            </a>
+          )}
+        </div>
+      </header>
+
+      <div class="article-body prose">
+        <Content />
+      </div>
+    </article>
+
+    {related.length > 0 && (
+      <section class="section" style="padding-top: 1rem;">
+        <div class="container">
+          <div class="section-header" style="margin-bottom: 1.5rem;">
+            <h2 style="font-size: 1.4rem;">{ui.relatedPosts}</h2>
+          </div>
+          <div class="posts-grid">
+            {related.map(({ entry, isFallback }) => (
+              <PostCard
+                title={entry.data.title}
+                date={entry.data.date}
+                description={entry.data.description}
+                tags={entry.data.tags}
+                slug={entry.id}
+                source={null}
+                isFallback={isFallback}
+                locale="en"
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+    )}
+  </main>
+
+  <Footer />
+</Layout>

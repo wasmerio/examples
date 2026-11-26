@@ -1,0 +1,108 @@
+---
+// src/pages/[locale]/posts/[...slug].astro
+// Catch-all for posts in non-default locales (e.g. /zh-Hans/posts/foo/).
+// Falls back to default-locale content per-post; fallback pages show a badge.
+// The default-locale route is src/pages/posts/[...slug].astro (prefix-free).
+import Layout from '../../../components/Layout.astro';
+import Nav from '../../../components/Nav.astro';
+import Footer from '../../../components/Footer.astro';
+import { renderLocalizedPost, getRelatedPosts, tagSlug, type LocalizedPostPathProps } from '../../../lib/content';
+import PostCard from '../../../components/PostCard.astro';
+import { buildAlternates, localeCode, localizePath, withBase, t, defaultLocale, locales, type Locale } from '../../../lib/i18n';
+
+export async function getStaticPaths() {
+  const { getPostLocalizedPaths } = await import('../../../lib/content');
+  const paths: { params: { locale: Locale; slug: string }; props: LocalizedPostPathProps }[] = [];
+  for (const l of locales) {
+    if (l === defaultLocale) continue;
+    const localized = await getPostLocalizedPaths(l);
+    for (const lp of localized) {
+      paths.push({ params: { locale: l, slug: lp.params.slug }, props: lp.props });
+    }
+  }
+  return paths;
+}
+
+const { slug, locale, isFallback } = Astro.props;
+const ui = t[locale];
+const page = await renderLocalizedPost(locale, slug);
+if (!page) return Astro.redirect(withBase(localizePath('/posts', locale)));
+const { Content, data } = page;
+const { title, date, description, tags, author, source } = data;
+const alternates = buildAlternates(`/posts/${slug}`);
+const related = await getRelatedPosts(locale, slug, 3);
+
+const formattedDate = date.toLocaleDateString(localeCode[locale], {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+});
+---
+
+<Layout title={title} description={description} locale={locale} alternates={alternates}>
+  <Nav alternates={alternates} />
+
+  <main data-pagefind-body>
+    <div class="container" style="padding-top: 1.5rem;">
+      <div class="docs-breadcrumb">
+        <a href={withBase(localizePath('/', locale))}>{ui.home}</a> / <a href={withBase(localizePath('/posts', locale))}>{ui.posts}</a> / <span>{title}</span>
+      </div>
+    </div>
+    <article class="article" data-pagefind-ignore={isFallback ? '' : undefined} data-pagefind-filter="scope:posts">
+      <a href={withBase(localizePath('/posts', locale))} class="article-back">{ui.allPostsBack}</a>
+
+      <header class="article-header">
+        <time class="article-date" datetime={date.toISOString()}>{formattedDate}</time>
+        <h1>
+          {title}
+          {isFallback && <span class="post-card-fallback" title={ui.noTranslation}>EN</span>}
+        </h1>
+        <div class="article-meta" style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+          {tags.length > 0 && (
+            <div class="article-tags">
+              {tags.map(tag => (
+                <a class="tag" href={withBase(localizePath(`/posts/tags/${tagSlug(tag)}`, locale))}>{tag}</a>
+              ))}
+            </div>
+          )}
+          {author && <span style="font-size:0.85rem; color:var(--color-text-muted);">{ui.byAuthor.replace('{author}', author)}</span>}
+          {source && (
+            <a href={source} style="font-size:0.8rem; color:var(--color-text-muted);" target="_blank" rel="noopener">
+              {ui.viewSource}
+            </a>
+          )}
+        </div>
+      </header>
+
+      <div class="article-body prose">
+        <Content />
+      </div>
+    </article>
+
+    {related.length > 0 && (
+      <section class="section" style="padding-top: 1rem;">
+        <div class="container">
+          <div class="section-header" style="margin-bottom: 1.5rem;">
+            <h2 style="font-size: 1.4rem;">{ui.relatedPosts}</h2>
+          </div>
+          <div class="posts-grid">
+            {related.map(({ entry, isFallback }) => (
+              <PostCard
+                title={entry.data.title}
+                date={entry.data.date}
+                description={entry.data.description}
+                tags={entry.data.tags}
+                slug={entry.id}
+                source={null}
+                isFallback={isFallback}
+                locale={locale}
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+    )}
+  </main>
+
+  <Footer />
+</Layout>

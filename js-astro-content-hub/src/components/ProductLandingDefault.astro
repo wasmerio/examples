@@ -1,0 +1,191 @@
+---
+// src/components/ProductLandingDefault.astro
+// Generic product landing. Rendered by the `[product]` route (and its
+// [locale] twin) when a product has no override at
+// `src/components/product-landing/<slug>.astro`. Shares the same prop
+// contract as an override, so the route can swap them freely.
+//
+// Auto-generated mode: a structured `product-info` file drives the landing.
+// When the file declares a `sections` list, this component becomes an
+// orchestrator - each entry is resolved to a section component via the
+// registry (src/lib/landing-sections.ts) and rendered in declared order with
+// the declared data. Entries that omit `data` are filled from the matching
+// product-info field (tagline/features/highlights/install/links), so authors
+// write `- type: features` without duplicating content. The curated overview
+// body, when present, is appended after the declared sections. Unknown
+// section types are skipped (never a build error).
+//
+// With no `sections` declared, the legacy fixed order is preserved
+// (hero -> highlights -> install -> features -> overview -> CTA), so existing
+// product-info files render exactly as before - zero migration.
+//
+// A hand-written override at `src/components/product-landing/<slug>.astro`
+// always takes precedence over this component (the route resolves it first).
+import type { ProductLandingProps } from '../lib/product-landing';
+import { getLocalizedProductInfo } from '../lib/content';
+import { getSectionComponent } from '../lib/landing-sections';
+import type { ProductInfoSection } from '../lib/content';
+
+interface Props extends ProductLandingProps {}
+const { product, locale, c, docsHref } = Astro.props as Props;
+
+// Resolve landing info (null when no product-info file exists for this product).
+const info = await getLocalizedProductInfo(product.slug, locale);
+
+// Legacy fixed order, kept when the file declares no `sections`.
+const legacySections: ProductInfoSection[] = [
+  { type: 'hero' },
+  { type: 'highlights' },
+  { type: 'install' },
+  { type: 'features' },
+];
+const sections: ProductInfoSection[] = info?.sections ?? legacySections;
+// Split declared sections into the pre-CTA body and the closing CTA, so the
+// curated overview body always sits before the CTA (and an explicit
+// `- type: cta` never double-renders with the auto-appended one).
+const declaredCta = sections.find((s) => s.type === 'cta');
+const preCtaSections = sections.filter((s) => s.type !== 'cta');
+const closingCta = declaredCta ?? { type: 'cta' } as ProductInfoSection;
+
+/** Fill a section's data from the matching product-info field when the author
+ *  omitted `data` (so `- type: features` reuses the existing `features` field).
+ *  When `data` is a config object ({ variant, layout, eyebrow, title, items })
+ *  and `items` is omitted, the matching product-info field is merged in, so an
+ *  author can write `- type: highlights\n    data: { variant: badge }` and keep
+ *  the existing highlights field as the source of items. */
+function resolveData(section: ProductInfoSection): unknown {
+  const d = section.data;
+  if (d === undefined) {
+    switch (section.type) {
+      case 'hero':
+        return { tagline: info?.tagline ?? '', links: info?.links ?? [] };
+      case 'highlights':
+        return info?.highlights ?? [];
+      case 'install':
+        return info?.install ?? '';
+      case 'features':
+        return info?.features ?? [];
+      default:
+        return undefined;
+    }
+  }
+  // Config-object data: merge the matching field in when items is omitted.
+  if (d && typeof d === 'object' && !Array.isArray(d)) {
+    const cfg = d as Record<string, unknown>;
+    if (section.type === 'highlights' && cfg.items === undefined) {
+      return { ...cfg, items: info?.highlights ?? [] };
+    }
+    if (section.type === 'features' && cfg.items === undefined) {
+      return { ...cfg, items: info?.features ?? [] };
+    }
+    if (section.type === 'stats' && cfg.items === undefined) {
+      return { ...cfg, items: [] };
+    }
+  }
+  return d;
+}
+---
+
+{info ? (
+  <Fragment>
+    {preCtaSections.map((s) => {
+      const Comp = getSectionComponent(s.type);
+      if (!Comp) return null; // unknown type -> skip, never break the build
+      const data = resolveData(s);
+      return (
+        <Comp
+          type={s.type}
+          data={data}
+          product={product}
+          locale={locale}
+          c={c}
+          docsHref={docsHref}
+        />
+      );
+    })}
+
+    {info.hasBody && info.Content && (
+      <section class="section section-alt">
+        <div class="container">
+          <div class="prose product-overview">
+            <info.Content />
+          </div>
+        </div>
+      </section>
+    )}
+
+    {(() => {
+      const Cta = getSectionComponent(closingCta.type);
+      if (!Cta) return null;
+      return (
+        <Cta
+          type={closingCta.type}
+          data={closingCta.data}
+          product={product}
+          locale={locale}
+          c={c}
+          docsHref={docsHref}
+        />
+      );
+    })()}
+  </Fragment>
+) : (
+  <Fragment>
+    <!-- Hero: product name + one-line description + badges + actions.
+         Unlike the product-info path (which pulls tagline/links from MD),
+         this fallback is fully data-driven from the Product registry -
+         name, description, badges, github - so any registered product gets
+         a presentable landing with zero extra content. -->
+    <section class="product-hero">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="hero-glow hero-glow-2" aria-hidden="true"></div>
+      <div class="container">
+        <div class="hero-badge" style="display:inline-block; font-size:0.85rem; font-weight:600; padding:0.25rem 0.9rem; border-radius:100px; background:var(--color-accent-subtle); color:var(--color-accent); margin-bottom:1.25rem;">
+          {c.heroBadge}
+        </div>
+        <h1>{product.name}</h1>
+        <p class="hero-lead">{product.description[locale]}</p>
+        <div class="hero-actions">
+          <a href={product.github} class="btn btn-primary" target="_blank" rel="noopener">{c.viewSource}</a>
+          <a href={docsHref} class="btn btn-secondary">{c.documentation}</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Badges as a compact trust strip (reuses .highlight-badges) -->
+    {
+      product.badges.length > 0 && (
+        <section class="section">
+          <div class="container">
+            <div class="highlight-badges">
+              {product.badges.map((b: string) => (
+                <span class="highlight-badge">
+                  <span class="highlight-badge-value">{b}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+      )
+    }
+
+    <!-- About: the product description, presented as a real section rather
+         than a lone hero line. Falls back to localized generic copy when the
+         product has no description of its own. -->
+    <section class="section section-alt">
+      <div class="container">
+        <div class="section-header">
+          <p class="eyebrow">{c.docsEyebrow}</p>
+          <h2>{product.name}</h2>
+        </div>
+        <div class="prose product-overview">
+          <p>{product.description[locale]}</p>
+        </div>
+        <div class="cta-actions" style="margin-top:2rem;">
+          <a href={docsHref} class="btn btn-primary btn-large">{c.readDocs}</a>
+          <a href={product.github} class="btn btn-secondary btn-large" target="_blank" rel="noopener">{c.viewSource}</a>
+        </div>
+      </div>
+    </section>
+  </Fragment>
+)}

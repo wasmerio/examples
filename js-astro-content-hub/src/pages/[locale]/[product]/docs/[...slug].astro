@@ -1,0 +1,52 @@
+---
+// src/pages/[locale]/[product]/docs/[...slug].astro
+// Catch-all for product docs in non-default locales (e.g. /zh-Hans/vite/docs/foo/).
+// The default-locale route is src/pages/[product]/docs/[...slug].astro.
+import DocsLayout from '../../../../components/DocsLayout.astro';
+import { getLocalizedPaths, renderLocalizedPage } from '../../../../lib/content';
+import { buildAlternates, localizePath, withBase, defaultLocale, locales, type Locale } from '../../../../lib/i18n';
+import { products } from '../../../../../site.config';
+
+export async function getStaticPaths() {
+  const paths: { params: { locale: Locale; product: string; slug: string }; props: { product: string; locale: Locale } }[] = [];
+  for (const l of locales) {
+    if (l === defaultLocale) continue;
+    for (const p of products) {
+      const basePath = localizePath(`/${p.slug}/docs`, l);
+      const localized = await getLocalizedPaths(p.slug, basePath, l);
+      for (const lp of localized) {
+        paths.push({ params: { locale: l, product: p.slug, slug: lp.params.slug }, props: { product: p.slug, locale: l } });
+      }
+    }
+  }
+  return paths;
+}
+
+const { product, locale } = Astro.props;
+const { slug } = Astro.params;
+const basePath = localizePath(`/${product}/docs`, locale);
+const page = await renderLocalizedPage(product, locale, slug, basePath);
+// Resolve the redirect target outside the `return` so astro check counts
+// `withBase` as used (refs inside a frontmatter `return` are ignored by the
+// checker — see withastro/astro#14684).
+const redirectTarget = withBase(basePath);
+if (!page || !redirectTarget) return Astro.redirect(redirectTarget);
+const { Content, title, description, navItems, isFallback, headings } = page;
+const alternates = buildAlternates(`/${product}/docs/${slug}`);
+---
+
+<DocsLayout
+  title={title}
+  description={description}
+  sidebarTitle={`${product} Docs`}
+  productName={product}
+  productHref={`/${product}`}
+  navItems={navItems}
+  locale={locale}
+  isFallback={isFallback}
+  alternates={alternates}
+  headings={headings}
+  productSlug={product}
+>
+  <Content />
+</DocsLayout>

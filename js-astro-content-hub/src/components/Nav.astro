@@ -1,0 +1,274 @@
+---
+// src/components/Nav.astro
+// Global site header. Locale is inferred from the URL pathname so every
+// page composes <Nav /> without passing a locale prop. Links are prefixed
+// with the current locale (default locale has no prefix).
+//
+// Desktop: logo ... [Posts][Products ▾][custom links ▾][GitHub CTA][locale][theme]
+// Custom entries come from site.config.ts `site.nav.links` (plain links or
+// dropdowns). Mobile (<= 768px): a borderless hamburger toggles a full-screen
+// overlay; dropdown panels are collapsed by default and toggle via the
+// trigger. The locale switcher stays in the header bar, left of the
+// hamburger, so it is reachable without opening the menu.
+import { localeFromPath, localizePath, withBase, stripBase, t, siteName, defaultLocale, type Locale } from '../lib/i18n';
+import { products, site } from '../../site.config';
+import LocaleSwitcher from './LocaleSwitcher.astro';
+import ThemeToggle from './ThemeToggle.astro';
+import SearchModal from './SearchModal.astro';
+
+export interface Props {
+  alternates?: Partial<Record<Locale, string>>;
+}
+const { alternates } = Astro.props;
+
+const locale = localeFromPath(Astro.url.pathname);
+const ui = t[locale];
+const homeHref = withBase(localizePath('/', locale));
+const postsHref = withBase(localizePath('/posts', locale));
+const productsHref = withBase(localizePath('/products', locale));
+// Git host for the CTA pill + the nav's external links come from site config.
+const ctaHref = site.orgUrl;
+const navLinks = site.nav.links;
+
+// First path segment after the locale prefix. Used for active-state
+// highlighting: the Products trigger lights up on a product page or the
+// catalog; the Posts link lights up on /posts.
+let segs = stripBase(Astro.url.pathname).split('/').filter(Boolean);
+if (segs[0] === locale && locale !== defaultLocale) segs = segs.slice(1);
+const currentSlug = segs.length > 0 ? segs[0] : null;
+
+const featured = products.filter((p) => p.featured);
+const onProductsPage = segs[0] === 'products';
+const onProductPage = products.some((p) => p.slug === currentSlug);
+const productsActive = onProductsPage || onProductPage;
+
+// GitHub-style search scope: derive the initial scope from the page the user
+// is on. 'posts' on a blog article, 'docs' (narrowed to the current product's
+// docs) on a product docs page, 'products' on the catalog or a product
+// landing, otherwise All.
+const initialSearchScope = segs.includes('docs')
+  ? 'docs'
+  : segs[0] === 'posts'
+    ? 'posts'
+    : onProductsPage || onProductPage
+      ? 'products'
+      : '';
+// The product whose docs the current page belongs to, when it is one.
+const currentDocProduct = segs.includes('docs') && currentSlug ? currentSlug : undefined;
+// Resolve a nav link href: internal links are base- and locale-prefixed,
+// external links (http) are used as-is.
+const navLinkHref = (l: { href?: string }) =>
+  l.href ? (l.href.startsWith('http') ? l.href : withBase(localizePath(l.href, locale))) : undefined;
+// A nav link lights up when the current path (locale-stripped) contains any of
+// its `activePrefix` segments. For a dropdown, any child's match lights the
+// trigger. E.g. ['docs'] stays lit on any /docs/... page regardless of nesting.
+const isNavLinkActive = (l: (typeof navLinks)[number]): boolean =>
+  (!!l.activePrefix && l.activePrefix.some((p) => segs.includes(p))) ||
+  (!!l.children && l.children.some((c) => isNavLinkActive(c)));
+---
+<header class="site-header" id="site-header">
+  <div class="nav container">
+    <a href={homeHref} class="logo" aria-label={`${siteName} home`}>
+      <span class="logo-mark">
+        <img src={withBase('/images/logo.png')} alt="" width="28" height="28" />
+      </span>
+      <span class="logo-text">{siteName}</span>
+    </a>
+    <div class="nav-right">
+      <nav class="nav-menu" id="nav-menu" aria-label="Primary">
+        <ul class="nav-menu-primary">
+          <li><a href={postsHref} class:list={[{ active: segs[0] === 'posts' }]}>{ui.posts}</a></li>
+          <li
+            class="nav-dropdown"
+            id="nav-products-dropdown"
+            class:list={[{ 'nav-dropdown-active': productsActive }]}
+          >
+            <button
+              type="button"
+              class="nav-dropdown-trigger"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="nav-products-panel"
+            >
+              {ui.products}
+              <svg class="nav-dropdown-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
+            </button>
+            <div class="nav-dropdown-panel" id="nav-products-panel">
+              {
+                featured.map((p) => (
+                  <a class="nav-dropdown-item" href={withBase(localizePath(`/${p.slug}`, locale))}>
+                    <span class="nav-dropdown-name">{p.name}</span>
+                    <span class="nav-dropdown-desc">{p.description[locale]}</span>
+                  </a>
+                ))
+              }
+              <a class="nav-dropdown-all" href={productsHref}>{ui.viewAllProducts} →</a>
+            </div>
+          </li>
+          {navLinks.map((l, i) => (
+            l.children ? (
+              <li
+                class="nav-dropdown"
+                id={`nav-link-dropdown-${i}`}
+                class:list={[{ 'nav-dropdown-active': isNavLinkActive(l) }]}
+              >
+                <button
+                  type="button"
+                  class="nav-dropdown-trigger"
+                  aria-haspopup="menu"
+                  aria-expanded="false"
+                  aria-controls={`nav-link-panel-${i}`}
+                >
+                  {l.label[locale]}
+                  <svg class="nav-dropdown-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6"/>
+                  </svg>
+                </button>
+                <div class="nav-dropdown-panel" id={`nav-link-panel-${i}`}>
+                  {
+                    l.children.map((c) => (
+                      <a
+                        class="nav-dropdown-item"
+                        href={navLinkHref(c)}
+                        target={c.external ? '_blank' : undefined}
+                        rel={c.external ? 'noopener noreferrer' : undefined}
+                      >
+                        <span class="nav-dropdown-name">{c.label[locale]}</span>
+                      </a>
+                    ))
+                  }
+                </div>
+              </li>
+            ) : (
+              <li>
+                <a
+                  href={navLinkHref(l)}
+                  target={l.external ? '_blank' : undefined}
+                  rel={l.external ? 'noopener noreferrer' : undefined}
+                  class:list={[{ active: isNavLinkActive(l) }]}
+                >
+                  {l.label[locale]}
+                </a>
+              </li>
+            )
+          ))}
+        </ul>
+        <a href={ctaHref} class="nav-cta" target="_blank" rel="noopener noreferrer">
+          {ui.ctaGitHub}
+        </a>
+      </nav>
+      <div class="nav-actions">
+        <SearchModal
+          placeholder={ui.searchPlaceholder}
+          hint={ui.searchHint}
+          noResults={ui.searchNoResults}
+          loading={ui.searchLoading}
+          error={ui.searchError}
+          resultsFor={ui.searchResultsFor}
+          matchCount={ui.searchMatchCount}
+          matchCountPlural={ui.searchMatchCountPlural}
+          openLabel={ui.searchOpen}
+          scopes={[
+            { value: '', label: ui.searchScopeAll },
+            { value: 'posts', label: ui.searchScopePosts },
+            { value: 'docs', label: ui.searchScopeDocs },
+            { value: 'products', label: ui.searchScopeProducts },
+          ]}
+          initialScope={initialSearchScope}
+          initialProduct={currentDocProduct}
+        />
+        <div class="nav-locale">
+          <LocaleSwitcher alternates={alternates} current={locale} />
+        </div>
+        <ThemeToggle />
+      </div>
+      <button
+        class="nav-toggle"
+        type="button"
+        aria-label={ui.toggleMenu}
+        aria-expanded="false"
+        aria-controls="nav-menu"
+      >
+        <span class="nav-toggle-bar" aria-hidden="true"></span>
+        <span class="nav-toggle-bar" aria-hidden="true"></span>
+        <span class="nav-toggle-bar" aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<script>
+  // Mobile menu + Products dropdown toggles. Each navigation is a full page
+  // load, so this module re-runs on every page.
+  const header = document.getElementById('site-header');
+  const toggle = header?.querySelector<HTMLButtonElement>('.nav-toggle');
+  if (header && toggle) {
+    const setOpen = (open: boolean) => {
+      header.classList.toggle('nav-open', open);
+      toggle.setAttribute('aria-expanded', String(open));
+    };
+    toggle.addEventListener('click', () => {
+      setOpen(!header.classList.contains('nav-open'));
+    });
+    // Close after tapping a link (hash/anchor links otherwise leave it open).
+    header.querySelectorAll('.nav-menu a').forEach((a) => {
+      a.addEventListener('click', () => setOpen(false));
+    });
+    // Close on Escape.
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    });
+    // Close when clicking outside the header.
+    document.addEventListener('click', (e) => {
+      if (!header.contains(e.target as Node)) setOpen(false);
+    });
+
+    // Nav dropdowns (Products + any custom dropdown links). Desktop: opens
+    // on hover/click (hover is pure CSS); mobile: the panel is collapsed by
+    // default and toggles open via click. Each dropdown is independent.
+    // Keyboard: Enter/Space on the trigger toggles; Escape closes and
+    // returns focus to the trigger; Tab moves into the panel when open.
+    header.querySelectorAll<HTMLElement>('.nav-dropdown').forEach((dropdown) => {
+      const trigger = dropdown.querySelector<HTMLButtonElement>('.nav-dropdown-trigger');
+      const panel = dropdown.querySelector<HTMLElement>('.nav-dropdown-panel');
+      if (!trigger || !panel) return;
+      trigger.setAttribute('aria-haspopup', 'menu');
+      const setDropdownOpen = (open: boolean) => {
+        dropdown.classList.toggle('nav-dropdown-open', open);
+        trigger.setAttribute('aria-expanded', String(open));
+        // data-state mirrors the open state as an explicit attribute so the
+        // CSS can key off it with higher specificity than :hover. On touch
+        // devices the tap's click is followed by a synthetic mouseover, and
+        // without this the :hover rule would re-hide the just-opened panel
+        // (blank until a second tap). See global.css for the selectors.
+        dropdown.dataset.state = open ? 'open' : '';
+      };
+      // Click toggles (works on desktop and mobile).
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setDropdownOpen(!dropdown.classList.contains('nav-dropdown-open'));
+      });
+      // Open on Enter/Space (keyboard parity with click).
+      trigger.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          setDropdownOpen(!dropdown.classList.contains('nav-dropdown-open'));
+        }
+      });
+      // Close on outside click.
+      document.addEventListener('click', (e) => {
+        if (!dropdown.contains(e.target as Node)) setDropdownOpen(false);
+      });
+      // Close on Escape and return focus to the trigger.
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && dropdown.classList.contains('nav-dropdown-open')) {
+          setDropdownOpen(false);
+          trigger.focus();
+        }
+      });
+    });
+  }
+</script>

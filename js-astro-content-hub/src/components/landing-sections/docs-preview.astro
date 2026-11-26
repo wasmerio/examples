@@ -1,0 +1,51 @@
+---
+// src/components/landing-sections/docs-preview.astro
+// Landing section: renders the product's docs as a card grid on the landing
+// page, proving the hub's real content. Pulls from the existing docs
+// collection (current locale + default-locale fallback) - no new data, no
+// duplication. Cards link to each doc page; the header links to the docs
+// index. Data (optional): { eyebrow?, title? } overrides for the header;
+// when omitted, shared productCopy labels are used.
+import type { LandingSectionProps } from '../../lib/landing-sections';
+import { getCollection } from 'astro:content';
+import { defaultLocale, collectionSuffix } from '../../lib/i18n';
+import { buildNav } from '../../lib/docs';
+
+interface Props extends LandingSectionProps {}
+const { data, product, locale, c, docsHref } = Astro.props as Props;
+
+const header = (data && typeof data === 'object' ? data : {}) as { eyebrow?: string; title?: string };
+const eyebrow = header.eyebrow ?? c.docsEyebrow;
+const title = header.title ?? c.docsTitle;
+
+// Docs for this product + locale, with default-locale fallback (mirrors the
+// docs routes: primary first, then missing docs from the default locale).
+const collectionName = `${product.slug}Docs${collectionSuffix(locale)}`;
+const primary = (await getCollection(collectionName as any)) as { id: string; data: { title: string; order: number } }[];
+const fallback = locale === defaultLocale
+  ? []
+  : (await getCollection(`${product.slug}Docs${collectionSuffix(defaultLocale)}` as any)) as { id: string; data: { title: string; order: number } }[];
+const all = [
+  ...primary,
+  ...fallback.filter((f) => !primary.some((p) => p.id === f.id)),
+];
+const items = buildNav(all, docsHref);
+if (items.length === 0) return null;
+---
+
+<section class="section section-alt">
+  <div class="container">
+    <div class="section-header">
+      <p class="eyebrow">{eyebrow}</p>
+      <h2>{title}</h2>
+    </div>
+    <div class="docs-preview-grid">
+      {items.map((item) => (
+        <a class="docs-preview-card" href={item.href}>
+          <h3>{item.label}</h3>
+          <span class="docs-preview-link">Read →</span>
+        </a>
+      ))}
+    </div>
+  </div>
+</section>

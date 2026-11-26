@@ -1,0 +1,464 @@
+---
+import {
+  defaultLanguage,
+  formatDate,
+  languages,
+  localizePath,
+  useTranslations,
+  type Language,
+} from "../../../i18n";
+import { render } from "astro:content";
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+import PersonalCard from "../../../components/home/PersonalCard.vue";
+import { countWords, getPosts, summarize, getPostId } from "../../../lib/posts";
+import { categoryLabel } from "../../../data/post-options";
+import { getPersonalInfo } from "../../../config";
+import { getAvatar } from "../../../lib/avatar";
+export async function getStaticPaths() {
+  return (
+    await Promise.all(
+      languages.map(async (lang) =>
+        (await getPosts(lang)).map((post) => ({
+          params: {
+            lang: lang === defaultLanguage ? undefined : lang,
+            id: getPostId(post),
+          },
+          props: { post, lang },
+        })),
+      ),
+    )
+  ).flat();
+}
+const { post, lang } = Astro.props as {
+  post: Awaited<ReturnType<typeof getPosts>>[number];
+  lang: Language;
+};
+const t = useTranslations(lang);
+const personalInfo = getPersonalInfo(lang);
+const postsPath = localizePath(lang, "/posts/");
+const { Content, headings } = await render(post);
+const posts = (await getPosts(lang)).map(summarize);
+const summary = summarize(post);
+const index = posts.findIndex((item) => item.id === getPostId(post));
+const newer = posts[index - 1];
+const older = posts[index + 1];
+---
+
+<BaseLayout
+  title={post.data.title}
+  description={post.data.description}
+  heroTitle={t("article.heroTitle")}
+  article={{
+    id: getPostId(post),
+    published: post.data.date,
+    modified: post.data.updated ?? post.data.date,
+    tags: post.data.tags,
+    section: categoryLabel(lang, post.data.category),
+    words: countWords(post.body ?? ""),
+    minutes: summary.minutes,
+  }}
+>
+  <div class="reading-progress" id="reading-progress" aria-hidden="true"></div>
+  <div class="shell article-layout">
+    <article class="card article-detail">
+      <a href={postsPath} class="text-link">
+        <span class="icon-[lucide--arrow-left]" aria-hidden="true"></span>
+        {t("article.back")}
+      </a>
+      <header class="article-header">
+        <a
+          class="chip"
+          href={`${postsPath}?category=${encodeURIComponent(post.data.category)}`}
+        >
+          {categoryLabel(lang, post.data.category)}
+        </a>
+        <h1>{post.data.title}</h1>
+        <div class="article-meta">
+          <img
+            {...await getAvatar(25)}
+            alt=""
+            width="25"
+            height="25"
+            decoding="async"
+          />
+          <span>{personalInfo.name}</span>
+          <span>·</span>
+          <time datetime={summary.date}>{formatDate(lang, summary.date)}</time>
+          <span>·</span>
+          <span>{t("article.readingTime", { count: summary.minutes })}</span>
+        </div>
+        <p>{post.data.description}</p>
+      </header>
+      <details class="mobile-toc">
+        <summary>{t("article.toc")}</summary>
+        <ol>
+          {headings
+            .filter((h) => h.depth <= 3)
+            .map((h) => (
+              <li>
+                <a href={`#${h.slug}`}>{h.text}</a>
+              </li>
+            ))}
+        </ol>
+      </details>
+      <div class="prose" id="article-body">
+        <Content />
+      </div>
+      <div class="article-tools">
+        <div class="article-tags">
+          {post.data.tags.map((tag) => (
+            <a
+              class="chip"
+              href={`${postsPath}?tag=${encodeURIComponent(tag)}`}
+            >
+              # {tag}
+            </a>
+          ))}
+        </div>
+        <button id="share-post" class="btn secondary">
+          <span class="icon-[lucide--link]" aria-hidden="true"></span>
+          {t("article.share")}
+        </button>
+      </div>
+      <p id="share-status" role="status" class="share-status"></p>
+      <div class="author-note">
+        <img
+          {...await getAvatar(44)}
+          alt={personalInfo.name}
+          width="44"
+          height="44"
+          loading="lazy"
+          decoding="async"
+        />
+        <div>
+          <strong>
+            {personalInfo.name}{" "}
+            <span class="accent">/ {personalInfo.englishName}</span>
+          </strong>
+          <p>{t("article.authorNote")}</p>
+        </div>
+      </div>
+      <nav class="adjacent-posts" aria-label={t("article.adjacent")}>
+        {newer ? (
+          <a href={`${postsPath}${newer.id}/`}>
+            <span>{t("article.previous")}</span>
+            <strong>{newer.title}</strong>
+          </a>
+        ) : (
+          <div></div>
+        )}
+        {older && (
+          <a href={`${postsPath}${older.id}/`}>
+            <span>{t("article.next")}</span>
+            <strong>{older.title}</strong>
+          </a>
+        )}
+      </nav>
+    </article>
+    <aside class="article-sidebar">
+      <PersonalCard posts={posts} lang={lang} avatar={await getAvatar(64)} />
+      <nav class="card panel toc" aria-label={t("article.toc")}>
+        <h2 class="panel-title">
+          <span class="icon-[lucide--list]" aria-hidden="true"></span>
+          {t("article.toc")}
+        </h2>
+        <ol>
+          {headings
+            .filter((h) => h.depth <= 3)
+            .map((h, i) => (
+              <li class:list={{ nested: h.depth === 3 }}>
+                <a href={`#${h.slug}`} data-heading={h.slug}>
+                  <span>{String(i + 1).padStart(2, "0")}</span>
+                  {h.text}
+                </a>
+              </li>
+            ))}
+        </ol>
+      </nav>
+    </aside>
+  </div>
+  <script>
+    import { getLanguage, useTranslations } from "../../../i18n";
+    const t = useTranslations(getLanguage(document.documentElement.lang));
+    const body = document.querySelector<HTMLElement>("#article-body");
+    const progress = document.querySelector<HTMLElement>("#reading-progress");
+    const tocLinks = [
+      ...document.querySelectorAll<HTMLAnchorElement>("[data-heading]"),
+    ];
+    const update = () => {
+      if (!body || !progress) return;
+      const top = body.getBoundingClientRect().top + window.scrollY;
+      const distance = Math.max(
+        1,
+        body.offsetHeight - window.innerHeight + 130,
+      );
+      progress.style.width = `${Math.min(100, Math.max(0, ((window.scrollY - top + 100) / distance) * 100))}%`;
+      let current = "";
+      for (const link of tocLinks) {
+        const heading = document.getElementById(link.dataset.heading || "");
+        if (heading && heading.getBoundingClientRect().top <= 150)
+          current = link.dataset.heading || "";
+      }
+      tocLinks.forEach((link) => {
+        const selected = link.dataset.heading === current;
+        link.classList.toggle("active", selected);
+        selected
+          ? link.setAttribute("aria-current", "location")
+          : link.removeAttribute("aria-current");
+      });
+    };
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    update();
+    document
+      .querySelector("#share-post")
+      ?.addEventListener("click", async () => {
+        const status = document.querySelector<HTMLElement>("#share-status");
+        try {
+          await navigator.clipboard.writeText(
+            window.location.href.split("#")[0],
+          );
+          if (status) status.textContent = t("article.shared");
+        } catch {
+          if (status)
+            status.textContent = t("article.shareFallback", {
+              url: window.location.href.split("#")[0],
+            });
+        }
+      });
+    document.querySelectorAll<HTMLPreElement>(".prose pre").forEach((pre) => {
+      const code = pre.querySelector("code");
+      if (!code) return;
+      const button = document.createElement("button");
+      button.className = "copy-code";
+      button.textContent = t("article.copy");
+      button.setAttribute("aria-label", t("article.copyCode"));
+      button.setAttribute("aria-live", "polite");
+      button.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(code.textContent || "");
+          button.textContent = t("article.copied");
+        } catch {
+          button.textContent = t("article.copyFallback");
+        }
+        setTimeout(() => {
+          button.textContent = t("article.copy");
+        }, 2500);
+      });
+      pre.append(button);
+    });
+  </script>
+</BaseLayout>
+<style>
+  .article-layout {
+    max-width: 1120px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 250px;
+    gap: 28px;
+    align-items: start;
+    padding-top: 28px;
+    padding-bottom: 56px;
+  }
+  .article-detail {
+    padding: 36px 44px;
+    min-width: 0;
+  }
+  .article-header {
+    padding-top: 22px;
+  }
+  .article-header .chip {
+    color: var(--accent);
+  }
+  .article-header h1 {
+    font-size: 32px;
+    line-height: 1.25;
+    margin: 14px 0 14px;
+    font-weight: 600;
+  }
+  .article-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .article-meta img {
+    border-radius: 50%;
+  }
+  .article-header > p {
+    color: var(--muted);
+    font-size: 17px;
+    line-height: 1.65;
+    margin: 18px 0 24px;
+  }
+  .article-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-self: stretch;
+  }
+  .toc {
+    position: sticky;
+    top: 84px;
+  }
+  .toc ol {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .toc li {
+    line-height: 1.45;
+  }
+  .toc a {
+    display: flex;
+    gap: 8px;
+    padding: 5px 0 5px 10px;
+    border-left: 2px solid transparent;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .toc a span {
+    display: none;
+  }
+  .toc a:hover {
+    color: var(--text);
+  }
+  .toc a.active {
+    color: var(--text);
+    border-left-color: var(--accent);
+  }
+  .toc .nested a {
+    padding-left: 22px;
+  }
+  .reading-progress {
+    position: fixed;
+    top: 60px;
+    left: 0;
+    height: 2px;
+    width: 0;
+    background: var(--accent);
+    z-index: 41;
+  }
+  .article-tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 40px;
+    padding: 18px 0;
+    border-top: 1px solid var(--line);
+  }
+  .article-tools .btn {
+    font-size: 14px;
+    padding: 6px 12px;
+  }
+  .article-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .share-status {
+    color: var(--accent);
+    font-size: 14px;
+  }
+  .author-note {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .author-note img {
+    border-radius: 50%;
+  }
+  .author-note strong {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .author-note p {
+    font-size: 14px;
+    color: var(--muted);
+    margin: 2px 0 0;
+  }
+  .adjacent-posts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 20px;
+  }
+  .adjacent-posts a {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  .adjacent-posts a:last-child {
+    text-align: right;
+  }
+  .adjacent-posts span {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .adjacent-posts strong {
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .adjacent-posts a:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .mobile-toc {
+    display: none;
+  }
+  @media (max-width: 900px) {
+    .article-layout {
+      grid-template-columns: 1fr;
+      max-width: 800px;
+    }
+    .article-sidebar {
+      display: none;
+    }
+    .mobile-toc {
+      display: block;
+      border: 1px solid var(--line);
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin: 24px 0;
+      font-size: 15px;
+    }
+    .mobile-toc summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .mobile-toc ol {
+      padding-left: 18px;
+      margin: 10px 0 0;
+      color: var(--muted);
+    }
+    .mobile-toc li {
+      margin: 6px 0;
+    }
+    .mobile-toc a:hover {
+      color: var(--accent);
+    }
+  }
+  @media (max-width: 760px) {
+    .article-detail {
+      padding: 22px 18px;
+    }
+    .article-header h1 {
+      font-size: 26px;
+    }
+    .reading-progress {
+      top: 56px;
+    }
+    .adjacent-posts {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

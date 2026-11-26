@@ -1,0 +1,329 @@
+---
+import {
+  defaultLanguage,
+  getLanguageFromPath,
+  languages,
+  localizePath,
+  stripLanguage,
+  useTranslations,
+} from "../i18n";
+import { getSiteInfo, getPersonalInfo } from "../config";
+import { getShareImage } from "../lib/avatar";
+import { OG_HEIGHT, OG_WIDTH, ogImagePath } from "../lib/og";
+import "../styles/global.css";
+import "@fontsource-variable/ibm-plex-sans";
+import bodyFont from "@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-latin-wght-normal.woff2?url";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
+import Navigation from "../components/header/Navigation.vue";
+import Search from "../components/header/Search.vue";
+import MainContainer from "../components/MainContainer.vue";
+import { getPosts, summarize } from "../lib/posts";
+type ArticleInfo = {
+  id: string;
+  published: Date;
+  modified: Date;
+  tags: string[];
+  section: string;
+  words: number;
+  minutes: number;
+};
+interface Props {
+  title?: string;
+  description?: string;
+  heroTitle?: string;
+  home?: boolean;
+  article?: ArticleInfo;
+  pageType?: "WebPage" | "CollectionPage" | "ProfilePage";
+  noindex?: boolean;
+}
+const lang = getLanguageFromPath(Astro.url.pathname);
+const t = useTranslations(lang);
+const siteInfo = getSiteInfo(lang);
+const personalInfo = getPersonalInfo(lang);
+const basePath = stripLanguage(Astro.url.pathname);
+const {
+  title,
+  description = siteInfo.description,
+  heroTitle,
+  article,
+  pageType = "WebPage",
+  noindex = false,
+} = Astro.props;
+const posts = (await getPosts(lang)).map(summarize);
+const pageTitle = title
+  ? `${title} · ${siteInfo.title}`
+  : `${siteInfo.title} · ${siteInfo.titleSuffix}`;
+const canonical = new URL(Astro.url.pathname, siteInfo.url).href;
+const absolute = (path: string) => new URL(path, siteInfo.url).href;
+const homeUrl = absolute(localizePath(lang, "/"));
+const ogImage = absolute(ogImagePath(lang, article?.id));
+const ogImageAlt = title ?? siteInfo.titleSuffix;
+const avatarImage = absolute(await getShareImage());
+
+// One linked graph (https://schema.org) describing the site, its author,
+// this page, and, on posts, the article and its breadcrumb trail.
+const ids = {
+  person: `${absolute("/")}#person`,
+  website: `${homeUrl}#website`,
+  page: `${canonical}#webpage`,
+};
+const graph: Record<string, unknown>[] = [
+  {
+    "@type": "Person",
+    "@id": ids.person,
+    name: personalInfo.name,
+    alternateName: personalInfo.englishName,
+    jobTitle: personalInfo.role,
+    url: absolute(localizePath(lang, "/about/")),
+    image: avatarImage,
+    sameAs: [personalInfo.github],
+  },
+  {
+    "@type": "WebSite",
+    "@id": ids.website,
+    name: siteInfo.title,
+    alternateName: `${siteInfo.title} Blog`,
+    url: homeUrl,
+    description: siteInfo.description,
+    inLanguage: lang,
+    publisher: { "@id": ids.person },
+  },
+  {
+    "@type": article ? "WebPage" : pageType,
+    "@id": ids.page,
+    url: canonical,
+    name: pageTitle,
+    description,
+    inLanguage: lang,
+    isPartOf: { "@id": ids.website },
+    primaryImageOfPage: { "@type": "ImageObject", url: ogImage },
+    ...(pageType === "ProfilePage" && { mainEntity: { "@id": ids.person } }),
+  },
+];
+if (article) {
+  const postsUrl = absolute(localizePath(lang, "/posts/"));
+  graph.push(
+    {
+      "@type": "BlogPosting",
+      "@id": `${canonical}#article`,
+      headline: title,
+      description,
+      url: canonical,
+      mainEntityOfPage: { "@id": ids.page },
+      image: {
+        "@type": "ImageObject",
+        url: ogImage,
+        width: OG_WIDTH,
+        height: OG_HEIGHT,
+      },
+      datePublished: article.published.toISOString(),
+      dateModified: article.modified.toISOString(),
+      author: {
+        "@id": ids.person,
+        "@type": "Person",
+        name: personalInfo.name,
+        url: absolute(localizePath(lang, "/about/")),
+      },
+      publisher: { "@id": ids.person },
+      inLanguage: lang,
+      articleSection: article.section,
+      keywords: article.tags,
+      wordCount: article.words,
+      timeRequired: `PT${article.minutes}M`,
+      isPartOf: { "@id": ids.website },
+    },
+    {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { name: t("nav.home"), item: homeUrl },
+        { name: t("nav.posts"), item: postsUrl },
+        { name: title, item: canonical },
+      ].map((crumb, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        ...crumb,
+      })),
+    },
+  );
+}
+const jsonLd = JSON.stringify({
+  "@context": "https://schema.org",
+  "@graph": graph,
+}).replaceAll("<", "\\u003c");
+---
+
+<!doctype html>
+<html lang={siteInfo.language}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      rel="preload"
+      href={bodyFont}
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link rel="icon" href={siteInfo.favicon} sizes="32x32" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <meta name="author" content={personalInfo.name} />
+    <meta
+      name="robots"
+      content={
+        noindex
+          ? "noindex, follow"
+          : "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+      }
+    />
+    <meta
+      name="theme-color"
+      content="#f4f5f7"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#17191c"
+      media="(prefers-color-scheme: dark)"
+    />
+    <link rel="canonical" href={canonical} />
+    {!noindex &&
+      languages.map((language) => (
+        <link
+          rel="alternate"
+          hreflang={language}
+          href={absolute(localizePath(language, basePath))}
+        />
+      ))}
+    {!noindex && (
+      <link
+        rel="alternate"
+        hreflang="x-default"
+        href={absolute(localizePath(defaultLanguage, basePath))}
+      />
+    )}
+    <meta property="og:type" content={article ? "article" : "website"} />
+    <meta property="og:site_name" content={siteInfo.title} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={siteInfo.locale} />
+    {languages
+      .filter((language) => language !== lang)
+      .map((language) => (
+        <meta
+          property="og:locale:alternate"
+          content={getSiteInfo(language).locale}
+        />
+      ))}
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content={String(OG_WIDTH)} />
+    <meta property="og:image:height" content={String(OG_HEIGHT)} />
+    <meta property="og:image:alt" content={ogImageAlt} />
+    {article && (
+      <>
+        <meta
+          property="article:published_time"
+          content={article.published.toISOString()}
+        />
+        <meta
+          property="article:modified_time"
+          content={article.modified.toISOString()}
+        />
+        <meta property="article:author" content={personalInfo.github} />
+        <meta property="article:section" content={article.section} />
+        {article.tags.map((tag) => (
+          <meta property="article:tag" content={tag} />
+        ))}
+      </>
+    )}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content={ogImageAlt} />
+    <script type="application/ld+json" set:html={jsonLd} />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={`${siteInfo.title} RSS`}
+      href={absolute(localizePath(lang, "/rss.xml"))}
+    />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <title>{pageTitle}</title>
+    <script is:inline>
+      (() => {
+        let theme;
+        try {
+          theme = localStorage.getItem("theme");
+        } catch {}
+        document.documentElement.classList.toggle(
+          "dark",
+          theme === "dark" ||
+            (theme !== "light" &&
+              matchMedia("(prefers-color-scheme: dark)").matches),
+        );
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">
+      {t("common.skip")}
+    </a>
+    <Navigation pathname={Astro.url.pathname} lang={lang} client:load />
+    <Search posts={posts} lang={lang} client:idle />
+    {!article && <h1 class="sr-only">{heroTitle || t("hero.title")}</h1>}
+    <MainContainer>
+      <main id="main-content" tabindex="-1">
+        <slot />
+      </main>
+    </MainContainer>
+    <footer class="site-footer">
+      <div class="shell">
+        <span class="footer-mark">
+          © {new Date().getFullYear()} {personalInfo.englishName}
+        </span>
+        <nav aria-label={t("footer.links")}>
+          <a href={localizePath(lang, "/about/")}>{t("common.aboutSite")}</a>
+          <a href={localizePath(lang, "/rss.xml")}>{t("common.rss")}</a>
+          <a
+            href={personalInfo.github}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            GitHub
+          </a>
+        </nav>
+      </div>
+    </footer>
+    <button
+      class="back-top"
+      id="back-top"
+      aria-label={t("common.backTop")}
+      hidden
+    >
+      <span class="icon-[lucide--arrow-up]"></span>
+    </button>
+    <script>
+      const button = document.querySelector<HTMLButtonElement>("#back-top");
+      const update = () => {
+        if (button) button.hidden = window.scrollY < 500;
+      };
+      window.addEventListener("scroll", update, { passive: true });
+      button?.addEventListener("click", () =>
+        window.scrollTo({
+          top: 0,
+          behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? "instant"
+            : "smooth",
+        }),
+      );
+      update();
+    </script>
+  </body>
+</html>

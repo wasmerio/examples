@@ -1,0 +1,216 @@
+---
+import type { Block } from "../../lib/blocks";
+import { resolveBackgroundColor, resolveTextColor } from "../../lib/blocks";
+import katex from "katex";
+import RichText from "./RichText.astro";
+import type { TocItem } from "../../lib/toc";
+import { toEmbeddableImageUrl } from "../../lib/image-url";
+
+interface Props {
+  block: Block;
+  depth?: number;
+  tocItems?: TocItem[];
+  numberedListStart?: number;
+}
+
+const { block, depth = 0, tocItems = [], numberedListStart = 1 } = Astro.props;
+const bentoTocItems = tocItems.filter((item) => item.level === 1);
+const textColor = resolveTextColor(block.textColor);
+const backgroundColor = resolveBackgroundColor(block.backgroundColor);
+const style = [
+  textColor && `--block-local-text: ${textColor}`,
+  backgroundColor && `--block-local-bg: ${backgroundColor}`,
+  block.align && `text-align: ${block.align}`,
+]
+  .filter(Boolean)
+  .join("; ");
+const HeadingTag = block.type === "heading" ? (`h${block.level}` as const) : "div";
+const equationHtml = block.type === "equation"
+  ? katex.renderToString(block.equation || "\\square", {
+      displayMode: true,
+      throwOnError: false,
+      errorColor: "#a4473f",
+      output: "htmlAndMathml",
+      strict: "warn",
+    })
+  : "";
+const rawImageDisplayWidth = block.type === "image" ? Number(block.displayWidth) : Number.NaN;
+const imageDisplayWidth = Number.isFinite(rawImageDisplayWidth) && rawImageDisplayWidth > 0
+  ? Math.round(Math.max(120, Math.min(760, rawImageDisplayWidth)))
+  : undefined;
+---
+
+<section
+  id={block.id}
+  class:list={["notion-block", `notion-block--${block.type}`, depth > 0 && "notion-block--nested"]}
+  style={style}
+  data-block-id={block.id}
+  data-heading-block={block.type === "heading" ? "true" : undefined}
+>
+
+  <div class="notion-block__content">
+    {
+      block.type === "paragraph" && (
+        <p><RichText value={block.richText} /></p>
+      )
+    }
+
+    {
+      block.type === "heading" && (
+        <HeadingTag class={`notion-heading notion-heading--${block.level}`}>
+          <RichText value={block.richText} />
+        </HeadingTag>
+      )
+    }
+
+    {
+      block.type === "bulleted_list" && (
+        <ul class="notion-list"><li><RichText value={block.richText} /></li></ul>
+      )
+    }
+
+    {
+      block.type === "numbered_list" && (
+        <ol class="notion-list" start={numberedListStart}><li><RichText value={block.richText} /></li></ol>
+      )
+    }
+
+    {
+      block.type === "todo" && (
+        <label class="notion-todo">
+          <input type="checkbox" checked={block.checked} disabled />
+          <span><RichText value={block.richText} /></span>
+        </label>
+      )
+    }
+
+    {
+      block.type === "quote" && (
+        <blockquote><RichText value={block.richText} /></blockquote>
+      )
+    }
+
+    {
+      block.type === "callout" && (
+        <aside class="notion-callout">
+          <span class="notion-callout__icon" aria-hidden="true">{block.icon ?? "i"}</span>
+          <div><RichText value={block.richText} /></div>
+        </aside>
+      )
+    }
+
+    {
+      block.type === "table_of_contents" && (
+        <section class="block-bento notion-table-of-contents" aria-label="Contents">
+          <div class="block-bento__header">
+            <h2>Contents</h2>
+            <span>{bentoTocItems.length} sections</span>
+          </div>
+          {bentoTocItems.length > 0 ? (
+            <div class="block-bento__grid">
+              {bentoTocItems.map((item, index) => (
+                <a href={`#${item.id}`} class:list={["block-bento__card", index === 0 && "block-bento__card--wide"]}>
+                  <span class="block-bento__index">{String(index + 1).padStart(2, "0")}</span>
+                  <strong>{item.text}</strong>
+                </a>
+              ))}
+            </div>
+          ) : <p class="notion-table-of-contents__empty">제목 1 블록을 추가하면 목차에 표시됩니다.</p>}
+        </section>
+      )
+    }
+
+    {
+      block.type === "context" && (
+        <aside class="notion-context">
+          <strong>{block.title}</strong>
+          <div><RichText value={block.richText} /></div>
+        </aside>
+      )
+    }
+
+    {
+      block.type === "equation" && (
+        <figure class="notion-equation" aria-label="Equation">
+          <div class="notion-equation__content" set:html={equationHtml} />
+        </figure>
+      )
+    }
+
+    {
+      block.type === "toggle" && (
+        <details class="notion-toggle" open={block.isOpen === true}>
+          <summary><RichText value={block.richText} /></summary>
+          {block.children?.length && (
+            <div class="notion-children">
+              {block.children.map((child) => <Astro.self block={child} depth={depth + 1} tocItems={tocItems} />)}
+            </div>
+          )}
+        </details>
+      )
+    }
+
+    {
+      block.type === "code" && (
+        <figure class="notion-code">
+          {block.language && <figcaption>{block.language}</figcaption>}
+          <pre><code>{block.code}</code></pre>
+        </figure>
+      )
+    }
+
+    {block.type === "divider" && <hr class="notion-divider" />}
+
+    {
+      block.type === "image" && (
+        <figure class="notion-image" style={imageDisplayWidth ? `--image-display-width: ${imageDisplayWidth}px` : undefined}>
+          <img src={toEmbeddableImageUrl(block.src)} alt={block.alt} loading="lazy" />
+          {block.caption && <figcaption><RichText value={block.caption} /></figcaption>}
+        </figure>
+      )
+    }
+
+    {
+      block.type === "bookmark" && (
+        <a class="notion-bookmark" href={block.url} target="_blank" rel="noreferrer">
+          <span>
+            <strong>{block.title}</strong>
+            {block.description && <small>{block.description}</small>}
+          </span>
+          <em>{new URL(block.url).hostname}</em>
+        </a>
+      )
+    }
+
+    {
+      block.type === "table" && (
+        <div class="notion-table-wrap">
+          <table class="notion-table">
+            <tbody>
+              {block.rows.map((row, rowIndex) => (
+                <tr>
+                  {row.map((cell) => {
+                    const CellTag = block.hasHeaderRow && rowIndex === 0 ? "th" : "td";
+                    return (
+                      <CellTag style={cell.align ? `text-align: ${cell.align}` : undefined}>
+                        <RichText value={cell.richText} />
+                      </CellTag>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    }
+
+    {
+      block.type !== "toggle" && block.children?.length && (
+        <div class="notion-children">
+          {block.children.map((child) => <Astro.self block={child} depth={depth + 1} tocItems={tocItems} />)}
+        </div>
+      )
+    }
+  </div>
+</section>

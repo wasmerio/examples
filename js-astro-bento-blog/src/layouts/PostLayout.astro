@@ -1,0 +1,157 @@
+---
+import { type BlogSchema } from "../content.config";
+import BaseLayout from "./BaseLayout.astro";
+import { SITE } from "../config";
+import { withBase } from "../lib/site-path";
+import BlockRenderer from "../components/blocks/BlockRenderer.astro";
+import type { Block } from "../lib/blocks";
+import { toEmbeddableImageUrl } from "../lib/image-url";
+import type { TocItem } from "../lib/toc";
+import "../styles/blocks.css";
+
+export interface Props extends BlogSchema {
+  blocks?: Block[];
+  tocItems?: TocItem[];
+}
+
+const { title, description, pubDate, updatedDate, heroImage, status = [], tags = [], page, blocks = [], tocItems = [] } = Astro.props;
+const pageIcon = page?.icon;
+const pageCover = page?.cover;
+const formatDate = (date: Date) => new Intl.DateTimeFormat(SITE.locale, { dateStyle: "medium" }).format(date);
+const numberedListStart = (items: Block[], index: number) => {
+  if (items[index]?.type !== "numbered_list") return 1;
+  let start = 1;
+  for (let cursor = index - 1; cursor >= 0 && items[cursor]?.type === "numbered_list"; cursor -= 1) start += 1;
+  return start;
+};
+---
+
+<BaseLayout
+  title={`${title} | ${SITE.title}`}
+  description={description}
+  image={heroImage}
+  ogType="article"
+  includeSidebar={false}
+  showHeader={false}
+  showFooter={false}
+  mainClass="notion-main"
+>
+  <div class="block-page">
+    <article class="block-article" data-block-article>
+      <header class:list={["block-hero", pageCover && "block-hero--has-cover", pageCover && `block-hero--${pageCover.type}`, pageIcon && "block-hero--has-icon"]}>
+        <nav class="notion-breadcrumb" aria-label="Breadcrumb">
+          <a href={withBase('/blog/')}>Blog</a>
+          <span>/</span>
+          <span>{title}</span>
+        </nav>
+        {pageCover && (
+          <div
+            class:list={["block-cover", `block-cover--${pageCover.type}`]}
+            style={pageCover.type === "color" ? `--block-cover-color: ${pageCover.value}` : undefined}
+            aria-hidden="true"
+          >
+            {pageCover.type === "image" && (
+              <img
+                src={toEmbeddableImageUrl(pageCover.value)}
+                alt=""
+                style={`object-position: center ${pageCover.position ?? 50}%`}
+                loading="eager"
+                decoding="async"
+              />
+            )}
+          </div>
+        )}
+        <div class="block-hero__content">
+          {pageIcon && <div class="block-page-icon" aria-hidden="true">{pageIcon}</div>}
+          <h1>{title}</h1>
+          <p>{description}</p>
+          <dl class="block-properties">
+            {pubDate && (
+              <div>
+                <dt>Date</dt>
+                <dd><time datetime={pubDate.toISOString()}>{formatDate(pubDate)}</time></dd>
+              </div>
+            )}
+            {updatedDate && (
+              <div>
+                <dt>Updated</dt>
+                <dd><time datetime={updatedDate.toISOString()}>{formatDate(updatedDate)}</time></dd>
+              </div>
+            )}
+            {status.length > 0 && (
+              <div>
+                <dt>Status</dt>
+                <dd class="block-property-status">
+                  {status.map((item) => <span class="block-badge">{item}</span>)}
+                </dd>
+              </div>
+            )}
+            {tags.length > 0 && (
+              <div>
+                <dt>Tags</dt>
+                <dd class="block-property-tags">
+                  {tags.map((tag) => (
+                    <a href={withBase(`/blog/tag/${encodeURIComponent(tag)}/`)} class="block-tag" data-astro-reload>
+                      {tag}
+                    </a>
+                  ))}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </div>
+      </header>
+
+      <div class="block-workspace">
+        <div class="block-content-column">
+          <div class="block-shell">
+            <div class="block-document">
+              {blocks.length > 0 ? blocks.map((block, index) => <BlockRenderer block={block} tocItems={tocItems} numberedListStart={numberedListStart(blocks, index)} />) : <slot />}
+            </div>
+          </div>
+        </div>
+
+        {tocItems.length > 0 && (
+          <aside class="block-outline block-bento__card" aria-label="Outline">
+            <span class="block-bento__index">Outline</span>
+            <nav>
+              {tocItems.map((item) => (
+                <a href={`#${item.id}`} class={`block-toc__link block-toc__link--${item.level}`} data-toc-link={item.id}>
+                  {item.text}
+                </a>
+              ))}
+            </nav>
+          </aside>
+        )}
+      </div>
+    </article>
+  </div>
+
+  <script>
+    const headings = Array.from(document.querySelectorAll("[data-heading-block='true']"));
+    const tocLinks = new Map(
+      Array.from(document.querySelectorAll("[data-toc-link]")).map((link) => [
+        link.getAttribute("data-toc-link"),
+        link,
+      ])
+    );
+
+    if ("IntersectionObserver" in window && headings.length > 0) {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const visible = entries
+            .filter((entry) => entry.isIntersecting)
+            .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+
+          if (!visible) return;
+
+          tocLinks.forEach((link) => link.removeAttribute("aria-current"));
+          tocLinks.get(visible.target.id)?.setAttribute("aria-current", "true");
+        },
+        { rootMargin: "-20% 0px -65% 0px", threshold: 0.01 }
+      );
+
+      headings.forEach((heading) => observer.observe(heading));
+    }
+  </script>
+</BaseLayout>

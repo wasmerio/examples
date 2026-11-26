@@ -1,0 +1,85 @@
+---
+import BaseHead from "../components/BaseHead.astro";
+import ThemeToggle from "../components/ThemeToggle.astro";
+import { ClientRouter } from "astro:transitions";
+import { SITE, SITE_TITLE, SITE_DESCRIPTION, TRANSITION_API } from "../config";
+
+const {
+  image,
+  title = SITE_TITLE,
+  description = SITE_DESCRIPTION,
+  ogType,
+  mainClass = "p-6 pt-10 lg:max-w-[900px] max-w-[100vw]",
+} = Astro.props;
+const themeStorageKey = `${SITE.storagePrefix}.theme`;
+---
+
+<!doctype html>
+<html lang={SITE.language}>
+  <head>
+    <BaseHead title={title} description={description} image={image} ogType={ogType} />
+    <script is:inline define:vars={{ themeStorageKey }}>
+      (() => {
+        const stored = localStorage.getItem(themeStorageKey);
+        const theme = stored === "dark" || stored === "light"
+          ? stored
+          : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    {TRANSITION_API && <ClientRouter />}
+  </head>
+  <body>
+    <main class={mainClass}>
+      <slot />
+    </main>
+    <ThemeToggle />
+    <script is:inline define:vars={{ themeStorageKey }}>
+      (() => {
+        const key = themeStorageKey;
+
+        function storedTheme() {
+          const stored = localStorage.getItem(key);
+          if (stored === "dark" || stored === "light") return stored;
+          return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+
+        function applyTheme(targetDocument = document) {
+          targetDocument.documentElement.dataset.theme = storedTheme();
+        }
+
+        function updateToggle() {
+          const dark = document.documentElement.dataset.theme === "dark";
+          document.querySelectorAll("[data-theme-toggle-button]").forEach((button) => {
+            button.setAttribute("aria-checked", String(dark));
+          });
+          document.querySelectorAll("[data-theme-label]").forEach((label) => {
+            label.toggleAttribute("data-active", label.getAttribute("data-theme-label") === (dark ? "dark" : "light"));
+          });
+        }
+
+        document.addEventListener("click", (event) => {
+          const target = event.target instanceof Element
+            ? event.target.closest("[data-theme-toggle-button]")
+            : null;
+          if (!target) return;
+          const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+          document.documentElement.dataset.theme = theme;
+          localStorage.setItem(key, theme);
+          updateToggle();
+        });
+
+        document.addEventListener("astro:before-swap", (event) => {
+          const nextDocument = event.newDocument;
+          if (nextDocument) applyTheme(nextDocument);
+        });
+        document.addEventListener("astro:page-load", () => {
+          applyTheme();
+          updateToggle();
+        });
+        applyTheme();
+        updateToggle();
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,71 @@
+---
+import { getCollection, type CollectionEntry } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import { SITE_CONFIG } from '../../config';
+import { slugifyTag } from '../../utils/tags';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => data.published === true);
+
+  const byTag = new Map<string, { name: string; posts: CollectionEntry<'blog'>[] }>();
+  for (const post of posts) {
+    // Dedupe slugs per post
+    const postTagMap = new Map<string, string>();
+    for (const tag of post.data.keywords ?? []) {
+      const slug = slugifyTag(tag);
+      if (!postTagMap.has(slug)) {
+        postTagMap.set(slug, tag);
+      }
+    }
+    // Process deduped tags
+    for (const [slug, tag] of postTagMap) {
+      const entry = byTag.get(slug);
+      if (entry) {
+        entry.posts.push(post);
+      } else {
+        byTag.set(slug, { name: tag, posts: [post] });
+      }
+    }
+  }
+
+  return [...byTag.entries()].map(([slug, { name, posts: tagPosts }]) => ({
+    params: { tag: slug },
+    props: {
+      name,
+      posts: tagPosts.sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf()),
+    },
+  }));
+}
+
+const { name, posts } = Astro.props;
+const base = import.meta.env.BASE_URL;
+---
+
+<Layout title={`${name} - ${SITE_CONFIG.title}`} description={`Posts tagged with ${name}`}>
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12" id="main-content">
+    <h1 class="text-4xl font-bold text-center mb-4 text-gray-900 dark:text-gray-100">
+      Posts tagged "{name}"
+    </h1>
+    <p class="text-center text-gray-500 dark:text-gray-400 mb-12">
+      <a href={`${base}tags`} class="text-blue-600 dark:text-blue-400 hover:underline">← All tags</a>
+    </p>
+
+    <section aria-label={`Posts tagged ${name}`}>
+      <ul class="max-w-3xl mx-auto space-y-6 list-none p-0 m-0">
+        {posts.map((post) => (
+          <li class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-2">
+              <a href={`${base}blog/${post.id}`} class="text-gray-900 dark:text-gray-100 hover:text-blue-600 dark:hover:text-blue-400">
+                {post.data.title}
+              </a>
+            </h2>
+            <time datetime={post.data.date.toISOString()} class="text-gray-500 dark:text-gray-400 text-sm block mb-2">
+              {post.data.date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </time>
+            <p class="text-gray-600 dark:text-gray-400">{post.data.description}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  </div>
+</Layout>

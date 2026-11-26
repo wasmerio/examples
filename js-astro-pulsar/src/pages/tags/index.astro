@@ -1,0 +1,53 @@
+---
+import { getCollection } from 'astro:content';
+import Layout from '../../layouts/Layout.astro';
+import { SITE_CONFIG } from '../../config';
+import { slugifyTag } from '../../utils/tags';
+
+const base = import.meta.env.BASE_URL;
+
+const posts = await getCollection('blog', ({ data }) => data.published === true);
+
+const tagMap = new Map<string, { name: string; count: number }>();
+for (const post of posts) {
+  // Dedupe slugs per post
+  const postTagMap = new Map<string, string>();
+  for (const tag of post.data.keywords ?? []) {
+    const slug = slugifyTag(tag);
+    if (!postTagMap.has(slug)) {
+      postTagMap.set(slug, tag);
+    }
+  }
+  // Process deduped tags
+  for (const [slug, tag] of postTagMap) {
+    const existing = tagMap.get(slug);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      tagMap.set(slug, { name: tag, count: 1 });
+    }
+  }
+}
+const tags = [...tagMap.entries()].sort((a, b) => b[1].count - a[1].count);
+---
+
+<Layout title={`Tags - ${SITE_CONFIG.title}`} description="Browse all post topics">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12" id="main-content">
+    <h1 class="text-4xl font-bold text-center mb-12 text-gray-900 dark:text-gray-100">Tags</h1>
+
+    <nav aria-label="All tags">
+      <ul class="flex flex-wrap justify-center gap-3 list-none p-0 m-0">
+        {tags.map(([slug, { name, count }]) => (
+          <li>
+            <a
+              href={`${base}tags/${slug}`}
+              class="inline-block px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full hover:bg-blue-600 hover:text-white dark:hover:bg-blue-400 dark:hover:text-gray-900 transition-colors duration-200"
+            >
+              {name} <span class="text-sm opacity-75">({count})</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  </div>
+</Layout>

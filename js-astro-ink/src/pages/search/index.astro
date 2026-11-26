@@ -1,0 +1,163 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro'
+import { config } from '@/site-config'
+---
+
+<BaseLayout title="Search" description="Full-text site search" noindex>
+  <div class="animate not-prose mx-auto max-w-2xl">
+    <header class="mb-6">
+      <h1 class="font-serif text-3xl font-semibold">Search</h1>
+      <p class="mt-2 text-sm text-ink-soft">
+        Search all posts from a local index (no external service)
+      </p>
+    </header>
+
+    {
+      config.search.enabled ? (
+        <>
+          <div class="relative">
+            <label for="search-input" class="sr-only">
+              Search posts
+            </label>
+            <span
+              class="i-lucide-search absolute start-3.5 top-1/2 size-4 -translate-y-1/2 text-ink-soft"
+              aria-hidden="true"
+            />
+            <input
+              id="search-input"
+              type="search"
+              placeholder="Search posts, e.g. astro, theme…"
+              autocomplete="off"
+              aria-controls="search-results"
+              autofocus
+              class="w-full rounded-xl border border-line bg-card px-10 py-3 text-sm text-ink outline-none transition-colors duration-200 placeholder:text-ink-soft focus:border-accent focus:ring-2 focus:ring-accent/20"
+            />
+          </div>
+          <p
+            id="search-status"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            class="mt-3 text-sm text-ink-soft"
+          />
+          <ul id="search-results" class="mt-6 flex flex-col" />
+        </>
+      ) : (
+        <p class="py-10 text-center text-ink-soft">Search is disabled in the configuration.</p>
+      )
+    }
+  </div>
+</BaseLayout>
+
+<script>
+  import { withBase } from '@/utils'
+  import { matchingSection, queryTerms, searchPosts, type SearchItem } from '@/utils/search'
+
+  const input = document.getElementById('search-input') as HTMLInputElement | null
+  const status = document.getElementById('search-status') as HTMLElement | null
+  const list = document.getElementById('search-results') as HTMLElement | null
+  let index: SearchItem[] | null = null
+  let loadFailed = false
+
+  if (input && status && list) {
+    const escapeHtml = (s: string) =>
+      s.replace(
+        /[&<>"']/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!
+      )
+
+    const snippet = (text: string, pattern: RegExp) => {
+      const i = text.search(pattern)
+      const start = Math.max(0, i - 40)
+      const end = Math.max(i, 0) + 140
+      return (start > 0 ? '…' : '') + text.slice(start, end).trim() + (end < text.length ? '…' : '')
+    }
+
+    const render = (q: string) => {
+      const query = q.trim().toLowerCase()
+      if (!query) {
+        list!.innerHTML = ''
+        status!.textContent = 'Type to search…'
+        return
+      }
+      if (!index) {
+        list!.innerHTML = ''
+        status!.textContent = loadFailed
+          ? 'Failed to load search index. Please reload to try again.'
+          : 'Loading index…'
+        return
+      }
+      const hits = searchPosts(index, query)
+      const terms = queryTerms(query)
+      const literals = [...terms]
+        .sort((a, b) => b.length - a.length)
+        .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      const pattern = new RegExp(`(${literals.join('|')})`, 'gi')
+      const highlight = (text: string) =>
+        text
+          .split(pattern)
+          .map((part, i) => (i % 2 ? `<mark>${escapeHtml(part)}</mark>` : escapeHtml(part)))
+          .join('')
+      status!.textContent = `${hits.length} results found`
+      list!.innerHTML = hits.length
+        ? hits
+            .map((item) => {
+              const matched = matchingSection(item, terms)
+              const path = withBase(
+                '/blog/' + item.slug.split('/').map(encodeURIComponent).join('/')
+              )
+              const href = matched ? path + '#' + encodeURIComponent(matched.section.id) : path
+              const text = matched?.text ?? `${item.description} ${item.content}`
+              return `
+            <li class="post-row">
+              <a href="${escapeHtml(href)}" class="group block">
+                <h2 class="font-serif text-xl font-semibold leading-snug transition-colors group-hover:text-accent">${highlight(item.title)}${matched ? ` <span class="text-sm font-normal text-ink-soft">› ${highlight(matched.section.title)}</span>` : ''}</h2>
+                <time class="mt-2 block text-xs text-ink-soft tabular-nums">${new Date(item.date).toLocaleDateString(document.documentElement.lang)}</time>
+                <p class="mt-2 line-clamp-2 text-sm leading-relaxed text-ink-body">${highlight(snippet(text, pattern))}</p>
+                ${
+                  item.tags.length
+                    ? `<div class="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-soft">${item.tags
+                        .map((t) => `<span>#${escapeHtml(t)}</span>`)
+                        .join('')}</div>`
+                    : ''
+                }
+              </a>
+            </li>`
+            })
+            .join('')
+        : '<li class="py-12 text-center text-ink-soft">No matching posts</li>'
+    }
+
+    let timer: number | undefined
+    const restoreQuery = () => {
+      input.value = new URL(location.href).searchParams.get('q') ?? ''
+      render(input.value)
+    }
+    restoreQuery()
+    window.addEventListener('popstate', restoreQuery)
+    input.addEventListener('input', () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        const url = new URL(location.href)
+        if (input.value.trim()) url.searchParams.set('q', input.value.trim())
+        else url.searchParams.delete('q')
+        history.replaceState(history.state, '', url)
+        render(input.value)
+      }, 120)
+    })
+
+    fetch(withBase('/search-index.json'))
+      .then((r) => {
+        if (!r.ok) throw new Error(`Search index request failed: ${r.status}`)
+        return r.json()
+      })
+      .then((data: SearchItem[]) => {
+        index = data
+        render(input.value)
+      })
+      .catch(() => {
+        loadFailed = true
+        status!.textContent = 'Failed to load search index. Please reload to try again.'
+      })
+  }
+</script>

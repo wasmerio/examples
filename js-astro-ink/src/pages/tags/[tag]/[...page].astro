@@ -1,0 +1,62 @@
+---
+import type { GetStaticPaths, Page } from 'astro'
+import type { CollectionEntry } from 'astro:content'
+
+import BaseLayout from '@/layouts/BaseLayout.astro'
+import Pagination from '@/components/Pagination.astro'
+import PostCard from '@/components/PostCard.astro'
+import { config } from '@/site-config'
+import { getBlogCollection, sortMDByDate } from '@/utils/server'
+
+export const prerender = true
+
+export const getStaticPaths = (async ({ paginate }) => {
+  const posts = await getBlogCollection()
+  const tags = new Set(posts.flatMap((p) => p.data.tags))
+  return [...tags].flatMap((tag) => {
+    const tagged = sortMDByDate(posts.filter((p) => p.data.tags.includes(tag)))
+    return paginate(tagged, {
+      pageSize: config.blog.pageSize,
+      params: { tag },
+      props: { tag }
+    })
+  })
+}) satisfies GetStaticPaths
+
+interface Props {
+  page: Page<CollectionEntry<'blog'>>
+  tag: string
+}
+
+const { page, tag } = Astro.props
+---
+
+<BaseLayout title={`#${tag}`} description={`Posts tagged ${tag}`}>
+  <div class="animate not-prose mx-auto max-w-[47.5rem]">
+    <header class="mb-8">
+      <h1 class="font-serif text-3xl font-semibold">
+        <span class="text-accent">#{tag}</span>
+      </h1>
+      <p class="mt-2 text-sm text-ink-soft">
+        {page.total} posts · page {page.currentPage} of {Math.max(1, page.lastPage)}
+      </p>
+    </header>
+
+    {
+      page.data.length === 0 ? (
+        <p class="py-12 text-center text-ink-soft">No posts with this tag.</p>
+      ) : (
+        <div class="flex flex-col">
+          {page.data.map((post) => (
+            <PostCard post={post} />
+          ))}
+        </div>
+      )
+    }
+
+    <Pagination
+      prev={page.url.prev ? { title: 'Previous', url: page.url.prev } : undefined}
+      next={page.url.next ? { title: 'Next', url: page.url.next } : undefined}
+    />
+  </div>
+</BaseLayout>

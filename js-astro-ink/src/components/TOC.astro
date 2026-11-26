@@ -1,0 +1,173 @@
+---
+import type { MarkdownHeading } from 'astro'
+import { siteLanguage, ui } from '@/utils/locale'
+
+interface Props {
+  headings: MarkdownHeading[]
+  language: string
+  hasLongOutline?: boolean
+  variant: 'mobile' | 'desktop'
+}
+
+const { headings, language, hasLongOutline, variant } = Astro.props
+const label = ui('Table of contents', '本文目录')
+---
+
+{
+  headings.length > 0 &&
+    (variant === 'mobile' ? (
+      <>
+        <details lang={siteLanguage} class="toc-mobile not-prose mb-6 border-y border-line xl:hidden">
+          <summary class="flex min-h-10 cursor-pointer select-none items-center gap-2 font-serif text-sm font-semibold text-ink-soft transition-colors hover:text-accent">
+            <span class="i-lucide-list-tree size-4" aria-hidden="true" />
+            {label}
+            <span class="i-lucide-chevron-down ms-auto size-4 transition-transform duration-300" aria-hidden="true" />
+          </summary>
+          <nav class="pb-3" aria-label={label}>
+            <ul lang={language} class="flex flex-col gap-0.5">
+              {headings.map((h) => (
+                <li style={`padding-inline-start: ${(h.depth - 2) * 0.8}rem`}>
+                  <a href={`#${h.slug}`} class="toc-link block rounded-md px-3 py-1.5 text-sm leading-snug text-ink-soft transition-colors hover:text-accent">
+                    {h.text}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </details>
+        {hasLongOutline && (
+          <dialog id="toc-dialog" lang={siteLanguage} aria-labelledby="toc-dialog-title" class="not-prose rounded-xl border border-line bg-paper p-0 text-ink">
+            <header class="flex items-center justify-between gap-4 border-b border-line px-4 py-2">
+              <h2 id="toc-dialog-title" class="font-serif font-semibold">{label}</h2>
+              <form method="dialog">
+                <button class="grid size-10 place-items-center rounded-md text-ink-soft hover:text-accent" aria-label={ui('Close', '关闭')}>
+                  <span class="i-lucide-x size-5" aria-hidden="true" />
+                </button>
+              </form>
+            </header>
+            <div class="toc-dialog-list overflow-y-auto overscroll-contain p-3"></div>
+          </dialog>
+        )}
+      </>
+    ) : (
+      <aside lang={siteLanguage} class="toc not-prose sticky top-24 hidden max-h-[calc(100dvh-8rem)] self-start overflow-y-auto pb-6 xl:col-start-2 xl:row-start-1 xl:block">
+        <h2 class="font-serif text-sm font-semibold tracking-widest text-ink-soft">{ui('Contents', '目录')}</h2>
+        <ul lang={language} class="mt-3 flex flex-col gap-0.5 border-s border-line ps-4">
+          {headings.map((h) => (
+            <li style={`padding-inline-start: ${(h.depth - 2) * 0.85}rem`}>
+              <a href={`#${h.slug}`} class="toc-link block rounded-md py-1 text-[13px] leading-snug text-ink-soft transition-colors duration-200 hover:text-accent">
+                {h.text}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </aside>
+    ))
+}
+
+<style>
+  .toc-link[aria-current='location'] {
+    color: hsl(var(--accent) / 1);
+    font-weight: 600;
+  }
+  .toc-mobile[open] summary .i-lucide-chevron-down {
+    transform: rotate(180deg);
+  }
+  #toc-dialog {
+    width: min(27rem, calc(100vw - 2rem));
+    max-height: 75dvh;
+    margin: auto;
+  }
+  #toc-dialog[open] {
+    display: flex;
+    flex-direction: column;
+  }
+  #toc-dialog::backdrop {
+    background: hsl(var(--ink) / 0.28);
+  }
+  :global(html:has(#toc-dialog[open])) {
+    overflow: hidden;
+  }
+  @media print {
+    #toc-dialog[open] {
+      display: none;
+    }
+  }
+</style>
+
+<script>
+  const outline = document.querySelector<HTMLDetailsElement>('.toc-mobile')
+  if (outline) {
+    const linksById = new Map<string, HTMLAnchorElement[]>()
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('.toc-link')) {
+      const id = link.getAttribute('href')!.slice(1)
+      const links = linksById.get(id) ?? []
+      links.push(link)
+      linksById.set(id, links)
+    }
+    const headings = [...linksById.keys()]
+      .map((id) => document.getElementById(id))
+      .filter((heading): heading is HTMLElement => !!heading)
+    const button = document.querySelector<HTMLButtonElement>('#toc-open')
+    const dialog = document.querySelector<HTMLDialogElement>('#toc-dialog')
+    const list = dialog?.querySelector('.toc-dialog-list')
+    const header = document.getElementById('site-header')
+    let activeId: string | undefined
+    let frame = 0
+    let headingMargin = 0
+
+    function update() {
+      frame = 0
+      const headerBottom = header?.getBoundingClientRect().bottom ?? 0
+      // Find the last heading above the anchor landing position, including on a reverse scroll.
+      let start = 0
+      let end = headings.length
+      while (start < end) {
+        const mid = (start + end) >>> 1
+        if (headings[mid].getBoundingClientRect().top <= Math.max(headerBottom, headingMargin) + 2) start = mid + 1
+        else end = mid
+      }
+      const id = headings[start - 1]?.id
+      if (id !== activeId) {
+        if (activeId) linksById.get(activeId)?.forEach((link) => link.removeAttribute('aria-current'))
+        if (id) linksById.get(id)?.forEach((link) => link.setAttribute('aria-current', 'location'))
+        activeId = id
+      }
+      if (button && dialog) {
+        const mobile = !!outline!.getClientRects().length
+        button.hidden = !mobile || outline!.getBoundingClientRect().bottom > headerBottom
+        if (!mobile && dialog.open) dialog.close()
+      }
+    }
+    function schedule() {
+      if (!frame) frame = requestAnimationFrame(update)
+    }
+    function measure() {
+      headingMargin = headings.length ? parseFloat(getComputedStyle(headings[0]).scrollMarginTop) || 0 : 0
+      schedule()
+    }
+    measure()
+    window.addEventListener('scroll', schedule, { passive: true })
+    window.addEventListener('resize', measure)
+    outline.addEventListener('toggle', schedule)
+
+    if (button && dialog && list) {
+      button.addEventListener('click', () => {
+        const nav = outline.querySelector('nav')!
+        list.replaceChildren(nav.cloneNode(true))
+        dialog.showModal()
+        list.querySelector<HTMLAnchorElement>('[aria-current="location"]')?.focus()
+      })
+      dialog.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element)) return
+        const link = event.target.closest<HTMLAnchorElement>('a[href^="#"]')
+        if (!link) return
+        // Preserve native anchor navigation, including the back button, and continue Tab at the heading.
+        const heading = document.getElementById(link.getAttribute('href')!.slice(1))
+        dialog.close()
+        heading?.setAttribute('tabindex', '-1')
+        heading?.focus({ preventScroll: true })
+      })
+    }
+  }
+</script>

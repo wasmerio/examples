@@ -1,0 +1,217 @@
+<style is:global>
+  /* Native modal dialogs keep the background inert and support Escape. */
+  .lb-dialog {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    padding: 4rem 4vw;
+    background: hsl(var(--paper) / 0.97);
+    color: hsl(var(--ink));
+    cursor: zoom-out;
+  }
+  .lb-dialog[open] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .lb-dialog::backdrop {
+    background: transparent;
+  }
+  .lb-dialog img {
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: var(--radius);
+    box-shadow: 0 0 0 1px hsl(var(--line) / 0.8);
+    cursor: default;
+  }
+  .lb-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 9999px;
+    border: 1px solid hsl(var(--line));
+    background: hsl(var(--card));
+    color: hsl(var(--ink-soft));
+    cursor: pointer;
+  }
+  .lb-close:hover {
+    background: hsl(var(--wash));
+    color: hsl(var(--accent));
+  }
+  .lb-caption {
+    position: absolute;
+    bottom: 1rem;
+    left: 10%;
+    width: 80%;
+    overflow: hidden;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: hsl(var(--ink-soft));
+    font-size: 0.8125rem;
+    cursor: default;
+  }
+  /* A real button provides Tab, Enter and Space without custom key handlers. */
+  .prose .lb-trigger {
+    display: block;
+    width: fit-content;
+    max-width: 100%;
+    margin: 1.5em auto;
+    padding: 0;
+    border: 0;
+    border-radius: calc(var(--radius) * 1.25);
+    background: transparent;
+    cursor: zoom-in;
+  }
+  .prose .lb-trigger img {
+    margin: 0;
+  }
+  .prose figure .lb-trigger {
+    margin: 0 auto;
+  }
+  .prose .lb-trigger.lb-failed {
+    display: grid;
+    min-width: min(100%, 16rem);
+    min-height: 5rem;
+    place-items: center;
+    border: 1px dashed hsl(var(--line) / 1);
+    background: hsl(var(--wash) / 0.55);
+    color: hsl(var(--ink-soft) / 1);
+    cursor: not-allowed;
+  }
+  .prose a img {
+    cursor: pointer;
+  }
+  @media print {
+    .lb-dialog {
+      display: none !important;
+    }
+  }
+</style>
+
+<script>
+  const openImage = (img: HTMLImageElement, trigger: HTMLButtonElement, caption: string) => {
+    if (document.querySelector('.lb-dialog')) return
+    const dialog = document.createElement('dialog')
+    dialog.className = 'lb-dialog'
+    dialog.setAttribute('aria-label', 'Image preview')
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth
+    const previousOverflow = document.body.style.overflow
+    const previousPadding = document.body.style.paddingRight
+    const bodyPadding = parseFloat(getComputedStyle(document.body).paddingRight) || 0
+    const cleanup = () => {
+      if (!dialog.isConnected) return
+      document.body.style.overflow = previousOverflow
+      document.body.style.paddingRight = previousPadding
+      dialog.remove()
+      trigger.focus({ preventScroll: true })
+    }
+    const dismiss = () => {
+      dialog.close()
+      // Restore scrolling immediately; the native close event is queued.
+      cleanup()
+    }
+    const full = document.createElement('img')
+    full.src = img.currentSrc || img.src
+    full.alt = caption
+    if (img.srcset) {
+      full.srcset = img.srcset
+      full.sizes = '92vw'
+    }
+    const close = document.createElement('button')
+    close.className = 'lb-close'
+    close.type = 'button'
+    close.setAttribute('aria-label', 'Close image preview')
+    close.autofocus = true
+    close.innerHTML =
+      '<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>'
+    // Bind directly so clicks on the nested SVG also close the dialog.
+    close.addEventListener('click', dismiss)
+    dialog.append(full, close)
+    if (caption) {
+      const captionNode = document.createElement('p')
+      captionNode.id = 'lightbox-caption'
+      captionNode.className = 'lb-caption'
+      captionNode.textContent = caption
+      dialog.setAttribute('aria-describedby', captionNode.id)
+      dialog.append(captionNode)
+    }
+    dialog.addEventListener('click', (event) => {
+      if (event.target === dialog) dismiss()
+    })
+    // Both native Escape and the close button use the same cleanup path.
+    dialog.addEventListener('cancel', (event) => {
+      event.preventDefault()
+      dismiss()
+    })
+    dialog.addEventListener('close', cleanup, { once: true })
+    document.body.style.overflow = 'hidden'
+    document.body.style.paddingRight = `${bodyPadding + scrollbarWidth}px`
+    document.body.append(dialog)
+    dialog.showModal()
+  }
+  document.querySelectorAll<HTMLImageElement>('.prose img').forEach((img) => {
+    // Preserve linked images and existing interactive wrappers.
+    if (img.closest('a, button')) return
+    const caption = img.dataset.caption ?? img.alt
+    const parent = img.parentElement
+    const isStandaloneImage =
+      parent?.tagName === 'P' &&
+      [...parent.childNodes].every((node) => node === img || !node.textContent?.trim())
+
+    if (caption && isStandaloneImage) {
+      const figure = document.createElement('figure')
+      const figcaption = document.createElement('figcaption')
+      figcaption.textContent = caption
+      img.dataset.caption = caption
+      img.alt = ''
+      parent.replaceWith(figure)
+      figure.append(img, figcaption)
+    }
+    if (/^https?:\/\//.test(img.currentSrc || img.src)) img.referrerPolicy = 'no-referrer'
+
+    const trigger = document.createElement('button')
+    trigger.type = 'button'
+    trigger.className = 'lb-trigger'
+    trigger.setAttribute('aria-haspopup', 'dialog')
+    trigger.setAttribute('aria-label', caption ? `Enlarge image: ${caption}` : 'Enlarge image')
+    const content = img.parentElement?.tagName === 'PICTURE' ? img.parentElement : img
+    content.replaceWith(trigger)
+    trigger.append(content)
+    trigger.addEventListener('click', () => openImage(img, trigger, caption))
+    let retried = false
+    img.addEventListener('error', () => {
+      if (!retried && /^https?:\/\//.test(img.currentSrc || img.src)) {
+        retried = true
+        const retryUrl = new URL(img.currentSrc || img.src)
+        retryUrl.searchParams.set('ink-image-retry', '1')
+        img.src = retryUrl.href
+        return
+      }
+      trigger.classList.add('lb-failed')
+      trigger.disabled = true
+      trigger.removeAttribute('aria-haspopup')
+      trigger.setAttribute(
+        'aria-label',
+        caption ? `Image unavailable: ${caption}` : 'Image unavailable'
+      )
+      img.hidden = true
+      const fallback = document.createElement('span')
+      fallback.textContent = 'Image unavailable'
+      trigger.append(fallback)
+    })
+  })
+</script>

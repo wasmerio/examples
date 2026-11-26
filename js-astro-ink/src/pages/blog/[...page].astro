@@ -1,0 +1,54 @@
+---
+import type { GetStaticPaths, Page } from 'astro'
+import type { CollectionEntry } from 'astro:content'
+
+import BaseLayout from '@/layouts/BaseLayout.astro'
+import Pagination from '@/components/Pagination.astro'
+import PostCard from '@/components/PostCard.astro'
+import { config } from '@/site-config'
+import { getBlogCollection, sortMDByDate } from '@/utils/server'
+
+export const prerender = true
+
+export const getStaticPaths = (async ({ paginate }) => {
+  const posts = sortMDByDate(await getBlogCollection())
+  return paginate(posts, { pageSize: config.blog.pageSize })
+}) satisfies GetStaticPaths
+
+interface Props {
+  page: Page<CollectionEntry<'blog'>>
+}
+
+const { page } = Astro.props
+const isFirst = page.currentPage === 1
+const title = isFirst ? 'Blog' : `Blog · page ${page.currentPage}`
+const totalPages = Math.max(1, page.lastPage)
+---
+
+<BaseLayout title={title} description={`${page.total} posts`}>
+  <div class="animate not-prose mx-auto max-w-[47.5rem]">
+    <header class="mb-8">
+      <h1 class="font-serif text-3xl font-semibold">Blog</h1>
+      <p class="mt-2 text-sm text-ink-soft">
+        {page.total} posts · page {page.currentPage} of {totalPages}
+      </p>
+    </header>
+
+    {
+      page.data.length === 0 ? (
+        <p class="py-12 text-center text-ink-soft">No posts yet.</p>
+      ) : (
+        <div class="flex flex-col">
+          {page.data.map((post) => (
+            <PostCard post={post} />
+          ))}
+        </div>
+      )
+    }
+
+    <Pagination
+      prev={page.url.prev ? { title: 'Previous', url: page.url.prev } : undefined}
+      next={page.url.next ? { title: 'Next', url: page.url.next } : undefined}
+    />
+  </div>
+</BaseLayout>

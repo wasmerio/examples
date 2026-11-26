@@ -1,0 +1,254 @@
+---
+import katexStylesheet from 'katex/dist/katex.min.css?url'
+import { getImage, Image } from 'astro:assets'
+import type { MarkdownHeading } from 'astro'
+import type { CollectionEntry } from 'astro:content'
+
+import BaseLayout from './BaseLayout.astro'
+import Comment from '@/components/Comment.astro'
+import Mermaid from '@/components/Mermaid.astro'
+import Pageview from '@/components/Pageview.astro'
+import TOC from '@/components/TOC.astro'
+import { config } from '@/site-config'
+import { formatDate, withBase } from '@/utils'
+import { getBlogCollection, postUrl, sortMDByDate } from '@/utils/server'
+import { getSeriesNavigation } from '@/utils/post-navigation'
+import { articleLanguage, readingTimeLabel, siteLanguage, ui } from '@/utils/locale'
+
+interface Props {
+  post: CollectionEntry<'blog'>
+  headings: MarkdownHeading[]
+  minutesRead: number
+  hasMath?: boolean
+}
+
+const { post, headings, minutesRead, hasMath = false } = Astro.props
+const { data } = post
+const language = articleLanguage(data.language)
+const tocHeadings = headings.filter(({ depth }) => depth >= 2 && depth <= 4)
+const hasLongOutline = tocHeadings.length >= 5
+const published = data.publishDate
+const updated = data.updatedDate
+
+// Series follow the author's reading order. Standalone articles use publish dates.
+const allPosts = sortMDByDate(await getBlogCollection())
+const series = getSeriesNavigation(post, allPosts)
+const index = allPosts.findIndex((p) => p.id === post.id)
+const previousPost = series ? series.previous : allPosts[index - 1]
+const nextPost = series ? series.next : index >= 0 ? allPosts[index + 1] : undefined
+
+const canonical = new URL(postUrl(post.id), Astro.site ?? 'https://example.com')
+const cover = data.heroImage
+const shareCover = cover && await getImage({
+  src: cover.src,
+  width: Math.min(1200, cover.src.width),
+  format: 'jpeg'
+})
+// Astro's image service already includes the deployment base in its output URL.
+const shareImage = new URL(shareCover?.src ?? withBase(config.site.ogImage), canonical).href
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'BlogPosting',
+  headline: data.title,
+  inLanguage: language,
+  description: data.description,
+  image: shareImage,
+  datePublished: published.toISOString(),
+  ...(updated && { dateModified: updated.toISOString() }),
+  author: { '@type': 'Person', name: config.site.author },
+  mainEntityOfPage: canonical.href
+}
+---
+
+<BaseLayout
+  title={data.title}
+  {hasLongOutline}
+  description={data.description}
+  ogImage={shareImage}
+  ogImageAlt={cover ? (cover.alt ?? data.title) : undefined}
+  date={published}
+  modifiedDate={updated}
+  stylesheets={hasMath ? [katexStylesheet] : []}
+>
+  <!-- Reading progress -->
+  <div id="reading-progress" aria-hidden="true"></div>
+
+  <!-- No entrance animation here: the full article appears immediately
+       (an opacity-0 fade-in reads as a dark flash on heavy pages). -->
+  <div
+    class="mx-auto max-w-[45rem] xl:grid xl:max-w-none xl:grid-cols-[minmax(0,1fr)_12.5rem] xl:gap-10"
+  >
+    <article lang={language} class="min-w-0 xl:col-start-1 xl:row-start-1">
+      <!-- Post header -->
+      <header class="mb-6 xl:mb-9">
+        <h1 class="font-serif text-3xl font-semibold leading-tight sm:text-4xl">
+          {data.draft && <span lang={siteLanguage} class="me-2 text-accent">[{ui('Draft', '草稿')}]</span>}
+          {data.title}
+        </h1>
+
+        <!-- Editorial-style meta: plain muted text, no chips -->
+        <div lang={siteLanguage} class="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm text-ink-soft">
+          <time datetime={published.toISOString()}>{formatDate(published)}</time>
+          {
+            updated && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{ui('Updated', '更新于')} {formatDate(updated)}</span>
+              </>
+            )
+          }
+          <span aria-hidden="true">·</span>
+          <span>{readingTimeLabel(minutesRead)}</span>
+          {
+            config.pageview.server && (
+              <>
+                <span aria-hidden="true">·</span>
+                <Pageview />
+              </>
+            )
+          }
+          {
+            data.tags.length > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                {data.tags.map((tag, i) => (
+                  <>
+                    <a href={withBase(`/tags/${tag}`)} class="link-ink" data-astro-prefetch>
+                      #{tag}
+                    </a>
+                    {i < data.tags.length - 1 && <span class="text-ink-soft/50">/</span>}
+                  </>
+                ))}
+              </>
+            )
+          }
+        </div>
+      </header>
+
+      <TOC headings={tocHeadings} {language} {hasLongOutline} variant="mobile" />
+
+      <!-- Cover image (optimized: responsive sizes, eager for LCP, no CLS) -->
+      {
+        data.heroImage && (
+          <Image
+            src={data.heroImage.src}
+            alt={data.heroImage.alt ?? data.title}
+            widths={[640, 960, 1280]}
+            sizes="(min-width: 784px) 720px, (min-width: 640px) calc(100vw - 64px), calc(100vw - 40px)"
+            fetchpriority="high"
+            loading="eager"
+            decoding="async"
+            class="mb-9 h-auto max-h-96 w-full rounded-2xl border border-line object-cover"
+          />
+        )
+      }
+
+      <!-- Article body -->
+      <div class="prose prose-fill">
+        <slot />
+      </div>
+      <Mermaid />
+
+      <!-- Post footer -->
+      <footer lang={siteLanguage} class="not-prose mt-14 border-t border-line pt-6">
+        <p class="font-serif text-sm italic text-ink-soft">{ui('— End of article. Thanks for reading.', '— 全文完，感谢阅读。')}</p>
+        <div class="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-ink-soft">
+          <a
+            href={withBase('/blog')}
+            class="link-ink inline-flex min-h-8 items-center gap-1.5"
+            data-astro-prefetch
+          >
+            <span class="i-lucide-arrow-left size-3.5" aria-hidden="true"></span>
+            {ui('Back to blog', '返回文章列表')}
+          </a>
+          <a href="#top" class="link-ink inline-flex min-h-8 items-center gap-1.5">
+            <span class="i-lucide-arrow-up size-3.5" aria-hidden="true"></span>
+            {ui('Back to top', '返回顶部')}
+          </a>
+        </div>
+
+        <!-- Prev / next -->
+        {
+          (previousPost || nextPost) && (
+            <nav class="mt-6 grid gap-x-8 gap-y-3 border-t border-line/60 pt-5 sm:grid-cols-2" aria-label={ui('Post navigation', '文章导航')}>
+              {series && (
+                <p class="text-sm text-ink-soft sm:col-span-2">
+                  {series.name} · {ui(`Part ${series.position} of ${series.total}`, `本系列第 ${series.position}/${series.total} 篇`)}
+                </p>
+              )}
+              {previousPost && (
+                <a
+                  href={postUrl(previousPost.id)}
+                  class="group flex min-w-0 flex-col items-start gap-1"
+                  data-astro-prefetch
+                >
+                  <span class="flex items-center gap-1.5 text-xs text-ink-soft">
+                    <span
+                      class="i-lucide-arrow-left size-3.5 transition-transform duration-300 group-hover:-translate-x-1"
+                      aria-hidden="true"
+                    />
+                    {ui('Previous', '上一篇')}
+                  </span>
+                  <span lang={articleLanguage(previousPost.data.language)} class="line-clamp-2 font-serif font-semibold group-hover:text-accent group-focus-visible:text-accent">
+                    {previousPost.data.title}
+                  </span>
+                </a>
+              )}
+              {nextPost && (
+                <a
+                  href={postUrl(nextPost.id)}
+                  class="group flex min-w-0 flex-col items-start gap-1 sm:col-start-2 sm:items-end sm:text-end"
+                  data-astro-prefetch
+                >
+                  <span class="flex items-center gap-1.5 text-xs text-ink-soft">
+                    {ui('Next', '下一篇')}
+                    <span
+                      class="i-lucide-arrow-right size-3.5 transition-transform duration-300 group-hover:translate-x-1"
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span lang={articleLanguage(nextPost.data.language)} class="line-clamp-2 font-serif font-semibold group-hover:text-accent group-focus-visible:text-accent">
+                    {nextPost.data.title}
+                  </span>
+                </a>
+              )}
+            </nav>
+          )
+        }
+
+        {data.comment && <Comment />}
+      </footer>
+    </article>
+    <TOC headings={tocHeadings} {language} variant="desktop" />
+  </div>
+
+  <!-- BlogPosting structured data -->
+  <script is:inline type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+</BaseLayout>
+
+<style>
+  #reading-progress {
+    position: fixed;
+    inset-inline: 0;
+    top: 0;
+    z-index: 50;
+    height: 3px;
+    background-color: hsl(var(--accent) / 0.85);
+    transform-origin: 0 50%;
+    transform: scaleX(0);
+    pointer-events: none;
+  }
+</style>
+
+<script>
+  const bar = document.getElementById('reading-progress')
+  if (bar) {
+    const onScroll = () => {
+      const max = document.documentElement.scrollHeight - window.innerHeight
+      bar.style.transform = `scaleX(${max > 0 ? Math.min(window.scrollY / max, 1) : 0})`
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+  }
+</script>

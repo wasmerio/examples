@@ -198,6 +198,7 @@ export function classifyLicense(text) {
   const body = String(text || '');
   if (!body.trim()) return { decision: 'rejected', kind: 'no license text' };
   if (/\bnon-?commercial\b|\bno-?deriv|\bBY-NC\b|\bBY-ND\b/i.test(body)) return { decision: 'rejected', kind: 'non-commercial or no-derivatives terms' };
+  if (/no redistribution|may not (?:\w+, )*(?:sublicense, )?redistribute|not (?:be )?redistributed/i.test(body)) return { decision: 'rejected', kind: 'the license forbids redistribution' };
   const kinds = [
     [/Permission is hereby granted, free of charge/i, 'MIT'],
     [/Apache License/i, 'Apache-2.0'],

@@ -255,3 +255,7 @@ test('example.com anchors are noted, example.com assets fail', () => {
   assert.deepEqual(found.placeholder, ['https://example.com/logo.png']);
   assert.deepEqual(found.examples, ['https://example.com/']);
 });
+
+test('licenses that forbid redistribution are rejected', () => {
+  assert.equal(classifyLicense('2. No Redistribution or Resale\nYou may not sublicense, redistribute, resell, or repackage this Theme').decision, 'rejected');
+});

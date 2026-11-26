@@ -1,0 +1,129 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { GALLERY } from "@/data/gallery";
+import { t, fill } from "@/locales";
+import SmartImage from "@/components/SmartImage.astro";
+import Icon from "@/components/Icon.astro";
+// The masonry carries data-pagefind-body: captions and alt text are unique
+// content, so the gallery joins the search index (see index.astro's note;
+// the lightbox copies below the masonry stay out of it).
+---
+
+<Layout title={t["nav.gallery"]} description={t["gallery.description"]}>
+  <div class="section-title reveal">
+    <h1 class="ts-header is-big is-heavy">{t["nav.gallery"]}</h1>
+    <span class="ts-text is-description"
+      >{fill(t["gallery.count"], { n: GALLERY.length })}</span
+    >
+  </div>
+  {
+    GALLERY.length === 0 ? (
+      <p class="ts-text is-secondary">{t["gallery.empty"]}</p>
+    ) : (
+      <div
+        class="gallery-masonry"
+        data-pagefind-body
+        data-pagefind-meta={`title:${t["nav.gallery"]}`}
+      >
+        {GALLERY.map((photo, i) => (
+          <button
+            type="button"
+            class="gallery-item reveal"
+            style={`--ri: ${i % 5}`}
+            data-modal={`gallery-modal-${i}`}
+          >
+            <SmartImage
+              src={photo.src}
+              alt={photo.alt}
+              loading={i < 2 ? "eager" : "lazy"}
+              widths={[320, 640]}
+              sizes="(max-width: 640px) 94vw, 320px"
+            />
+            {photo.caption && (
+              <div class="gallery-caption ts-text is-tiny">
+                {photo.caption}
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+    )
+  }
+  {
+    // In-page lightboxes, same shape as Cards.astro's trophy wall. Ids are
+    // index-based rather than slugified from text, so they stay unique and
+    // valid no matter what language alt/caption is written in.
+    GALLERY.map((photo, i) => (
+      <dialog
+        class="gallery-modal"
+        id={`gallery-modal-${i}`}
+        aria-label={photo.alt}
+      >
+        <button
+          type="button"
+          class="gallery-nav is-prev"
+          data-open={`gallery-modal-${(i - 1 + GALLERY.length) % GALLERY.length}`}
+          aria-label={t["gallery.prev"]}
+        >
+          <Icon name="angle-left" />
+        </button>
+        <figure class="gallery-modal-figure">
+          <SmartImage
+            src={photo.src}
+            alt=""
+            loading="lazy"
+            widths={[1000, 1600]}
+            sizes="94vw"
+          />
+          <figcaption class="ts-text is-secondary">
+            {photo.caption ?? ""}
+          </figcaption>
+        </figure>
+        <button
+          type="button"
+          class="gallery-nav is-next"
+          data-open={`gallery-modal-${(i + 1) % GALLERY.length}`}
+          aria-label={t["gallery.next"]}
+        >
+          <Icon name="angle-right" />
+        </button>
+      </dialog>
+    ))
+  }
+</Layout>
+
+<script>
+  import { wireModalOpeners } from "@/utils/dialogs";
+  // Re-armed per navigation (every binding is on that page's elements).
+  // Opening is the shared wiring (same as Cards.astro's trophy wall);
+  // the stage-specific close and arrow-nav behavior stays below.
+  document.addEventListener("astro:page-load", () => {
+  if (!document.querySelector(".gallery-masonry")) return;
+  wireModalOpeners(".gallery-item[data-modal]");
+  document.querySelectorAll<HTMLButtonElement>(".gallery-nav").forEach((nav) => {
+    nav.addEventListener("click", () => {
+      const target = nav.dataset.open && document.getElementById(nav.dataset.open);
+      if (!(target instanceof HTMLDialogElement)) return;
+      nav.closest("dialog")?.close();
+      target.showModal();
+    });
+  });
+  document
+    .querySelectorAll<HTMLDialogElement>("dialog.gallery-modal")
+    .forEach((d) => {
+      d.addEventListener("click", (e) => {
+        // The whole dialog is the dark stage; clicking anywhere off the
+        // image, its caption, or the nav arrows closes, X/FB style.
+        if (!(e.target as Element).closest(".gallery-modal-figure, .gallery-nav"))
+          d.close();
+      });
+      // Arrow keys walk the wall (wrapping at both ends), same as the
+      // on-stage chevrons.
+      d.addEventListener("keydown", (e) => {
+        const dir =
+          e.key === "ArrowRight" ? ".is-next" : e.key === "ArrowLeft" ? ".is-prev" : null;
+        if (dir) (d.querySelector(dir) as HTMLButtonElement | null)?.click();
+      });
+    });
+  });
+</script>

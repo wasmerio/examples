@@ -1,0 +1,133 @@
+---
+// Merges the trophy-wall grid (image-or-placeholder card + caption, click
+// lightbox) with a generic clickable card (title/subtitle, wraps in a link
+// when `url` is set). Precedence per card: `url` set → link; else `img` set
+// → lightbox button (today's trophy behavior); else a plain, non-interactive
+// placeholder card (e.g. certifications, which have neither).
+// Shell, heading, and empty-guard live in Section.astro; `title` is still
+// received here because the modal ids are namespaced by it.
+import type { CardEntry } from "@/data/sections";
+import SmartImage from "@/components/SmartImage.astro";
+import { isExternal } from "@/utils/url";
+
+interface Props {
+  title?: string;
+  cards: CardEntry[];
+}
+const { title, cards } = Astro.props;
+// Modal ids must be unique across the whole page — both faces (and every
+// Cards usage on them) are in the DOM at once — so they're namespaced by
+// this block's own title rather than a bare per-card index. HTML ids allow
+// any non-whitespace character, so only whitespace needs collapsing — a
+// CJK-only title (e.g. "專業認證") stays distinct instead of collapsing to
+// a single placeholder the way an ASCII-only filter would.
+const slug = (title ?? "cards").replace(/\s+/g, "-");
+---
+
+<div class="trophy-grid">
+  {
+    cards.map((c, i) => {
+      const media = (
+        <div class="trophy-media">
+          {c.img ? (
+            <SmartImage
+              src={c.img}
+              alt=""
+              loading="lazy"
+              widths={[400, 800]}
+              sizes="(max-width: 767px) 94vw, 400px"
+            />
+          ) : (
+            <div class="trophy-empty" />
+          )}
+        </div>
+      );
+      const caption = (
+        <>
+          <div class="trophy-caption ts-text is-tiny is-secondary">
+            {c.title}
+          </div>
+          {c.subtitle && (
+            <div class="ts-text is-tiny is-secondary">{c.subtitle}</div>
+          )}
+        </>
+      );
+      return c.url ? (
+        <a
+          class="trophy-item is-link"
+          href={c.url}
+          target={isExternal(c.url) ? "_blank" : undefined}
+          rel={isExternal(c.url) ? "noopener noreferrer" : undefined}
+        >
+          {media}
+          {caption}
+        </a>
+      ) : c.img ? (
+        <button
+          type="button"
+          class="trophy-item"
+          data-modal={`card-modal-${slug}-${i}`}
+        >
+          {media}
+          {caption}
+        </button>
+      ) : (
+        <div>
+          {media}
+          {caption}
+        </div>
+      );
+    })
+  }
+</div>
+{/* In-page lightboxes: the same full-viewport dark stage as the gallery
+    (dialog.gallery-modal — one lightbox look site-wide). Esc and any
+    click off the figure close. Only cards with an image and no `url`
+    get one (the trophy-wall case). */}
+{
+  cards.map(
+    (c, i) =>
+      !c.url &&
+      c.img && (
+        <dialog
+          class="gallery-modal"
+          id={`card-modal-${slug}-${i}`}
+          aria-label={c.title}
+        >
+          <figure class="gallery-modal-figure">
+            <SmartImage
+              src={c.img}
+              alt=""
+              loading="lazy"
+              widths={[800, 1400]}
+              sizes="94vw"
+            />
+            <figcaption class="ts-text is-secondary">{c.title}</figcaption>
+          </figure>
+        </dialog>
+      ),
+  )
+}
+
+<script>
+  import { wireModalOpeners } from "@/utils/dialogs";
+  // Re-armed per navigation: every binding here is on that page's own
+  // elements. Opening is the shared wiring (queries the whole document,
+  // so any number of Cards instances work); closing matches the gallery
+  // stage — the whole dialog is the dark backdrop, so any click off the
+  // figure closes. Esc is native. Scoped to card modals so the gallery
+  // page's own dialogs (wired in gallery/index.astro) aren't double-bound.
+  document.addEventListener("astro:page-load", () => {
+    wireModalOpeners(".trophy-item[data-modal]");
+    document
+      .querySelectorAll<HTMLDialogElement>(
+        'dialog.gallery-modal[id^="card-modal-"]',
+      )
+      .forEach((d) => {
+        d.addEventListener("click", (e) => {
+          if (!(e.target as Element).closest(".gallery-modal-figure"))
+            d.close();
+        });
+      });
+  });
+</script>

@@ -1,0 +1,128 @@
+---
+// ONE identity-card + sections layout for both faces — which face you get
+// is pure data (avatar, name, socials, section list). Social buttons:
+// entries with `url` link out; entries with `copy` (e.g. Discord, which
+// has no add-friend URL) copy the handle to the clipboard — script below.
+import type { ImageMetadata } from "astro";
+import type { Section as SectionData } from "@/data/sections";
+import { Image } from "astro:assets";
+import FaceToggle from "@/components/FaceToggle.astro";
+import Section from "@/components/Section.astro";
+import Icon from "@/components/Icon.astro";
+import type { IconName } from "@/components/icons";
+import { isExternal } from "@/utils/url";
+
+interface Props {
+  face: "personal" | "professional";
+  /** Ship the face hidden + inert (statically, so the non-default face
+   *  never flashes before JS runs). */
+  hidden?: boolean;
+  /** The default (visible) face's avatar is above the fold — fetch it at
+   *  high priority; the hidden face's can wait. */
+  priority?: boolean;
+  avatar: ImageMetadata;
+  name: string;
+  /** Subtitle line. Omitted → an invisible placeholder keeps both cards'
+   *  geometry identical, or the face cross-fade reads as the card
+   *  shifting and flickering. */
+  headline?: string;
+  socials: { name: string; icon: IconName; url?: string; copy?: string }[];
+  sections: SectionData[];
+}
+const {
+  face,
+  hidden = false,
+  priority = false,
+  avatar,
+  name,
+  headline,
+  socials,
+  sections,
+} = Astro.props;
+---
+
+<div
+  class:list={["about-layout", "face", { "is-hidden": hidden }]}
+  data-face={face}
+  inert={hidden}
+>
+  <aside class="about-aside ts-box about-card">
+    <div class="ts-content">
+      <Image
+        class="about-avatar"
+        src={avatar}
+        width={136}
+        height={136}
+        densities={[1, 2]}
+        format="webp"
+        alt=""
+        loading={priority ? "eager" : "lazy"}
+        fetchpriority={priority ? "high" : undefined}
+      />
+      <div class="ts-header is-large is-heavy has-top-spaced">{name}</div>
+      {
+        headline ? (
+          <div class="ts-text is-secondary">{headline}</div>
+        ) : (
+          <div class="ts-text is-secondary" aria-hidden="true">
+            &nbsp;
+          </div>
+        )
+      }
+      <div class="social-icons has-top-spaced">
+        {
+          socials.map((l) =>
+            l.url ? (
+              <a
+                class="ts-button is-icon is-circular"
+                href={l.url}
+                aria-label={l.name}
+                target={isExternal(l.url) ? "_blank" : undefined}
+                rel={isExternal(l.url) ? "noopener noreferrer" : undefined}
+              >
+                <Icon name={l.icon} />
+              </a>
+            ) : (
+              <button
+                type="button"
+                class="ts-button is-icon is-circular"
+                data-copy={l.copy}
+                aria-label={l.name}
+              >
+                <Icon name={l.icon} />
+              </button>
+            ),
+          )
+        }
+      </div>
+      <FaceToggle />
+    </div>
+  </aside>
+
+  <div class="about-main">
+    {sections.map((s) => <Section section={s} />)}
+  </div>
+</div>
+
+<script>
+  import { t } from "@/locales";
+
+  // Copy-to-clipboard socials: flash a confirmation in the tooltip
+  // (aria-label drives the CSS tooltip). Delegated through document so it
+  // survives ClientRouter swaps and covers every [data-copy] button on
+  // whatever page is current.
+  document.addEventListener("click", async (e) => {
+    const btn = (e.target as Element).closest?.<HTMLElement>(
+      ".social-icons [data-copy]",
+    );
+    if (!btn) return;
+    try {
+      await navigator.clipboard.writeText(btn.dataset.copy!);
+      const prev = btn.getAttribute("aria-label")!;
+      btn.setAttribute("aria-label", t["life.copied"]);
+      setTimeout(() => btn.setAttribute("aria-label", prev), 1500);
+    } catch {
+      /* clipboard blocked — the handle still shows in the tooltip */
+    }
+  });
+</script>

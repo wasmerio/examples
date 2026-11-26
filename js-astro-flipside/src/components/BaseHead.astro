@@ -1,0 +1,110 @@
+---
+// Self-hosted Noto Sans TC (Tocas UI's primary font-family) is NOT imported
+// here: its @font-face declarations were 95% of the render-blocking CSS
+// bundle. The notoFonts integration (astro.config.mjs) copies them to
+// /fonts/ at build time and the <link media="print"> below applies them
+// asynchronously — system font first, Noto upgrade when ready (the same
+// reflow font-display:swap already allowed). Dev server: system fonts only,
+// like the KaTeX vendored assets.
+import "@/styles/global.css";
+import SITE from "@/config";
+import { url } from "@/utils/url";
+import { ClientRouter } from "astro:transitions";
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+  noindex?: boolean;
+}
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+// Default share image: the template expects a 1200×630 social-share image
+// at public/og.png (a demo asset ships with the template; replace it with
+// your own) — a page can override with its own `image`.
+const {
+  title,
+  description = SITE.description,
+  image = "/og.png",
+  noindex,
+} = Astro.props;
+const pageTitle = title ? `${title} - ${SITE.title}` : SITE.title;
+const imageURL = new URL(url(image), Astro.site);
+---
+
+<meta charset="utf-8" />
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1, shrink-to-fit=no"
+/>
+<link rel="icon" type="image/svg+xml" href={url("/favicon.svg")} />
+{/* fallback="swap": browsers without the native View Transitions API
+    (iOS Safari < 18) swap instantly instead of running Astro's JS fade
+    simulation, which flickers the whole page on WebKit. Pairs with the
+    animation:none rule on ::view-transition(root) in global.css so native-VT
+    browsers get the same instant swap — no cross-fade anywhere. */}
+<ClientRouter fallback="swap" />
+<meta name="generator" content={Astro.generator} />
+<link rel="sitemap" href={url("/sitemap-index.xml")} />
+<link
+  rel="alternate"
+  type="application/rss+xml"
+  title={SITE.title}
+  href={url("/rss.xml")}
+/>
+<link rel="stylesheet" href={url("/vendor/tocas/tocas.min.css")} />
+{/* Font declarations load AFTER the window load event, not merely async:
+    the declaration file is ~99 KB (gzip) of CJK @font-face and pulls in
+    hundreds of KB of woff2 slices. Fetched any earlier they compete with
+    critical resources on slow connections — and Lighthouse's simulator
+    charges everything in flight before first paint against FCP/LCP.
+    font-display:optional means a cold visit paints with the system font
+    either way, so deferring costs nothing visible. */}
+<script is:inline define:vars={{ fontCss: url("/fonts/noto-sans-tc.css") }}>
+  // Double-rAF after load: rAF callbacks run on paint frames, so two of
+  // them guarantee the first paint is already on screen before the 315
+  // @font-face declarations register. On pages with few assets, load can
+  // fire BEFORE first paint — injecting there stalled the paint behind
+  // the declaration parse + optional's invisibility window.
+  const injectFontCss = () => {
+    if (document.querySelector('link[href="' + fontCss + '"]')) return;
+    const l = document.createElement("link");
+    l.rel = "stylesheet";
+    l.href = fontCss;
+    document.head.append(l);
+  };
+  addEventListener("load", () => {
+    requestAnimationFrame(() => requestAnimationFrame(injectFontCss));
+  });
+  // The ClientRouter diffs the new page's head on navigation and drops
+  // our dynamically added link (it isn't in the incoming SSG head), so
+  // put it back after every swap — by then the css is warm in cache.
+  document.addEventListener("astro:after-swap", injectFontCss);
+</script>
+<noscript>
+  <link rel="stylesheet" href={url("/fonts/noto-sans-tc.css")} />
+</noscript>
+{
+  SITE.features.math && (
+    <link rel="stylesheet" href={url("/vendor/katex/katex.min.css")} />
+  )
+}
+<link rel="canonical" href={canonicalURL} />
+{noindex && <meta name="robots" content="noindex, nofollow" />}
+
+<title>{pageTitle}</title>
+<meta name="title" content={pageTitle} />
+<meta name="description" content={description} />
+<meta name="author" content={SITE.author} />
+
+<meta property="og:type" content="website" />
+<meta property="og:url" content={Astro.url} />
+<meta property="og:title" content={pageTitle} />
+<meta property="og:description" content={description} />
+<meta property="og:image" content={imageURL} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="twitter:card" content="summary_large_image" />
+<meta property="twitter:title" content={pageTitle} />
+<meta property="twitter:description" content={description} />
+<meta property="twitter:image" content={imageURL} />

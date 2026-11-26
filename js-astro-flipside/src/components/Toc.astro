@@ -1,0 +1,70 @@
+---
+// Toc.astro — table of contents for a blog post. Desktop (≥1024px, see
+// .post-body in global.css): sticky rail beside the content. Mobile: a
+// native <details> collapsed above the content, no JS needed to toggle.
+import type { MarkdownHeading } from "astro";
+import { t } from "@/locales";
+
+interface Props {
+  headings: MarkdownHeading[];
+}
+
+const { headings } = Astro.props;
+// Exclude GFM's auto-generated sr-only "Footnotes" heading (id
+// "footnote-label", from remark-gfm's footnotes section) — it's not a real
+// section a reader navigates to, just noise duplicating a TOC entry.
+const items = headings.filter(
+  (h) => (h.depth === 2 || h.depth === 3) && h.slug !== "footnote-label",
+);
+---
+
+{
+  items.length > 0 && (
+    <nav class="toc" aria-label={t["blog.toc"]}>
+      <details class="toc-details">
+        <summary class="ts-text is-bold">{t["blog.toc"]}</summary>
+        <ul>
+          {items.map((h) => (
+            <li class:list={["toc-item", `is-depth-${h.depth}`]}>
+              {/* rehype-autolink appends a literal "#" link to every heading and
+    Astro's heading extraction carries it into `text` — strip it so
+    TOC entries don't end with a stray #. */}
+              <a href={`#${h.slug}`}>{h.text.replace(/#\s*$/, "")}</a>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </nav>
+  )
+}
+
+<script>
+  // Scroll-spy: mark the last heading above the viewport line as current.
+  // Heading ids (from rehype-slug) may be non-ASCII (CJK headings), so the
+  // lookup key is decoded from the link's hash rather than compared raw.
+  // Rebuilt per navigation (fresh links and headings each page); the old
+  // observer's nodes left the DOM with the previous page.
+  document.addEventListener("astro:page-load", () => {
+    const links = [...document.querySelectorAll<HTMLAnchorElement>(".toc a")];
+    if (links.length === 0) return;
+    const byId = new Map(
+      links.map((a) => [decodeURIComponent(a.hash.slice(1)), a]),
+    );
+    let current: HTMLAnchorElement | undefined;
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (!e.isIntersecting) continue;
+          current?.classList.remove("is-current");
+          current = byId.get(e.target.id);
+          current?.classList.add("is-current");
+        }
+      },
+      { rootMargin: "0px 0px -75% 0px" },
+    );
+    byId.forEach((_, id) => {
+      const el = document.getElementById(id);
+      if (el) io.observe(el);
+    });
+  });
+</script>

@@ -1,0 +1,255 @@
+---
+// Search.astro — Pagefind-powered site search, an Apple-style header
+// extension. Rendered inside .site-header (see Navbar.astro) and opened
+// NON-modally with dialog.show(): no top layer means the sticky header
+// stays crisp above the #search-veil dim layer (z 99 < header's 100),
+// while the panel hangs off the header's bottom edge like the header
+// growing taller. Esc/veil-click closing is wired up by hand below —
+// that is the price of skipping showModal's backdrop.
+import { t } from "@/locales";
+import Icon from "@/components/Icon.astro";
+---
+
+{/* data-lenis-prevent: the results list scrolls on its own; without the
+    marker Lenis would swallow wheel events over it for the page. */}
+<dialog
+  id="search-dialog"
+  class="search-dialog"
+  aria-label={t["search.open"]}
+  data-lenis-prevent
+>
+  <div class="ts-container">
+    <div class="search-inner">
+      {/* Borderless Apple-style query row: bare magnifier + naked input,
+          no box — the solid panel IS the field. The native WebKit cancel
+          X is hidden in global.css; the project-styled clear button
+          appears once there is text. */}
+      <div class="search-row">
+        <Icon name="magnifying-glass" />
+        <input
+          id="search-input"
+          type="search"
+          placeholder={t["search.placeholder"]}
+          aria-label={t["search.open"]}
+        />
+        <button
+          id="search-clear"
+          class="search-clear"
+          type="button"
+          aria-label={t["search.clear"]}
+          hidden
+        >
+          <Icon name="xmark" />
+        </button>
+      </div>
+      <ol
+        id="search-results"
+        class="search-results"
+        aria-live="polite"
+        data-empty={t["search.noResults"]}
+      >
+      </ol>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  // Escapes for both HTML text content and attribute values (hence the
+  // trailing quote-escape) — unlike remark-mermaid.mjs's esc(), which only
+  // ever escapes into text-content. The escape sets differ on purpose:
+  // do not unify them.
+  const esc = (s: string) =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  // Pagefind stores excerpts as decoded text, so a `<mark>`-wrapped match
+  // next to raw HTML from a source code block (e.g. an `<img onerror=…>`
+  // inside a fenced code sample) would otherwise inject live markup via
+  // innerHTML below. Escape everything, then restore only pagefind's own
+  // <mark> tags (never user/content-controlled) as real elements.
+  const excerptSafe = (e: string) =>
+    esc(e)
+      .replace(/&lt;mark&gt;/g, "<mark>")
+      .replace(/&lt;\/mark&gt;/g, "</mark>");
+
+  // Defense in depth on the result href. Pagefind's `url` comes from Astro's
+  // own route output today (always a site-relative path), so this can't fire
+  // now, but guard the scheme anyway: a future data-pagefind-url override
+  // driven by frontmatter could otherwise smuggle a javascript:/data: href
+  // past the entity-escaping into a live link. Allow only http(s) and
+  // site-relative paths; anything else falls back to "#".
+  const safeHref = (u: string) => (/^(https?:\/\/|\/)/i.test(u) ? u : "#");
+
+  // Only pagefind.js's own import path needs the base prefixed by hand: the
+  // pagefind runtime auto-detects the site base from wherever pagefind.js
+  // itself was loaded and joins every result's `d.url` onto it already, so
+  // `d.url` below is already an absolute, base-included path. Prefixing it
+  // again here would double it up (verified against a built
+  // dist/pagefind/pagefind.js: its getDefaultBaseUrl() derives the base from
+  // import.meta.url, then every raw index url is joined onto that base) —
+  // do not re-add `base` to `d.url`.
+  const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+  // Everything below binds to per-page elements, so it re-arms on every
+  // ClientRouter navigation (astro:page-load also fires on first load).
+  // Esc lives on document — registered once, delegating to the current
+  // page's closePanel through this slot.
+  let currentClose: (() => void) | undefined;
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") currentClose?.();
+  });
+  const init = () => {
+  const dialog = document.getElementById("search-dialog") as HTMLDialogElement;
+  const input = document.getElementById("search-input") as HTMLInputElement;
+  const list = document.getElementById("search-results")!;
+  const clear = document.getElementById("search-clear") as HTMLButtonElement;
+  clear.addEventListener("click", () => {
+    input.value = "";
+    clear.hidden = true;
+    list.innerHTML = "";
+    input.focus();
+  });
+  // Pagefind's runtime search API is a generated post-build asset, not an
+  // npm module — it ships no types, so `any` is the honest type here.
+  let pagefind: any;
+  // Vite's build wraps *every* `import(...)` call site in a modulePreload
+  // helper to inject <link rel=modulepreload> hints — even ones marked
+  // `@vite-ignore` — and since pagefind.js doesn't exist until the postbuild
+  // step runs (after Vite's build), it can't compute that helper's deps
+  // list, which corrupts the output: `__VITE_PRELOAD__ is not defined` at
+  // runtime (confirmed against the compiled bundle). Routing the import
+  // through `new Function` hides it from Vite's static import scan
+  // entirely — there's no literal `import(` for it to find and wrap.
+  const importPagefind = new Function("path", "return import(path)") as (
+    path: string,
+  ) => Promise<any>;
+  const veil = document.getElementById("search-veil")!;
+  const opener = document.getElementById("search-open");
+  const openPanel = async () => {
+    // Reopening mid-close: drop the closing state so the armed
+    // animationend/timeout (guarded on this class) becomes a no-op.
+    dialog.classList.remove("is-closing");
+    veil.classList.remove("is-closing");
+    // Set [open] directly instead of calling dialog.show(): show()'s
+    // focusing steps asynchronously scroll-focus the panel, and since it
+    // lives inside the sticky header at the top of the document, that
+    // yanks a scrolled page back to the top. The attribute alone renders
+    // the dialog; focus is placed by hand, scroll untouched.
+    dialog.setAttribute("open", "");
+    input.focus({ preventScroll: true });
+    veil.hidden = false;
+    // Dev note: the index only exists after `npm run build` (postbuild).
+    // `astro dev` has no dist/pagefind/, so this 404s, the catch below
+    // keeps search a silent no-op, and the input stays inert.
+    pagefind ??= await importPagefind(`${base}/pagefind/pagefind.js`).catch(
+      () => {
+        console.info("Pagefind index not found (run npm run build first).");
+        return null;
+      },
+    );
+    // Keystrokes that landed while the runtime was still loading hit the
+    // `if (!pagefind) return` guard and rendered nothing — re-run the
+    // query they left behind now that search is ready.
+    if (pagefind && input.value) input.dispatchEvent(new Event("input"));
+  };
+  // Closing is two-phase so it can animate: closePanel() adds .is-closing
+  // (global.css plays the open animations in reverse) and only when that
+  // animation ends does finishClose() flip the real [open]/[hidden] state.
+  // finishClose is guarded by the class so a stray animationend (e.g. the
+  // OPENING drop's own end, or an interrupted close) can never close a
+  // panel that is not actually closing.
+  const finishClose = () => {
+    if (!dialog.classList.contains("is-closing")) return;
+    dialog.classList.remove("is-closing");
+    veil.classList.remove("is-closing");
+    dialog.close();
+    veil.hidden = true;
+    opener?.focus();
+  };
+  const closePanel = () => {
+    if (!dialog.open || dialog.classList.contains("is-closing")) return;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      dialog.classList.add("is-closing");
+      finishClose();
+      return;
+    }
+    dialog.classList.add("is-closing");
+    veil.classList.add("is-closing");
+    dialog.addEventListener("animationend", finishClose, { once: true });
+    // Fallback in case animationend never arrives; finishClose is
+    // idempotent thanks to the class guard.
+    window.setTimeout(finishClose, 250);
+  };
+  // The magnifier toggles the panel; Esc, clicking the veil (the dimmed
+  // page), and the pointer leaving the header all close it — non-modal
+  // dialogs get none of this for free.
+  opener?.addEventListener("click", () =>
+    dialog.open ? closePanel() : openPanel(),
+  );
+  veil.addEventListener("click", closePanel);
+  currentClose = closePanel;
+  // Auto-collapse when the mouse leaves the header+panel area, with a small
+  // grace window so grazing the boundary doesn't slam it shut. Mouse-only
+  // by nature (mouseleave) — keyboard and touch flows are unaffected.
+  const header = dialog.closest(".site-header")!;
+  let leaveTimer: number;
+  header.addEventListener("mouseleave", () => {
+    if (!dialog.open) return;
+    leaveTimer = window.setTimeout(closePanel, 200);
+  });
+  header.addEventListener("mouseenter", () => window.clearTimeout(leaveTimer));
+  // Pagefind's zh query segmenter mangles multi-character CJK queries —
+  // 關東煮 effectively searches 關 alone, and 手搖飲 highlights only 手
+  // and 飲. Spacing the characters out (關 東 煮) makes each one its own
+  // required term and gets every one highlighted; the indexed content
+  // itself is unaffected. Latin words in mixed queries pass through.
+  const cjkSpaced = (q: string) =>
+    q.replace(/(\p{Script=Han})(?=\p{Script=Han})/gu, "$1 ");
+  // Guards against out-of-order responses while typing fast: only the
+  // newest query may write to the list.
+  let seq = 0;
+  input.addEventListener("input", async () => {
+    clear.hidden = input.value === "";
+    if (!pagefind) return;
+    const mySeq = ++seq;
+    const raw = input.value.trim();
+    if (!raw) {
+      list.innerHTML = "";
+      return;
+    }
+    const { results } = await pagefind.search(cjkSpaced(raw));
+    const top = await Promise.all(
+      results.slice(0, 12).map((r: any) => r.data()),
+    );
+    if (mySeq !== seq) return;
+    // Pagefind also ranks pages that contain only SOME of the query's
+    // characters, which for CJK surfaces one-character junk matches.
+    // Require every contiguous Han run of the query verbatim in the page
+    // (title or body) — i.e. real phrase semantics for Chinese. Latin
+    // terms keep pagefind's own matching untouched.
+    const hanRuns = raw.match(/\p{Script=Han}+/gu) ?? [];
+    const kept = top
+      .filter((d: any) =>
+        hanRuns.every(
+          (run) =>
+            (d.content ?? "").includes(run) ||
+            (d.meta.title ?? "").includes(run),
+        ),
+      )
+      .slice(0, 8);
+    list.innerHTML =
+      kept.length === 0
+        ? `<li class="search-empty">${esc(list.dataset.empty ?? "")}</li>`
+        : kept
+            .map(
+              (d: any) =>
+                `<li><a href="${esc(safeHref(d.url))}"><strong>${esc(d.meta.title ?? d.url)}</strong><span>${excerptSafe(d.excerpt)}</span></a></li>`,
+            )
+            .join("");
+  });
+  };
+  document.addEventListener("astro:page-load", init);
+</script>

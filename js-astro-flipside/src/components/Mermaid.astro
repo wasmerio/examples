@@ -1,0 +1,65 @@
+---
+// Mermaid.astro — the client render logic for ```mermaid fences, kept here
+// as a real, type-checked Astro component (and directly usable on its own:
+// `import Mermaid from "@/components/Mermaid.astro"` + `<Mermaid />`).
+//
+// It isn't imported anywhere in the site, though: astro.config.mjs reads the
+// script block below as plain text and injects it into every page via the
+// mermaidClient integration, only when SITE.features.mermaid is on.
+// A static `{SITE.features.mermaid && <Mermaid />}` in BlogPost.astro was
+// tried first and rejected — see the comment on mermaidClient for why.
+//
+// No-op when a page has no diagrams; the `mermaid` package itself is only
+// pulled in by the dynamic import below, once a real .mermaid node exists.
+//
+// Plain JS, not TS, unlike Toc.astro's scripts: injected
+// via injectScript as raw text into a virtual .js module, so there's no
+// Astro-compiler pass here to strip TS syntax. A `<HTMLElement>` generic on
+// querySelectorAll was tried first — esbuild parsed it as two `<`/`>`
+// comparisons instead of a type argument (valid JS, wrong meaning), which
+// minified to `[...(document.querySelectorAll < HTMLElement) > ".mermaid"]`
+// and threw at runtime on every page.
+---
+
+<script>
+  // Re-queried on every ClientRouter navigation: this injected module runs
+  // once per session, so a top-level query would capture only the first
+  // page's nodes and later posts would show raw fence text. The original
+  // fence source is cached on each element (data attribute) instead of a
+  // closure, so a theme re-render restores the CURRENT page's sources.
+  const isDark = () =>
+    document.documentElement.classList.contains("is-dark") ||
+    (!document.documentElement.classList.contains("is-light") &&
+      matchMedia("(prefers-color-scheme: dark)").matches);
+  const render = async () => {
+    const nodes = [...document.querySelectorAll(".mermaid")];
+    if (!nodes.length) return;
+    const { default: mermaid } = await import("mermaid");
+    // mermaid.run() mutates each node (SVG output + data-processed) on
+    // first render; restore the original source before re-running so a
+    // theme change re-renders from source instead of re-processing markup.
+    nodes.forEach((n) => {
+      // get/setAttribute, not .dataset: querySelectorAll types these as
+      // Element (no dataset), and this plain-JS script can't cast.
+      if (n.getAttribute("data-mermaid-source") === null)
+        n.setAttribute("data-mermaid-source", n.textContent ?? "");
+      n.textContent = n.getAttribute("data-mermaid-source");
+      n.removeAttribute("data-processed");
+    });
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: isDark() ? "dark" : "default",
+    });
+    // No explicit `nodes` here: run()'s querySelector already defaults to
+    // ".mermaid" (the same elements), and passing `nodes` would require
+    // typing it ArrayLike<HTMLElement> — a generic-call cast this plain-JS
+    // (non-TS-stripped, see file header) script can't spell safely.
+    await mermaid.run();
+  };
+  document.addEventListener("astro:page-load", () => {
+    render().catch(console.error);
+  });
+  window.addEventListener("themechange", () => {
+    render().catch(console.error);
+  });
+</script>

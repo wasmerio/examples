@@ -1,0 +1,190 @@
+---
+import BaseHead from "@/components/BaseHead.astro";
+import Navbar from "@/components/Navbar.astro";
+import Footer from "@/components/Footer.astro";
+import ImageLightbox from "@/components/ImageLightbox.astro";
+import Icon from "@/components/Icon.astro";
+import { t, LOCALE } from "@/locales";
+
+interface Props {
+  title?: string;
+  description?: string;
+  /** Keep this page out of search engines. */
+  noindex?: boolean;
+  /** Pages that provide their own ending (the landing) skip the
+   *  floating back-to-top button. */
+  hideBackToTop?: boolean;
+}
+
+const { title, description, noindex, hideBackToTop } = Astro.props;
+---
+
+<!-- `is-large` roots the page at 16px rather than Tocas's default 15px. That is
+     what lands its whole rem scale on an 8px grid: 0.5rem = 8px, 1rem = 16px,
+     1.5rem = 24px, 3rem = 48px. -->
+<html lang={LOCALE} class="is-large">
+  <head>
+    <BaseHead title={title} description={description} noindex={noindex} />
+    {/* Per-page <head> extras — e.g. an LCP image preload (index.astro). */}
+    <slot name="head" />
+    <script is:inline>
+      (() => {
+        const saved = localStorage.getItem("theme");
+        if (saved === "dark") document.documentElement.classList.add("is-dark");
+        if (saved === "light")
+          document.documentElement.classList.add("is-light");
+        // Arms the .reveal entrance styles before first paint; without JS
+        // the class never lands and everything is simply visible.
+        document.documentElement.classList.add("js");
+      })();
+    </script>
+  </head>
+
+  <body>
+    <Navbar />
+    <!-- Default container width (1180px): `is-narrow` (910px) squeezed long
+         timeline titles into wrapping under their dates. -->
+    <main class="ts-container">
+      <slot />
+    </main>
+    <Footer />
+    <ImageLightbox />
+    {
+      !hideBackToTop && (
+        <button
+          id="back-to-top"
+          class="ts-button is-icon is-circular is-secondary"
+          aria-label={t["layout.backToTop"]}
+        >
+          <Icon name="arrow-up" />
+        </button>
+      )
+    }
+    <script>
+      import Lenis from "lenis";
+
+      // Measured page-scrollbar width for the modal scroll-lock: while a
+      // dialog is open, :root goes overflow:hidden and loses its scrollbar
+      // gutter, so global.css pads the root by this amount to keep the page
+      // from shifting sideways. 0 on overlay-scrollbar platforms.
+      document.documentElement.style.setProperty(
+        "--scrollbar-w",
+        `${window.innerWidth - document.documentElement.clientWidth}px`,
+      );
+
+      // Momentum smooth scrolling (the nagi reference): wheel input eases
+      // toward its target instead of jumping a notch. Touch stays native
+      // (Lenis's default — platform inertia beats simulation on phones)
+      // and reduced-motion visitors keep fully native scrolling.
+      let lenis: Lenis | undefined;
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        lenis = new Lenis({
+          autoRaf: true,
+          // Any open dialog freezes the page behind it. The CSS
+          // overflow:hidden lock alone can't stop Lenis: its virtual
+          // scroll writes scrollTop directly, and hidden scroll
+          // containers still scroll programmatically.
+          prevent: () => !!document.querySelector("dialog[open]"),
+        });
+        // Anchor glides. Hand-rolled instead of Lenis's anchors option:
+        // that one doesn't preventDefault, so the native instant jump
+        // races the glide. No offset here — Lenis reads the page's
+        // scroll-padding-top itself.
+        document.addEventListener("click", (e) => {
+          const a = (e.target as Element).closest?.('a[href^="#"]');
+          if (!(a instanceof HTMLAnchorElement)) return;
+          const el = document.getElementById(
+            decodeURIComponent(a.hash.slice(1)),
+          );
+          if (!el) return;
+          e.preventDefault();
+          history.pushState(null, "", a.hash);
+          // Remeasure first: Lenis snapshots the scroll limit at init,
+          // before lazy images finish, and clamps glides to that stale
+          // ceiling on cold loads.
+          lenis!.resize();
+          lenis!.scrollTo(el, {
+            // Lazy media loading mid-glide can shift the target; one
+            // instant correction on arrival (a no-op when nothing moved).
+            onComplete: () => lenis!.scrollTo(el, { immediate: true }),
+          });
+        });
+      }
+
+      // The ClientRouter swaps the DOM without re-running module scripts,
+      // so anything bound to page elements re-arms on astro:page-load
+      // (which also fires on the initial load). Listeners on document /
+      // window above this line register once and stay live.
+      addEventListener(
+        "scroll",
+        () =>
+          document
+            .getElementById("back-to-top")
+            ?.classList.toggle("is-shown", scrollY > 400),
+        { passive: true },
+      );
+      document.addEventListener("click", (e) => {
+        if (!(e.target as Element).closest?.("#back-to-top")) return;
+        lenis ? lenis.scrollTo(0) : scrollTo({ top: 0, behavior: "smooth" });
+      });
+
+      // Site-wide scroll entrances. A .reveal is visible by default; only
+      // elements that load below the fold get hidden (.is-pending) and then
+      // animate in the first time 15% of them enters the viewport. Anything
+      // already on screen at load is left painted — an above-the-fold LCP
+      // image must not wait for this observer (that pushed LCP seconds out
+      // under throttling). One observer instance outlives navigations.
+      const io = new IntersectionObserver(
+        (entries) =>
+          entries.forEach((e) => {
+            if (e.isIntersecting) {
+              e.target.classList.remove("is-pending");
+              io.unobserve(e.target);
+            }
+          }),
+        { threshold: 0.15 },
+      );
+      document.addEventListener("astro:page-load", () => {
+        // Below the fold = its top sits past 90% of the viewport height.
+        // Those are the only ones hidden + animated; the brief pre-hide
+        // frame is off-screen, so no flash is visible.
+        const fold = window.innerHeight * 0.9;
+        document.querySelectorAll(".reveal").forEach((el) => {
+          if (el.getBoundingClientRect().top < fold) return;
+          el.classList.add("is-pending");
+          io.observe(el);
+        });
+      });
+
+      document.addEventListener("astro:after-swap", () => {
+        // The swap replaces <html> with the incoming page's server-rendered
+        // element, whose class is just "is-large" — every runtime class is
+        // gone: the persisted theme (else the page flips back to light/OS
+        // on navigation) and the `js` reveal arm. Re-apply from the same
+        // source the inline head script uses, before the swapped page
+        // paints (after-swap runs pre-paint, so no flash). toggle with the
+        // boolean handles all three theme states, including null = follow OS.
+        const root = document.documentElement;
+        root.classList.add("js");
+        const saved = localStorage.getItem("theme");
+        root.classList.toggle("is-dark", saved === "dark");
+        root.classList.toggle("is-light", saved === "light");
+
+        // Ease the incoming content up into place (see .page-enter in
+        // global.css). Fires only here, on navigation — never first load —
+        // so the LCP paint is untouched. The fresh <main> keeps the class;
+        // the animation plays once per swap because it is a new element.
+        document.querySelector("main")?.classList.add("page-enter");
+
+        // The router has already set the real scrollTop (top for forward
+        // navs, restored for history). Lenis's internal value still points
+        // at the OLD page's position and would yank the page back on its
+        // next frame — sync it immediately, then remeasure for the new
+        // page's height.
+        if (!lenis) return;
+        lenis.scrollTo(window.scrollY, { immediate: true, force: true });
+        lenis.resize();
+      });
+    </script>
+  </body>
+</html>

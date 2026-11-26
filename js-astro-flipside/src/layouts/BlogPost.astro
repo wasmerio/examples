@@ -1,0 +1,179 @@
+---
+import type { CollectionEntry } from "astro:content";
+import type { MarkdownHeading } from "astro";
+import Layout from "@/layouts/Layout.astro";
+import FormattedDate from "@/components/FormattedDate.astro";
+import Toc from "@/components/Toc.astro";
+import Comments from "@/components/Comments.astro";
+import { t, fill } from "@/locales";
+import SmartImage from "@/components/SmartImage.astro";
+import Icon from "@/components/Icon.astro";
+import { Image, getImage } from "astro:assets";
+import { url } from "@/utils/url";
+import SITE from "@/config";
+// The byline wears the WORK avatar: posts are the musician identity's
+// output (the Life face's cat stays on the about page).
+import { AVATAR_WORK } from "@/data/about";
+
+type Props = CollectionEntry<"blog">["data"] & {
+  minutesRead: number;
+  headings: MarkdownHeading[];
+  prev?: { id: string; title: string };
+  next?: { id: string; title: string };
+};
+
+const {
+  title,
+  description,
+  pubDate,
+  updatedDate,
+  heroImage,
+  tags = [],
+  draft,
+  minutesRead,
+  headings,
+  prev,
+  next,
+} = Astro.props;
+// Same h2/h3 + footnote-label exclusion as Toc.astro: when the ToC would
+// render nothing, skip the .post-body grid entirely — an empty rail would
+// still reserve its 220px desktop column (squeezing the prose) and add a
+// stray grid gap on mobile.
+const hasToc = headings.some(
+  (h) => (h.depth === 2 || h.depth === 3) && h.slug !== "footnote-label",
+);
+// When a post has a hero, it's the LCP element — preload it (matching the
+// SmartImage widths/sizes below) so it fetches with the document instead of
+// after CSS parse, same as the landing hero. heroImage is always a local
+// ImageMetadata (the image() schema), so getImage can size it.
+const heroSizes = "(max-width: 767px) 100vw, min(1100px, 92vw)";
+const heroPreload = heroImage
+  ? await getImage({ src: heroImage, widths: [720, 1100, 1600], format: "webp" })
+  : null;
+---
+
+<Layout title={title} description={description}>
+  {
+    heroPreload && (
+      <link
+        slot="head"
+        rel="preload"
+        as="image"
+        type="image/webp"
+        imagesrcset={heroPreload.srcSet.attribute}
+        imagesizes={heroSizes}
+      />
+    )
+  }
+  <article class="ts-container is-narrow" data-pagefind-body>
+    <header class="post-header reveal">
+      <a class="post-back" href={url("/blog/")}>
+        <Icon name="arrow-left" />
+        {t["post.backToList"]}
+      </a>
+      <h1 class="ts-header is-big is-heavy post-title">{title}</h1>
+      {
+        draft && (
+          // Dev-only signal: getPosts() filters drafts out of prod builds,
+          // so this chip can never render in a production build.
+          <span class="ts-chip is-outlined has-top-spaced">
+            {t["blog.draft"]}
+          </span>
+        )
+      }
+      <div class="post-meta">
+        <Image
+          class="post-meta-avatar"
+          src={AVATAR_WORK}
+          width={44}
+          height={44}
+          densities={[1, 2]}
+          format="webp"
+          loading="eager"
+          alt=""
+        />
+        <div class="post-meta-who">
+          <div class="post-meta-author">{SITE.author}</div>
+          <div class="ts-text is-description">
+            <FormattedDate date={pubDate} />
+            {
+              updatedDate && (
+                <>
+                  {` · ${t["blog.updated"]} `}
+                  <FormattedDate date={updatedDate} />
+                </>
+              )
+            }
+            {` · ${fill(t["blog.readingTime"], { m: minutesRead })}`}
+          </div>
+        </div>
+      </div>
+    </header>
+    {
+      heroImage && (
+        <SmartImage
+          class="post-hero reveal"
+          src={heroImage}
+          alt=""
+          loading="eager"
+          fetchpriority="high"
+          widths={[720, 1100, 1600]}
+          sizes="(max-width: 767px) 100vw, min(1100px, 92vw)"
+        />
+      )
+    }
+    {
+      hasToc ? (
+        <div class="post-body">
+          <div class="md-content">
+            <slot />
+          </div>
+          <aside class="post-rail">
+            <Toc headings={headings} />
+          </aside>
+        </div>
+      ) : (
+        <div class="md-content">
+          <slot />
+        </div>
+      )
+    }
+    {
+      tags.length > 0 && (
+        <div class="ts-wrap post-tags">
+          {tags.map((tag) => (
+            <a
+              href={url(`/blog/tags/${tag}/`)}
+              class="ts-chip is-circular is-outlined"
+            >
+              {tag}
+            </a>
+          ))}
+        </div>
+      )
+    }
+    {
+      (prev || next) && (
+        <nav class="post-nav">
+          {(
+            [
+              { rel: "prev", label: t["blog.prev"], post: prev },
+              { rel: "next", label: t["blog.next"], post: next },
+            ] as const
+          ).map(
+            ({ rel, label, post }) =>
+              post && (
+                <a class="post-nav-link" rel={rel} href={url(`/blog/${post.id}/`)}>
+                  <div class="ts-text is-description">{label}</div>
+                  <div class="ts-header is-heavy post-nav-title u-line">
+                    {post.title}
+                  </div>
+                </a>
+              ),
+          )}
+        </nav>
+      )
+    }
+    <Comments />
+  </article>
+</Layout>

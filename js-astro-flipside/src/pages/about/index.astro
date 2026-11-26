@@ -1,0 +1,123 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import AboutFace from "@/components/AboutFace.astro";
+import SITE from "@/config";
+import { AVATAR, PERSONAL_SECTIONS } from "@/data/life";
+import { AVATAR_WORK, PROFILE, PROFESSIONAL_SECTIONS } from "@/data/about";
+import { t, fill } from "@/locales";
+// The ASCII art is a two-way easter egg: a real HTML comment at the top of
+// the page (view-source), and logged to the console below (F12). `set:html`
+// is required — an Astro `{/* */}` comment never reaches the built output.
+import art from "@/data/ascii-art.txt?raw";
+
+// Prebuilt once per locale — the toggle script below is plain inline JS
+// (no module imports), so it receives the finished strings through a data
+// attribute on `.faces` instead of calling fill() itself. Not define:vars:
+// the v7 compiler drops a define:vars script's other attributes, and this
+// script cannot afford to lose data-astro-rerun.
+const SWITCH_LABELS = {
+  professional: fill(t["face.switchTo"], { name: t["face.work"] }),
+  personal: fill(t["face.switchTo"], { name: t["face.life"] }),
+};
+---
+
+<Layout title={t["nav.about"]} description={SITE.description}>
+  <Fragment set:html={`<!--\n${art}\n-->`} />
+  <!-- Both faces are in the DOM (SSG). `.is-hidden` (statically on the
+       professional face) overlays the hidden face on the visible one and
+       drives the flip/fade transitions — no FOUC, works before JS. Each
+       face carries its own FaceToggle copy in the identity card. -->
+  {
+    /* data-pagefind-body: the about faces are searchable alongside blog
+      posts (once the attribute exists anywhere, ONLY tagged pages are
+      indexed — listing/tag/404 pages stay out). The meta pins the result
+      title to the nav's about label instead of a guessed heading. */
+  }
+  <div
+    class="faces reveal"
+    data-pagefind-body
+    data-pagefind-meta={`title:${t["nav.about"]}`}
+    data-switch-labels={JSON.stringify(SWITCH_LABELS)}
+  >
+    {
+      /* One AboutFace layout, two data sets. The personal face is the
+        default; the professional one ships hidden + inert so it never
+        flashes before JS runs. */
+    }
+    <AboutFace
+      face="personal"
+      priority
+      avatar={AVATAR}
+      name={SITE.title}
+      socials={SITE.socials}
+      sections={PERSONAL_SECTIONS}
+    />
+    <AboutFace
+      face="professional"
+      hidden
+      avatar={AVATAR_WORK}
+      name={PROFILE.name}
+      headline={PROFILE.headline}
+      socials={SITE.socialsWork}
+      sections={PROFESSIONAL_SECTIONS}
+    />
+  </div>
+</Layout>
+
+<!-- Print the ASCII art to the console so it shows the moment DevTools
+     (F12) opens, not only in view-source. -->
+<script is:inline define:vars={{ art, title: SITE.title }}>
+  console.log("%c" + art, "font-family:monospace;line-height:1.1");
+  console.log("%c" + title, "font-size:24px;font-weight:800;color:#1f2430");
+</script>
+
+{
+  /* data-astro-rerun: inline scripts don't re-execute after a ClientRouter
+    swap by default, but this one binds the fresh page's toggle buttons and
+    reads ?face= — it must run on every visit to this page. The bare block
+    keeps the consts re-run-safe: without define:vars nothing wraps this
+    script, and a second classic-script top-level `const` would throw. */
+}
+<script is:inline data-astro-rerun>
+  {
+    const SWITCH_LABELS = JSON.parse(
+      document.querySelector(".faces").dataset.switchLabels,
+    );
+    const faces = document.querySelectorAll(".faces .face");
+    const toggles = document.querySelectorAll(".face-toggle");
+    const showFace = (next, focusToggle) => {
+      const other = next === "professional" ? "personal" : "professional";
+      faces.forEach((f) => {
+        const hidden = f.dataset.face !== next;
+        f.classList.toggle("is-hidden", hidden);
+        // `inert` drops the leaving face from the tab order and a11y tree
+        // right away — CSS `visibility` only catches up when the fade ends.
+        f.inert = hidden;
+      });
+      // Every face carries its own toggle copy — sync them all.
+      document
+        .querySelectorAll(".face-toggle .face-option")
+        .forEach((o) =>
+          o.classList.toggle("is-active", o.dataset.face === next),
+        );
+      toggles.forEach((btn) =>
+        btn.setAttribute("aria-label", SWITCH_LABELS[other]),
+      );
+      // The clicked copy just went inert with its face, which blurs it —
+      // hand focus to the copy in the face that is now visible.
+      if (focusToggle)
+        document.querySelector(".face:not(.is-hidden) .face-toggle")?.focus();
+    };
+    toggles.forEach((toggle) =>
+      toggle.addEventListener("click", () =>
+        // One button, two faces: whichever is hidden now is the one to show.
+        showFace(document.querySelector(".face.is-hidden").dataset.face, true),
+      ),
+    );
+    // The landing page's Work card deep-links here with ?face=work; without
+    // it (or with anything else) the default Life face stays. No focus grab
+    // on entry — this runs at page load.
+    if (new URLSearchParams(location.search).get("face") === "work")
+      showFace("professional", false);
+  }
+</script>

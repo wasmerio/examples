@@ -1,0 +1,86 @@
+---
+// Comments.astro — giscus (GitHub Discussions-backed comments), gated behind
+// SITE.features.giscus. giscus is the one deliberate third-party embed in
+// this template (it IS the feature the no-CDN rule doesn't apply to); every
+// other asset in the site ships from our own build.
+//
+// The embed script below is `is:inline`: Astro never hoists or bundles it,
+// so a static `{g && <Comments />}` import in BlogPost.astro can't leak
+// anything into the Vite graph when the flag is off.
+//
+// The script tag below is a sibling of the conditional section markup, not
+// nested inside it, and always renders; the mount-element check is the
+// actual on/off switch. No define:vars: the v7 compiler drops a define:vars
+// script's other attributes — including the data-astro-rerun this script
+// needs — so the giscus config rides on #giscus's data attribute instead,
+// and the bare block scopes the consts (nothing wraps the script anymore,
+// and a re-run redeclaring a top-level `const` would throw). The previous
+// shape — the script tag nested inside
+// `{g && (...)}`, plus a stray literal mention of the tag name earlier in
+// this very comment block — made Vite's cold-start dependency scan (a
+// regex-based pass over the raw file text, not a real parse) misidentify
+// where the script starts and print a harmless-but-scary ERROR on every
+// `npm run dev`; this shape, keeping the comments free of that literal
+// substring, doesn't trip it. Trade-off: flag off, the guarded script's own
+// dead source still ships as inert text (grep -ri giscus dist/ now finds
+// it), but nothing executes past the guard — no request to giscus.app, no
+// third-party code runs.
+//
+// data-* attributes go through `.dataset` rather than a setAttribute loop:
+// simpler, and it's a native property assignment instead of a quoted-key
+// object literal.
+import SITE from "@/config";
+const g = SITE.features.giscus;
+---
+
+{
+  g && (
+    <section class="comments has-top-spaced">
+      <div id="giscus" data-giscus={JSON.stringify(g)} />
+    </section>
+  )
+}
+{
+  /* data-astro-rerun: each ClientRouter navigation swaps in a fresh empty
+    #giscus mount, so the embed must re-inject per visit — without the
+    attribute an inline script runs only once per session. */
+}
+<script is:inline data-astro-rerun>
+  {
+    const mount = document.getElementById("giscus");
+    if (mount) {
+      const g = JSON.parse(mount.dataset.giscus);
+      const dark = () =>
+        document.documentElement.classList.contains("is-dark") ||
+        (!document.documentElement.classList.contains("is-light") &&
+          matchMedia("(prefers-color-scheme: dark)").matches);
+      const s = document.createElement("script");
+      s.src = "https://giscus.app/client.js";
+      s.dataset.repo = g.repo;
+      s.dataset.repoId = g.repoId;
+      s.dataset.category = g.category;
+      s.dataset.categoryId = g.categoryId;
+      s.dataset.mapping = "pathname";
+      s.dataset.reactionsEnabled = "1";
+      s.dataset.inputPosition = "bottom";
+      s.dataset.lang = document.documentElement.lang;
+      s.dataset.theme = dark() ? "dark" : "light";
+      s.crossOrigin = "anonymous";
+      s.async = true;
+      mount.appendChild(s);
+      // The script re-runs per navigation now — register the theme bridge
+      // once; it looks the current iframe up at event time.
+      if (!window.__giscusThemeBound) {
+        window.__giscusThemeBound = true;
+        window.addEventListener("themechange", () => {
+          document
+            .querySelector("iframe.giscus-frame")
+            ?.contentWindow?.postMessage(
+              { giscus: { setConfig: { theme: dark() ? "dark" : "light" } } },
+              "https://giscus.app",
+            );
+        });
+      }
+    }
+  }
+</script>

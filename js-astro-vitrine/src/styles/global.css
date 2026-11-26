@@ -1,0 +1,418 @@
+@import 'tailwindcss';
+@import './tokens.css';
+@import './theme.css';
+
+/*
+  Tailwind utilities read the tokens through @theme inline: bg-background,
+  text-foreground, border-border, font-prose, max-w-content and so on.
+  There is no dark: variant -- light-dark() in tokens.css covers both modes.
+*/
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-rule: var(--rule);
+  --color-plate: var(--plate);
+  --color-plate-ink: var(--plate-ink);
+  --color-plate-muted: var(--plate-muted);
+  --color-plate-primary: var(--plate-primary);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+
+  --font-prose: var(--font-body);
+  --font-ui: var(--font-heading);
+  --font-mono: var(--font-mono);
+
+  --container-content: var(--content-width);
+  --container-wide: var(--wide-width);
+
+  --radius-DEFAULT: var(--radius);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-body);
+    /* Anchor links and :target land below a sticky header */
+    scroll-padding-block-start: 5rem;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    text-wrap: balance;
+  }
+
+  /* Tailwind preflight strips underlines. Body links must not rely on color
+     alone (WCAG 1.4.1), and Lighthouse's link-in-text-block audit checks it. */
+  p a,
+  li a {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+
+  /* Form controls are native elements styled here, so a form needs markup and
+     nothing else. No radius: the rule grid does not mix with rounded corners. */
+  input,
+  textarea,
+  select {
+    inline-size: 100%;
+    padding: 0.5rem 0.625rem;
+    border: var(--rule-width) solid var(--border);
+    border-radius: var(--radius);
+    background: var(--background);
+    color: var(--foreground);
+    font: inherit;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    inline-size: auto;
+    padding: 0;
+  }
+
+  textarea {
+    /* Grows with its content where supported; a plain scrolling box elsewhere. */
+    field-sizing: content;
+    min-block-size: 5lh;
+  }
+
+  input:hover,
+  textarea:hover,
+  select:hover {
+    border-color: var(--rule);
+  }
+
+  /* :user-invalid waits until the field has been left. :invalid alone would mark a
+     required field the moment the page loads. The accent doubles as the error
+     colour on purpose -- a second red would be a second accent. */
+  input:user-invalid,
+  textarea:user-invalid,
+  select:user-invalid {
+    border-color: var(--primary);
+  }
+
+  ::placeholder {
+    color: var(--muted);
+    opacity: 1; /* Firefox dims placeholders below the token value */
+  }
+
+  :disabled {
+    color: var(--muted);
+    cursor: not-allowed;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/*
+  Plate -- the theme's signature. A 1px rule grid runs through the page, objects
+  sit inside the cells instead of filling them, and each cell carries a caption
+  above and a cartellino (the museum wall label) below.
+
+  The rules are a 1px ring drawn outside each cell, not borders and not a gap
+  showing the parent's colour. A cell paints over the ring of the cell above and
+  to its left, so a shared line stays 1px however many cells there are, the last
+  row never doubles up, and a half-filled row leaves no stray band behind it.
+*/
+@layer components {
+  /* The only button shape in the theme: a ruled rectangle that inverts. */
+  .btn {
+    display: inline-block;
+    border: var(--rule-width) solid var(--rule);
+    padding: 0.55rem 1.75rem;
+    font-family: var(--font-heading);
+    background: var(--background);
+    color: var(--foreground);
+    transition:
+      background var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .btn:hover {
+    background: var(--foreground);
+    color: var(--background);
+  }
+
+  .plate-grid {
+    display: grid;
+    gap: 0;
+  }
+
+  /* The hairline ring is the rule grid, not a drop shadow. */
+  .plate-grid > * {
+    background: var(--background);
+    box-shadow: 0 0 0 var(--rule-width) var(--rule);
+  }
+
+  /* Signature off (config.ts features.plate = false): plain spaced grid, no rules,
+     no caption line, and the label simply stays where the reveal used to be. */
+  .plate-grid.is-plain {
+    gap: 1.5rem;
+  }
+
+  .plate-grid.is-plain > * {
+    box-shadow: none;
+  }
+
+  .plate-grid.is-plain .plate__caption {
+    display: none;
+  }
+
+  .plate-grid.is-plain .plate__label {
+    opacity: 1;
+  }
+
+  .plate {
+    position: relative;
+    isolation: isolate; /* keeps the object's blend inside its own cell */
+    background: var(--plate);
+    color: var(--plate-ink);
+    padding: var(--plate-pad);
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 1rem;
+    /* The figure height every plate in a row is measured against. A wide plate
+       raises it for its row; the objects beside it gain air, not scale. */
+    --plate-figure: clamp(12rem, 24vw, 15rem);
+  }
+
+  .plate--wide {
+    --plate-figure: clamp(14rem, 34vw, 20rem);
+  }
+
+  .plate__caption {
+    font-size: var(--caption-size);
+    letter-spacing: var(--caption-tracking);
+    color: var(--plate-muted);
+    text-align: center;
+  }
+
+  /* Objects are placed in the cell, never cropped to fill it. The box is the
+     photograph itself rather than the cell: an image that fills its box can be
+     faded at its own edges, and a letterboxed one cannot. */
+  .plate__object {
+    inline-size: auto;
+    block-size: auto;
+    max-inline-size: 100%;
+    /* The cap, not a floor: it bounds what the object contributes to the row, so a
+       tall photograph cannot stretch its row and every plate keeps its proportions. */
+    max-block-size: var(--plate-figure);
+    align-self: center;
+    margin-inline: auto;
+    /* Object photographs are shot on white; the plate is paper, which is not quite
+       white in dark mode. Multiply drops the photo's white into the paper instead of
+       printing a white rectangle on it, and leaves the object itself alone. */
+    mix-blend-mode: multiply;
+    /* A sweep is rarely pure white, so multiply alone still prints the edge of the
+       photograph as a pale rectangle on the paper. Fading the last tenth of the
+       image takes that edge off the way a plate is vignetted into the page; the
+       object sits well inside it. */
+    -webkit-mask-image: radial-gradient(farthest-side, #000 92%, transparent 100%);
+    mask-image: radial-gradient(farthest-side, #000 92%, transparent 100%);
+  }
+
+  /* The cartellino keeps its row at all times, so revealing it shifts nothing.
+     Keyboard focus reveals it too -- the label is content, not decoration. */
+  .plate__label {
+    font-size: var(--caption-size);
+    letter-spacing: var(--caption-tracking);
+    color: var(--plate-muted);
+    font-variant-numeric: tabular-nums; /* tnum: verified present in both faces */
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+  }
+
+  .plate:hover .plate__label,
+  .plate:focus-within .plate__label {
+    opacity: 1;
+  }
+
+  @media (hover: none) {
+    /* No hover to reveal it with, so it just stays. */
+    .plate__label {
+      opacity: 1;
+    }
+  }
+
+  .plate__title {
+    font-family: var(--font-heading);
+    font-size: 1.0625rem;
+    line-height: 1.2;
+    letter-spacing: normal;
+    color: var(--plate-ink);
+  }
+
+  .plate__title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .plate__title a:hover {
+    color: var(--plate-primary);
+  }
+
+  /* One link per plate, stretched over the whole cell. */
+  .plate__title a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+  }
+}
+
+/*
+  The body copy of a note or a page. One place, no typography plugin: a catalogue
+  note is a column of text with the occasional list or quotation, and the rules
+  below are the whole of it. Wrap anything that should keep its own look in
+  .not-prose; every rule here honours the guard, so add it to any rule you add.
+*/
+@layer components {
+  .prose {
+    font-size: 1.0625rem;
+    line-height: 1.7;
+  }
+
+  .prose
+    :where(p, ul, ol, blockquote, pre, table, figure, hr):not(:where(.not-prose, .not-prose *)) {
+    margin-block: 1.3em;
+  }
+
+  .prose > :first-child {
+    margin-block-start: 0;
+  }
+
+  .prose :where(h2, h3, h4):not(:where(.not-prose, .not-prose *)) {
+    margin-block: 2em 0.6em;
+    line-height: 1.2;
+  }
+
+  .prose h2:not(:where(.not-prose, .not-prose *)) {
+    font-size: 1.6em;
+  }
+
+  .prose h3:not(:where(.not-prose, .not-prose *)) {
+    font-size: 1.25em;
+  }
+
+  /* The fourth level is set in italic rather than smaller again: below 1em the
+     Spectral body face starts losing its serifs on screen. */
+  .prose h4:not(:where(.not-prose, .not-prose *)) {
+    font-size: 1em;
+    font-style: italic;
+  }
+
+  .prose :where(ul, ol):not(:where(.not-prose, .not-prose *)) {
+    padding-inline-start: 1.3em;
+  }
+
+  .prose ul:not(:where(.not-prose, .not-prose *)) {
+    list-style: disc;
+  }
+
+  .prose ol:not(:where(.not-prose, .not-prose *)) {
+    list-style: decimal;
+  }
+
+  .prose li:not(:where(.not-prose, .not-prose *)) {
+    margin-block: 0.35em;
+  }
+
+  .prose li:not(:where(.not-prose, .not-prose *))::marker {
+    color: var(--muted);
+  }
+
+  .prose a:not(:where(.not-prose, .not-prose *)) {
+    text-decoration-line: underline;
+    text-underline-offset: 0.15em;
+  }
+
+  /* A quotation is set off by a rule, like everything else here. */
+  .prose blockquote:not(:where(.not-prose, .not-prose *)) {
+    border-inline-start: var(--rule-width) solid var(--rule);
+    padding-inline-start: 1.2em;
+    color: var(--muted);
+  }
+
+  .prose hr:not(:where(.not-prose, .not-prose *)) {
+    border: 0;
+    border-block-start: var(--rule-width) solid var(--rule);
+    margin-block: 2.5em;
+  }
+
+  .prose :where(code):not(:where(pre code, .not-prose *)) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+  }
+
+  .prose pre:not(:where(.not-prose, .not-prose *)) {
+    font-family: var(--font-mono);
+    font-size: 0.8em;
+    line-height: 1.6;
+    padding: 1em 1.1em;
+    border: var(--rule-width) solid var(--border);
+    overflow-x: auto;
+  }
+
+  /* The scroll is on the wrapper (src/…/table-scroll.ts): a table set to display: block
+
+     is no longer read out as a table. */
+
+  .prose .table-scroll {
+    max-width: 100%;
+
+    overflow-x: auto;
+  }
+
+  .prose table:not(:where(.not-prose, .not-prose *)) {
+    inline-size: 100%;
+    font-size: 0.85em;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .prose :where(th, td):not(:where(.not-prose, .not-prose *)) {
+    text-align: start;
+    padding: 0.5em 1em 0.5em 0;
+    border-block-end: var(--rule-width) solid var(--border);
+  }
+
+  .prose th:not(:where(.not-prose, .not-prose *)) {
+    font-family: var(--font-heading);
+    font-weight: 500;
+    border-block-end-color: var(--rule);
+  }
+
+  .prose figcaption:not(:where(.not-prose, .not-prose *)) {
+    margin-block-start: 0.6em;
+    font-size: var(--caption-size);
+    letter-spacing: var(--caption-tracking);
+    color: var(--muted);
+  }
+
+  /* The object page prints one plate the size of a page. Same cell, same paper,
+     same blend; only the figure cap and the empty caption rows change. */
+  .plate--figure {
+    grid-template-rows: 1fr;
+    --plate-figure: clamp(15rem, 52vw, 30rem);
+  }
+}

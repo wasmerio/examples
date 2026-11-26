@@ -1,0 +1,126 @@
+---
+// One object: the plate at page size, the wall label beside the note, and the
+// entries that follow it in the catalogue.
+import type { GetStaticPaths } from 'astro';
+import { Image } from 'astro:assets';
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Plate from '../../components/plate/Plate.astro';
+import PlateGrid from '../../components/plate/PlateGrid.astro';
+import { catalogue, site, ui } from '../../config';
+import { getPlates, getRelatedPlates, groupPath } from '../../lib/content';
+
+export const getStaticPaths = (async () =>
+  (await getPlates()).map((plate) => ({
+    params: { id: plate.id },
+    props: { plate },
+  }))) satisfies GetStaticPaths;
+
+const { plate } = Astro.props;
+const { title, dateText, medium, dimensions, credit, image } = plate.data;
+const { Content } = await render(plate);
+const hasNote = Boolean(plate.body?.trim());
+const related = await getRelatedPlates(plate);
+
+// The label as a museum prints it, one row per line that exists.
+const rows = [
+  [ui.label.medium, medium],
+  [ui.label.date, dateText],
+  [ui.label.dimensions, dimensions],
+  [ui.label.number, catalogue.showAccession ? plate.number : ''],
+  [ui.label.credit, credit],
+].filter(([, value]) => value) as [string, string][];
+
+const description = `${title}. ${[medium, dateText].join(', ')}.`;
+const abs = (path: string) => new URL(path, Astro.site).href;
+const url = abs(Astro.url.pathname);
+const jsonLd = [
+  {
+    '@type': 'CreativeWork',
+    name: title,
+    description,
+    artMedium: medium,
+    dateCreated: dateText,
+    image: abs(image.src),
+    isPartOf: { '@type': 'Collection', name: plate.group.data.title },
+    creditText: credit,
+    url,
+    inLanguage: site.locale,
+  },
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { name: site.name, item: abs('/') },
+      { name: ui.catalogue.title, item: abs('/catalogue/') },
+      { name: title, item: url },
+    ].map((crumb, i) => ({ '@type': 'ListItem', position: i + 1, ...crumb })),
+  },
+];
+---
+
+<Base title={title} description={description} image={image} type="article" jsonLd={jsonLd}>
+  <div class="max-w-wide mx-auto px-4 pt-10 pb-20 md:pt-14">
+    <p class="text-muted text-sm">
+      <a href={groupPath(plate.group)}>{plate.group.data.title}</a>
+      {catalogue.showAccession && (
+        <span class="tabular-nums">
+          {' · '}
+          {plate.number}
+        </span>
+      )}
+    </p>
+    <h1 class="font-ui mt-3 text-[clamp(2.25rem,6vw,3.5rem)] leading-[1.05]">{title}</h1>
+    <p class="text-muted mt-2 text-lg tabular-nums">{dateText}</p>
+
+    <PlateGrid class="mt-8">
+      <figure class="plate plate--figure">
+        <Image
+          class="plate__object"
+          src={image}
+          alt={title}
+          widths={[640, 960, 1440]}
+          sizes="(min-width: 76rem) 68rem, 96vw"
+          loading="eager"
+          fetchpriority="high"
+        />
+      </figure>
+    </PlateGrid>
+
+    <div
+      class:list={[
+        'mt-12 grid gap-10 md:gap-16',
+        hasNote && 'md:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]',
+      ]}
+    >
+      <dl class="border-rule max-w-content border-t text-sm">
+        {rows.map(([term, value]) => (
+          <div class="border-rule flex flex-wrap gap-x-6 gap-y-1 border-b py-3">
+            <dt class="font-ui text-muted w-24">{term}</dt>
+            <dd class="flex-1 tabular-nums">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {hasNote && (
+        <div class="prose max-w-content">
+          <Content />
+        </div>
+      )}
+    </div>
+
+    {related.length > 0 && (
+      <section class="pt-20">
+        <div class="border-rule flex items-baseline justify-between gap-4 border-b pb-2">
+          <h2 class="font-ui text-lg font-medium">{ui.nearby}</h2>
+          <a href="/catalogue" class="text-sm no-underline">
+            {ui.wholeCatalogue}
+          </a>
+        </div>
+        <PlateGrid class="mt-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {related.map((other) => (
+            <Plate plate={other} showCaption={false} />
+          ))}
+        </PlateGrid>
+      </section>
+    )}
+  </div>
+</Base>

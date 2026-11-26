@@ -1,0 +1,505 @@
+---
+
+---
+
+<script>
+  import { announce, copyToClipboard } from '@utils/a11y';
+
+  interface MermaidModule {
+    default: {
+      initialize: (config: Record<string, unknown>) => void;
+      render: (id: string, text: string) => Promise<{ svg: string }>;
+    };
+  }
+
+  interface PlotlyGlobal {
+    newPlot: (
+      root: string | HTMLElement,
+      data: unknown[],
+      layout: Record<string, unknown>,
+      config?: Record<string, unknown>
+    ) => Promise<unknown>;
+    relayout: (
+      root: string | HTMLElement,
+      layout: Record<string, unknown>
+    ) => Promise<unknown>;
+  }
+
+  interface CustomWindow extends Window {
+    Plotly?: PlotlyGlobal;
+  }
+
+  let globalMermaid: MermaidModule['default'] | null = null;
+
+  function enhanceProse() {
+    // 1. Code Block Copy Buttons
+    document.querySelectorAll('.prose pre').forEach((pre) => {
+      if (
+        pre.querySelector('.code-copy-btn') ||
+        pre.getAttribute('data-language') === 'mermaid' ||
+        Boolean(pre.querySelector('code.language-mermaid'))
+      )
+        return;
+
+      pre.classList.add('relative', 'group');
+
+      const copyBtn = document.createElement('button');
+      copyBtn.type = 'button';
+      copyBtn.className =
+        'code-copy-btn absolute top-2 right-2 flex opacity-0 group-hover:opacity-100 focus:opacity-100 items-center gap-1 px-2 py-1 text-xs font-mono rounded bg-(--global-footer-bg-color)/90 hover:bg-(--global-footer-bg-color) text-(--global-text-color) border border-(--global-border-color) transition-opacity shadow-xs cursor-pointer z-10';
+      copyBtn.setAttribute('aria-label', 'Copy code to clipboard');
+      copyBtn.innerHTML = `
+        <svg class="copy-icon w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+        </svg>
+        <span class="copy-text text-[10px]">Copy</span>
+      `;
+
+      copyBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const code = pre.querySelector('code');
+        const textToCopy =
+          (code as HTMLElement | null)?.innerText ||
+          (pre as HTMLElement).innerText ||
+          code?.textContent ||
+          pre.textContent ||
+          '';
+
+        const copied = await copyToClipboard(textToCopy);
+
+        if (copied) {
+          announce('Code copied to clipboard');
+          copyBtn.classList.add('copy-pop');
+          copyBtn.innerHTML = `
+            <svg class="check-icon w-3.5 h-3.5 text-(--global-base-color)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span class="copy-text text-[10px] text-(--global-base-color)">Copied!</span>
+          `;
+          setTimeout(() => {
+            copyBtn.classList.remove('copy-pop');
+            copyBtn.innerHTML = `
+              <svg class="copy-icon w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+              </svg>
+              <span class="copy-text text-[10px]">Copy</span>
+            `;
+          }, 2000);
+        }
+      });
+
+      pre.appendChild(copyBtn);
+
+      // Language Badge
+      const lang =
+        pre.getAttribute('data-language') ||
+        pre.getAttribute('data-lang') ||
+        pre
+          .querySelector('code')
+          ?.className.match(/language-([a-zA-Z0-9_-]+)/)?.[1];
+
+      if (
+        lang &&
+        lang !== 'plaintext' &&
+        !pre.querySelector('.code-lang-badge')
+      ) {
+        const langBadge = document.createElement('span');
+        langBadge.className =
+          'code-lang-badge pointer-events-none absolute top-2.5 right-16 select-none font-mono text-[10px] font-semibold uppercase tracking-wider text-(--global-text-color-light) opacity-70 transition group-hover:opacity-100';
+        langBadge.textContent = lang;
+        pre.appendChild(langBadge);
+      }
+    });
+
+    // 2. Heading Anchor '#' Links
+    document
+      .querySelectorAll('.prose h2, .prose h3, .prose h4')
+      .forEach((heading) => {
+        if (heading.querySelector('.heading-anchor')) return;
+
+        let id = heading.id;
+        if (!id) {
+          id = (heading.textContent || '')
+            .toLowerCase()
+            .trim()
+            .replace(/[^\w\s-]/g, '')
+            .replace(/[\s_-]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+          if (id) heading.id = id;
+        }
+
+        if (!id) return;
+
+        heading.classList.add('group', 'relative');
+
+        const anchor = document.createElement('a');
+        anchor.href = `#${id}`;
+        anchor.className =
+          'heading-anchor opacity-0 group-hover:opacity-100 ml-2 text-(--global-link-color) no-underline transition-opacity text-sm font-normal';
+        anchor.setAttribute(
+          'aria-label',
+          `Permalink to ${heading.textContent}`
+        );
+        anchor.innerHTML = '#';
+
+        anchor.addEventListener('click', () => {
+          const url = new URL(window.location.href);
+          url.hash = id;
+          navigator.clipboard?.writeText(url.toString());
+          announce('Heading permalink copied to clipboard');
+        });
+
+        heading.appendChild(anchor);
+      });
+
+    // 3. Kramdown IAL Notice Box Enhancement
+    document.querySelectorAll('.prose p').forEach((p) => {
+      const lastChild = p.lastChild;
+      if (!lastChild || lastChild.nodeType !== Node.TEXT_NODE) return;
+      const text = lastChild.textContent || '';
+      const noticeMatch = text.match(/\{:\s*\.(notice(?:--[a-z]+)?)\s*\}\s*$/);
+      if (noticeMatch) {
+        const noticeClass = noticeMatch[1];
+        lastChild.textContent = text
+          .replace(/\{:\s*\.(notice(?:--[a-z]+)?)\s*\}\s*$/, '')
+          .trimEnd();
+        p.classList.add('notice', noticeClass);
+      }
+    });
+
+    // 4. GitHub-Style Markdown Alerts (> [!NOTE], > [!TIP], etc.)
+    const alertClassMap: Record<string, { cls: string; label: string }> = {
+      NOTE: { cls: 'notice--info', label: 'Note' },
+      TIP: { cls: 'notice--success', label: 'Tip' },
+      IMPORTANT: { cls: 'notice--info', label: 'Important' },
+      WARNING: { cls: 'notice--warning', label: 'Warning' },
+      CAUTION: { cls: 'notice--danger', label: 'Caution' },
+    };
+
+    document
+      .querySelectorAll<HTMLElement>('.prose blockquote')
+      .forEach((bq) => {
+        const firstP = bq.querySelector('p');
+        if (!firstP) return;
+
+        const firstNode = firstP.firstChild;
+        if (!firstNode || firstNode.nodeType !== Node.TEXT_NODE) return;
+
+        const rawText = firstNode.textContent || '';
+        const match = rawText.match(
+          /^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\](?:\s*\n|\s+|$)/i
+        );
+        if (!match) return;
+
+        const alertKey = match[1].toUpperCase();
+        const alertInfo = alertClassMap[alertKey];
+        if (!alertInfo) return;
+
+        const remainder = rawText.slice(match[0].length);
+        firstNode.textContent = remainder ? ` ${remainder}` : '';
+
+        const strong = document.createElement('strong');
+        strong.textContent = `${alertInfo.label}:`;
+        firstP.insertBefore(strong, firstNode);
+
+        const div = document.createElement('div');
+        div.className = `notice ${alertInfo.cls}`;
+        while (bq.firstChild) div.appendChild(bq.firstChild);
+        bq.replaceWith(div);
+      });
+
+    // 5. Mermaid Diagrams Dynamic Auto-Rendering
+    const mermaidBlocks = document.querySelectorAll<HTMLElement>(
+      '.prose pre[data-language="mermaid"], .prose pre code.language-mermaid, .prose .mermaid'
+    );
+    if (mermaidBlocks.length > 0) {
+      const loadMermaid = new Function('url', 'return import(url)') as (
+        url: string
+      ) => Promise<MermaidModule>;
+
+      loadMermaid(
+        'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'
+      )
+        .then(({ default: mermaid }) => {
+          globalMermaid = mermaid;
+          const isDark =
+            document.documentElement.getAttribute('data-theme') === 'dark';
+          mermaid.initialize({
+            startOnLoad: false,
+            theme: isDark ? 'dark' : 'default',
+            securityLevel: 'loose',
+          });
+
+          mermaidBlocks.forEach(async (el, idx) => {
+            const pre = el.closest('pre') || el;
+            if (pre.dataset.enhanced) return;
+            pre.dataset.enhanced = 'true';
+
+            const code = (
+              (el.tagName === 'CODE' ? el : el.querySelector('code') || el)
+                .textContent || ''
+            ).trim();
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'mermaid-wrapper my-6';
+
+            const container = document.createElement('div');
+            container.className =
+              'mermaid-diagram flex justify-center overflow-x-auto';
+            container.dataset.mermaidCode = code;
+            const id = `mermaid-svg-${Date.now()}-${idx}`;
+
+            try {
+              const { svg } = await mermaid.render(id, code);
+              container.innerHTML = svg;
+
+              const details = document.createElement('details');
+              details.className =
+                'mt-3 rounded border border-(--global-border-color) bg-(--global-footer-bg-color) p-2 text-xs';
+              const summary = document.createElement('summary');
+              summary.className =
+                'cursor-pointer font-sans text-xs font-medium text-(--global-text-color-light) hover:text-(--global-text-color) select-none';
+              summary.textContent = 'View Mermaid Source';
+              details.appendChild(summary);
+
+              const clonedPre = pre.cloneNode(true) as HTMLElement;
+              clonedPre.classList.remove('my-6');
+              clonedPre.classList.add('mt-2');
+              details.appendChild(clonedPre);
+
+              wrapper.appendChild(container);
+              wrapper.appendChild(details);
+
+              pre.replaceWith(wrapper);
+            } catch (err) {
+              console.warn('Mermaid rendering failed:', err);
+            }
+          });
+        })
+        .catch(() => {});
+    }
+
+    // 6. Plotly Graphs Dynamic Auto-Rendering
+    const plotlyBlocks = document.querySelectorAll<HTMLElement>(
+      '.prose pre[data-language="plotly"], .prose pre code.language-plotly'
+    );
+    if (plotlyBlocks.length > 0) {
+      const customWin = window as CustomWindow;
+      const renderPlots = () => {
+        const Plotly = customWin.Plotly;
+        if (!Plotly) return;
+
+        const isDark =
+          document.documentElement.getAttribute('data-theme') === 'dark';
+        plotlyBlocks.forEach((el, idx) => {
+          const pre = el.closest('pre') || el;
+          if (pre.dataset.enhanced) return;
+          pre.dataset.enhanced = 'true';
+
+          const code = (
+            (el.tagName === 'CODE' ? el : el.querySelector('code') || el)
+              .textContent || ''
+          ).trim();
+          try {
+            const plotData = JSON.parse(code) as {
+              data?: unknown[];
+              layout?: Record<string, unknown>;
+            };
+
+            const wrapper = document.createElement('div');
+            wrapper.className = 'plotly-wrapper my-6 w-full';
+
+            const plotDiv = document.createElement('div');
+            plotDiv.id = `plotly-graph-${Date.now()}-${idx}`;
+            plotDiv.className = 'plotly-container w-full min-h-[350px]';
+            plotDiv.dataset.plotData = code;
+
+            const details = document.createElement('details');
+            details.className =
+              'mt-3 rounded border border-(--global-border-color) bg-(--global-footer-bg-color) p-2 text-xs';
+            const summary = document.createElement('summary');
+            summary.className =
+              'cursor-pointer font-sans text-xs font-medium text-(--global-text-color-light) hover:text-(--global-text-color) select-none';
+            summary.textContent = 'View Plotly JSON Source';
+            details.appendChild(summary);
+
+            const clonedPre = pre.cloneNode(true) as HTMLElement;
+            clonedPre.classList.remove('my-6');
+            clonedPre.classList.add('mt-2');
+            details.appendChild(clonedPre);
+
+            wrapper.appendChild(plotDiv);
+            wrapper.appendChild(details);
+
+            pre.replaceWith(wrapper);
+
+            const themedLayout = buildPlotlyThemeLayout(
+              plotData.layout || {},
+              isDark
+            );
+
+            Plotly.newPlot(plotDiv.id, plotData.data || [], themedLayout, {
+              responsive: true,
+              displayModeBar: false,
+            });
+          } catch (e) {
+            console.warn('Plotly JSON parse failed:', e);
+          }
+        });
+      };
+
+      if (!customWin.Plotly) {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.plot.ly/plotly-2.35.2.min.js';
+        script.onload = renderPlots;
+        document.head.appendChild(script);
+      } else renderPlots();
+    }
+  }
+
+  function buildPlotlyThemeLayout(
+    userLayout: Record<string, unknown> = {},
+    isDark: boolean
+  ): Record<string, unknown> {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const textColor = rootStyle.getPropertyValue('--global-text-color').trim();
+    const bgColor = rootStyle.getPropertyValue('--global-bg-color').trim();
+    const gridColor = isDark
+      ? 'rgba(255, 255, 255, 0.12)'
+      : 'rgba(0, 0, 0, 0.08)';
+    const zeroLineColor = isDark
+      ? 'rgba(255, 255, 255, 0.25)'
+      : 'rgba(0, 0, 0, 0.2)';
+    const lineColor = isDark
+      ? 'rgba(255, 255, 255, 0.35)'
+      : 'rgba(0, 0, 0, 0.3)';
+
+    const defaultMargin = {
+      l: 45,
+      r: 25,
+      t: userLayout.title ? 40 : 25,
+      b: 40,
+      pad: 4,
+    };
+
+    const themedLayout: Record<string, unknown> = {
+      margin: {
+        ...defaultMargin,
+        ...(userLayout.margin && typeof userLayout.margin === 'object'
+          ? (userLayout.margin as Record<string, unknown>)
+          : {}),
+      },
+      ...userLayout,
+      autosize: true,
+      paper_bgcolor: bgColor,
+      plot_bgcolor: bgColor,
+      font: {
+        color: textColor,
+        ...(userLayout.font && typeof userLayout.font === 'object'
+          ? (userLayout.font as Record<string, unknown>)
+          : {}),
+      },
+    };
+
+    // Enhance all axes (xaxis, yaxis, xaxis2, yaxis2, etc.)
+    const axisKeys = Object.keys(userLayout).filter((k) =>
+      /^[xy]axis\d*$/.test(k)
+    );
+    if (!axisKeys.includes('xaxis')) axisKeys.push('xaxis');
+    if (!axisKeys.includes('yaxis')) axisKeys.push('yaxis');
+
+    for (const axisKey of axisKeys) {
+      const existingAxis =
+        (userLayout[axisKey] as Record<string, unknown>) || {};
+      themedLayout[axisKey] = {
+        ...existingAxis,
+        gridcolor: existingAxis.gridcolor || gridColor,
+        zerolinecolor: existingAxis.zerolinecolor || zeroLineColor,
+        linecolor: existingAxis.linecolor || lineColor,
+        tickcolor: existingAxis.tickcolor || textColor,
+        tickfont: {
+          color: textColor,
+          ...(existingAxis.tickfont && typeof existingAxis.tickfont === 'object'
+            ? (existingAxis.tickfont as Record<string, unknown>)
+            : {}),
+        },
+        title:
+          typeof existingAxis.title === 'string'
+            ? { text: existingAxis.title, font: { color: textColor } }
+            : existingAxis.title && typeof existingAxis.title === 'object'
+              ? {
+                  ...(existingAxis.title as Record<string, unknown>),
+                  font: {
+                    color: textColor,
+                    ...(((existingAxis.title as Record<string, unknown>)
+                      .font as Record<string, unknown>) || {}),
+                  },
+                }
+              : existingAxis.title,
+      };
+    }
+
+    return themedLayout;
+  }
+
+  // Reactive Theme Listener for Mermaid & Plotly
+  function handleThemeChange() {
+    const isDark =
+      document.documentElement.getAttribute('data-theme') === 'dark';
+
+    // 1. Reactive Mermaid Theme Switch
+    if (globalMermaid) {
+      globalMermaid.initialize({
+        startOnLoad: false,
+        theme: isDark ? 'dark' : 'default',
+        securityLevel: 'loose',
+      });
+
+      document
+        .querySelectorAll<HTMLElement>('.mermaid-diagram')
+        .forEach(async (container, idx) => {
+          const code = container.dataset.mermaidCode;
+          if (!code) return;
+          const id = `mermaid-svg-theme-${Date.now()}-${idx}`;
+          try {
+            const { svg } = await globalMermaid!.render(id, code);
+            container.innerHTML = svg;
+          } catch (e) {
+            console.warn('Mermaid re-render failed:', e);
+          }
+        });
+    }
+
+    // 2. Reactive Plotly Theme Switch with High Contrast Axes
+    const customWin = window as CustomWindow;
+    if (customWin.Plotly) {
+      document
+        .querySelectorAll<HTMLElement>('.plotly-container')
+        .forEach((plotDiv) => {
+          const rawCode = plotDiv.dataset.plotData;
+          let userLayout: Record<string, unknown> = {};
+          if (rawCode) {
+            try {
+              const parsed = JSON.parse(rawCode);
+              userLayout = parsed.layout || {};
+            } catch {
+              // ignore JSON parse errors for fallback
+            }
+          }
+
+          customWin
+            .Plotly!.relayout(
+              plotDiv.id,
+              buildPlotlyThemeLayout(userLayout, isDark)
+            )
+            .catch(() => {});
+        });
+    }
+  }
+
+  document.addEventListener('theme-change', handleThemeChange);
+
+  document.addEventListener('astro:page-load', () => {
+    requestAnimationFrame(enhanceProse);
+  });
+</script>

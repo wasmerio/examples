@@ -1,0 +1,82 @@
+---
+import { getCollection, render } from 'astro:content';
+
+import { Icon } from 'astro-icon/components';
+
+import PageLayout from '@layouts/PageLayout.astro';
+
+import { formatDate } from '@utils/date';
+import { calculateReadingTime } from '@utils/readingTime';
+import { buildBlogPostingSchema } from '@utils/seo';
+import { buildCollectionPaths, getSiteUrls } from '@utils/url';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog', ({ data }) => !data.draft);
+
+  return buildCollectionPaths('posts', posts).map(({ slug, item: post }) => ({
+    params: { slug },
+    props: { post },
+  }));
+}
+
+const { post } = Astro.props;
+const { Content } = await render(post);
+const formattedDate = formatDate(post.data.date);
+const readTime = post.data.read_time
+  ? calculateReadingTime(post.body)
+  : undefined;
+
+const { siteBase, canonicalUrl } = getSiteUrls(Astro.url, Astro.site);
+
+const blogPostingSchema = buildBlogPostingSchema(
+  canonicalUrl,
+  siteBase,
+  post.data.title,
+  post.data.date,
+  post.data.modified,
+  post.data.description,
+  post.data.image
+);
+---
+
+<PageLayout
+  title={post.data.title}
+  description={post.data.description}
+  date={post.data.date}
+  tags={post.data.tags}
+  schemaNodes={[blogPostingSchema]}
+  ogType="article"
+  authorProfile={post.data.author_profile}
+  toc={post.data.toc}
+  image={post.data.image}
+>
+  {
+    (formattedDate || readTime) && (
+      <div
+        slot="header-metadata"
+        class="mt-2 flex flex-wrap items-center gap-3 text-sm text-(--global-text-color-light)"
+      >
+        {formattedDate && (
+          <p class="inline-flex items-center gap-1.5 leading-none">
+            <Icon name="fa6-solid:calendar" class="h-3.5 w-3.5 shrink-0" />
+            <span>
+              <strong>Published:</strong> {formattedDate}
+            </span>
+            {post.data.modified && (
+              <span class="ml-2">
+                (Updated: {formatDate(post.data.modified)})
+              </span>
+            )}
+          </p>
+        )}
+        {readTime && (
+          <p class="inline-flex items-center gap-1.5 leading-none">
+            <Icon name="fa6-solid:clock" class="h-3.5 w-3.5 shrink-0" />
+            <span>{readTime}</span>
+          </p>
+        )}
+      </div>
+    )
+  }
+  <Content />
+</PageLayout>

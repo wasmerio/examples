@@ -1,0 +1,66 @@
+---
+import { getCollection, render } from 'astro:content';
+
+import PageLayout from '@layouts/PageLayout.astro';
+
+import { siteConfig } from '@data/siteConfig';
+import { formatYear, toIsoDateString } from '@utils/date';
+import { buildCollectionPaths, getSiteUrls, resolveUrl } from '@utils/url';
+
+export async function getStaticPaths() {
+  const publications = await getCollection('publications');
+
+  return buildCollectionPaths('publications', publications).map(
+    ({ slug, item: pub }) => ({ params: { slug }, props: { pub } })
+  );
+}
+
+const { pub } = Astro.props;
+const { Content } = await render(pub);
+const formattedYear = formatYear(pub.data.date);
+const pdfUrl = pub.data.pdf_url ?? pub.data.paper_url;
+
+const { siteBase } = getSiteUrls(Astro.url, Astro.site);
+
+const citationMetadata = {
+  title: pub.data.title,
+  author: siteConfig.author.name,
+  publicationDate: toIsoDateString(pub.data.date),
+  journalTitle: pub.data.venue,
+  venue: pub.data.venue,
+  pdfUrl: pdfUrl
+    ? pdfUrl.startsWith('http')
+      ? pdfUrl
+      : new URL(resolveUrl(pdfUrl), siteBase).toString()
+    : undefined,
+};
+---
+
+<PageLayout
+  title={pub.data.title}
+  description={pub.data.description}
+  date={pub.data.date}
+  citation={pub.data.citation}
+  citationMetadata={citationMetadata}
+  ogType="article"
+  pdfUrl={pdfUrl}
+  slidesUrl={pub.data.slides_url}
+  codeUrl={pub.data.code_url}
+  bibtex={pub.data.bibtex}
+  authorProfile={pub.data.author_profile}
+  toc={pub.data.toc}
+  image={pub.data.image}
+>
+  {
+    pub.data.venue && (
+      <p
+        slot="header-metadata"
+        class="mt-2 text-sm text-(--global-text-color-light)"
+      >
+        Published in <em>{pub.data.venue}</em>
+        {formattedYear ? `, ${formattedYear}` : ''}
+      </p>
+    )
+  }
+  <Content />
+</PageLayout>

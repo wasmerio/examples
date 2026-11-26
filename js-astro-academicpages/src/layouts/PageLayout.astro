@@ -1,0 +1,217 @@
+---
+import { Image } from 'astro:assets';
+import { fade } from 'astro:transitions';
+
+import BaseLayout from '@layouts/BaseLayout.astro';
+import ActionBadges from '@components/ActionBadges.astro';
+import AuthorProfile from '@components/AuthorProfile.astro';
+import Breadcrumbs from '@components/Breadcrumbs.astro';
+import Prose from '@components/Prose.astro';
+import TableOfContents from '@components/TableOfContents.astro';
+
+import type { CitationMetadata, SchemaOrgNode } from '@utils/seo';
+import { parseInline } from '@utils/marked';
+import { resolveUrl as resolvePath } from '@utils/url';
+
+export interface Props {
+  title: string;
+  description?: string;
+  date?: Date;
+  tags?: string[];
+  citation?: string;
+  citationMetadata?: CitationMetadata;
+  schemaNodes?: SchemaOrgNode[];
+  ogType?: 'website' | 'article' | 'profile';
+  pdfUrl?: string;
+  slidesUrl?: string;
+  codeUrl?: string;
+  bibtex?: string;
+  authorProfile?: boolean;
+  toc?: boolean;
+  image?: string;
+}
+
+const {
+  title,
+  description,
+  date,
+  tags = [],
+  citation,
+  citationMetadata,
+  schemaNodes,
+  ogType,
+  pdfUrl,
+  slidesUrl,
+  codeUrl,
+  bibtex,
+  authorProfile = true,
+  toc = true,
+  image,
+} = Astro.props;
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  articleDate={date}
+  image={image}
+  citation={citationMetadata}
+  schemaNodes={schemaNodes}
+  ogType={ogType}
+>
+  <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div class="grid grid-cols-1 gap-8 lg:grid-cols-12">
+      {
+        authorProfile && (
+          <aside class="lg:col-span-3" aria-label="Author profile">
+            <div class="sticky top-24">
+              <AuthorProfile />
+            </div>
+          </aside>
+        )
+      }
+
+      <main
+        class:list={[
+          authorProfile ? 'lg:col-span-9' : 'lg:col-span-12',
+          'min-w-0',
+        ]}
+        transition:animate={fade({ duration: '0.08s' })}
+      >
+        <Breadcrumbs />
+
+        <article
+          class="page"
+          itemscope
+          itemtype="http://schema.org/CreativeWork"
+        >
+          {
+            image && (
+              <div class="page__hero mb-6 overflow-hidden rounded-lg">
+                <Image
+                  src={resolvePath(image)}
+                  alt={title}
+                  width={1200}
+                  height={630}
+                  class="h-auto max-h-96 w-full object-cover"
+                  loading="eager"
+                  decoding="async"
+                />
+              </div>
+            )
+          }
+
+          <header class="mb-6">
+            <h1
+              class="text-2xl font-bold tracking-tight text-(--global-text-color) sm:text-3xl"
+              itemprop="headline"
+              set:html={parseInline(title)}
+            />
+            <slot name="header-metadata" />
+          </header>
+
+          {toc !== false && <TableOfContents />}
+
+          <Prose>
+            <slot />
+          </Prose>
+
+          {
+            (citation || pdfUrl || slidesUrl || codeUrl || bibtex) && (
+              <div class="mt-6 border-t border-(--global-border-color) pt-4 text-xs text-(--global-text-color-light)">
+                {citation && (
+                  <p class="mb-2">
+                    <strong>Recommended citation:</strong>{' '}
+                    <span set:html={parseInline(citation)} />
+                  </p>
+                )}
+                <ActionBadges
+                  pdfUrl={pdfUrl}
+                  slidesUrl={slidesUrl}
+                  codeUrl={codeUrl}
+                  bibtex={bibtex}
+                />
+              </div>
+            )
+          }
+
+          {
+            tags.length > 0 && (
+              <footer class="mt-8 border-t border-(--global-border-color) pt-4 text-xs text-(--global-text-color-light)">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-semibold">Tags:</span>
+                  {tags.map((tag) => (
+                    <span class="rounded-sm bg-(--global-footer-bg-color) px-2 py-0.5">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </footer>
+            )
+          }
+        </article>
+      </main>
+    </div>
+  </div>
+</BaseLayout>
+
+<script>
+  function setupReadingProgress() {
+    const progressBar = document.getElementById('reading-progress');
+    if (!progressBar) return;
+
+    let ticking = false;
+
+    function updateProgress() {
+      const article = document.querySelector('article.page');
+      if (!article) {
+        progressBar?.style.setProperty('width', '0%');
+        ticking = false;
+
+        return;
+      }
+
+      const rect = article.getBoundingClientRect();
+      const articleTop = rect.top + window.scrollY;
+      const articleHeight = rect.height;
+      const windowHeight = window.innerHeight;
+      const scrollY = window.scrollY;
+
+      const maxScroll = articleTop + articleHeight - windowHeight;
+      if (maxScroll <= 0) {
+        progressBar?.style.setProperty('width', scrollY > 0 ? '100%' : '0%');
+        ticking = false;
+
+        return;
+      }
+
+      const currentProgress = Math.max(
+        0,
+        Math.min(100, (scrollY / maxScroll) * 100)
+      );
+
+      progressBar?.style.setProperty('width', `${currentProgress}%`);
+      ticking = false;
+    }
+
+    function onScroll() {
+      if (!ticking) {
+        requestAnimationFrame(updateProgress);
+        ticking = true;
+      }
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    requestAnimationFrame(updateProgress);
+
+    document.addEventListener(
+      'astro:before-swap',
+      () => {
+        window.removeEventListener('scroll', onScroll);
+      },
+      { once: true }
+    );
+  }
+
+  document.addEventListener('astro:page-load', setupReadingProgress);
+</script>

@@ -1,0 +1,163 @@
+---
+import { Icon } from 'astro-icon/components';
+
+export interface Props {
+  containerSelector?: string;
+}
+
+const { containerSelector = '.prose, .cv-content' } = Astro.props;
+---
+
+<div
+  id="toc-wrapper"
+  class="toc-container my-6 hidden rounded-lg border border-(--global-border-color) bg-(--global-footer-bg-color)/60 p-4 text-sm transition-colors duration-200"
+  data-container={containerSelector}
+>
+  <button
+    type="button"
+    id="toc-toggle-btn"
+    class="group flex w-full cursor-pointer items-center justify-between text-left font-semibold text-(--global-text-color) select-none focus:outline-none"
+    aria-controls="toc-collapse-wrapper"
+    aria-expanded="false"
+    aria-label="Toggle Table of Contents"
+  >
+    <div class="inline-flex items-center gap-2 leading-none">
+      <Icon
+        name="fa6-solid:list"
+        class="h-3.5 w-3.5 shrink-0 text-(--global-link-color) transition-colors group-hover:text-(--global-base-color)"
+      />
+      <span
+        class="inline-flex items-center leading-none transition-colors group-hover:text-(--global-base-color)"
+      >
+        Table of Contents
+      </span>
+    </div>
+    <Icon
+      name="fa6-solid:chevron-right"
+      id="toc-chevron"
+      class="h-3 w-3 shrink-0 text-(--global-text-color-light) transition-transform duration-200 group-hover:text-(--global-text-color)"
+    />
+  </button>
+  <div
+    id="toc-collapse-wrapper"
+    class="hidden transition-all duration-300 ease-in-out"
+  >
+    <nav id="toc-nav" class="mt-3">
+      <ul
+        id="toc-list"
+        class="space-y-1.5 border-l border-(--global-border-color) pl-3 text-xs text-(--global-text-color-light)"
+      >
+      </ul>
+    </nav>
+  </div>
+</div>
+
+<script>
+  let activeTocObserver: IntersectionObserver | null = null;
+
+  function setupToC() {
+    if (activeTocObserver) {
+      activeTocObserver.disconnect();
+      activeTocObserver = null;
+    }
+
+    const tocWrapper = document.getElementById('toc-wrapper');
+    const tocList = document.getElementById('toc-list');
+    const tocToggle = document.getElementById('toc-toggle-btn');
+    const tocChevron = document.getElementById('toc-chevron');
+    const tocCollapse = document.getElementById('toc-collapse-wrapper');
+
+    if (!tocWrapper || !tocList || !tocToggle) return;
+
+    const selector =
+      tocWrapper.getAttribute('data-container') || '.prose, .cv-content';
+    const container = document.querySelector(selector);
+    if (!container) return;
+
+    const headings = container.querySelectorAll<HTMLElement>('h2, h3');
+    if (headings.length < 2) {
+      tocWrapper.classList.add('hidden');
+
+      return;
+    }
+
+    tocList.innerHTML = '';
+    headings.forEach((heading, idx) => {
+      let id = heading.id;
+      if (!id) {
+        id = `heading-${idx}`;
+        heading.id = id;
+      }
+
+      const li = document.createElement('li');
+      const isH3 = heading.tagName.toLowerCase() === 'h3';
+      if (isH3) li.className = 'pl-3';
+
+      const a = document.createElement('a');
+      a.href = `#${id}`;
+      a.className =
+        'toc-link block transition hover:text-(--global-link-color)';
+      a.textContent = heading.textContent?.replace(/#$/, '').trim() || '';
+      a.setAttribute('data-target', id);
+
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        heading.scrollIntoView({ behavior: 'smooth' });
+        history.pushState(null, '', `#${id}`);
+      });
+
+      li.appendChild(a);
+      tocList.appendChild(li);
+    });
+
+    tocWrapper.classList.remove('hidden');
+
+    tocToggle.onclick = () => {
+      const isExpanded = tocToggle.getAttribute('aria-expanded') === 'true';
+      const newExpanded = !isExpanded;
+      tocToggle.setAttribute('aria-expanded', String(newExpanded));
+
+      if (tocChevron) {
+        tocChevron.style.transform = newExpanded
+          ? 'rotate(90deg)'
+          : 'rotate(0deg)';
+      }
+      if (tocCollapse) {
+        if (newExpanded) tocCollapse.classList.remove('hidden');
+        else tocCollapse.classList.add('hidden');
+      }
+    };
+
+    activeTocObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const id = entry.target.id;
+            tocList.querySelectorAll('.toc-link').forEach((link) => {
+              if (link.getAttribute('data-target') === id)
+                link.classList.add('font-bold', 'text-(--global-link-color)');
+              else {
+                link.classList.remove(
+                  'font-bold',
+                  'text-(--global-link-color)'
+                );
+              }
+            });
+          }
+        });
+      },
+      { rootMargin: '0px 0px -70% 0px' }
+    );
+
+    headings.forEach((h) => activeTocObserver!.observe(h));
+  }
+
+  document.addEventListener('astro:before-swap', () => {
+    if (activeTocObserver) {
+      activeTocObserver.disconnect();
+      activeTocObserver = null;
+    }
+  });
+
+  document.addEventListener('astro:page-load', setupToC);
+</script>

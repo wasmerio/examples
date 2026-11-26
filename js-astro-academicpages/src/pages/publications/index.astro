@@ -1,0 +1,228 @@
+---
+import { getCollection } from 'astro:content';
+
+import ListLayout from '@layouts/ListLayout.astro';
+import PublicationCard from '@components/PublicationCard.astro';
+
+import { siteConfig } from '@data/siteConfig';
+import { sortByDateDesc } from '@utils/date';
+import { getPublicationUrl, resolveExternalUrl } from '@utils/url';
+
+const allPubs = sortByDateDesc(await getCollection('publications'));
+const categories = siteConfig.publicationCategories;
+---
+
+<ListLayout title="Publications">
+  {
+    siteConfig.author.googlescholar && (
+      <div class="mb-4 text-sm text-(--global-text-color)">
+        You can also find my articles on{' '}
+        <a
+          href={resolveExternalUrl(
+            siteConfig.author.googlescholar,
+            'https://scholar.google.com/citations?user='
+          )}
+          target="_blank"
+          class="text-(--global-link-color) hover:underline"
+        >
+          my Google Scholar profile
+        </a>
+      </div>
+    )
+  }
+
+  <div
+    class="mb-6 flex flex-wrap items-center gap-2 border-b border-(--global-border-color) pb-4"
+    role="tablist"
+    aria-label="Publication category filters"
+  >
+    <button
+      type="button"
+      role="tab"
+      aria-selected="true"
+      aria-controls="publications-container"
+      tabindex="0"
+      data-filter="all"
+      class="pub-filter-btn active inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-(--global-base-color) bg-(--global-base-color) px-3.5 py-1.5 text-xs leading-none font-semibold text-white shadow-xs transition dark:text-(--global-bg-color)"
+    >
+      <span>All</span>
+      <span
+        class="pub-count font-normal text-white opacity-80 dark:text-(--global-bg-color)"
+      >
+        ({allPubs.length})
+      </span>
+    </button>
+    {
+      Object.entries(categories).map(([catKey, catInfo]) => {
+        const count = allPubs.filter((p) => p.data.category === catKey).length;
+        if (count === 0) return null;
+
+        return (
+          <button
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="publications-container"
+            tabindex="-1"
+            data-filter={catKey}
+            class="pub-filter-btn inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-(--global-border-color) bg-(--global-bg-color) px-3.5 py-1.5 text-xs leading-none font-medium text-(--global-text-color) shadow-2xs transition hover:border-(--global-link-color) hover:text-(--global-link-color)"
+          >
+            <span>{catInfo.title}</span>
+            <span class="pub-count font-normal text-(--global-text-color-light)">
+              ({count})
+            </span>
+          </button>
+        );
+      })
+    }
+  </div>
+
+  <div
+    id="publications-container"
+    role="tabpanel"
+    aria-label="Publications list"
+    class="space-y-8"
+  >
+    {
+      allPubs.length > 0 ? (
+        Object.entries(categories).map(([catKey, catInfo]) => {
+          const catPubs = allPubs.filter((p) => p.data.category === catKey);
+          if (catPubs.length === 0) return null;
+
+          return (
+            <section data-category={catKey} class="pub-category-section">
+              <h2 class="mb-3 border-b border-(--global-border-color) pb-1 text-xl font-bold text-(--global-text-color)">
+                {catInfo.title}
+              </h2>
+              <div class="space-y-2">
+                {catPubs.map((pub) => (
+                  <PublicationCard
+                    title={pub.data.title}
+                    url={getPublicationUrl(pub)}
+                    description={pub.data.description}
+                    date={pub.data.date}
+                    venue={pub.data.venue}
+                    citation={pub.data.citation}
+                    pdfUrl={pub.data.pdf_url ?? pub.data.paper_url}
+                    slidesUrl={pub.data.slides_url}
+                    codeUrl={pub.data.code_url}
+                    bibtex={pub.data.bibtex}
+                  />
+                ))}
+              </div>
+            </section>
+          );
+        })
+      ) : (
+        <p class="text-sm text-(--global-text-color-light)">
+          No publications published yet.
+        </p>
+      )
+    }
+  </div>
+</ListLayout>
+
+<script>
+  import { announce } from '@utils/a11y';
+
+  function setupPubFilters() {
+    const filterButtons =
+      document.querySelectorAll<HTMLButtonElement>('.pub-filter-btn');
+    const sections = document.querySelectorAll<HTMLElement>(
+      '.pub-category-section'
+    );
+
+    if (filterButtons.length === 0 || sections.length === 0) return;
+
+    function applyFilter(filterKey: string, updateHash = true) {
+      filterButtons.forEach((btn) => {
+        const key = btn.getAttribute('data-filter');
+        const countSpan = btn.querySelector('.pub-count');
+        if (key === filterKey) {
+          btn.classList.add(
+            'bg-(--global-base-color)',
+            'text-white',
+            'dark:text-(--global-bg-color)',
+            'border-(--global-base-color)',
+            'font-semibold'
+          );
+          btn.classList.remove(
+            'bg-(--global-bg-color)',
+            'text-(--global-text-color)',
+            'border-(--global-border-color)',
+            'font-medium'
+          );
+          if (countSpan) {
+            countSpan.classList.add(
+              'opacity-80',
+              'text-white',
+              'dark:text-(--global-bg-color)'
+            );
+            countSpan.classList.remove('text-(--global-text-color-light)');
+          }
+          btn.setAttribute('aria-selected', 'true');
+          btn.tabIndex = 0;
+        } else {
+          btn.classList.remove(
+            'bg-(--global-base-color)',
+            'text-white',
+            'dark:text-(--global-bg-color)',
+            'border-(--global-base-color)',
+            'font-semibold'
+          );
+          btn.classList.add(
+            'bg-(--global-bg-color)',
+            'text-(--global-text-color)',
+            'border-(--global-border-color)',
+            'font-medium'
+          );
+          if (countSpan) {
+            countSpan.classList.remove(
+              'opacity-80',
+              'text-white',
+              'dark:text-(--global-bg-color)'
+            );
+            countSpan.classList.add('text-(--global-text-color-light)');
+          }
+          btn.setAttribute('aria-selected', 'false');
+          btn.tabIndex = -1;
+        }
+      });
+
+      sections.forEach((sec) => {
+        const secCategory = sec.getAttribute('data-category');
+        if (filterKey === 'all' || secCategory === filterKey)
+          sec.classList.remove('hidden');
+        else sec.classList.add('hidden');
+      });
+
+      if (updateHash) {
+        history.replaceState(
+          null,
+          '',
+          filterKey === 'all' ? window.location.pathname : `#${filterKey}`
+        );
+        announce(
+          `Showing ${filterKey === 'all' ? 'all' : filterKey} publications`
+        );
+      }
+    }
+
+    filterButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-filter') || 'all';
+        applyFilter(key);
+      });
+    });
+
+    const currentHash = window.location.hash.replace(/^#/, '');
+    if (currentHash) {
+      const match = Array.from(filterButtons).some(
+        (b) => b.getAttribute('data-filter') === currentHash
+      );
+      if (match) applyFilter(currentHash, false);
+    }
+  }
+
+  document.addEventListener('astro:page-load', setupPubFilters);
+</script>

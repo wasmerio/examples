@@ -1,0 +1,57 @@
+---
+import { siteConfig } from '../config.ts';
+import type { Piece } from '../lib/collection.ts';
+import { feedHref, pageOf } from '../lib/feed.ts';
+import { creatorOf, ownTitle, pieceWords, piecePath } from '../lib/pieces.ts';
+import { stanzas } from '../lib/verse.ts';
+
+interface Props { piece: Piece; total: number; level?: 'h1' | 'h2'; context: 'feed' | 'page' }
+const { piece, total, level = 'h2', context } = Astro.props;
+const n = piece.data.number;
+const verse = stanzas(piece.body ?? '');
+const Heading = level;
+const { label } = siteConfig.pieces;
+const words = pieceWords();
+// A title of its own becomes the heading under the running head; a bare "Poem 18" stays one.
+const title = ownTitle(piece.data.title, n);
+// The byline: always on a piece's page; in the feed, on phones only when the piece names its own
+// creator, and always in the desktop margin.
+const byline = creatorOf(piece.data);
+const bylineClass = context === 'page' || piece.data.creator ? 'byline' : 'byline margin-only';
+const head = context === 'feed' ? `${n} of ${total}` : words.piece(n);
+// The next piece: on this page by its anchor, on the next page by its place there.
+const next = n < total ? (pageOf(n + 1) === pageOf(n) ? `#${n + 1}` : feedHref(n + 1)) : undefined;
+---
+
+<section class="card piece" id={context === 'feed' ? String(n) : undefined} aria-labelledby={`piece-${n}`}>
+  <div class="poem">
+    {title ? (
+      <>
+        <p class="number">{context === 'feed' && <span class="visually-hidden">{label} </span>}{head}</p>
+        <Heading class="title" id={`piece-${n}`}>{title}</Heading>
+      </>
+    ) : (
+      <Heading class="number" id={`piece-${n}`}>{context === 'feed' && <span class="visually-hidden">{label} </span>}{head}</Heading>
+    )}
+    <p class={bylineClass}>{byline}</p>
+    <div class="verse">
+      {verse.map((stanza) => (
+        <p>{stanza.map((line) => <span class:list={['line', { indent: line.indent }]}>{line.text}</span>)}</p>
+      ))}
+    </div>
+    {context === 'feed' && (
+      <nav class="card-links" aria-label={words.piece(n)}>
+        {next && <a href={next}>Next<span class="visually-hidden">{`: ${words.piece(n + 1)}`}</span> ↓</a>}
+        {!next && <a href={feedHref(1)}>Back to the first ↑</a>}
+        <a href={piecePath(n)}>{`${label} page`}<span class="visually-hidden">{`: ${words.piece(n)}`}</span> →</a>
+      </nav>
+    )}
+    {context === 'page' && (
+      <nav class="card-links" aria-label={words.more}>
+        {n > 1 && <a href={piecePath(n - 1)} rel="prev">{`← ${words.piece(n - 1)}`}</a>}
+        {n < total && <a href={piecePath(n + 1)} rel="next">{`${words.piece(n + 1)} →`}</a>}
+        <a href={feedHref(n)}>See it in the feed</a>
+      </nav>
+    )}
+  </div>
+</section>

@@ -1,0 +1,59 @@
+---
+import Base from "../layouts/Base.astro";
+---
+
+<Base title="Search" description="Search all posts.">
+  <div class="col">
+    <h1 class="page-title">Search</h1>
+    <p class="page-lede">Find a post by title or text.</p>
+    <input id="q" class="search-input" type="search" placeholder="Search posts" aria-label="Search posts" autocomplete="off" />
+    <p class="status" id="status" role="status" aria-live="polite"></p>
+    <ul class="results" id="results"></ul>
+  </div>
+</Base>
+
+<script>
+  const input = document.getElementById("q") as HTMLInputElement;
+  const status = document.getElementById("status")!;
+  const results = document.getElementById("results")!;
+  let pagefind: any;
+  let timer: number;
+
+  async function load() {
+    if (pagefind) return pagefind;
+    try {
+      // Created by `npm run build`; not available in `npm run dev`.
+      pagefind = await import(/* @vite-ignore */ "/pagefind/pagefind.js");
+      await pagefind.init();
+    } catch {
+      status.textContent = "Search works on the built site. Run npm run build, then npm run preview.";
+    }
+    return pagefind;
+  }
+
+  async function run() {
+    const q = input.value.trim();
+    results.replaceChildren();
+    if (!q) { status.textContent = ""; return; }
+    const pf = await load();
+    if (!pf) return;
+    const search = await pf.search(q);
+    const items = await Promise.all(search.results.slice(0, 12).map((r: any) => r.data()));
+    status.textContent = items.length ? `${search.results.length} result${search.results.length === 1 ? "" : "s"}` : `No posts match "${q}".`;
+    for (const d of items) {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = d.url;
+      a.textContent = d.meta?.title ?? d.url;
+      const p = document.createElement("p");
+      p.innerHTML = d.excerpt; // Pagefind returns the excerpt with <mark> only
+      li.append(a, p);
+      results.append(li);
+    }
+  }
+
+  input.addEventListener("input", () => { clearTimeout(timer); timer = window.setTimeout(run, 150); });
+  const initial = new URLSearchParams(location.search).get("q");
+  if (initial) { input.value = initial; run(); }
+  input.focus();
+</script>

@@ -1,0 +1,93 @@
+---
+import { render } from "astro:content";
+import Base from "../../layouts/Base.astro";
+import { SITE } from "../../config";
+import { getPosts, formatDate, readingTime, slugify } from "../../utils/posts";
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  return posts.map((post, i) => ({
+    params: { slug: post.id },
+    props: { post, newer: posts[i - 1], older: posts[i + 1] },
+  }));
+}
+
+const { post, newer, older } = Astro.props;
+const { Content, headings } = await render(post);
+const toc = headings.filter((h) => h.depth === 2 || h.depth === 3);
+const { title, description, pubDate, updatedDate, tags } = post.data;
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  headline: title,
+  description,
+  datePublished: pubDate.toISOString(),
+  dateModified: (updatedDate ?? pubDate).toISOString(),
+  author: { "@type": "Person", name: SITE.author },
+  ...(SITE.features.ogImages && { image: new URL(`/og/${post.id}.png`, Astro.site).href }),
+  mainEntityOfPage: new URL(Astro.url.pathname, Astro.site).href,
+};
+---
+
+<Base title={title} description={description} type="article" reading image={SITE.features.ogImages ? `/og/${post.id}.png` : undefined}>
+  <script type="application/ld+json" slot="head" set:html={JSON.stringify(jsonLd)} />
+  <article class="article" data-pagefind-body>
+    <header class="article-head">
+      {tags.length > 0 && (
+        <ul class="tags" data-pagefind-ignore>
+          {tags.map((t) => <li><a href={`/tags/${slugify(t)}/`}>{t}</a></li>)}
+        </ul>
+      )}
+      <h1>{title}</h1>
+      <p class="lede">{description}</p>
+      <div class="meta">
+        <time datetime={pubDate.toISOString()}>{formatDate(pubDate, SITE.lang)}</time>
+        <span>{readingTime(post.body)} min read</span>
+      </div>
+    </header>
+
+    {SITE.features.toc && toc.length >= 3 && (
+      <nav class="toc" aria-label="Contents" data-pagefind-ignore>
+        <details>
+          <summary>On this page</summary>
+          <ol>
+            {toc.map((h) => (
+              <li style={h.depth === 3 ? "margin-left:1.1rem;list-style:circle" : undefined}><a href={`#${h.slug}`}>{h.text}</a></li>
+            ))}
+          </ol>
+        </details>
+      </nav>
+    )}
+
+    <div class="prose">
+      <Content />
+    </div>
+
+    {updatedDate && <p class="updated">Updated {formatDate(updatedDate, SITE.lang)}</p>}
+
+    <nav class="pager" aria-label="More posts" data-pagefind-ignore>
+      {older && <a class="prev" href={`/posts/${older.id}/`}><small>Older</small><span>{older.data.title}</span></a>}
+      {newer && <a class="next" href={`/posts/${newer.id}/`}><small>Newer</small><span>{newer.data.title}</span></a>}
+    </nav>
+  </article>
+</Base>
+
+<script>
+  document.querySelectorAll<HTMLPreElement>(".prose pre").forEach((pre) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "copy";
+    btn.textContent = "Copy";
+    btn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(pre.querySelector("code")?.innerText ?? "");
+        btn.textContent = "Copied";
+      } catch {
+        btn.textContent = "Press Ctrl+C";
+      }
+      setTimeout(() => (btn.textContent = "Copy"), 1600);
+    });
+    pre.append(btn);
+  });
+</script>

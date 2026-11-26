@@ -1,0 +1,159 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import type { ButtonVariant, TileMotion } from "../lib/button";
+import { cn } from "../lib/cn";
+import type { IconComponent } from "../lib/icon";
+import Button from "./Button.astro";
+import FormEnhance from "./FormEnhance.astro";
+import FormStatus from "./FormStatus.astro";
+
+/** An extra field the endpoint wants: a tag, a list id, a redirect URL. Sent as <input type="hidden">. */
+export interface HiddenField {
+	name: string;
+	value: string;
+}
+
+/** The spam trap: one field real people never fill. The endpoint rejects posts that fill it. */
+export interface Honeypot {
+	/** The field's name, e.g. Mailchimp's b_<u>_<id>, or Formspree's _gotcha. Avoid names autofill knows (email, name, url). */
+	name: string;
+}
+
+export interface Props extends Omit<HTMLAttributes<"form">, "action" | "method" | "enctype" | "target"> {
+	/** The URL the form posts to. Required. */
+	action: string;
+	/** post (default) or get. Only post is enhanced. */
+	method?: "post" | "get";
+	/** How a post is encoded: URL-encoded (default) or multipart (files). Not used with get. */
+	enctype?: "application/x-www-form-urlencoded" | "multipart/form-data";
+	/** Extra fields the endpoint wants: { name, value }[]. Not `hidden`, which is the HTML attribute. */
+	hiddenFields?: HiddenField[];
+	/** The spam trap. Off by default. */
+	honeypot?: Honeypot;
+	/** The button text. */
+	submitLabel?: string;
+	/**
+	 * The submit Button's variant: primary (default), or secondary or ghost where another action on the page is the
+	 * main one (a sign-in form under a Subscribe Button). It takes the form's tone, so on a band it is the band's.
+	 */
+	submitVariant?: ButtonVariant;
+	/** The submit Button's iconTile: a tile at its end that holds your icon component (an arrow). Off by default. */
+	submitIconTile?: IconComponent;
+	/** The submit Button's tileMotion: `turn` (default) or `slide` (the icon slides out and a copy slides in). */
+	submitTileMotion?: TileMotion;
+	/** The submit Button's roll: on hover and keyboard focus the label rolls up and the same words roll in. Off by default. */
+	submitRoll?: boolean;
+	/**
+	 * none (default): a plain post, the safe choice for any endpoint. fetch: send in the page and say the result in
+	 * the status. fetch needs a same-origin or CORS-enabled endpoint that answers JSON with a real status code. A
+	 * cross-origin endpoint without CORS still receives the post, but the page cannot read the answer, so it shows the
+	 * error text and a retry posts again. Success is a 2xx JSON answer (or 204 No Content): a provider that answers an
+	 * HTML page, even with 200, reads as an error, so use a plain post for it.
+	 */
+	enhance?: "none" | "fetch";
+	/** FormStatus's text while sending (enhance="fetch"). */
+	sendingText?: string;
+	/** FormStatus's text on success (enhance="fetch"). */
+	successText?: string;
+	/** FormStatus's text on an error (enhance="fetch"). */
+	errorText?: string;
+	/** Passed to <form>, e.g. _blank for a provider's own page in a new tab. */
+	target?: string;
+	/** The surface: page (default) or band (a surface-band area: the Button and status take the band). */
+	tone?: "page" | "band";
+	/** For form parts: the box that holds the fields, the extra slot and the button row. */
+	fieldsClass?: string;
+	/** For form parts: the button row (the Button and the status). */
+	actionClass?: string;
+	/** For form parts: the submit Button, such as a top margin that sets it level with a labeled field. */
+	buttonClass?: string;
+	/** For form parts: the status under the Button (an inline row makes the action box contents and the status a full line). */
+	statusClass?: string;
+	class?: string;
+}
+
+const {
+	action,
+	method = "post",
+	enctype,
+	hiddenFields = [],
+	honeypot,
+	submitLabel = "Send",
+	submitVariant = "primary",
+	submitIconTile,
+	submitTileMotion = "turn",
+	submitRoll = false,
+	enhance = "none",
+	sendingText,
+	successText,
+	errorText,
+	target,
+	tone = "page",
+	fieldsClass,
+	actionClass,
+	buttonClass,
+	statusClass,
+	class: className,
+	// The script's switch is the enhance prop only: a data-enhance passed through is dropped.
+	"data-enhance": _dataEnhance,
+	...rest
+} = Astro.props;
+const extra = Astro.slots.has("extra") ? (await Astro.slots.render("extra")).trim() : "";
+const note = Astro.slots.has("note") ? (await Astro.slots.render("note")).trim() : "";
+const band = tone === "band";
+// The form every kit form part is built on (design, "Form props"): a plain <form> that posts with no JavaScript.
+// The order: the hidden fields, the honeypot, then the fields box (the default slot, the extra slot, the button row),
+// then the note (a privacy line or consent text). A submit button in the extra slot comes before the main
+// Button, so Enter submits with it (the browser's default button is the first one): keep a second submit button out
+// of extra and place it after the form's own, or make the extra one the main action. The button row holds the
+// submit Button (always type="submit": the kit Button defaults to type="button") and the FormStatus, which is empty until the script writes to it; it
+// sits inside the <form>, because the script looks the status up in its own form.
+// The honeypot is a text input inside an aria-hidden, visually hidden box, out of the tab order, with no
+// autocomplete: real people never see or fill it.
+// On a band, focus-on-band gives every control inside (the Button, extra controls, note links) the band's ring.
+// The caller's attributes come first, so they never override the managed ones (action, method, data-enhance).
+// With enhance="fetch" the form carries data-enhance, which the script (lib/form-enhance.ts, rendered by FormEnhance
+// after the form) binds; a plain post ships no script. fetch needs a same-origin or CORS-enabled endpoint that answers JSON
+// with a real status code: a cross-origin endpoint without CORS still receives the post, but the page cannot read
+// the answer, so it shows the error text and a retry posts again. Success is a 2xx JSON answer (or 204 No Content): a
+// provider that answers an HTML page, even with 200, reads as an error. A plain post (enhance="none", the default) is
+// the safe choice.
+---
+
+<form
+	{...rest}
+	action={action}
+	method={method}
+	enctype={method === "post" ? enctype : undefined}
+	target={target}
+	data-enhance={enhance === "fetch" ? "fetch" : undefined}
+	class={cn("grid min-w-0 gap-item", band && "focus-on-band", className)}
+>
+	{hiddenFields.map((field) => <input type="hidden" name={field.name} value={field.value} />)}
+	{
+		honeypot && (
+			<div aria-hidden="true" class="sr-only">
+				<input type="text" name={honeypot.name} tabindex="-1" autocomplete="off" value="" />
+			</div>
+		)
+	}
+	<div data-form-fields class={cn("grid min-w-0 gap-item", fieldsClass)}>
+		<slot />
+		{extra && <Fragment set:html={extra} />}
+		{/* The status always sits on its own line under the Button, so a short and a long message
+		    show in the same place. Idle, it has no text and no top margin, so it takes no room. */}
+		<div data-form-action class={cn("grid justify-items-start", actionClass)}>
+			<Button type="submit" variant={submitVariant} tone={band ? "band" : "page"} iconTile={submitIconTile} tileMotion={submitTileMotion} roll={submitRoll} class={buttonClass}>{submitLabel}</Button>
+			<FormStatus
+				tone={tone}
+				sendingText={sendingText}
+				successText={successText}
+				errorText={errorText}
+				class={cn("mt-2 data-[state=idle]:mt-0", statusClass)}
+			/>
+		</div>
+	</div>
+	{note && <div data-form-note class={cn("max-w-prose text-small text-pretty", band ? "text-on-band-muted" : "text-muted")} set:html={note} />}
+</form>
+{enhance === "fetch" && <FormEnhance />}
+

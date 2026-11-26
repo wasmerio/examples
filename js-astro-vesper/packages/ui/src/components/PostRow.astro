@@ -1,0 +1,75 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing } from "../lib/button";
+import { cn } from "../lib/cn";
+import { formatDate, isoDate, type DateInput } from "../lib/date";
+import { headingType } from "../lib/display";
+import type { ItemHeadingTag } from "../lib/heading";
+import type { PostTopic } from "./PostCard.astro";
+
+// The post's fields sit in Props itself: the props parser reads one base per type. No image and no author: a row is text.
+export interface Props extends Omit<HTMLAttributes<"article">, "title"> {
+	/** The post's URL. The title is the only link to it. */
+	href: string;
+	title: string;
+	/** "YYYY-MM-DD" (or a Date, read in UTC: lib/date.ts). Written as <time datetime>. Without it, no <time>: the meta line shows the reading time alone, or is left out. */
+	date?: DateInput;
+	/** Text shown in place of the formatted date, such as "Updated 3 days ago". The datetime stays the date. Shown only with a date. */
+	dateLabel?: string;
+	/** A line or two about the post. */
+	excerpt?: string;
+	topic?: PostTopic;
+	/** Your own text, such as "5 min read". */
+	readingTime?: string;
+	/** The date's language, e.g. "de" (formatDate in lib/date.ts). Default "en". */
+	locale?: string;
+	/** The title element. Required: a recipe passes childHeadingTag(...) (lib/heading.ts). */
+	headingTag: ItemHeadingTag;
+	class?: string;
+}
+
+const { href, title, date, dateLabel, excerpt, topic, readingTime, locale = "en", headingTag: Heading, class: className, ...rest } = Astro.props;
+const datetime = date == null ? undefined : isoDate(date);
+const dateText = date == null ? undefined : (dateLabel ?? formatDate(date, locale));
+// The posts family's row (decisions 0013, 0015): no card and no picture, a hairline (the border role) above each row.
+// The date (and reading time) first, small and muted; from 42rem of the posts container (@2xl/posts) it takes its own
+// start column, beside the title, the excerpt (running-text width) and the topic. The title is a plain link, the only
+// link to the post; the topic links to its own page. The recipe closes the last row with a bottom rule.
+---
+
+<article
+	data-post-row
+	class={cn(
+		"grid min-w-0 gap-2 border-0 border-t-ui border-solid border-border py-blocks @2xl/posts:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] @2xl/posts:gap-x-group",
+		className,
+	)}
+	{...rest}
+>
+	{
+		(datetime || readingTime) && (
+			<p data-post-meta class="m-0 text-small text-muted">
+				{/* The printed date and the reading time each stay whole ("8 min read" never splits); a line breaks only
+				    between them. The buyer's own dateLabel may wrap. In the narrow date column (from 42rem) the reading
+				    time always takes its own line, with no dot: a dot would otherwise start the second line of some rows
+				    only. With no date the reading time stands alone (no dot); with neither there is no line. */}
+				{datetime && <time class={dateLabel ? undefined : "whitespace-nowrap"} datetime={datetime}>{dateText}</time>}
+				{readingTime && <>{datetime && " "}<span class="whitespace-nowrap @2xl/posts:block">{datetime && <span aria-hidden="true" class="@2xl/posts:hidden">· </span>}{readingTime}</span></>}
+			</p>
+		)
+	}
+	{/* With no date and no reading time the body still takes the second column from 42rem, so the titles line up down
+	    the list. */}
+	<div class={cn("grid min-w-0 content-start gap-2", !(datetime || readingTime) && "@2xl/posts:col-start-2")}>
+		<Heading class={cn("m-0 text-heading text-balance [overflow-wrap:anywhere]", headingType)}>
+			<a href={href} class={cn("link-underline rounded-control text-inherit", focusRing)}>{title}</a>
+		</Heading>
+		{excerpt && <p class="m-0 max-w-prose text-body text-pretty text-muted">{excerpt}</p>}
+		{
+			topic && (
+				<p class="m-0 text-small font-medium">
+					{topic.href ? <a href={topic.href} class={cn("link-underline rounded-control", focusRing)}>{topic.label}</a> : topic.label}
+				</p>
+			)
+		}
+	</div>
+</article>

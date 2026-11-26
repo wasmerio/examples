@@ -1,0 +1,85 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import { displayType } from "../lib/display";
+import { uid } from "../lib/id";
+import Field from "./Field.astro";
+import Select from "./Select.astro";
+
+export interface ResultsSort {
+	value: string;
+	label: string;
+}
+
+export interface Props extends HTMLAttributes<"div"> {
+	/** The heading: "Homes for sale in Denver". */
+	heading: string;
+	/** h2 by default; h1 where it is the page's title (a search page). */
+	headingTag?: "h1" | "h2" | "h3";
+	/** The count the server knows (every listing, with no filter). Unset: the count line waits for the search. */
+	count?: number;
+	/** The count's noun: { one: "home", other: "homes" }. Default { one: "listing", other: "listings" }. */
+	countText?: { one: string; other: string };
+	/** The sorts, as passed to Filters. */
+	sorts: ResultsSort[];
+	/** The sort picked at first (the Filters default). Default: the first. */
+	sort?: string;
+	/** The sort's visible label ("Sort"). */
+	sortLabel?: string;
+	/** Draws the sort as a Select with picker. Filters' dropdown does not reach it: pass both. */
+	sortPicker?: boolean;
+	/** The Filters form's id: the sort belongs to that form (its form attribute), so it is part of the search's state. */
+	filtersId: string;
+	/** The heading's id, for a list that names itself by it (ListingResults' headingId). Default: a page-unique id. */
+	headingId?: string;
+	headingClass?: string;
+	class?: string;
+}
+
+const {
+	heading,
+	headingTag: Heading = "h2",
+	count,
+	countText = { one: "listing", other: "listings" },
+	sorts,
+	sort = sorts[0]?.value,
+	sortLabel = "Sort",
+	sortPicker = false,
+	filtersId,
+	headingId,
+	headingClass,
+	class: className,
+	...rest
+} = Astro.props;
+const id = uid("results");
+const hid = headingId ?? `${id}-h`;
+const number = count === undefined ? "" : new Intl.NumberFormat("en-US").format(count);
+// The part over search results: the heading (tabindex -1, so the search can move focus to it), the visible count
+// ("15 homes"; the search writes it on every search, load too) and, apart from it, a status line for screen readers
+// that only the search writes (after a reader's change or Back, never on load: a live count read on every load is
+// noise). The meta slot follows the count ("Updated today at 9:40 am"). The sort is a native select that belongs to
+// the Filters form through its form attribute, so the filters keep it in the URL; with no script it is hidden, as
+// the filters are.
+---
+
+<div data-results-head class={cn("flex min-w-0 flex-wrap items-end justify-between gap-x-blocks gap-y-3", className)} {...rest}>
+	<div class="grid min-w-0 gap-1.5">
+		<Heading id={hid} tabindex="-1" data-results-heading class={cn("m-0 text-section text-balance [overflow-wrap:anywhere] outline-none", displayType, headingClass)}>{heading}</Heading>
+		<div class="flex flex-wrap items-baseline gap-x-2 text-small text-muted">
+			<p data-results-count data-count-one={countText.one} data-count-other={countText.other} hidden={count === undefined} class="m-0">
+				<span data-results-number class="font-semibold text-fg tabular-nums">{number}</span>{" "}<span data-results-noun>{count === 1 ? countText.one : countText.other}</span>
+			</p>
+			{Astro.slots.has("meta") && <div data-results-meta class="m-0 text-pretty"><slot name="meta" /></div>}
+		</div>
+		<p role="status" data-results-status class="sr-only"></p>
+	</div>
+	<Field label={sortLabel} for={`${id}-sort`} class="grid-flow-col items-center gap-2.5 noscript:hidden [&>label]:text-small [&>label]:font-normal [&>label]:text-muted">
+		{/* A picker is only as wide as what it shows, so a hidden copy of the labels, with the select's padding, holds it at the widest: a new sort moves nothing. */}
+		<div class="grid">
+			<Select id={`${id}-sort`} class="pointer-coarse:min-h-11" name="sort" form={filtersId} data-filter-sort picker={sortPicker}>
+				{sorts.map((s) => <option value={s.value} selected={s.value === sort}>{s.label}</option>)}
+			</Select>
+			{sortPicker && <div aria-hidden="true" class="invisible h-0 overflow-hidden ps-3.5 pe-10.5 font-body text-base whitespace-nowrap">{sorts.map((s) => <div>{s.label}</div>)}</div>}
+		</div>
+	</Field>
+</div>

@@ -1,0 +1,64 @@
+---
+/**
+ * One photo in the collage band (comp ".ph"), the band's frame component: every look's frame comes from here, and a
+ * later Pro collage replaces this component's frame. The shape is one seam, `shape` ("cut", the only one today); the
+ * grids (src/styles/collage.css, v-band) hold no shape values.
+ *
+ * The outer box is the grid cell, and what grows, lifts and takes the focus ring, so the cut never clips them: a link
+ * when the photo has one (then a tab stop, and focus grows it too); else, when it has alt text and a safe file
+ * (collageOpens), a link to its large file that opens in the page's lightbox (set "photos", captioned with the place
+ * and year, never the map label; the home page then carries the lightbox, collageHasTrigger), a tab stop too; else a
+ * plain box (hover only). Inside, the figure is the frame (a print's paper, a mat's edge) and [data-ph-pic] the picture,
+ * each cut by the kit's media-cut;
+ * which corner comes from the band's layout map, never from the photo. The figcaption holds the place, the year and
+ * the map label; each look shows what it needs (Clear: read by screen readers only). Between the parts a visually
+ * hidden comma, so a screen reader pauses ("Mount Tamalpais, CA, 2024, 37.92° N · 2,571 ft") and no look shows it.
+ *
+ * `priority` loads the photo at once with high priority: the band's first photo (it is in the first screen at desktop).
+ */
+import { getImage } from "astro:assets";
+import { lightboxAttrs } from "@astronomic/ui/lib/lightbox.ts";
+import type { CollageItem } from "~/utils/view";
+import { imageSizes } from "~/utils/layout";
+import { collageCaption, collageOpens, lightboxImage, type GetImage } from "~/utils/lightbox-image";
+import ContentImage from "./ContentImage.astro";
+
+interface Props {
+	photo: CollageItem;
+	/** The frame's shape: "cut" (one corner sliced off). The seam a later collage replaces. */
+	shape?: "cut";
+	/** Load at once with high priority (the band's first photo). */
+	priority?: boolean;
+}
+
+const { photo, priority } = Astro.props;
+const parts = [
+	photo.place && { key: "place", text: photo.place },
+	photo.year !== undefined && { key: "year", text: String(photo.year) },
+	photo.geo && { key: "geo", text: photo.geo },
+].filter((part): part is { key: "place" | "year" | "geo"; text: string } => Boolean(part));
+// A photo with its own link keeps it; else one with alt text opens large (when its file is a safe address).
+const large = collageOpens(photo) ? await lightboxImage(photo.image, getImage as unknown as GetImage) : undefined;
+const attrs = large && lightboxAttrs({ group: "photos", caption: collageCaption(photo), srcset: large.srcset, sizes: large.sizes, width: large.width, height: large.height });
+const Tag = photo.href || large ? "a" : "div";
+---
+
+<Tag href={photo.href ?? large?.href} {...attrs} data-ph="">
+	<figure data-ph-frame class="media-cut">
+		<div data-ph-pic class="media-cut">
+			<ContentImage image={{ ...photo.image, alt: photo.alt }} class="media-cut" priority={priority} widths={imageSizes.collage.widths} sizes={imageSizes.collage.sizes} />
+		</div>
+		{
+			parts.length > 0 && (
+				<figcaption>
+					{parts.map((part, i) => (
+						<>
+							{i > 0 && <span class="sr-only">, </span>}
+							<span {...{ [`data-ph-${part.key}`]: "" }}>{part.text}</span>
+						</>
+					))}
+				</figcaption>
+			)
+		}
+	</figure>
+</Tag>

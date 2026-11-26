@@ -1,0 +1,52 @@
+---
+/**
+ * Renders its slot without the head tags named in `exclude` (the product
+ * layout's `page.baseMeta`), so EmDash only adds to what the layout rendered.
+ * Everything else is kept, e.g. EmDash's default og:image on a page where the
+ * layout renders none.
+ *
+ * EmDash 1.1 has no option to skip its base SEO tags, so this filters the
+ * rendered HTML. Names in `exclude`:
+ *   - "canonical"      matches <link rel="canonical"> (not hreflang alternates)
+ *   - anything else    matches <meta name="..."> or <meta property="...">
+ * Attribute order, quoting and case of tag/attribute names do not matter.
+ */
+interface Props {
+	exclude: readonly string[];
+}
+
+const exclude = new Set(Astro.props.exclude.map((n) => n.toLowerCase()));
+
+// One <meta> or <link> start tag; quoted values may contain ">".
+const TAG = /<(meta|link)\b((?:[^>"']|"[^"]*"|'[^']*')*)\/?>[^\S\n]*\n?/gi;
+const ATTR = /([^\s"'=<>\/]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+
+function attrs(source: string): Map<string, string> {
+	const out = new Map<string, string>();
+	for (const m of source.matchAll(ATTR)) {
+		const name = m[1].toLowerCase();
+		if (!out.has(name)) out.set(name, m[2] ?? m[3] ?? m[4] ?? "");
+	}
+	return out;
+}
+
+/** The base-meta name a tag stands for, or undefined. */
+function key(tag: string, source: string): string | undefined {
+	const a = attrs(source);
+	if (tag.toLowerCase() === "link") {
+		const rels = (a.get("rel") ?? "").toLowerCase().split(/\s+/);
+		return rels.includes("canonical") && !a.has("hreflang") ? "canonical" : undefined;
+	}
+	return (a.get("property") ?? a.get("name"))?.toLowerCase();
+}
+
+let html = await Astro.slots.render("default");
+if (exclude.size > 0) {
+	html = html.replace(TAG, (whole, tag: string, source: string) => {
+		const k = key(tag, source);
+		return k && exclude.has(k) ? "" : whole;
+	});
+}
+---
+
+<Fragment set:html={html} />

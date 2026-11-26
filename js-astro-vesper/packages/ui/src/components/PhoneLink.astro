@@ -1,0 +1,85 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing } from "../lib/button";
+import { cn } from "../lib/cn";
+import type { IconComponent } from "../lib/icon";
+import type { PhoneFold } from "../lib/nav";
+import { phoneLabel, telHref } from "../lib/phone";
+import Icon from "./Icon.astro";
+
+export interface Props extends Omit<HTMLAttributes<"a">, "href" | "aria-label"> {
+	/** Required. The number as the page shows it, such as "(555) 010-0142". The link calls it (a tel: link). */
+	number: string;
+	/** Small words over the number, such as "Call us" or "24/7 emergency". */
+	label?: string;
+	/** Shorter visible words in place of the number, such as "24/7". The number stays in the accessible name. */
+	text?: string;
+	/** Required. Your phone icon, before the words. Below iconOnlyBelow it is all there is to see. Decoration. */
+	icon: IconComponent;
+	/** The icon in an accent mark, for an emergency line. */
+	urgent?: boolean;
+	/** Below this fold point (Navbar's collapse: md or lg; or nav-phone, theme.css --breakpoint-nav-phone) only the icon shows, in a 44px round link. */
+	iconOnlyBelow?: PhoneFold;
+	/** page: on the page or a card. band: on the Navbar's bar or the band, in the band's own colors. */
+	tone?: "page" | "band";
+	class?: string;
+}
+
+const { number, label, text, icon, urgent = false, iconOnlyBelow, tone = "page", class: className, slot: _slot, ...rest } = Astro.props;
+// A slot name (the Navbar's emergency slot) stays in Astro.props; it is not an attribute of the link.
+const clean = (value: unknown) => String(value ?? "").trim();
+const shown = clean(number);
+const href = telHref(shown);
+const labelText = clean(label);
+const wordsText = clean(text);
+// One accessible name at every width: the visible words in their order, then the number. It does not
+// change at the fold point, where the words hide and only the icon shows.
+const name = phoneLabel(shown, [labelText, wordsText].filter(Boolean).join(" ") || undefined);
+const band = tone === "band";
+// The fold's classes, written in full for Tailwind: below the fold point the link is a 44px round box with the icon
+// centered, and the words are hidden (the link's aria-label still names it).
+const fold = {
+	md: { link: "max-nav-md:size-11 max-nav-md:justify-center max-nav-md:p-0", words: "max-nav-md:hidden" },
+	lg: { link: "max-nav-lg:size-11 max-nav-lg:justify-center max-nav-lg:p-0", words: "max-nav-lg:hidden" },
+	"nav-phone": { link: "max-nav-phone:size-11 max-nav-phone:justify-center max-nav-phone:p-0", words: "max-nav-phone:hidden" },
+}[iconOnlyBelow ?? "md"];
+// The navbar family's phone link (decision 0015): a tel: link named once, with your icon, then the label (small,
+// uppercase, muted) over the number in tabular figures (or the text in its place). A pill at least 44px tall at every
+// pointer. On the page the icon is the accent (decoration, at 3:1) with a surface-2 tint on hover; on the band
+// (tone="band", the Navbar's bar) it takes the bar's text colors and the band's 6% tint, and the band's focus ring
+// comes from the wrapper's focus-on-band (the Navbar's header), which wins over the kit's accent ring. urgent puts the
+// icon in an accent mark with accent-fg on it, its corners nested in the pill's (rounded-nested, --nest-gap the
+// link's start padding). A number with fewer than 3 digits renders nothing. Colors change at once (0018).
+---
+
+{
+	href && (
+		<a
+			href={href}
+			aria-label={name}
+			data-phone-link
+			class={cn(
+				"inline-flex min-h-11 min-w-0 max-w-full items-center gap-2 rounded-pill ps-2 pe-3 font-body no-underline [--nest-gap:0.5rem]",
+				band ? "text-on-band hover:bg-on-band-tint" : "text-fg hover:bg-surface-2",
+				focusRing,
+				iconOnlyBelow && fold.link,
+				className,
+			)}
+			{...rest}
+		>
+			{
+				urgent ? (
+					<span data-phone-link-mark aria-hidden="true" class="inline-grid size-7 shrink-0 place-items-center rounded-nested bg-accent text-accent-fg">
+						<Icon icon={icon} size="sm" />
+					</span>
+				) : (
+					<Icon icon={icon} size="md" class={cn("shrink-0", band ? "text-on-band" : "text-accent")} />
+				)
+			}
+			<span data-phone-link-words class={cn("flex min-w-0 flex-col", iconOnlyBelow && fold.words)}>
+				{labelText && <span class={cn("text-small leading-tight font-semibold uppercase tracking-wider", band ? "text-on-band-muted" : "text-muted")}>{labelText}</span>}
+				<span class="text-body leading-tight font-semibold tabular-nums">{wordsText || shown}</span>
+			</span>
+		</a>
+	)
+}

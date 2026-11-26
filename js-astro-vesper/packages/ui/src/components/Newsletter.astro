@@ -1,0 +1,84 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import type { SectionHeadingTag } from "../lib/heading";
+import { uid } from "../lib/id";
+import SectionHead from "./SectionHead.astro";
+
+export interface Props extends HTMLAttributes<"section"> {
+	/** The section heading. Without it there is no section and no header: a <div> holds only the form. */
+	heading?: string;
+	/** Turn one *phrase* in the heading into <em> (lib/emphasis.ts). Off by default: the heading shows as typed. */
+	emphasis?: boolean;
+	/** A short mark after the heading, such as "(12)". Shown beside the heading, outside it, so the heading's name stays plain. Shown only with a heading. */
+	mark?: string;
+	/** What the mark says to a screen reader, such as "12 projects". Without it, the mark is read as written. */
+	markLabel?: string;
+	/** One or two sentences under the heading. Shown only with a heading. */
+	text?: string;
+	/** Heading element. */
+	headingTag?: SectionHeadingTag;
+	/**
+	 * The surface. page (default): on the page. band: the band (surface-band: the band when a preset sets --ui-band,
+	 * else the page) with its focus ring, an edge and padding. A shell cannot pass the tone into its slot, so a recipe
+	 * passes it to the form and the band text colors to the header itself.
+	 */
+	tone?: "page" | "band";
+	/** For recipes: the alignment of the header. */
+	align?: "start" | "center";
+	/** For recipes: the row that holds the header and the body. */
+	contentClass?: string;
+	/** For recipes: the header (SectionHead). */
+	headerClass?: string;
+	/** For recipes: the heading's color on a band (SectionHead's headingClass). */
+	headingClass?: string;
+	/** For recipes: the lead's color on a band (SectionHead's leadClass). */
+	leadClass?: string;
+	/** For recipes: the body box (the form, and anything beside it). */
+	bodyClass?: string;
+	class?: string;
+}
+
+/** A recipe's props: the shell's, less the ones that set the layout and colors, which the recipe sets itself. */
+export type NewsletterRecipeProps = Omit<Props, "align" | "contentClass" | "headerClass" | "headingClass" | "leadClass" | "bodyClass">;
+
+const { heading, emphasis = false, mark, markLabel, text, headingTag = "h2", tone = "page", align = "start", contentClass, headerClass, headingClass, leadClass, bodyClass, class: className, ...rest } = Astro.props;
+const headingId = heading ? uid("newsletter") : undefined;
+const eyebrow = heading && Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+const Root = heading ? "section" : "div";
+const band = tone === "band";
+// The newsletter family's shell (decisions 0013, 0015): with a heading, the region named by it, then SectionHead and
+// the body; without one, a plain <div>. On the band (tone="band") the root takes surface-band (the background, edge
+// and text color only; no token is rebound, so the Input keeps its own fill) and focus-on-band, an edge and
+// padding; the recipe gives the header the band's text colors and the form tone="band" (decision 0013, "Band
+// context"). The root is a named container (newsletter): the inline split follows its width. On the band the padding
+// sits on an inner box (data-newsletter-pad), because an element cannot query its own container: the box queries the
+// root, so the padding grows on a wide band, and is itself a newsletter container, so the split still follows the
+// width inside the padding, which on a wide band is the group space: the recipes' split (@3xl, 48rem) comes when the
+// section is 48rem plus twice that space across. A caller's class (padding too) goes to the root, not the box. On the band the root
+// carries data-newsletter-band, a hook for tests; on the page there is neither the hook nor the box.
+const Pad = band ? "div" : Fragment;
+const padProps = band ? { "data-newsletter-pad": true, class: "@container/newsletter p-blocks @3xl/newsletter:p-group" } : {};
+---
+
+<Root
+	aria-labelledby={headingId}
+	data-newsletter-band={band || undefined}
+	class={cn("@container/newsletter", band && "surface-band focus-on-band rounded-card border-ui border-solid", className)}
+	{...rest}
+>
+	<Pad {...padProps}>
+		<div data-newsletter-row class={cn("grid gap-blocks", contentClass)}>
+			{
+				heading && (
+					<SectionHead data-newsletter-header heading={heading} emphasis={emphasis} mark={mark} markLabel={markLabel} markClass={leadClass} text={text} headingTag={headingTag} id={headingId} align={align} headingClass={headingClass} leadClass={leadClass} class={headerClass}>
+						{eyebrow && <Fragment slot="eyebrow" set:html={eyebrow} />}
+					</SectionHead>
+				)
+			}
+			<div data-newsletter-body class={cn("grid min-w-0", bodyClass)}>
+				<slot />
+			</div>
+		</div>
+	</Pad>
+</Root>

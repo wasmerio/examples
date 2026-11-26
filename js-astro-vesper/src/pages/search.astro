@@ -1,0 +1,140 @@
+---
+/**
+ * Search results, one page for both kinds of search (`searchKind`):
+ *
+ * - request (an EmDash server build): the source searches here (src/content/search.ts: posts, projects and pages)
+ *   and theme-core's SearchPage renders the hits on the server. A hit on an optional page that is off (getConfig) is
+ *   left out, as that page is not built.
+ * - static (a Markdown build): SearchPage searches the Pagefind index in the browser and fills the same hit markup.
+ *   The index holds only the pages that pass `index` to Base, so a page that is off is never in it.
+ * - none: a short notice instead.
+ *
+ * The page is linked from /articles (the search form above the list) and the footer; the nav has no search.
+ * Each hit is a text-only post row (v-post): the kind, the title as the row's link, the summary.
+ */
+import SearchForm from "@astronomic/theme-core/components/SearchForm.astro";
+import SearchPage from "@astronomic/theme-core/components/SearchPage.astro";
+import { toShownHit, type ShownHit } from "@astronomic/theme-core/content";
+import { searchQuery } from "@astronomic/theme-core/routes";
+import { plainHeading } from "@astronomic/ui/lib/emphasis.ts";
+import { searchKind, useContent } from "~/content";
+import { search } from "~/content/search";
+import Base from "~/layouts/Base.astro";
+import ListHead from "~/components/ListHead.astro";
+import { strings } from "~/theme.strings";
+import { cn } from "~/utils/cn";
+import { getConfig } from "~/utils/config";
+import { hoverUnderline, wrap } from "~/utils/layout";
+import { articlesHref, homeHref, linkOn, searchHref } from "~/utils/routes";
+import { siteSettings } from "~/utils/setup";
+
+const content = useContent(Astro);
+const mode = searchKind(content);
+const t = strings.search;
+const settings = await siteSettings(content);
+const { config } = getConfig(settings);
+// Static builds have no request, so no query: the browser reads it.
+const query = mode === "request" ? searchQuery(Astro) : "";
+const found = mode === "request" && query && content.search ? await content.search(query) : [];
+// The source returns one hit past the limit when more match (see `search.shownHits`).
+const { hits, more } = search.shownHits(found.filter((hit) => linkOn(hit.href, config)));
+// A title's emphasis marker never shows in a hit (static search indexes the plain title too: Base).
+const shown = hits.map((hit) => toShownHit({ ...hit, title: plainHeading(hit.title) }, t.kinds));
+
+// titleFor: the browser's title once static search has the query, worded as Base words the page title.
+const text = { loading: t.loading, failed: t.failed, devOnly: t.devOnly, noScript: t.noScript, count: t.count, titleFor: `${t.titleFor} — ${settings.title}` };
+const [noneBefore, noneAfter] = t.noneFor.split("{q}");
+const link = cn("font-semibold text-accent", hoverUnderline);
+---
+
+<Base title={query ? t.titleFor.replace("{q}", () => query) : t.title} description={t.intro}>
+	<div class={wrap}>
+		{
+			!mode ? (
+				<>
+					<ListHead title={t.title} lead={t.unavailable} />
+					<ul role="list" class="v-page-body m-0 flex list-none flex-wrap gap-x-8 gap-y-3 p-0">
+						<li><a href={homeHref()} class={link}>{t.home}</a></li>
+						<li><a href={articlesHref()} class={link}>{t.articles}</a></li>
+					</ul>
+				</>
+			) : (
+				// The search itself differs by build by design (static: the loading line and the no-script note; server: the
+				// hits of the request), so the content parity test leaves this box out (data-parity-skip) and compares the
+				// rest; the page checks test each build's search.
+				<section data-parity-skip class="v-list">
+					<SearchPage
+						mode={mode}
+						query={query}
+						hits={shown}
+						more={more}
+						limit={search.limit}
+						kinds={t.kinds}
+						text={text}
+						class="grid gap-8"
+						listClass="v-posts mt-2"
+					>
+						{(hit: ShownHit) => (
+							<li class="v-post">
+								<div class="min-w-0">
+									{hit.kind && (
+										<p data-post-meta data-hit="kind" class="v-meta">
+											{hit.kind}
+										</p>
+									)}
+									<h2 data-post-title class="v-heading">
+										<a data-hit="href" href={hit.href}>
+											{hit.title}
+										</a>
+									</h2>
+									{hit.excerpt && (
+										<p data-post-summary data-hit="excerpt">
+											{hit.excerpt}
+										</p>
+									)}
+								</div>
+							</li>
+						)}
+						<div slot="header">
+							{(count: string) => (
+								<header class="v-page-head">
+									<h1 class="m-0 v-display text-v-page">{t.title}</h1>
+									<p data-head-lead data-count-text aria-live="polite" class="m-0 max-w-lead text-v-lead text-v-body text-pretty">
+										{count || t.intro}
+									</p>
+									<SearchForm variant="row" action={searchHref()} strings={t.form} class="mt-10" />
+								</header>
+							)}
+						</div>
+						<div slot="empty" class="grid gap-3 text-v-body">
+							<p class="m-0">{t.empty}</p>
+							<p class="m-0">
+								<a href={articlesHref()} class={link}>
+									{t.articles}
+								</a>
+							</p>
+						</div>
+						<div slot="none" class="grid gap-4 text-v-body">
+							<p class="m-0 v-heading text-v-lead text-fg wrap-anywhere">
+								{noneBefore}
+								<span data-search-query>{query}</span>
+								{noneAfter}
+							</p>
+							<p class="m-0">{t.tipsHeading}</p>
+							<ul class="m-0 grid list-disc gap-1 pl-5 marker:text-muted">
+								{t.tips.map((tip) => (
+									<li>{tip}</li>
+								))}
+							</ul>
+							<p class="m-0">
+								<a href={articlesHref()} class={link}>
+									{t.articles}
+								</a>
+							</p>
+						</div>
+					</SearchPage>
+				</section>
+			)
+		}
+	</div>
+</Base>

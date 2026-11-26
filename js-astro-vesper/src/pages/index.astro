@@ -1,0 +1,87 @@
+---
+/**
+ * The home page (comp "Home"): the intro (the headline, the bio, the Now line and the labeled social links), the
+ * collage band, then the newest posts beside the side cards (the newsletter, Work and Projects).
+ *
+ * The Now line shows while it is on (`nowLine`) and the settings have a status; it links to /now while that page is
+ * on. The collage shows for 4, 5 or 6 photos. The Projects card shows while the Projects page is on and has a
+ * featured project; Work shows with a job or a CV. The page carries the lightbox when a collage photo opens large.
+ */
+import CollageBand from "~/components/CollageBand.astro";
+import Intro from "~/components/Intro.astro";
+import PostList from "~/components/PostList.astro";
+import SideCards from "~/components/SideCards.astro";
+import Icon from "~/components/Icon.astro";
+import { useContent } from "~/content";
+import { safeHref } from "~/content/links";
+import Base from "~/layouts/Base.astro";
+import { strings } from "~/theme.strings";
+import { cn } from "~/utils/cn";
+import { getConfig } from "~/utils/config";
+import { homeCards, loadHome } from "~/utils/home";
+import { homeIds } from "~/utils/ids";
+import { collageHasTrigger } from "~/utils/lightbox-image";
+import { wrap } from "~/utils/layout";
+import { formOrigin } from "~/utils/public-pages";
+import { articlesHref, navLinks, nowHref, nowName } from "~/utils/routes";
+import { collageState, cvHref, newsletterState, siteIsLive, siteSettings } from "~/utils/setup";
+import { toCollagePhoto, toPostRow, toProjectItem, toWorkRow } from "~/utils/view";
+
+const content = useContent(Astro);
+const settings = await siteSettings(content);
+const { config } = getConfig(settings);
+const home = await loadHome(content, config);
+const t = strings.home;
+
+const status = settings.nowStatus?.trim();
+const now = config.nowLine && status ? { label: nowName(settings.nowLabel, strings.home.now), status, href: config.pages.now ? nowHref() : undefined } : undefined;
+const socials = navLinks(settings.socials, config).flatMap((item) => {
+	const href = safeHref(item.href);
+	return href === undefined ? [] : [{ label: item.label, href, icon: item.icon }];
+});
+const cvFile = cvHref(settings);
+const cards = homeCards({ jobs: home.jobs.length, cvFile, projects: home.projects.length, projectsOn: config.pages.projects });
+const origin = formOrigin(Astro);
+const newsletter = { state: newsletterState(settings, { origin, live: siteIsLive(origin) }), note: settings.newsletterNote };
+const collage = home.collage.map(toCollagePhoto);
+// The lightbox only while the band shows and one of its photos opens large (no link of its own, alt text).
+const lightbox = collageState(collage) === "ok" && collageHasTrigger(collage);
+---
+
+<Base title={settings.title} description={settings.tagline ?? settings.bio} lightbox={lightbox}>
+	<Intro headline={settings.headline} bio={settings.bio} now={now} socials={socials} place={settings.nowPlace?.trim() || undefined} />
+
+	<CollageBand photos={collage} label={t.collage} />
+
+	<div class={cn(wrap, "v-latest")}>
+		<section aria-labelledby={homeIds.latest}>
+			<div class="v-sec-head">
+				<h2 id={homeIds.latest} class="v-heading">{t.latest}</h2>
+				{
+					home.total > 0 && (
+						<a href={articlesHref()} class="v-alink">
+							{t.allArticles}
+							<Icon name="ui/arrow" />
+						</a>
+					)
+				}
+			</div>
+			<PostList posts={home.posts.map(toPostRow)} thumbs={config.thumbnails} headingTag="h3" class="pt-7.5 max-tablet:pt-6" />
+			{
+				home.total > home.posts.length && (
+					<a href={articlesHref()} class="v-alink mt-11">
+						{t.readAll(home.total)}
+						<Icon name="ui/arrow" />
+					</a>
+				)
+			}
+		</section>
+
+		<SideCards
+			label={t.side(settings.name)}
+			newsletter={newsletter}
+			work={cards.work ? { jobs: home.jobs.map((job) => toWorkRow(job, strings.work.now)), cvFile } : undefined}
+			projects={cards.projects ? home.projects.map(toProjectItem) : undefined}
+		/>
+	</div>
+</Base>

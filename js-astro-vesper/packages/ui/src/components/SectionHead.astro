@@ -1,0 +1,66 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import { displayType } from "../lib/display";
+import type { SectionHeadingTag } from "../lib/heading";
+import Emphasis from "./Emphasis.astro";
+
+export interface Props extends Omit<HTMLAttributes<"div">, "id"> {
+	/** The section heading, in the section role in display type. */
+	heading?: string;
+	/** Turn one *phrase* in the heading into <em> (lib/emphasis.ts). Off by default: the heading shows as typed. */
+	emphasis?: boolean;
+	/** A short mark after the heading, such as "(12)". Shown beside the heading, outside it, so the heading's name stays plain. */
+	mark?: string;
+	/** What the mark says to a screen reader, such as "12 projects". Without it, the mark is read as written. */
+	markLabel?: string;
+	/** One or two sentences under the heading, in the lead role, muted, at the lead width. */
+	text?: string;
+	/** Heading element: h2 to h4 (the page's h1 belongs to the Hero). */
+	headingTag?: SectionHeadingTag;
+	/** The heading's id. A shell passes its uid(), so its <section> can name itself with aria-labelledby. */
+	id?: string;
+	/** The alignment of the eyebrow, the heading and the text. */
+	align?: "start" | "center";
+	/** The heading, after its own classes (a smaller type role, a surface's text color). */
+	headingClass?: string;
+	/** The lead, after its own classes (a narrower width, a surface's text color). */
+	leadClass?: string;
+	/** The mark, after its own classes (a surface's text color, such as text-on-inverse-muted). */
+	markClass?: string;
+	class?: string;
+}
+
+const { heading, emphasis = false, mark, markLabel, text, headingTag: Heading = "h2", id, align = "start", headingClass, leadClass, markClass, class: className, ...rest } = Astro.props;
+const center = align === "center";
+// The eyebrow is rendered first, so an empty one (a shell passes its slot on in an expression, which always fills
+// it) leaves no wrapper.
+const eyebrow = Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+// The header every section family shares (decision 0015): the order eyebrow, heading, lead. The box is at the head
+// width and the lead at the lead width; the heading takes the section role (a step under title), which sizes to the
+// nearest container (the shell's). A band's heading passes the title role through headingClass (CtaBand). The eyebrow sits item above the heading, the lead item under it. With nothing to show there is no box.
+// A shell keeps its own attribute on the box (data-features-header, data-cta-text) through the rest.
+// A mark ("(12)", "©2026") sits after the heading element, outside it, in a wrapping row with it (data-section-title),
+// so the heading's name stays plain; with markLabel the mark is aria-hidden and the label is read in its place.
+// Without a mark there is no row, and the HTML is as before.
+---
+
+{
+	(eyebrow || heading || text) && (
+		<div data-section-head class={cn("grid min-w-0 max-w-head justify-items-start", center && "mx-auto justify-items-center text-center", className)} {...rest}>
+			{eyebrow && <div data-section-eyebrow class={cn("mb-item flex flex-wrap items-center gap-2", center && "justify-center")} set:html={eyebrow} />}
+			{/* One long word breaks rather than overflow. */}
+			{heading && !mark && <Heading id={id} class={cn("m-0 text-section text-balance [overflow-wrap:anywhere]", displayType, headingClass)}><Emphasis text={heading} enabled={emphasis} /></Heading>}
+			{
+				heading && mark && (
+					<div data-section-title class={cn("flex flex-wrap items-start gap-x-3", center && "justify-center")}>
+						<Heading id={id} class={cn("m-0 text-section text-balance [overflow-wrap:anywhere]", displayType, headingClass)}><Emphasis text={heading} enabled={emphasis} /></Heading>
+						<span data-section-mark aria-hidden={markLabel ? "true" : undefined} class={cn("text-small text-muted tabular-nums", markClass)}>{mark}</span>
+						{markLabel && <span class="sr-only">{markLabel}</span>}
+					</div>
+				)
+			}
+			{text && <p data-section-lead class={cn("m-0 max-w-lead text-lead text-pretty text-muted", heading && "mt-item", leadClass)}>{text}</p>}
+		</div>
+	)
+}

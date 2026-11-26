@@ -1,0 +1,58 @@
+---
+import { cn } from "../lib/cn";
+import { focalCss, imageAttrs, type ImageComponent, type MediaImage } from "../lib/image";
+import Hero, { type Props as HeroProps } from "./Hero.astro";
+
+export interface Props extends Omit<HeroProps, "align" | "tone" | "contentClass" | "textClass" | "headingClass" | "stackClass" | "mediaClass"> {
+	/** Required. The image behind the text. It fills the hero and is cropped; `ratio` is not used. Loaded eagerly unless it sets its own loading. */
+	image: MediaImage;
+	/** Card corners. Off, the hero fills its parent box; place it outside the Container to go edge to edge. */
+	framed?: boolean;
+	/** Your image component for the photo: Astro's <Image>, or a small wrapper for your CMS. It gets sizes="100vw". */
+	imageComponent?: ImageComponent;
+}
+
+const { image, framed = false, imageComponent: Image, class: className, ...rest } = Astro.props;
+const img = imageAttrs(image.src, image.width, image.height);
+const focal = focalCss(image.focalPoint);
+const loading = image.loading ?? "eager";
+const priority = loading === "eager" ? "high" : undefined;
+// The image fills the hero behind the text (the media block, out of the flow at -z-10), under a light veil of
+// --ui-scrim. The hero is at least 32rem tall (min-h-128), and from a 48rem hero 88svh, at most 48rem; on a narrow
+// hero a top padding as tall as the scrim's fade (pt-[16rem], fixed like the fade, not a multiple of --ui-space) keeps the image in view above the text. From
+// a 48rem hero the cover pads with the group role (64px by default, as the section space was), never section, which
+// a preset or the default may set very wide (as CtaBand). The text sits at its bottom start, on a
+// reading box narrower than the shell's (max-w-2xl), on scrim-rise: the scrim out to the hero's edges, rising slowly
+// under the box from 60% at its top to 68% at its bottom, and fading out on an eased curve over the 16rem above it,
+// with no flat part and so no edge. So the heading and subtitle (scrim-fg, from tone="image") read at 4.5:1 on any
+// image in every kit preset and mode (SCRIM_LAYERS in system/contrast.mjs holds the veil and the least share, 60%,
+// at the box's top). The hero always clips (the scrim's outset reaches past it) and isolates, so the image stays
+// inside it. The image is always the cover: there is no media slot. An eager image (the default, since a hero opens
+// the page) is fetched at high priority. With imageComponent the photo comes from your component (srcset), with sizes
+// 100vw, as ArticleHeaderCover's; without it the plain <img> is unchanged. The recipe's own props come after the rest, so its layout and tone always win.
+---
+
+<Hero
+	{...rest}
+	class={cn(framed && "rounded-card", className, "relative isolate overflow-hidden")}
+	align="start"
+	tone="image"
+	contentClass="min-h-128 content-end p-blocks pt-[16rem] @3xl/hero:min-h-[clamp(32rem,88svh,48rem)] @3xl/hero:p-group"
+	textClass={undefined}
+	headingClass={undefined}
+	stackClass="scrim-rise max-w-2xl"
+	mediaClass="absolute inset-0 -z-10"
+>
+	{Astro.slots.has("eyebrow") && <Fragment slot="eyebrow"><slot name="eyebrow" /></Fragment>}
+	<Fragment slot="media">
+		{
+			Image ? (
+				<Image src={image.src} alt={image.alt} width={img.width} height={img.height} loading={loading} fetchpriority={priority} decoding="async" sizes="100vw" class="block size-full object-cover" style={focal ? `object-position: ${focal}` : undefined} />
+			) : (
+				<img src={img.src} alt={image.alt} width={img.width} height={img.height} loading={loading} fetchpriority={priority} decoding={loading === "eager" ? undefined : "async"} class="block size-full object-cover" style={focal ? `object-position: ${focal}` : undefined} />
+			)
+		}
+		<span class="absolute inset-0 bg-scrim/20"></span>
+	</Fragment>
+	<slot />
+</Hero>

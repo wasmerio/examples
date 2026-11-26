@@ -1,0 +1,243 @@
+---
+/**
+ * The pages at the root, one route (src/utils/sections.ts says which):
+ *
+ * - /speaking (comp "Speaking"), /uses (comp "Uses") and /now (comp "Now"), each built only while its page switch is
+ *   on (src/theme.config.ts `pages`); off, a static build leaves it out and a server answers 404. On with nothing in
+ *   it yet: the head and a short note. The pages collection's `speaking` and `uses` entries, when there are some,
+ *   give their page its title and lead (src/utils/sections.ts `listHead`); with none, the head is the theme's words
+ *   (src/theme.strings.ts). /uses has a row of links to its groups under the head when it has two or more, then the
+ *   groups across the full width (no page photo: a group's own photo shows its gear).
+ * - /about: the about page's text beside the person's cut portrait and social links, then the full work history and
+ *   the CV button.
+ * - /<slug>: any other page from the pages collection (/privacy): the head and the text.
+ *
+ * Photos that open large (Base `lightbox`, PhotoLink): the Now photo when it has alt text; the About portrait only
+ * when it is also at least ABOUT_MIN_WIDTH (1000px) wide, so a small avatar stays a plain photo. Then the page carries
+ * the lightbox; else not. /speaking and /uses never do.
+ *
+ * Structured data: /about is a ProfilePage whose main entity is the site's owner (the Person every page carries); the
+ * other pages are a WebPage each.
+ *
+ * One segment only, and never a first segment the theme keeps (/pagefind, /_astro, /_image, ...): those answer 404.
+ */
+import { profilePageNode, siteIds, webPageNode } from "@astronomic/theme-core/jsonld";
+import { notFound } from "@astronomic/theme-core/routes";
+import Button from "@astronomic/ui/components/Button.astro";
+import Media from "@astronomic/ui/components/Media.astro";
+import Prose from "@astronomic/ui/components/Prose.astro";
+import { formatDate } from "@astronomic/ui/lib/date.ts";
+import { plainHeading } from "@astronomic/ui/lib/emphasis.ts";
+import EmptyNote from "~/components/EmptyNote.astro";
+import Icon from "~/components/Icon.astro";
+import JumpLinks from "~/components/JumpLinks.astro";
+import KitImage from "~/components/KitImage.astro";
+import NowAside from "~/components/NowAside.astro";
+import PageHead from "~/components/PageHead.astro";
+import PhotoLink from "~/components/PhotoLink.astro";
+import RichText from "~/components/RichText.astro";
+import SocialLinks from "~/components/SocialLinks.astro";
+import TalkList from "~/components/TalkList.astro";
+import UsesList from "~/components/UsesList.astro";
+import WorkRows from "~/components/WorkRows.astro";
+import { useContent } from "~/content";
+import { safeHref } from "~/content/links";
+import { searchSummary } from "~/content/search";
+import Base from "~/layouts/Base.astro";
+import { strings } from "~/theme.strings";
+import { cn } from "~/utils/cn";
+import { getConfig } from "~/utils/config";
+import { pageIds } from "~/utils/ids";
+import { imageSizes, wrap } from "~/utils/layout";
+import { ABOUT_MIN_WIDTH, isTrigger } from "~/utils/lightbox-image";
+import { siteOrigin } from "~/utils/public-pages";
+import { navLinks, nowName, pageHref } from "~/utils/routes";
+import { listHead, sectionOf, sectionSlugs } from "~/utils/sections";
+import { cvHref, siteSettings } from "~/utils/setup";
+import { talksByYear, toTalk, toUsesGroups, toWorkRow } from "~/utils/view";
+
+export async function getStaticPaths() {
+	const content = useContent();
+	const [settings, pageSlugs] = await Promise.all([siteSettings(content), content.pages.slugs()]);
+	return sectionSlugs(getConfig(settings).config, pageSlugs).map((section) => ({ params: { section } }));
+}
+
+const content = useContent(Astro);
+const [settings, pageSlugs] = await Promise.all([siteSettings(content), content.pages.slugs()]);
+const { config } = getConfig(settings);
+const section = sectionOf(Astro.params.section, config, pageSlugs);
+if (!section) {
+	return notFound(Astro, Astro.params.section);
+}
+
+// Only what this section shows is read. /speaking and /uses read their pages entry only when there is one.
+const kind = section.kind;
+const listPage = kind === "speaking" || kind === "uses";
+const page = !listPage || pageSlugs.includes(kind) ? await content.pages.get(section.slug) : undefined;
+if ((kind === "about" || kind === "page") && !page) {
+	return notFound(Astro, Astro.params.section);
+}
+const talks = kind === "speaking" ? (await content.talks.list()).items : [];
+const uses = kind === "uses" ? (await content.uses.list()).items : [];
+const usesGroups = toUsesGroups(uses);
+const jobs = kind === "about" ? (await content.jobs.list()).items : [];
+
+const socials =
+	kind === "about"
+		? navLinks(settings.socials, config).flatMap((item) => {
+				const href = safeHref(item.href);
+				return href === undefined ? [] : [{ label: item.label, href, icon: item.icon }];
+			})
+		: [];
+const cvFile = kind === "about" ? cvHref(settings) : undefined;
+const portrait = kind === "about" ? (settings.avatar ?? page?.image) : undefined;
+const stamp =
+	kind === "now" && settings.nowUpdated ? strings.now.stamp(formatDate(settings.nowUpdated, strings.locale, { dateStyle: "long" }), settings.nowPlace?.trim() || undefined) : undefined;
+
+/** The page's photo as it shows: on /about the portrait (the avatar first), else the page's image. */
+const shownPhoto = kind === "about" ? portrait : page?.image;
+/** Whether the page's photo opens large, so the page carries the lightbox: /now and /about only. */
+const lightbox = (kind === "now" && isTrigger(page?.image)) || (kind === "about" && isTrigger(portrait, { minWidth: ABOUT_MIN_WIDTH }));
+/** The share and search fields of a page from the pages collection; it shares the photo it shows. */
+const entryMeta = page
+	? {
+			title: page.seo?.title ?? page.title,
+			description: page.seo?.description || page.summary,
+			image: page.seo?.image ?? shownPhoto?.src,
+			imageAlt: page.seo?.image ? undefined : shownPhoto?.alt,
+			canonical: page.seo?.canonical,
+			entry: page,
+			index: { kind: "pages", title: page.title, summary: searchSummary("pages", page) },
+		}
+	: undefined;
+/** /speaking's and /uses' head: the pages entry's words when there is one, else the theme's words. */
+const head = kind === "speaking" || kind === "uses" ? listHead(page, strings[kind]) : undefined;
+/** /speaking's and /uses' share and search fields; they share the entry's SEO image when it sets one, else the page's card. */
+const listMeta =
+	head && {
+		title: page?.seo?.title ?? head.title,
+		description: page?.seo?.description || head.lead,
+		image: page?.seo?.image,
+		canonical: page?.seo?.canonical,
+		entry: page,
+		index: { kind: "pages", title: head.title, summary: head.lead },
+	};
+/** The page's JSON-LD: the about page is the owner's profile; any other page is a WebPage with the title it shows. */
+const origin = siteOrigin(Astro);
+const path = page?.seo?.canonical || pageHref(section.slug);
+const name = plainHeading(head?.title ?? page?.title ?? nowName(settings.nowLabel, strings.now.title));
+const jsonLd =
+	kind === "about"
+		? profilePageNode(origin, { path, name, person: { "@id": siteIds(origin).owner } })
+		: webPageNode(origin, { path, name, description: (listMeta || entryMeta)?.description });
+---
+
+{
+	kind === "speaking" && head ? (
+		<Base {...listMeta!} card jsonLd={jsonLd}>
+			<div class={wrap}>
+				<PageHead title={head.title} lead={head.lead} />
+				<div class="v-page-body">{talks.length > 0 ? <TalkList years={talksByYear(talks.map(toTalk))} /> : <EmptyNote />}</div>
+			</div>
+		</Base>
+	) : kind === "uses" && head ? (
+		<Base {...listMeta!} card jsonLd={jsonLd}>
+			<div class={wrap}>
+				<PageHead title={head.title} lead={head.lead} />
+				{usesGroups.length > 1 && <JumpLinks label={strings.uses.jump} links={usesGroups.map((g) => ({ label: g.group, href: `#${g.id}` }))} />}
+				<div class="v-page-body">{usesGroups.length > 0 ? <UsesList groups={usesGroups} /> : <EmptyNote />}</div>
+			</div>
+		</Base>
+	) : kind === "now" ? (
+		page ? (
+			<Base {...entryMeta!} card jsonLd={jsonLd} lightbox={lightbox}>
+				<div class={wrap}>
+					<PageHead title={page.title} lead={page.summary}>
+						{stamp && (
+							<p class="v-stamp v-meta">
+								<Icon name="ui/pin" />
+								{stamp}
+							</p>
+						)}
+					</PageHead>
+					<div class={cn("v-page-body", page.image && "v-beside")}>
+						<Prose class="v-prose v-now">
+							<RichText value={page.body} />
+						</Prose>
+						{page.image && <NowAside image={page.image} caption={page.imageCaption} />}
+					</div>
+				</div>
+			</Base>
+		) : (
+			<Base title={nowName(settings.nowLabel, strings.now.title)} card jsonLd={jsonLd}>
+				<div class={wrap}>
+					<PageHead title={nowName(settings.nowLabel, strings.now.title)} />
+					<div class="v-page-body">
+						<EmptyNote />
+					</div>
+				</div>
+			</Base>
+		)
+	) : kind === "about" && page ? (
+		<Base {...entryMeta!} card jsonLd={jsonLd} lightbox={lightbox}>
+			<div class={wrap}>
+				<PageHead title={page.title} lead={page.summary} />
+				<div class="v-page-body v-beside">
+					<div>
+						<Prose class="v-prose">
+							<RichText value={page.body} />
+						</Prose>
+						{(jobs.length > 0 || cvFile) && (
+							<section aria-labelledby={pageIds.work} class="v-work">
+								<h2 id={pageIds.work} class="v-heading">
+									{strings.about.work}
+								</h2>
+								{jobs.length > 0 && <WorkRows jobs={jobs.map((job) => toWorkRow(job, strings.work.now))} />}
+								{cvFile && (
+									<Button href={cvFile} variant="secondary" download data-work-cv>
+										{strings.work.cv}
+										<Icon name="ui/download" class="size-4" />
+									</Button>
+								)}
+							</section>
+						)}
+					</div>
+					{(portrait || socials.length > 0) && (
+						<div class="v-aside" data-aside-first>
+							{portrait && (
+								<PhotoLink image={portrait} minWidth={ABOUT_MIN_WIDTH}>
+									<Media
+										src={portrait as never}
+										alt={portrait.alt}
+										width={portrait.width}
+										height={portrait.height}
+										ratio="1/1"
+										shape="cut"
+										cutCorner="top-start"
+										imageComponent={KitImage}
+										loading="eager"
+										sizes={imageSizes.aside.sizes}
+									/>
+								</PhotoLink>
+							)}
+							<SocialLinks links={socials} label={strings.footer.elsewhere} />
+						</div>
+					)}
+				</div>
+			</div>
+		</Base>
+	) : (
+		page && (
+			<Base {...entryMeta!} card jsonLd={jsonLd}>
+				<div class={wrap}>
+					<PageHead title={page.title} lead={page.summary} />
+					<div class="v-page-body">
+						<Prose class="v-prose">
+							<RichText value={page.body} />
+						</Prose>
+					</div>
+				</div>
+			</Base>
+		)
+	)
+}

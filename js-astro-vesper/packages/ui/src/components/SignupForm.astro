@@ -1,0 +1,108 @@
+---
+import { cn } from "../lib/cn";
+import { uid } from "../lib/id";
+import Field from "./Field.astro";
+import Form, { type Props as FormProps } from "./Form.astro";
+import Input from "./Input.astro";
+
+export interface Props extends Omit<FormProps, "fieldsClass" | "actionClass" | "buttonClass" | "statusClass"> {
+	/** The email field's name: email (Buttondown, Formspree), EMAIL (Mailchimp), or any name your endpoint expects. */
+	emailName?: string;
+	emailLabel?: string;
+	/** Keep the field labels (email, and name with nameField) for screen readers only, when the heading beside the form says what it is for. */
+	labelHidden?: boolean;
+	/** A hint inside the empty email field. Default: "Email address" when the label is hidden, else none. Never the label. */
+	emailPlaceholder?: string;
+	/** Ask for a name too (optional to fill). */
+	nameField?: boolean;
+	nameName?: string;
+	nameLabel?: string;
+	/** A hint inside the empty name field (with nameField). Default: "Your name" when the label is hidden, else none. Never the label. */
+	namePlaceholder?: string;
+	/** stacked (default): the button under the field. inline: the field and button in one row, wrapping in a narrow box. */
+	layout?: "stacked" | "inline";
+	/** The text shown under the email field when it is empty or wrong (enhance="fetch"). */
+	fieldErrors?: { email?: string };
+}
+
+/** The form's settings a recipe takes as one prop (the Newsletter recipes' form). */
+export type SignupFormOptions = Omit<Props, "tone" | "class">;
+
+const {
+	emailName = "email",
+	emailLabel = "Email",
+	labelHidden = false,
+	emailPlaceholder = labelHidden ? "Email address" : undefined,
+	nameField = false,
+	nameName = "name",
+	nameLabel = "Name",
+	namePlaceholder = labelHidden ? "Your name" : undefined,
+	layout = "stacked",
+	fieldErrors = {},
+	submitLabel = "Subscribe",
+	successText = "Thanks. Check your inbox to confirm.",
+	enhance = "none",
+	tone = "page",
+	class: className,
+	...form
+} = Astro.props;
+const base = uid("signup");
+const inline = layout === "inline";
+const labelled = inline && !labelHidden;
+// Inline with the label shown: the form is a named container (signup) and its fields box queries it (a container
+// never queries itself). Below the breakpoint the field and the Button stack in a column, the Button at its own width
+// a plain gap under the field; from it they sit side by side, the Button's top margin the label's line and gap
+// (mt-field-label), so it lines up with the field's control, not the label. In the row the fields grow from 0
+// (basis-0), so they share what the Button leaves and never push it to a line of its own (where its margin would be
+// a label's worth of gap); only the status wraps, to its full line. The breakpoint is where each field still has
+// about 14rem beside a Subscribe Button (about 7rem): one field from @sm (24rem), two from @xl (36rem). Tailwind finds
+// only classes written out, so each set is whole.
+const SIDE = nameField
+	? {
+			fields: "flex flex-col items-start gap-item @xl/signup:flex-row @xl/signup:flex-wrap",
+			field: "min-w-0 self-stretch @xl/signup:self-auto @xl/signup:grow @xl/signup:basis-0",
+			button: "@xl/signup:mt-field-label",
+		}
+	: {
+			fields: "flex flex-col items-start gap-item @sm/signup:flex-row @sm/signup:flex-wrap",
+			field: "min-w-0 self-stretch @sm/signup:self-auto @sm/signup:grow @sm/signup:basis-0",
+			button: "@sm/signup:mt-field-label",
+		};
+const fieldClass = labelled ? SIDE.field : inline ? "min-w-0 grow basis-56" : undefined;
+// A signup form on Form (design, "Newsletter family"): one email field (type=email, no spellcheck, required), an
+// optional name field, the note slot for a privacy line. Inline: the fields and the Button in one flex row that wraps;
+// a field grows from 14rem, so in a narrow box the Button drops under it. The action box becomes contents, so the
+// Button is a flex item of the row and the status a full-width line under the whole row (the
+// status always on its own line under the button), and a status never widens the Button's box or moves it. Idle,
+// the status line is empty and its negative margin takes back the row gap, so it takes no room. The row lines up at
+// the top, so an error under a field never moves the Button. With the label shown, see SIDE above: the Button lines
+// up with the field only where they sit side by side, and stacked it sits a plain gap under it. labelHidden hides the name field's label too, so the
+// two fields line up. With the labels hidden each empty field shows a placeholder hint (the kit's placeholder color, on the
+// field's own fill, which a band never rebinds); the label stays for screen readers.
+---
+
+<Form
+	{...form}
+	class={cn(labelled && "@container/signup", className)}
+	enhance={enhance}
+	tone={tone}
+	submitLabel={submitLabel}
+	successText={successText}
+	fieldsClass={labelled ? SIDE.fields : inline ? "flex flex-wrap items-start gap-item" : undefined}
+	actionClass={inline ? "contents" : undefined}
+	buttonClass={labelled ? SIDE.button : undefined}
+	statusClass={inline ? "w-full basis-full mt-0 data-[state=idle]:-mt-item" : undefined}
+>
+	{
+		nameField && (
+			<Field label={nameLabel} for={`${base}-name`} tone={tone} labelHidden={labelHidden} class={fieldClass}>
+				<Input id={`${base}-name`} name={nameName} autocomplete="name" placeholder={namePlaceholder} />
+			</Field>
+		)
+	}
+	<Field label={emailLabel} for={`${base}-email`} required tone={tone} labelHidden={labelHidden} errorSlot={enhance === "fetch"} class={fieldClass}>
+		<Input id={`${base}-email`} type="email" name={emailName} autocomplete="email" spellcheck="false" placeholder={emailPlaceholder} required data-error={fieldErrors.email ?? "Enter an email address, like name@example.com."} />
+	</Field>
+	{Astro.slots.has("extra") && <Fragment slot="extra"><slot name="extra" /></Fragment>}
+	{Astro.slots.has("note") && <Fragment slot="note"><slot name="note" /></Fragment>}
+</Form>

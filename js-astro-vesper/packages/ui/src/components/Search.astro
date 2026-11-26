@@ -1,0 +1,371 @@
+---
+/// <reference types="@astronomic-dev/search/astro/virtual" />
+import { mergeStrings } from "@astronomic-dev/search/controller";
+import assets from "virtual:astronomic-search/assets";
+import { buttonClasses, focusRing, touchBox } from "../lib/button";
+import { cn, cx } from "../lib/cn";
+import { controlClasses } from "../lib/field";
+import { iconClasses } from "../lib/icon";
+import { dialogWords, type SearchStrings } from "../lib/search";
+import {
+	searchCount,
+	searchCrumb,
+	searchCrumbSep,
+	searchFilterLabel,
+	searchFilterRow,
+	searchGroupCount,
+	searchGroupLabel,
+	searchHeading,
+	searchHeadingMark,
+	searchHeadingSnippet,
+	searchHeadingTitle,
+	searchLabel,
+	searchMark,
+	searchPill,
+	searchPillSelected,
+	searchPills,
+	searchRow,
+} from "../lib/search-look";
+
+export interface Props {
+	/** The index this dialog searches. Default: the site's default index. */
+	index?: string;
+	/** The types it shows (its tabs and results). Default: every type of the index. */
+	types?: string[] | string;
+	/** The grouping: "type", a facet name, or false (mixed, each result's breadcrumb starting with its type). Default: the index setting. */
+	group?: string | false;
+	/** false turns the shortcut off for this dialog. Default: the site's `shortcut` setting. */
+	shortcut?: false;
+	/** Words for this dialog, over the site's `strings` setting (only the ones you pass), and the dialog's own words (escKey, headingMark, crumbMark, typeText). */
+	strings?: SearchStrings;
+	/** Classes for the <dialog>. */
+	class?: string;
+	/** For recipes: the visible panel (the dialog itself fills the screen). */
+	panelClass?: string;
+	/** For recipes: the header row around the search box. */
+	headerClass?: string;
+	/** For recipes: the search box. */
+	inputClass?: string;
+	/** For recipes: the type tabs (the tablist, after the row's "Type" label). */
+	tabsClass?: string;
+	/** For recipes: the facet rows. */
+	facetsClass?: string;
+	/** For recipes: the row around the results and the preview ([data-search-results-body]; never data-search-body, the HTML scan's marker for a page's text). */
+	bodyClass?: string;
+	/** For recipes: the list of results (the listbox). */
+	resultsClass?: string;
+	/** For recipes: one group of results. */
+	groupClass?: string;
+	/** For recipes: a group's label row (its name and its count). */
+	groupLabelClass?: string;
+	/** For recipes: a page option, and a suggested link in an empty box. */
+	optionClass?: string;
+	/** For recipes: a heading option, under its page. */
+	headingOptionClass?: string;
+	/** For recipes: an option's snippet. */
+	snippetClass?: string;
+	/** For recipes: the preview pane, beside the results (only with a `preview` slot). */
+	previewClass?: string;
+	/** For recipes: the footer with the key hints and "See all results". */
+	footerClass?: string;
+}
+
+/** What a recipe takes: the shell's props less the class hooks it sets itself. */
+export type SearchRecipeProps = Omit<
+	Props,
+	| "panelClass"
+	| "headerClass"
+	| "inputClass"
+	| "tabsClass"
+	| "facetsClass"
+	| "bodyClass"
+	| "resultsClass"
+	| "groupClass"
+	| "groupLabelClass"
+	| "optionClass"
+	| "headingOptionClass"
+	| "snippetClass"
+	| "previewClass"
+	| "footerClass"
+>;
+
+const {
+	index = assets.index,
+	types,
+	group,
+	shortcut,
+	strings: own = {},
+	class: className,
+	panelClass,
+	headerClass,
+	inputClass,
+	tabsClass,
+	facetsClass,
+	bodyClass,
+	resultsClass,
+	groupClass,
+	groupLabelClass,
+	optionClass,
+	headingOptionClass,
+	snippetClass,
+	previewClass,
+	footerClass,
+} = Astro.props;
+
+// The Search family's shell (decision 0013): one closed native modal <dialog> per index, types and group, which
+// lib/search-app.ts binds on first use with the search package's controller and dom layer (focus, keys, combobox,
+// tabs, live count; the WAI-ARIA dialog and combobox patterns). Recipes set only class hooks.
+// The words come from one place, the search integration's `strings` setting, with this dialog's `strings` on top. They
+// are rendered into the markup and the templates, and written into the config block (JSON, never run, so a strict CSP
+// allows it) with the manifest URL and the keys, which the script reads.
+// The dialog fills the viewport, every browser default for a modal dialog reset, and is clear over the scrim
+// backdrop, so a click outside the panel lands on the dialog and closes it. It is the named container `search`: a
+// recipe places the panel by the dialog's width (decision 0015, principle 1). The panel sits on the page fill (bg).
+// Areas in page order, which is the Tab order: the search box, the type tabs (one tab stop), the facets, close, the
+// results (one tab stop, the scrolling box, so a keyboard can scroll it; the arrows move the active result with focus
+// in the search box; a message's buttons are reachable), then "See all results". Close is
+// drawn in the header row by its grid place. The live region says the count once typing stops.
+// Every button and link carries tabindex="0": Safari skips plain buttons and links on Tab without one.
+// The <template>s are what the script clones for results and messages, so their classes are in the source. With an
+// empty box the listbox holds the index's suggested links (a "Suggested" group of link options the arrows reach, on
+// the page option's hook), and recent searches follow under it.
+// The look (lib/search-look.ts, shared with SearchPage; values from search-scope in theme.css): inner lines are the
+// search's hairline, never the preset's border; each filter row starts with a quiet label ("Type", a facet's label)
+// and its pills sit on one line that scrolls sideways below 40rem; tabs and facets share one selected look; a group
+// label is quiet type on a soft band with its count at the end; a page result shows its breadcrumb (crumbOf(): type ›
+// theme, small), its title and a two-line snippet; heading results sit indented in smaller text; a page and its
+// headings are one block, a hairline between blocks; the active result is a rounded soft fill (no edge), and a match a
+// soft accent fill under text in the page's color.
+// Motion (decision 0018), under motion-ok only: the dialog and its backdrop fade in. Under reduced motion it opens at once.
+const input: SearchStrings = { ...assets.strings, ...own };
+if (assets.strings.results || own.results) input.results = { ...assets.strings.results, ...own.results };
+if (assets.strings.keys || own.keys) input.keys = { ...assets.strings.keys, ...own.keys };
+const strings = { ...mergeStrings(input), ...dialogWords(input) };
+const keys = shortcut === false || !assets.shortcut ? [] : assets.shortcut.keys;
+const config = JSON.stringify({ manifest: assets.manifest, index: assets.index, keys, strings: input, browse: assets.browse }).replace(/</g, "\\u003c");
+const typeList = Array.isArray(types) ? types.join(",") : types;
+const base = import.meta.env.BASE_URL;
+const searchPage = `${base.endsWith("/") ? base : `${base}/`}search`;
+const preview = Astro.slots.has("preview");
+
+// The kit keycap (the kbd utility in theme.css), one key per kbd.
+const kbd = "kbd";
+// Inner lines are the search's hairline (--search-line, from search-scope in theme.css); the panel's outer edge is a recipe's.
+const line = "border-solid border-(--search-line)";
+// A result row: its corners capped and its soft active fill (lib/search-look.ts), room under the sticky group label.
+const row = cx("grid gap-0.5 px-3 py-2 text-fg no-underline cursor-pointer scroll-mt-12 scroll-mb-2", searchRow);
+// A page block (a page row and its heading rows): one after another option starts a new block, with room above it and
+// the hairline in the middle of that room, so the line sits under the block before (never on the active fill).
+const block = "relative [[data-search-option]+&]:mt-4 [[data-search-option]+&]:before:absolute [[data-search-option]+&]:before:inset-x-0 [[data-search-option]+&]:before:-top-2 [[data-search-option]+&]:before:h-px [[data-search-option]+&]:before:bg-(--search-rule)";
+// A group's band, sticky at the top of the scroll box, with a strip of the panel's fill under it (the gap before the
+// first row), so the band's fill never touches an active row's fill, also while rows scroll under it; and one over it
+// the height of the scroll box's padding, so rows scrolled past never show above a stuck band.
+const band = "sticky top-0 z-1 mb-1.5 before:absolute before:inset-x-0 before:bottom-full before:h-2 before:bg-bg after:absolute after:inset-x-0 after:top-full after:h-1.5 after:bg-bg";
+const textLink = cn("inline-flex items-center text-fg link-underline", touchBox, focusRing);
+---
+
+<dialog
+	data-search-dialog
+	data-modal
+	data-search-index={index}
+	data-search-types={typeList || undefined}
+	data-search-group={group === undefined ? undefined : String(group)}
+	aria-label={strings.dialogLabel}
+	class={cn(
+		"search-scope @container/search fixed inset-0 m-0 size-full h-dvh w-dvw max-h-none max-w-none overflow-hidden border-0 p-0",
+		"bg-transparent text-fg font-body outline-none",
+		"backdrop:bg-scrim/50 motion-ok:backdrop:transition-opacity motion-ok:backdrop:duration-150 motion-ok:starting:open:backdrop:opacity-0",
+		"motion-ok:transition-opacity motion-ok:duration-150 motion-ok:starting:open:opacity-0",
+		className,
+	)}
+>
+	<div
+		data-search-panel
+		class={cn(
+			"grid size-full min-h-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto_auto_minmax(0,1fr)_auto] overflow-hidden bg-bg text-fg safe-area-pad",
+			panelClass,
+		)}
+	>
+		<div data-search-header class={cn("relative col-start-1 row-start-1 flex min-w-0 items-center p-3", headerClass)}>
+			<svg class={cx(iconClasses("md"), "pointer-events-none absolute start-6 text-muted")} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">
+				<path d="M9 15.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM13.75 13.75L17.5 17.5"></path>
+			</svg>
+			<input
+				data-search-input
+				type="text"
+				aria-label={strings.placeholder}
+				placeholder={strings.placeholder}
+				spellcheck="false"
+				autocapitalize="off"
+				autocorrect="off"
+				enterkeyhint="go"
+				class={cn(controlClasses, "h-control-lg rounded-control border-0 bg-surface-2 ps-10 pe-3.5 focus-visible:outline-1 focus-visible:outline-offset-0 focus-visible:outline-(--search-focus) focus-visible:shadow-[0_0_0_4px_var(--search-focus-halo)]", inputClass)}
+			/>
+		</div>
+		<div data-search-type-row hidden class={cn(searchFilterRow, "col-span-full row-start-2 px-3 pb-2")}>
+			<span aria-hidden="true" class={searchFilterLabel}>{strings.typeText}</span>
+			<div data-search-tabs hidden class={cn(searchPills, tabsClass)}></div>
+		</div>
+		<div data-search-facets role="group" aria-label={strings.facetsLabel} hidden class={cn("col-span-full row-start-3 grid gap-2 px-3 pb-2", facetsClass)}></div>
+		<button
+			type="button"
+			tabindex="0"
+			data-search-close
+			aria-label={strings.close}
+			class={cn(buttonClasses({ variant: "ghost", icon: true }), touchBox, "col-start-2 row-start-1 me-3 self-center text-muted hover:text-fg")}
+		>
+			<svg class={iconClasses("md")} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15"></path></svg>
+		</button>
+		<div data-search-results-body class={cn("col-span-full row-start-4 mt-1 flex min-h-0 border-t", line, bodyClass)}>
+			<div data-search-scroll tabindex="0" class="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-2 outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-accent">
+				<div data-search-results role="listbox" aria-label={strings.dialogLabel} hidden class={cn("grid gap-1", resultsClass)}></div>
+				<div data-search-message class="empty:hidden"></div>
+			</div>
+			{
+				preview && (
+					<div data-search-preview class={cn("min-h-0 min-w-0 overflow-y-auto", previewClass)}>
+						<slot name="preview" />
+					</div>
+				)
+			}
+		</div>
+		<div data-search-footer class={cn("col-span-full row-start-5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t px-3 py-2 @max-[40rem]/search:has-[[data-search-see-all][hidden]]:hidden", line, footerClass)}>
+			<p data-search-hints aria-hidden="true" class="m-0 hidden flex-wrap @min-[40rem]/search:flex gap-x-3 gap-y-1 text-small text-muted">
+				<span class="inline-flex items-center gap-1"><kbd class={kbd}>↑</kbd><kbd class={kbd}>↓</kbd> {strings.keys.move}</span>
+				<span class="inline-flex items-center gap-1"><kbd class={kbd}>↵</kbd> {strings.keys.open}</span>
+				<span class="inline-flex items-center gap-1"><kbd class={kbd}>{strings.escKey}</kbd> {strings.keys.close}</span>
+			</p>
+			<a data-search-see-all href={searchPage} tabindex="0" class={cn("ms-auto text-small font-medium text-fg link-underline", touchBox, "inline-flex items-center", focusRing)}>{strings.seeAll}</a>
+		</div>
+		<div data-search-live class="sr-only"></div>
+	</div>
+	<script is:inline type="application/json" data-search-config set:html={config}></script>
+	<template data-search-template="group">
+		<div role="group" class={cn("grid not-first:mt-6", groupClass)}>
+			<div data-search-group-label role="presentation" class={cn(searchGroupLabel, band, groupLabelClass)}>
+				<span data-search-group-name></span>
+				<span data-search-group-count class={searchGroupCount}></span>
+			</div>
+		</div>
+	</template>
+	<template data-search-template="page">
+		<a data-search-option class={cn(row, block, optionClass)}>
+			<span data-search-crumb class={searchCrumb}><span data-search-crumb-sep aria-hidden="true" class={searchCrumbSep}>{strings.crumbMark}</span></span>
+			<span data-search-line class="flex items-baseline justify-between gap-2">
+				<span data-search-title class="font-medium text-balance [overflow-wrap:anywhere]"></span>
+			</span>
+			<span data-search-snippet class={cn("line-clamp-2 text-small text-pretty text-muted [overflow-wrap:anywhere]", snippetClass)}></span>
+		</a>
+	</template>
+	<template data-search-template="heading">
+		<a data-search-option class={cn(row, searchHeading, "ms-5 ps-6 py-1.5", headingOptionClass)}>
+			<span data-search-line class="flex items-baseline">
+				<span aria-hidden="true" class={searchHeadingMark}>{strings.headingMark}</span>
+				<span data-search-title class={searchHeadingTitle}></span>
+			</span>
+			<span data-search-snippet class={cn(searchHeadingSnippet, snippetClass)}></span>
+		</a>
+	</template>
+	<template data-search-template="suggested">
+		<a data-search-option class={cn(row, optionClass)}>
+			<span data-search-line class="flex items-baseline gap-2">
+				<span data-search-title class="font-medium text-balance [overflow-wrap:anywhere]"></span>
+			</span>
+		</a>
+	</template>
+	<template data-search-template="mark">
+		<mark class={searchMark}></mark>
+	</template>
+	<template data-search-template="tab">
+		<button type="button" role="tab" class={cx(searchPill, searchPillSelected)}>
+			<span data-search-name></span>
+			<span data-search-count class={searchCount}></span>
+		</button>
+	</template>
+	<template data-search-template="facet-group">
+		<div role="group" class={searchFilterRow}>
+			<span data-search-facet-label class={searchFilterLabel}></span>
+			<div data-search-facet-values class={searchPills}></div>
+		</div>
+	</template>
+	<template data-search-template="facet">
+		<button type="button" tabindex="0" aria-pressed="false" data-action="facet" class={cx(searchPill, searchPillSelected)}>
+			<span data-search-name></span>
+			<span data-search-count class={searchCount}></span>
+		</button>
+	</template>
+	<template data-search-template="loading">
+		<p class="m-0 px-3 py-2 text-muted">{strings.loading}</p>
+	</template>
+	<template data-search-template="empty">
+		<div class="grid justify-items-start gap-4 px-3 py-2">
+			<div class="grid justify-items-start gap-3">
+				<p data-search-empty-text class="m-0 font-medium text-pretty [overflow-wrap:anywhere]"></p>
+				<button type="button" tabindex="0" data-action="all-types" class={searchPill}>{strings.searchAllTypes}</button>
+			</div>
+			<div data-search-suggested-links class="grid gap-2">
+				<p data-search-suggested-label class={searchLabel}>{strings.suggested}</p>
+				<ul class="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0">
+					<li><a tabindex="0" class={textLink}></a></li>
+				</ul>
+			</div>
+		</div>
+	</template>
+	<template data-search-template="error">
+		<div class="grid justify-items-start gap-3 px-3 py-2">
+			<p class="m-0 font-medium text-pretty">{strings.unavailable}</p>
+			<button type="button" tabindex="0" data-action="retry" class={searchPill}>{strings.retry}</button>
+			<p data-search-browse-label class={searchLabel}>{strings.browse}</p>
+			<ul data-search-browse class="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0">
+				<li><a tabindex="0" class={textLink}></a></li>
+			</ul>
+		</div>
+	</template>
+	<template data-search-template="recent">
+		<div class="grid gap-2.5 px-3 py-2">
+			<p data-search-recent-label class={searchLabel}>{strings.recent}</p>
+			<ul class="m-0 flex list-none flex-wrap gap-1.5 p-0">
+				<li class="max-w-full"><button type="button" tabindex="0" data-action="recent" class={searchPill}></button></li>
+			</ul>
+		</div>
+	</template>
+</dialog>
+
+<script>
+	import { startBoot } from "@astronomic-dev/search/boot";
+	import { DIALOG, TRIGGER, bootConfig, keyHint, triggerKey } from "../lib/search-boot";
+
+	// Boot: until first use this only listens (hover, focus, a click or the shortcut), then loads lib/search-app.ts.
+	// It runs on every page with a search button, so it imports only the package's boot and lib/search-boot.ts (which
+	// imports nothing): one small file, no shared chunk (decision 0015, principle 7). The lazy app reads the config
+	// block strictly. The keys are those of the main button's dialog.
+	const config = (d: Element) => bootConfig(d.querySelector("script[data-search-config]")?.textContent);
+	const apple = /mac|iphone|ipad|ipod/i.test((navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform || navigator.platform || "");
+	function keys(): string[] {
+		const dialogs = [...document.querySelectorAll<HTMLDialogElement>(DIALOG)];
+		const first = dialogs[0];
+		if (!first) return [];
+		const site = config(first);
+		const main = document.querySelector(`${TRIGGER}[data-search-main]`) ?? document.querySelector(TRIGGER);
+		const dialog = main && dialogs.find((d) => triggerKey(d, site.index) === triggerKey(main, site.index));
+		return dialog ? config(dialog).keys : [];
+	}
+	// The key hint on the main button, if it draws as a field: "⌘K" or "Ctrl K".
+	function hints(list: string[]): void {
+		const main = document.querySelector(`${TRIGGER}[data-search-main]`) ?? document.querySelector(TRIGGER);
+		const text = keyHint(list, apple);
+		for (const hint of main?.querySelectorAll<HTMLElement>("[data-search-key-hint]") ?? []) {
+			hint.textContent = text;
+			hint.hidden = text === "";
+		}
+	}
+	// startBoot reads this array on each key press, so after a ClientRouter swap it is refilled with the new page's
+	// keys (a page whose dialog has shortcut={false} answers none; the next one may answer its own).
+	const list = keys();
+	hints(list);
+	document.addEventListener("astro:after-swap", () => {
+		list.splice(0, list.length, ...keys());
+		hints(list);
+	});
+	startBoot({ selector: TRIGGER, keys: list, load: () => import("../lib/search-app") });
+</script>

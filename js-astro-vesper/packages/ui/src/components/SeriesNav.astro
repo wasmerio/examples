@@ -1,0 +1,67 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing, touchBox } from "../lib/button";
+import { cn } from "../lib/cn";
+import { headingType } from "../lib/display";
+import type { SectionHeadingTag } from "../lib/heading";
+import { uid } from "../lib/id";
+
+/** One part of a series. */
+export interface SeriesPart {
+	title: string;
+	/** The part's page. Without it (not out yet), the title is plain text. */
+	href?: string;
+	/** Your own text, e.g. "Oct 16 · Members" or "Reading now". */
+	meta?: string;
+	/** The part on this page. One at most; two stop the build. */
+	current?: boolean;
+}
+
+export interface Props extends Omit<HTMLAttributes<"nav">, "title"> {
+	/** The series name, e.g. "The Last Diners". The nav's heading. */
+	title: string;
+	/** The series page. With it, the heading's name is a link. */
+	href?: string;
+	/** Text before the name, e.g. "Series". Shown with a middle dot. */
+	label?: string;
+	/** The parts in order. One or more: empty throws. Two current parts throw. */
+	parts: SeriesPart[];
+	/** Where this part sits. {part} and {total} are filled in. Default "Part {part} of {total}". Shown only with a current part. */
+	positionText?: string;
+	/** The heading element. Default h2. */
+	headingTag?: SectionHeadingTag;
+	/** For recipes: the list or the pager. */
+	listClass?: string;
+	class?: string;
+}
+
+/** A recipe's props: the shell's, less the one that sets the layout. */
+export type SeriesNavRecipeProps = Omit<Props, "listClass">;
+
+const { title, href, label, parts, positionText = "Part {part} of {total}", headingTag: Heading = "h2", listClass, class: className, ...rest } = Astro.props;
+if (parts.length === 0) throw new Error("SeriesNav: one part at least");
+const currents = parts.filter((p) => p.current).length;
+if (currents > 1) throw new Error("SeriesNav: one current part at most");
+const at = parts.findIndex((p) => p.current);
+const position = at < 0 ? undefined : positionText.replace("{part}", String(at + 1)).replace("{total}", String(parts.length));
+const headingId = uid("series");
+// The body is rendered first, so a recipe with nothing to show (a pager with one part) leaves no wrapper.
+const body = Astro.slots.has("default") ? (await Astro.slots.render("default")).trim() : "";
+// The series family's shell (decisions 0013, 0015): a <nav> named by its heading, so it is a navigation landmark of its
+// own. The heading: your label (muted) and a middle dot hidden from screen readers, then the series name (a link to the
+// series page with href); then the position line ("Part 2 of 4", from the one current part, small and muted); then the
+// default slot, where a recipe lays out the parts. The shell reads the parts only for the position. The nav is a named
+// container (series) for the recipes' queries.
+---
+
+<nav aria-labelledby={headingId} class={cn("@container/series grid gap-item font-body", className)} {...rest}>
+	<div class="grid gap-1">
+		<Heading id={headingId} class={cn("m-0 text-heading text-balance [overflow-wrap:anywhere]", headingType)}>
+			{label && <span class="text-muted">{label}</span>}
+			{label && <span aria-hidden="true"> · </span>}
+			{href ? <a href={href} class={cn("link-underline rounded-control pointer-coarse:inline-flex pointer-coarse:items-center", touchBox, focusRing)}>{title}</a> : title}
+		</Heading>
+		{position && <p data-series-position class="m-0 text-small text-muted">{position}</p>}
+	</div>
+	{body && <div data-series-body class={cn("min-w-0", listClass)} set:html={body} />}
+</nav>

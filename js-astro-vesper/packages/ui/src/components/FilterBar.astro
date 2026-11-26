@@ -1,0 +1,95 @@
+---
+import { cn } from "../lib/cn";
+import type * as Shell from "./Filters.astro";
+import Filters from "./Filters.astro";
+
+/** Every Filters prop but the hooks this recipe sets. */
+export interface FilterBarOptions extends Omit<Shell.FiltersOptions, "barClass" | "rowClass" | "fieldClass"> {}
+/** As Filters: modes need modesLabel (an Omit per member keeps that rule). */
+export type Props = Shell.Props extends infer P ? (P extends unknown ? Omit<P, "barClass" | "rowClass" | "fieldClass"> : never) : never;
+
+const { class: className, ...props } = Astro.props as Shell.Props;
+const dropdown = (props as Shell.FiltersOptions).dropdown === true;
+const hasActions = Astro.slots.has("actions");
+// The comp's filter bar, on the Filters shell (decision 0013: a recipe sets class hooks only). From a 72rem filters box
+// (@6xl/filters), one rounded row on the surface, its hairline a ring: the switch, each field as a cell, then "Clear"
+// and the actions slot. The cells grow to share the whole bar, the text box and a two-select range most, and when they
+// cannot all fit at their smallest the bar scrolls sideways inside its own box. Below that
+// box the row (the switch, the text, the selects) still grows to fill, and scrolls sideways inside its own rounded box
+// when it cannot, with an end fade only while there is more (scroll-fade; the script marks data-more), so the page
+// never scrolls; option-chip fields leave the row and sit on their own line under it, where their chips wrap; then
+// "Clear", the actions and the active-filter chips.
+// One rhythm: every cell is the same two lines, a small eyebrow label (its margin, not a gap, parts it from the control,
+// the same in a Field and a fieldset in every engine) over a control line one h-6 tall, 44px on touch. Every cell's
+// children move down by one offset, which centers the two lines in the cell's height, so every label is on one top line
+// and every value on one control line, whatever the part. An offset, not centering or a top margin or padding: a
+// fieldset's inner box does not fill a stretched fieldset, and WebKit keeps its legend at the very top. The bottom
+// padding keeps the same room under a taller touch control. The controls have no box of their own and fill the cell,
+// the chevron or search icon at its right edge, the cell's divider parting them. The switch, "Clear" and the actions
+// center on the bar instead.
+// The columns are locked: no value moves a cell. A native select is as wide as its widest option whatever is picked, so a
+// plain cell may fit it. A dropdown shows only its value, so with dropdown a cell's width comes from its kind (its basis,
+// its share of the free room, its smallest width), and a long value stops at an ellipsis inside its divider.
+const cell = cn(
+	"min-h-14 min-w-fit shrink-0 grow-2 basis-24 content-start gap-0 border-s-ui border-solid border-border px-4 pt-0 pb-2 first:border-s-0 [&>*]:relative [&>*]:top-2 [&>*]:min-w-16 [[data-filter-switch]+&]:border-s-0 @6xl/filters:shrink",
+	// The quiet label: small, wide-set, upper case, muted, one line.
+	"[&>label]:mb-1 [&>label]:text-filter-label [&>label]:font-semibold [&>label]:tracking-filter-label [&>label]:whitespace-nowrap [&>label]:text-muted [&>label]:uppercase",
+	"[&>legend]:mb-1 [&>legend]:text-filter-label [&>legend]:font-semibold [&>legend]:tracking-filter-label [&>legend]:whitespace-nowrap [&>legend]:text-muted [&>legend]:uppercase",
+	// The controls: one line tall, no box, in the value's type, room at the end for the icon, which sits at the cell's edge.
+	// The box runs a little past the text at the start, so the focus ring, tight on the line, clears the text.
+	"[&_select]:-ms-1.5 [&_select]:h-6 [&_select]:w-auto [&_select]:border-0 [&_select]:bg-transparent [&_select]:ps-1.5 [&_select]:pe-6 [&_select]:focus-visible:outline-offset-0",
+	"[&_input[type=search]]:-ms-1.5 [&_input[type=search]]:h-6 [&_input[type=search]]:w-full [&_input[type=search]]:border-0 [&_input[type=search]]:bg-transparent [&_input[type=search]]:ps-1.5 [&_input[type=search]]:pe-6 [&_input[type=search]]:text-ellipsis [&_input[type=search]]:focus-visible:outline-offset-0",
+	"[&_select+span]:end-0 [&_input[type=search]+span]:end-0 [&_input[type=search]+span]:inline-flex",
+	"[&_[data-filter-ends]]:gap-3 [&_[data-filter-ends]_select]:w-full",
+	// The text box and a two-select range get the most room. The text box gives it back first, on a tight bar.
+	"data-[filter-field=q]:min-w-36 data-[filter-field=q]:grow-3 data-[filter-field=q]:basis-60",
+	"data-[filter=range]:min-w-56 data-[filter=range]:grow-4 data-[filter=range]:basis-48",
+	// A toggle is a cell too: its whole label is the target, its name on the label line, its box on the control line.
+	"data-[filter=toggle]:items-stretch data-[filter=toggle]:[&>label]:mb-0 data-[filter=toggle]:[&>label]:flex-col-reverse data-[filter=toggle]:[&>label]:items-start data-[filter=toggle]:[&>label]:justify-end data-[filter=toggle]:[&>label]:gap-1 data-[filter=toggle]:[&_input]:my-0.5",
+	// Option chips: under the row on a narrow box (full width, no divider); a cell in the row in the bar, its chips one
+	// control line tall (a touch screen keeps its 44px chips).
+	"data-[filter=options]:min-h-0 data-[filter=options]:min-w-0 data-[filter=options]:basis-auto data-[filter=options]:border-s-0 data-[filter=options]:px-0 data-[filter=options]:pb-0 data-[filter=options]:[&>*]:top-0",
+	"@6xl/filters:data-[filter=options]:min-h-14 @6xl/filters:data-[filter=options]:border-s-ui @6xl/filters:data-[filter=options]:px-4 @6xl/filters:data-[filter=options]:pb-2 @6xl/filters:data-[filter=options]:[&>*]:top-2",
+	"@6xl/filters:[&_[data-filter-options]]:gap-1.5 @6xl/filters:not-pointer-coarse:[&_[data-filter-options]>label]:min-h-6 @6xl/filters:not-pointer-coarse:[&_[data-filter-options]>label]:px-2.5 @6xl/filters:not-pointer-coarse:[&_[data-filter-options]>label]:py-0",
+);
+// With dropdown, a cell is a Popover's trigger, all of it the button: the cell gives up its padding and offset to the
+// trigger, whose label and value then fall on the same two lines as the other cells'. It is filled on hover and while
+// open, and its ring sits inside the cell. A picker select fills its cell, since a base-select is only as wide as what it shows.
+// A cell whose field is set (filter-set: read from its controls, so no script keeps it) has an accent label and a thin
+// underline, which lets clicks through and carries the state where the color alone would not.
+const dropdownCell = cn(
+	// One line of words where a two-select range has two boxes, and a choice's trigger words need a little more than a select's.
+	"min-w-28 data-[filter=range]:min-w-48 data-[filter=choices]:min-w-36 data-[filter=toggle]:min-w-fit",
+	// A long label stops at an ellipsis too. A toggle's stays whole: it has a set width, and its box's focus ring is inside the label.
+	"not-data-[filter=toggle]:[&>label]:truncate",
+	"relative filter-set:[&>label]:text-accent filter-set:[&>legend]:text-accent filter-set:[&_[data-popover-trigger]>[data-filter-label]]:text-accent",
+	"filter-set:after:pointer-events-none filter-set:after:absolute filter-set:after:inset-x-4 filter-set:after:bottom-1.5 filter-set:after:h-0.5 filter-set:after:bg-accent filter-set:after:content-['']",
+	"data-[filter-dropdown]:p-0 data-[filter-dropdown]:[&>*]:static [&_select.select-picker]:w-full [&_select.select-picker]:truncate",
+	"[&_[data-popover-trigger]]:min-h-14 [&_[data-popover-trigger]]:content-start [&_[data-popover-trigger]]:gap-0 [&_[data-popover-trigger]]:px-4 [&_[data-popover-trigger]]:pt-2 [&_[data-popover-trigger]]:pb-1 pointer-coarse:[&_[data-popover-trigger]]:pb-0 [&_[data-popover-trigger]]:hover:bg-bg [&_[data-popover-trigger]]:aria-expanded:bg-bg [&_[data-popover-trigger]]:focus-visible:-outline-offset-2 motion-ok:[&_[data-popover-trigger]]:transition-colors",
+	"[&_[data-popover-trigger]>[data-filter-label]]:mb-1 [&_[data-popover-trigger]>[data-filter-label]]:text-filter-label [&_[data-popover-trigger]>[data-filter-label]]:leading-none [&_[data-popover-trigger]>[data-filter-label]]:font-semibold [&_[data-popover-trigger]>[data-filter-label]]:tracking-filter-label [&_[data-popover-trigger]>[data-filter-label]]:whitespace-nowrap [&_[data-popover-trigger]>[data-filter-label]]:text-muted [&_[data-popover-trigger]>[data-filter-label]]:uppercase",
+	"[&_[data-filter-value]]:h-6 [&_[data-filter-value]]:rounded-none [&_[data-filter-value]]:border-0 [&_[data-filter-value]]:bg-transparent [&_[data-filter-value]]:ps-0 [&_[data-filter-value]]:pe-6 [&_[data-filter-value]>span+span]:end-0",
+);
+---
+
+<Filters
+	{...props}
+	class={className}
+	barClass={cn(
+		"flex-col flex-nowrap items-stretch gap-3 [&>[data-filters-actions]]:self-start [&>[data-filters-clear]]:self-start",
+		"@6xl/filters:flex-row @6xl/filters:gap-0 @6xl/filters:overflow-x-auto @6xl/filters:rounded-card @6xl/filters:bg-surface @6xl/filters:p-1.5 @6xl/filters:ring-ui @6xl/filters:ring-border",
+		// "Clear" and the actions at the right end, centered on the bar. Its room stays while it is hidden, so it moves nothing when it comes.
+		"@6xl/filters:[&>[data-filters-clear]]:ms-2.5 @6xl/filters:[&>[data-filters-clear]]:h-11.5 @6xl/filters:[&>[data-filters-clear]]:self-center @6xl/filters:[&>[data-filters-clear]]:px-3",
+		"@6xl/filters:[&>[data-filters-clear][hidden]+[data-filters-clear-room]]:inline-flex @6xl/filters:[&>[data-filters-clear-room]]:ms-2.5 @6xl/filters:[&>[data-filters-clear-room]]:h-11.5 @6xl/filters:[&>[data-filters-clear-room]]:self-center @6xl/filters:[&>[data-filters-clear-room]]:px-3",
+		"@6xl/filters:[&>[data-filters-actions]]:ms-1.5 @6xl/filters:[&>[data-filters-actions]]:shrink-0 @6xl/filters:[&>[data-filters-actions]]:self-center @6xl/filters:[&>[data-filters-actions]>*]:h-11.5",
+	)}
+	rowClass={cn(
+		// A border, not the bar's ring: scroll-fade's mask would cut a ring.
+		"shrink-0 flex-nowrap items-stretch gap-0 rounded-card border-ui border-solid border-border bg-surface p-1.5 scroll-fade not-data-more:mask-none",
+		// The switch centered on the bar: a quiet pill on the page's color, its hairline the bar's.
+		"[&>[data-filter-switch]]:ms-1 [&>[data-filter-switch]]:me-2 [&>[data-filter-switch]]:self-center [&>[data-filter-switch]>div]:border-border [&>[data-filter-switch]>div]:bg-bg [&>[data-filter-switch]_label]:min-w-16 [&>[data-filter-switch]_label]:text-control",
+		"@6xl/filters:contents @6xl/filters:overflow-visible @6xl/filters:mask-none",
+	)}
+	fieldClass={dropdown ? cn(cell, dropdownCell) : cell}
+>
+	{hasActions && <slot name="actions" slot="actions" />}
+</Filters>

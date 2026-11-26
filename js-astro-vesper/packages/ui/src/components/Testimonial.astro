@@ -1,0 +1,99 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import { headingType } from "../lib/display";
+import type { ItemHeadingTag } from "../lib/heading";
+import type { UiImage } from "../lib/image";
+import Avatar from "./Avatar.astro";
+import Emphasis from "./Emphasis.astro";
+
+// The item fields sit in Props itself, not in a base type it extends: the props parser reads one base, an imported
+// sibling's Props, so a second base would drop them from the props table.
+export interface Props extends Omit<HTMLAttributes<"figure">, "role" | "title"> {
+	/** Plain text. */
+	quote: string;
+	/** For recipes: turn one *phrase* in the quote into <em> (lib/emphasis.ts). Off by default: the quote shows as typed. */
+	emphasis?: boolean;
+	name: string;
+	role?: string;
+	company?: string;
+	/**
+	 * Short facts about the person, shown in place of role and company, such as the town and the service ["Oak Park",
+	 * "Lawn care"]. They show joined with a dot, which a screen reader skips; it hears a comma.
+	 */
+	meta?: string[];
+	/** Photo of the person. Without it, initials show. `false` hides the avatar. */
+	avatar?: UiImage | false;
+	/** A short title above the quote, e.g. "Launched in three weeks". */
+	title?: string;
+	/** The title element. Required, as FeatureItem's and StepItem's: a part never guesses the outline (decision 0013); a recipe passes childHeadingTag(...) (lib/heading.ts). */
+	headingTag: ItemHeadingTag;
+	/** The alignment of the quote and the caption. */
+	align?: "start" | "center";
+	/** page (default) or inverse: the name and byline in the inverse surface's colors (Panel tone="inverse"). */
+	tone?: "page" | "inverse";
+	/** For recipes: the quote's type role and face, after its own classes: text-quote and display type for one large quote, text-lead text-pretty (the body face) in a card. */
+	quoteClass?: string;
+	class?: string;
+}
+
+/** One quote's content: the words, the person, an optional title (TestimonialGrid's items). */
+export type TestimonialItem = Pick<Props, "quote" | "name" | "role" | "company" | "meta" | "avatar" | "title">;
+
+const { quote, emphasis = false, name, role, company, meta, avatar, title, headingTag: Title, align = "start", tone = "page", quoteClass, class: className, ...rest } = Astro.props;
+const center = align === "center";
+const facts = (meta ?? []).map((fact) => String(fact ?? "").trim()).filter(Boolean);
+const byline = facts.length ? "" : [role, company].filter(Boolean).join(", ");
+// The named slots are rendered first, so an empty one (a recipe passes its slots on in an expression, which always
+// fills them) counts as none: the initials show, and no logo box is left.
+const avatarSlot = Astro.slots.has("avatar") ? (await Astro.slots.render("avatar")).trim() : "";
+const logo = Astro.slots.has("logo") ? (await Astro.slots.render("logo")).trim() : "";
+const head = Astro.slots.has("head") ? (await Astro.slots.render("head")).trim() : "";
+// The testimonials family's item (decision 0013): one <figure>, the order title, quote, caption. The quote is at the
+// narrow lead width, in the body face and the role the recipe sets (body unless it says); only a recipe that makes the
+// quote the lead text (TestimonialQuote) passes display type, so in a card the title leads. The caption is the name,
+// then the role and company; at the start, that block takes the row's free space, so a long byline wraps beside the
+// avatar and the block drops under it only below 10rem. Centered, the avatar and the name block center as a group, but
+// the name and byline stay flush left beside the avatar, so the two lines start on one edge. The avatar sits in an
+// aria-hidden box, since the name is written next to it, so an image slotted with alt text never reads the name twice.
+// The logo (a company mark) ends the caption. The caption takes any free height above it (mt-auto), so when a recipe
+// makes the figure a tall column, the person sits on the bottom edge. Two opt-ins: meta, short facts in place of role
+// and company ("Oak Park · Lawn care"), the dots hidden from a screen reader, which hears a comma; and a head slot, a
+// line above the title and the quote, such as a rating and its source (an empty one leaves no box).
+const bylineColor = tone === "inverse" ? "text-on-inverse-muted" : "text-muted";
+---
+
+<figure data-testimonial class={cn("m-0 grid min-w-0 content-start gap-blocks", center && "justify-items-center text-center", className)} {...rest}>
+	{head && <div data-testimonial-head class={cn("flex flex-wrap items-center gap-item", center && "justify-center")} set:html={head} />}
+	{title && <Title class={cn("m-0 text-heading text-balance", headingType)}>{title}</Title>}
+	<blockquote class={cn("m-0 max-w-lead-narrow text-body text-balance", quoteClass)}>
+		<p class="m-0"><Emphasis text={quote} enabled={emphasis} /></p>
+	</blockquote>
+	<figcaption class={cn("mt-auto flex flex-wrap items-center gap-item text-body", center && "justify-center")}>
+		{
+			(avatarSlot || avatar !== false) && (
+				<span data-testimonial-avatar aria-hidden="true" class="flex">
+					{avatarSlot ? <Fragment set:html={avatarSlot} /> : <Avatar name={name} image={avatar || undefined} decorative />}
+				</span>
+			)
+		}
+		<span class={cn("grid gap-0.5 text-start", !center && "min-w-0 grow basis-40")}>
+			<span class={cn("font-semibold", tone === "inverse" ? "text-on-inverse" : "text-fg")}>{name}</span>
+			{byline && <span data-testimonial-byline class={cn("text-pretty", bylineColor)}>{byline}</span>}
+			{
+				facts.length > 0 && (
+					<span data-testimonial-byline class={cn("text-pretty", bylineColor)}>
+						{facts.map((fact, i) => (
+							<Fragment>
+								{i > 0 && <span aria-hidden="true">{" · "}</span>}
+								{i > 0 && <span class="sr-only">{", "}</span>}
+								{fact}
+							</Fragment>
+						))}
+					</span>
+				)
+			}
+		</span>
+		{logo && <span data-testimonial-logo class={cn("flex", !center && "ms-auto")} set:html={logo} />}
+	</figcaption>
+</figure>

@@ -1,0 +1,152 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { stretchedLink } from "../lib/card";
+import { cn } from "../lib/cn";
+import { listingPriceType } from "../lib/display";
+import type { ImageComponent, MediaRatio } from "../lib/image";
+import type { ListingField } from "../lib/listing";
+import { listingCardView, type ListingCardData } from "../lib/listing-card";
+import Badge from "./Badge.astro";
+import Card from "./Card.astro";
+import FactStrip from "./FactStrip.astro";
+import Media from "./Media.astro";
+import SaveButton from "./SaveButton.astro";
+
+export type { ListingCardData } from "../lib/listing-card";
+
+export interface Props extends Omit<HTMLAttributes<"article">, "title"> {
+	/** The listing: plain data (lib/listing-card.ts), the same a search fills in the browser. */
+	listing: ListingCardData;
+	/** Your fields list: the fact strip shows the fields with card not false that have a value. */
+	fields: ListingField[];
+	/** The mode ("buy", "rent"): the fact labels and values follow each field's labels and period for it. */
+	mode?: string;
+	/** Shows the SaveButton on the photo. */
+	save?: boolean;
+	/** The SaveButton's list: the storage key is "astronomic:saved:<saveList>". */
+	saveList?: string;
+	/** Element for the title. */
+	headingTag?: "h2" | "h3" | "h4";
+	/** Your image component, for a card the server renders alone (a home page grid). A search's cards use the plain <img> with the listing's srcset. */
+	imageComponent?: ImageComponent;
+	/** How wide the photo shows, as its sizes attribute, for the listing's srcset or your image component. */
+	imageSizes?: string;
+	/** The photo's frame, width/height. */
+	ratio?: MediaRatio;
+	/** Classes for the photo's box (the status and badge sit on it). */
+	mediaClass?: string;
+	/** Classes for the text column: the price line, the title, the address, the facts and the foot line. */
+	bodyClass?: string;
+	/** Classes for the price line (the amount, "/mo" and the note). */
+	priceClass?: string;
+	/** Classes for the note after the price. */
+	priceNoteClass?: string;
+	/** Classes for the title. */
+	titleClass?: string;
+	/** Classes for the fact strip. */
+	factsClass?: string;
+	/** Classes for the foot line. */
+	footClass?: string;
+	class?: string;
+}
+
+const {
+	listing,
+	fields,
+	mode,
+	save = true,
+	saveList,
+	headingTag: Heading = "h3",
+	imageComponent,
+	imageSizes,
+	ratio = "3/2",
+	mediaClass,
+	bodyClass,
+	priceClass,
+	priceNoteClass,
+	titleClass,
+	factsClass,
+	footClass,
+	class: className,
+	...rest
+} = Astro.props;
+const view = listingCardView(listing, fields, mode);
+// The listing card family's shell (decisions 0013, 0015) on the Card shell: an <article> that is one link (the title,
+// stretchedLink: its ::after covers the card) and a named container (listing-card), so a recipe's layout sizes to the
+// card. Order: the photo (Media, lazy, 3/2) with the status (top start) and the badge
+// (bottom start) on it; then the price line ("/mo" and the note in quieter spans), the title, the address, the fact
+// strip (your fields list) and the foot line. Missing parts leave no empty box. The Save button comes last in the page
+// order, so Tab reaches the title link first, then Save; the card is a grid, and Save shares the photo's cell, at its
+// top end, above the link. Every text comes from listingCardView() (lib/listing-card.ts), which the browser fill reads
+// too, and every part a fill sets or removes has a data-listing-* hook. The price is one flat size (listingPriceType)
+// at every card width, and the title is the body face, so a card's text reads as one column of a list.
+---
+
+<Card
+	as="article"
+	class={cn(
+		"group/listing-card relative @container/listing-card grid grid-cols-1 content-start [&>[data-card-media]]:col-start-1 [&>[data-card-media]]:row-start-1",
+		className,
+	)}
+	data-listing-card=""
+	data-listing-id={view.id}
+	{...rest}
+>
+	<Fragment slot="media">
+		<div data-listing-media class={cn("relative", mediaClass)}>
+			<Media
+				src={view.image.src}
+				alt={view.image.alt}
+				width={view.image.width}
+				height={view.image.height}
+				srcset={view.image.srcset ?? undefined}
+				sizes={imageSizes}
+				ratio={ratio}
+				imageComponent={imageComponent}
+			/>
+			{view.status && <Badge data-listing-status="" class="absolute start-2.5 top-2.5">{view.status}</Badge>}
+			{view.badge && <Badge data-listing-badge="" class="absolute start-2.5 bottom-2.5">{view.badge}</Badge>}
+		</div>
+	</Fragment>
+	<div data-listing-body class={cn("grid min-w-0 content-start", bodyClass)}>
+		{
+			(view.amount || view.priceNote) && (
+				<p data-listing-price class={cn("m-0 flex flex-wrap items-baseline gap-x-1.5 gap-y-1", priceClass)}>
+					{view.amount && (
+						<span data-listing-amount class={listingPriceType}>
+							{view.amount}
+						</span>
+					)}
+					{view.period && (
+						<span data-listing-period class="text-small text-muted">
+							{view.period}
+						</span>
+					)}
+					{view.priceNote && (
+						<span data-listing-price-note class={cn("text-small text-muted", priceNoteClass)}>
+							{view.priceNote}
+						</span>
+					)}
+				</p>
+			)
+		}
+		<Heading class={cn("m-0 mt-2.5 font-body text-heading leading-tight font-medium text-balance [overflow-wrap:anywhere]", titleClass)}>
+			<a data-listing-link href={view.href} class={stretchedLink}>{view.title}</a>
+		</Heading>
+		{view.address && <p data-listing-address class="m-0 mt-0.5 text-small text-pretty text-muted [overflow-wrap:anywhere]">{view.address}</p>}
+		<FactStrip data-listing-facts="" fields={fields} values={listing.values ?? {}} mode={mode} class={cn("mt-4", factsClass)} />
+		{
+			(view.footStart || view.footEnd) && (
+				<p data-listing-foot class={cn("m-0 mt-3 flex flex-wrap justify-between gap-x-3 gap-y-1 text-eyebrow text-muted tabular-nums", footClass)}>
+					{view.footStart && <span data-listing-foot-start>{view.footStart}</span>}
+					{view.footEnd && (
+						<span data-listing-foot-end class="text-end">
+							{view.footEnd}
+						</span>
+					)}
+				</p>
+			)
+		}
+	</div>
+	{save && <SaveButton id={view.id} title={view.title} list={saveList} class="relative z-10 col-start-1 row-start-1 m-2 self-start justify-self-end" />}
+</Card>

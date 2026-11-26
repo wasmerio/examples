@@ -1,0 +1,92 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import { errorId, hintId } from "../lib/field";
+import Icon from "./Icon.astro";
+
+export type FieldTone = "page" | "band" | "cta";
+
+export interface Props extends HTMLAttributes<"div"> {
+	label: string;
+	/** Id of the control in the slot. Links the label, hint and error to it. */
+	for: string;
+	hint?: string;
+	/** Error text. Also set `invalid` on the control. */
+	error?: string;
+	/** Shows a required marker. Also set `required` on the control. */
+	required?: boolean;
+	/**
+	 * The surface the Field sits on (decision 0015 §2), which sets its text colors and focus ring.
+	 * `page` (default): the page's colors, the error in red. `band`: a `surface-band` area, the band when a preset sets
+	 * `--ui-band`, else the page (the band's text colors and focus ring). `cta`: the CTA band, always a band (its text
+	 * color and focus ring). On `band` and `cta` the error is in the band's text color with a warning icon, since no
+	 * red reads on every band. The control in the slot keeps its own fill, so its red edge still shows.
+	 */
+	tone?: FieldTone;
+	/**
+	 * Render the error node up front, empty and hidden, so a script can fill it (Form's enhance="fetch"). Off by
+	 * default: a plain form does not change. With error set, the node shows as before.
+	 */
+	errorSlot?: boolean;
+	/** Keep the label for screen readers only, when the heading beside the field already says what it is for. */
+	labelHidden?: boolean;
+	class?: string;
+}
+
+const {
+	label,
+	for: id,
+	hint,
+	error,
+	required = false,
+	tone = "page",
+	errorSlot = false,
+	labelHidden = false,
+	class: className,
+	...rest
+} = Astro.props;
+// Each tone's text colors, and the focus utility on the root, which styles the control inside: on a band the
+// kit's accent ring would vanish on an accent band. The label is the body role, the hint and error the small role.
+const TONE = {
+	page: { root: "", label: "text-fg", hint: "text-muted", marker: "text-muted", error: "text-danger" },
+	band: { root: "focus-on-band", label: "text-on-band", hint: "text-on-band-muted", marker: "text-on-band-muted", error: "text-on-band" },
+	cta: { root: "focus-on-cta", label: "text-band-fg", hint: "text-band-fg", marker: "text-band-fg", error: "text-band-fg" },
+} satisfies Record<FieldTone, Record<string, string>>;
+const t = TONE[tone];
+// The script's hooks, only with errorSlot: a Field without it renders as before.
+const hook = errorSlot ? id : undefined;
+---
+
+<div class={cn("grid content-start gap-1.5 font-body", t.root, className)} {...rest}>
+	<label for={id} class={cn("text-body font-medium", t.label, labelHidden && "sr-only")}>
+		{label}
+		{required && <span aria-hidden="true" class={t.marker}> *</span>}
+	</label>
+	<slot />
+	{hint && <p id={hintId(id)} class={cn("m-0 text-small text-pretty", t.hint)}>{hint}</p>}
+	{/* The error node. With errorSlot it is there from the start, empty and hidden, for Form's script: the script finds it
+	   by data-field-error (the control's id) and writes into data-field-error-text. The id stays errorId(id), for the
+	   control's aria-describedby. Without errorSlot neither hook is set, so a plain Field renders as before. */}
+	{
+		(error || errorSlot) &&
+			(tone === "page" ? (
+				<p id={errorId(id)} data-field-error={hook} data-field-error-text={errorSlot ? "" : undefined} hidden={!error} class={cn("m-0 text-small font-medium text-pretty", t.error)}>
+					{error}
+				</p>
+			) : (
+				<p id={errorId(id)} data-field-error={hook} hidden={!error} class={cn("m-0 flex gap-1.5 text-small font-medium text-pretty", t.error)}>
+					{/* The icon box is one line tall, so the icon sits on the middle of the first line. */}
+					<span class="flex h-lh shrink-0 items-center">
+						<Icon size="sm">
+							<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M8.6 3.4 2.3 14.6A1.6 1.6 0 0 0 3.7 17h12.6a1.6 1.6 0 0 0 1.4-2.4L11.4 3.4a1.6 1.6 0 0 0-2.8 0z" />
+								<path d="M10 7.5v4" />
+								<path d="M10 14.25h.01" />
+							</svg>
+						</Icon>
+					</span>
+					<span data-field-error-text={errorSlot ? "" : undefined}>{error}</span>
+				</p>
+			))
+	}
+</div>

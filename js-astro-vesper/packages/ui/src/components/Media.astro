@@ -1,0 +1,101 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import { imageAttrs, type CutCorner, type FocalPoint, type ImageComponent, type ImageSource, type MediaRatio } from "../lib/image";
+import { mediaFrame } from "../lib/media-frame";
+
+export interface Props extends Omit<HTMLAttributes<"figure">, "children"> {
+	/** The image: a URL, or Astro's imported image metadata (its width and height are used too). */
+	src: ImageSource;
+	/** Required. Describe the image; use `""` when it is only decoration. */
+	alt: string;
+	/** The frame's shape, `width/height`. The image fills it and is cropped (`object-fit: cover`). */
+	ratio?: MediaRatio;
+	/**
+	 * The frame's shape: `"rect"` (default), `"circle"` or `"cut"`. A circle is always square: it sets the ratio to
+	 * 1/1, and `ratio` and `ratioClass` are not used. A cut slices one corner off (see `cutCorner`), with softly rounded
+	 * joins; any ratio works. The slice is 45° when both sides are at least twice the cut size; on a smaller frame the
+	 * cut stops at half of each side, so its slope is shallower. Its size and rounding are the tokens `--ui-cut-size`
+	 * and `--ui-cut-r`. A cut frame has no edge and no shadow (the clip would cut them); the dim stays.
+	 */
+	shape?: "rect" | "circle" | "cut";
+	/**
+	 * With `shape="cut"`: the corner to cut, in the writing direction (`start` is the left in left to right and the
+	 * right in right to left). Default: `"top-end"`. Ignored without `shape="cut"`, with a warning in dev.
+	 */
+	cutCorner?: CutCorner;
+	/**
+	 * Classes for the frame's shape in place of `ratio`, such as `aspect-[4/3] md:aspect-video` for a shape that
+	 * changes with the width. When set, the image has no inline ratio, and `ratio` is not used.
+	 */
+	ratioClass?: string;
+	/**
+	 * The point of the image to keep in view when the frame crops it, as CSS `object-position`: one or two parts,
+	 * each a keyword (`left`, `center`, `right`, `top`, `bottom`) or a percentage, like `"50% 30%"` or `"top"`.
+	 * Default: the center.
+	 */
+	focalPoint?: FocalPoint;
+	/** A short line under the image, in muted text. The whole is then a `<figure>` with a `<figcaption>`. */
+	caption?: string;
+	/** `"lazy"` (default) or `"eager"`, for an image near the top of the page. */
+	loading?: "lazy" | "eager";
+	/** `"high"` for the page's largest image (a post's header photo), so the browser fetches it first. Passed to your image component too. */
+	fetchpriority?: "high" | "low" | "auto";
+	/** The file's size, so the browser keeps the space before it loads. Default: the source's own. */
+	width?: number;
+	height?: number;
+	/**
+	 * Your own image component (Astro's <Image>, or a small wrapper for your CMS), so the photo gets your srcset. The
+	 * frame (the ratio, corners, edge, dim and fill) then sits on a box around it, and the component gets src as you
+	 * gave it, alt, width, height, loading, decoding, sizes, a class that fills the box, and style with only the focal point
+	 * (ImageComponentProps in lib/image.ts). Forward style to the <img> if you use focalPoint.
+	 */
+	imageComponent?: ImageComponent;
+	/** How wide the image shows, as the sizes attribute, for imageComponent's srcset or srcset. The plain <img> ignores it without srcset. */
+	sizes?: string;
+	/**
+	 * Ready image candidates for the plain <img> ("/a-400.webp 400w, /a-800.webp 800w"), such as a CMS's or getImage()'s
+	 * URLs, when there is no image component (a card a script fills in the browser cannot run one). It then also writes
+	 * sizes. Not used with imageComponent, which makes its own.
+	 */
+	srcset?: string;
+	class?: string;
+}
+
+const { src, alt, ratio = "16/9", shape = "rect", cutCorner, ratioClass, focalPoint, caption, loading = "lazy", fetchpriority, width, height, imageComponent: Image, sizes, srcset, class: className, ...rest } = Astro.props;
+const image = imageAttrs(src, width, height);
+const hasCaption = Boolean(caption) || Astro.slots.has("caption");
+const Tag = hasCaption ? "figure" : "div";
+// The frame (lib/media-frame.ts, shared with VideoMedia): the ratio, corners, edge, dim and fill, the circle and the
+// cut. With imageComponent the frame classes and the ratio move to a box (data-media-frame) and the caller's component
+// draws the photo inside it, filling and covering the box; only the focal point reaches the component, so the frame
+// never depends on it forwarding style.
+const { frameClass, ratioStyle, focalStyle, corner } = mediaFrame({ shape, cutCorner, ratio, ratioSet: Astro.props.ratio !== undefined, ratioClass, focalPoint, part: "Media", dev: import.meta.env.DEV });
+const style = [ratioStyle, focalStyle].filter(Boolean).join("; ") || undefined;
+---
+
+<Tag class={cn("m-0 grid min-w-0 content-start gap-item", className)} {...rest}>
+	{
+		Image ? (
+			<div data-media-frame data-cut={corner} style={ratioStyle} class={cn("overflow-hidden", frameClass)}>
+				<Image src={src} alt={alt} width={image.width} height={image.height} loading={loading} fetchpriority={fetchpriority} decoding="async" sizes={sizes} class="block size-full object-cover" style={focalStyle} />
+			</div>
+		) : (
+			<img
+				src={image.src}
+				alt={alt}
+				width={image.width}
+				height={image.height}
+				loading={loading}
+				fetchpriority={fetchpriority}
+				decoding="async"
+				srcset={srcset || undefined}
+				sizes={srcset ? sizes : undefined}
+				style={style}
+				data-cut={corner}
+				class={cn("block h-auto w-full max-w-full object-cover", frameClass)}
+			/>
+		)
+	}
+	{hasCaption && <figcaption class="text-small text-pretty text-muted">{Astro.slots.has("caption") ? <slot name="caption" /> : caption}</figcaption>}
+</Tag>

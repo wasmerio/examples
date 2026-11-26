@@ -1,0 +1,106 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing, touchBox } from "../lib/button";
+import { optionChip, optionChipCheck, optionChipInput } from "../lib/chip";
+import { cn } from "../lib/cn";
+import { filterDropdownClasses as drop } from "../lib/field";
+import { FILTERS_TEXTS } from "../lib/filters";
+import { uid } from "../lib/id";
+import { fieldAnyText, fieldLabel, type ListingField } from "../lib/listing";
+import { POPOVER_TEXTS, choicesText } from "../lib/popover";
+import Field from "./Field.astro";
+import Icon from "./Icon.astro";
+import Popover from "./Popover.astro";
+import PopoverOption from "./PopoverOption.astro";
+import Select from "./Select.astro";
+
+export interface Props extends HTMLAttributes<"div"> {
+	/** A choice field (kind "choice") or a toggle (kind "toggle") from your fields list. */
+	field: ListingField;
+	/** The mode whose label shows (labels per mode). */
+	mode?: string;
+	/** The picked option values. */
+	value?: string[];
+	/** A toggle: checked. */
+	checked?: boolean;
+	/** The one select's empty first option, which means any ("Any"). The field's own anyText wins. */
+	anyText?: string;
+	/** Draws the field as a dropdown: one choice as a Select with picker, several as checkboxes in a Popover. A toggle stays a checkbox. Same names and values. */
+	dropdown?: boolean;
+	/** A dropdown's words for two or more choices; {n} is the count. The field's own countText wins. */
+	countText?: string;
+	/** The select's, the first checkbox's or a Popover trigger's id. Default: a page-unique id. */
+	id?: string;
+	class?: string;
+}
+
+const { field, mode, value = [], checked = false, anyText = FILTERS_TEXTS.anyText, dropdown = false, countText = POPOVER_TEXTS.countText, id = uid("filters"), class: className, ...rest } = Astro.props;
+const label = fieldLabel(field, mode);
+const options = field.options ?? [];
+// A choice field in one of two ways, by the field's multiple:
+// - without it, one native select (Field + Select) with an empty first option for any. Never a native multiple
+//   select, which is hard to use with a mouse.
+// - with it, option chips (lib/chip.ts, optionChip): a fieldset of native checkboxes, each visually hidden inside its
+//   label, drawn as a pill in the pill token's corners. At rest the page Button's outline colors, checked its filled
+//   colors and a check icon (so the state is not color alone). Each chip is its own Tab stop and toggles with Space, as a checkbox does; the focus ring is on the
+//   chip. The chips wrap onto new lines at any width (flex-wrap) and never scroll on their own.
+// A toggle is one native checkbox with its label.
+// The label carries data-filter-label, so the script can swap it with the mode (labels per mode).
+// With dropdown, one choice is the same Field and Select, with picker. Several are the same checkboxes in a Popover: the
+// trigger holds the label over the words for what is picked, and its name is both, so no Field's label points at it (a
+// label would replace the button's words). The panel's own name says what the list is, so it needs no group.
+const labelClass = "text-body font-medium text-fg";
+const chip = optionChip();
+const anyWords = fieldAnyText(field, mode, anyText);
+const count = field.countText ?? countText;
+const pickedLabels = options.filter((o) => value.includes(o.value)).map((o) => o.label);
+const triggerText = choicesText(pickedLabels, { anyText: anyWords, countText: count });
+---
+
+{
+	dropdown && field.kind === "choice" && field.multiple ? (
+		<div data-filter-field={field.key} data-filter="choices" data-filter-dropdown class={cn("grid min-w-0 content-start", className)} {...rest}>
+			<Popover id={id} label={label} summary="choices" anyText={anyWords} countText={count} triggerText={triggerText} class={drop.root} triggerClass={drop.trigger}>
+				<Fragment slot="trigger">
+					<span data-filter-label={field.key} class={drop.label}>{label}</span>
+					<span data-filter-value class={drop.value}>
+						<span data-popover-text class={drop.text}>{triggerText}</span>
+						<Icon size="sm" class={drop.chevron}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4" /></svg></Icon>
+					</span>
+				</Fragment>
+				{options.map((option) => <PopoverOption type="checkbox" name={field.key} value={option.value} checked={value.includes(option.value)} data-filter-key={field.key}>{option.label}</PopoverOption>)}
+			</Popover>
+		</div>
+	) : field.kind === "toggle" ? (
+		<div data-filter-field={field.key} data-filter="toggle" class={cn("flex items-center", className)} {...rest}>
+			<label class={cn("inline-flex cursor-pointer items-center gap-2.5", labelClass, touchBox)}>
+				<input id={id} type="checkbox" name={field.key} value="1" checked={checked} data-filter-key={field.key} class={cn("size-5 shrink-0 accent-accent", focusRing)} />
+				<span data-filter-label={field.key}>{label}</span>
+			</label>
+		</div>
+	) : field.multiple ? (
+		<fieldset data-filter-field={field.key} data-filter="options" class={cn("m-0 grid min-w-0 content-start gap-1.5 border-0 p-0", className)} {...rest}>
+			<legend data-filter-label={field.key} class={cn("float-start mb-1.5 w-full p-0", labelClass)}>
+				{label}
+			</legend>
+			<div data-filter-options class="flex flex-wrap gap-2">
+				{options.map((option, i) => (
+					<label class={chip}>
+						<input id={i === 0 ? id : undefined} type="checkbox" name={field.key} value={option.value} checked={value.includes(option.value)} data-filter-key={field.key} class={optionChipInput} />
+						<Icon size="sm" class={optionChipCheck}>
+							<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7" /></svg>
+						</Icon>
+						{option.label}
+					</label>
+				))}
+			</div>
+		</fieldset>
+	) : (
+		<Field label={label} for={id} class={className} data-filter-field={field.key} {...rest}>
+			<Select id={id} class="pointer-coarse:min-h-11" name={field.key} data-filter-key={field.key} picker={dropdown}>
+				<option value="" selected={!value.length}>{anyWords}</option>
+				{options.map((option) => <option value={option.value} selected={value[0] === option.value}>{option.label}</option>)}
+			</Select>
+		</Field>
+	)
+}

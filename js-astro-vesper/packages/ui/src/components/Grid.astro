@@ -1,0 +1,39 @@
+---
+import type { HTMLAttributes, HTMLTag } from "astro/types";
+import { cn } from "../lib/cn";
+import { layoutGap, layoutGapValue, type LayoutGap } from "../lib/layout";
+
+export type GridCols = 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface Props extends HTMLAttributes<"div"> {
+	/** Element to render. */
+	as?: HTMLTag;
+	/** The most columns. Fewer when the Grid is too narrow for that many items of at least `min`. */
+	cols?: GridCols;
+	/** The narrowest an item may be, as a CSS length. Without `cols`, as many columns as fit. */
+	min?: string;
+	/** Space between items: a spacing role. */
+	gap?: LayoutGap;
+	class?: string;
+}
+
+const { as: Tag = "div", cols, min = "15rem", gap = "blocks", class: className, style, ...rest } = Astro.props;
+
+// Both layouts measure the Grid's own width, with no media or container query. min(100%, …) keeps one item from
+// overflowing a grid narrower than `min`. With `cols`, an item is at least `min` and at least the width of one of
+// `cols` columns (the width less the gaps between them, shared out), so auto-fit never makes more than `cols`.
+const vars: Record<string, string> = { "--grid-min": min };
+if (cols) Object.assign(vars, { "--grid-cols": String(cols), "--grid-gap": layoutGapValue[gap] });
+const template = cols
+	? "grid-cols-[repeat(auto-fit,minmax(min(100%,max(var(--grid-min),calc((100%_-_(var(--grid-cols)_-_1)*var(--grid-gap))/var(--grid-cols)))),1fr))]"
+	: "grid-cols-[repeat(auto-fit,minmax(min(100%,var(--grid-min)),1fr))]";
+// A caller's style is kept, in either form, and wins on the same property.
+const merged =
+	style && typeof style === "object"
+		? { ...vars, ...style }
+		: [Object.entries(vars).map(([k, v]) => `${k}: ${v}`).join("; "), style].filter(Boolean).join("; ");
+---
+
+<Tag class={cn("grid", template, layoutGap[gap], className)} style={merged} {...rest}>
+	<slot />
+</Tag>

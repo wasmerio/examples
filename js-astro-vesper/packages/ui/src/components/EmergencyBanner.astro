@@ -1,0 +1,98 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import type { SectionHeadingTag } from "../lib/heading";
+import type { IconComponent } from "../lib/icon";
+import { uid } from "../lib/id";
+import { phoneEms, phoneLabel, telHref } from "../lib/phone";
+import Button from "./Button.astro";
+import Icon from "./Icon.astro";
+import SectionHead from "./SectionHead.astro";
+
+export interface Props extends HTMLAttributes<"section"> {
+	/** The heading, such as "Water where it should not be?". */
+	heading: string;
+	/** One or two sentences under the heading: what to do first, and who answers. */
+	text?: string;
+	/** The emergency number as the page shows it, such as "(614) 555-0119". The link calls it. */
+	phone: string;
+	/** The arrival window, such as "Most calls: on site in 60 to 90 minutes". Without it the line is left out. */
+	arrivalText?: string;
+	/** The call button's words. */
+	callText?: string;
+	/** Your clock icon, before the arrival line. Decoration. */
+	icon?: IconComponent;
+	/** Your phone icon, in a tile at the end of the call button. Decoration. */
+	callIcon?: IconComponent;
+	/** Heading element. */
+	headingTag?: SectionHeadingTag;
+	class?: string;
+}
+
+const { heading, text, phone, arrivalText, callText = "Call the emergency line", icon, callIcon, headingTag = "h2", class: className, ...rest } = Astro.props;
+const headingId = uid("emergency");
+const number = String(phone ?? "").trim();
+const href = telHref(number);
+const arrival = String(arrivalText ?? "").trim();
+// The number's em budget for the stat role (phoneEms: its own width, so "1-800-555-0119" and "+1 (614) 555-0119"
+// set on one line in a 320px card as "(614) 555-0119" does).
+const numberEms = phoneEms(number);
+// The number's groups ("(614)", "555-0119"), each kept whole, so a last-resort wrap falls between them, never after a hyphen.
+const groups = number.split(/\s+/).filter(Boolean);
+// The call button grows with its label (h-auto, min-h-tap: the control height, never under 44px); its tile keeps
+// its one-line size, centered on the label.
+const callWraps = callIcon ? "[&_[data-button-tile]]:h-button-tile [&_[data-button-tile]]:self-center" : "py-2.5";
+const eyebrow = Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+// The 24/7 line (decision 0015): a <section> named by its heading, on the accent surface (surface-accent; the pairs are
+// checked in every preset as accentPairs) with the accent-fg focus ring inside (focus-on-accent). A named container
+// (emergency): from @4xl/emergency the text and the phone card sit in two columns. The text block is SectionHead in
+// the title role; its lead is the surface's muted text. The card is the inverted accent pair (an accent-fg fill, its
+// text, the number and its focus ring in the accent; data-accent-card turns focus-on-accent's ring back to the
+// accent there). The number is large and sized to the card (text-stat on the card's own container), in the body
+// face's figures (tabular-nums), as a 44px tel: link named "Call (614) 555-0119". Its em budget follows its length
+// (--stat-ems), so any US number fits on one line; at the role's floor it may wrap at a space (never after a hyphen), never run out. The call
+// Button is the page's own primary (an accent fill with accent-fg text: the surface's pair again, on the card). With
+// no dialable number the number shows as text and the button is left out.
+---
+
+<section aria-labelledby={headingId} data-emergency class={cn("@container/emergency surface-accent focus-on-accent rounded-card", className)} {...rest}>
+	<div class="grid items-center gap-blocks p-blocks @4xl/emergency:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] @4xl/emergency:gap-x-group @4xl/emergency:px-blocks-item @4xl/emergency:py-group">
+		<SectionHead
+			data-emergency-text
+			heading={heading}
+			text={text}
+			headingTag={headingTag}
+			id={headingId}
+			headingClass="text-title"
+			leadClass="text-on-accent-muted max-w-lead-narrow"
+		>
+			{eyebrow && <Fragment slot="eyebrow" set:html={eyebrow} />}
+		</SectionHead>
+		<div data-accent-card class="@container/emergency-card grid min-w-0 justify-items-start gap-3.5 rounded-card bg-on-accent p-6.5 text-accent">
+			{
+				arrival && (
+					<p data-emergency-arrival class="m-0 inline-flex items-center gap-2 text-small text-pretty">
+						{icon && <Icon icon={icon} size="sm" class="shrink-0" />}
+						<span>{arrival}</span>
+					</p>
+				)
+			}
+			{
+				href ? (
+					<a href={href} aria-label={phoneLabel(number)} data-emergency-number style={`--stat-ems: ${numberEms}`} class="inline-flex min-h-11 max-w-full items-center font-body text-stat font-bold tabular-nums text-accent no-underline hover:underline">
+						<span>{groups.map((g, i) => <Fragment>{i > 0 && " "}<span class="whitespace-nowrap">{g}</span></Fragment>)}</span>
+					</a>
+				) : (
+					number && <p data-emergency-number style={`--stat-ems: ${numberEms}`} class="m-0 font-body text-stat font-bold tabular-nums">{number}</p>
+				)
+			}
+			{
+				href && (
+					<Button href={href} iconTile={callIcon} class={cn("h-auto min-h-tap max-w-full whitespace-normal text-start [overflow-wrap:anywhere]", callWraps)}>
+						{callText}
+					</Button>
+				)
+			}
+		</div>
+	</div>
+</section>

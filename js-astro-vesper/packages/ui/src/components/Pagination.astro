@@ -1,0 +1,105 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing } from "../lib/button";
+import { cn } from "../lib/cn";
+import { pageItems } from "../lib/pagination";
+
+export interface Props extends HTMLAttributes<"nav"> {
+	/** Current page, from 1. */
+	current: number;
+	total: number;
+	/** URL of page `n`. */
+	href: (n: number) => string;
+	/** Accessible name of the navigation. */
+	label?: string;
+	previousLabel?: string;
+	nextLabel?: string;
+	/** Accessible name of a page link, e.g. (n) => `Page ${n}`. */
+	pageLabel?: (n: number) => string;
+	class?: string;
+}
+
+const {
+	current,
+	total,
+	href,
+	label = "Pagination",
+	previousLabel = "Previous",
+	nextLabel = "Next",
+	pageLabel = (n: number) => `Page ${n}`,
+	class: className,
+	...rest
+} = Astro.props;
+
+const items = total > 1 ? pageItems(current, total) : [];
+
+const cell =
+	"inline-flex h-control min-w-control items-center justify-center gap-2 rounded-control px-3 text-control tabular-nums no-underline";
+const link = cn(
+	cell,
+	"border-ui border-solid border-transparent text-fg hover:border-border hover:bg-surface-2 motion-ok:transition-[color,background-color,border-color,text-decoration-color] motion-ok:duration-150",
+	"aria-[current=page]:border-fg aria-[current=page]:bg-fg aria-[current=page]:text-bg aria-[current=page]:font-semibold",
+	focusRing,
+);
+const off = cn(cell, "text-muted opacity-60");
+// The gap's <li> is aria-hidden as a whole: the list's item count then matches what a screen reader can reach, and
+// no empty item is announced. Valid ARIA on a list item, and axe-clean.
+// On narrow screens, a neighbor of the current page hides when a gap is next
+// to it, so the gap stands for it and the row stays short.
+const hideNarrow = (i: number) => {
+	const item = items[i];
+	if (item === "gap" || item === current || item === 1 || item === total) return false;
+	return items[i - 1] === "gap" || items[i + 1] === "gap";
+};
+---
+
+{
+	items.length > 0 && (
+		<nav aria-label={label} class={cn("font-body", className)} {...rest}>
+			<ul role="list" class="m-0 flex list-none flex-wrap items-center gap-1 p-0">
+				<li>
+					{current > 1 ? (
+						<a href={href(current - 1)} rel="prev" class={link}>
+							<span aria-hidden="true">←</span>
+							<span class="sr-only sm:not-sr-only">{previousLabel}</span>
+						</a>
+					) : (
+						<span class={off} aria-hidden="true">
+							<span>←</span>
+							<span class="sr-only sm:not-sr-only">{previousLabel}</span>
+						</span>
+					)}
+				</li>
+				{items.map((item, i) =>
+					item === "gap" ? (
+						<li aria-hidden="true" class={cn(cell, "px-1 text-muted")}>…</li>
+					) : (
+						<li class={hideNarrow(i) ? "hidden sm:block" : undefined}>
+							<a
+								href={href(item)}
+								aria-label={pageLabel(item)}
+								aria-current={item === current ? "page" : undefined}
+								class={link}
+							>
+								{item}
+							</a>
+						</li>
+					),
+				)}
+				<li>
+					{current < total ? (
+						<a href={href(current + 1)} rel="next" class={link}>
+							<span class="sr-only sm:not-sr-only">{nextLabel}</span>
+							<span aria-hidden="true">→</span>
+						</a>
+					) : (
+						<span class={off} aria-hidden="true">
+							<span class="sr-only sm:not-sr-only">{nextLabel}</span>
+							<span>→</span>
+						</span>
+					)}
+				</li>
+			</ul>
+		</nav>
+	)
+}

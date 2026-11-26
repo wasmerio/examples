@@ -1,0 +1,160 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { buttonClasses, touchBox } from "../lib/button";
+import { cn } from "../lib/cn";
+import { FILTERS_TEXTS, configJson, type FiltersData } from "../lib/filters";
+import { uid } from "../lib/id";
+import { checkFields, type ListingField } from "../lib/listing";
+import FilterChips from "./FilterChips.astro";
+import FilterChoice from "./FilterChoice.astro";
+import FilterRange from "./FilterRange.astro";
+import FilterSwitch, { type FilterMode } from "./FilterSwitch.astro";
+import FilterText from "./FilterText.astro";
+
+export interface FilterSort {
+	value: string;
+	label: string;
+}
+
+/** Every prop, each on its own; Props below adds the one rule they cannot say alone (modes need modesLabel). */
+export interface FiltersOptions extends Omit<HTMLAttributes<"form">, "role" | "action" | "method"> {
+	/** The search's name, for role="search": "Filter homes". */
+	label: string;
+	/** Your fields list (lib/listing.ts). Each field with a kind gets a filter: range, choice or toggle. */
+	fields: ListingField[];
+	/** The modes of the two-part switch, such as Buy and Rent. Without them, no switch. */
+	modes?: FilterMode[];
+	/** The switch's name, read before its options ("Buy or rent"). Required with modes. */
+	modesLabel?: string;
+	/** The sorts ResultsHead offers; the filters keep the picked one in the URL. */
+	sorts: FilterSort[];
+	/** The mode and sort with nothing chosen; neither is written in the URL. */
+	defaults: { mode?: string; sort: string };
+	/** The text box's label ("Where"). Without it, no text box. */
+	textLabel?: string;
+	textPlaceholder?: string;
+	/** The paths of the server's pages, as your list's pager builds them: pageHref(1) to pageHref(pages). Unset: one page. */
+	pageHref?: (n: number) => string;
+	pages?: number;
+	/** The "Clear" button's text: it removes the text and every filter. */
+	clearText?: string;
+	/** An empty select option: a choice field's and a minimum-only range's ("Any"). */
+	anyText?: string;
+	/** A range's empty Min and Max options ("No min", "No max"). */
+	minText?: string;
+	maxText?: string;
+	/** A range's selects' names for screen readers, after its legend ("Min", "Max"). */
+	minLabel?: string;
+	maxLabel?: string;
+	/** Draws the fields as dropdowns: one choice and a minimum-only range as a Select with picker, several choices as checkboxes in a Popover, a range as Min and Max radio lists in one. The names, the values, the URL and filters:change stay the same. ResultsHead's sort has its own prop, sortPicker. */
+	dropdown?: boolean;
+	/** A dropdown's words: both ends of a range ("{min} to {max}"), one end ("{min}+", "Up to {max}"), two or more choices ("{n} selected"). */
+	rangeText?: string;
+	fromText?: string;
+	upToText?: string;
+	countText?: string;
+	/** An active-filter chip's name, with {text} filled in ("Remove: {text}"). */
+	removeLabel?: string;
+	/** For recipes: the bar (the row and the option-chip fields), the row (the switch, the text and the other fields), each field, the active-filter chips. */
+	barClass?: string;
+	rowClass?: string;
+	fieldClass?: string;
+	chipsClass?: string;
+	class?: string;
+}
+
+/** With modes, the switch needs its name (modesLabel): the kit has no default, since the modes are yours. */
+export type Props = FiltersOptions & ({ modes: FilterMode[]; modesLabel: string } | { modes?: undefined; modesLabel?: undefined });
+
+const {
+	label,
+	fields,
+	modes,
+	modesLabel,
+	sorts,
+	defaults,
+	textLabel,
+	textPlaceholder,
+	pageHref,
+	pages,
+	clearText = "Clear",
+	anyText = FILTERS_TEXTS.anyText,
+	minText = FILTERS_TEXTS.minText,
+	maxText = FILTERS_TEXTS.maxText,
+	minLabel,
+	maxLabel,
+	dropdown = false,
+	rangeText,
+	fromText,
+	upToText,
+	countText,
+	removeLabel = FILTERS_TEXTS.removeLabel,
+	barClass,
+	rowClass,
+	fieldClass,
+	chipsClass,
+	id = uid("filters"),
+	class: className,
+	...rest
+} = Astro.props;
+
+const modeValues = (modes ?? []).map((m) => m.value);
+if (import.meta.env.DEV) {
+	if (modes?.length && !modesLabel) throw new Error("Filters: modes need a modesLabel, the switch's name (such as \"Buy or rent\")");
+	checkFields(fields, modeValues);
+}
+const mode = modes?.length ? (defaults.mode && modeValues.includes(defaults.mode) ? defaults.mode : modeValues[0]) : "";
+const data: FiltersData = {
+	fields,
+	...(modes?.length ? { modes: modeValues } : {}),
+	sorts: sorts.map((s) => s.value),
+	defaults,
+	...(pageHref && pages && pages > 1 ? { pageHrefs: Array.from({ length: pages }, (_, i) => pageHref(i + 1)) } : {}),
+	texts: { anyText, minText, maxText, removeLabel },
+};
+const filtered = fields.filter((f) => f.kind);
+// A dropdown is one line tall, so several choices stay in the row with it.
+const isChips = (f: ListingField) => !dropdown && f.kind === "choice" && f.multiple;
+const inRow = filtered.filter((f) => !isChips(f));
+const chipFields = filtered.filter((f) => isChips(f));
+// "Clear", and a copy with no use and no name that a recipe can draw while "Clear" is hidden, to keep its room (FilterBar).
+const clearClass = cn(buttonClasses({ variant: "ghost", size: "sm" }), "underline underline-offset-4", touchBox);
+// Rendered first, so a recipe that passes on an empty slot leaves no empty box.
+const actions = Astro.slots.has("actions") ? (await Astro.slots.render("actions")).trim() : "";
+// The shell (decision 0013): a search form that owns the order and the URL. In order: the switch (with modes), the
+// text box (with textLabel), one part per filtered field (range: FilterRange; choice: FilterChoice, a select or option
+// chips; toggle: a checkbox), "Clear" (shown when anything is set), the actions slot, then the active-filter chips. The row holds the
+// switch, the text and the one-line fields; option-chip fields sit after it in the bar, so a recipe can put them on
+// their own line where they wrap. The form is the filters container (filters), and hidden with no script: without
+// it nothing listens, and the page's list shows every listing. Its script (lib/filters.ts) reads the config below,
+// keeps the state in the URL and fires one filters:change per change; the form never submits.
+---
+
+<form id={id} role="search" aria-label={label} data-filters class={cn("@container/filters grid min-w-0 gap-3 noscript:hidden", className)} {...rest}>
+	<script is:inline type="application/json" data-filters-config set:html={configJson(data)} />
+	<div data-filters-bar class={cn("flex min-w-0 flex-wrap items-end gap-3", barClass)}>
+		<div data-filters-row class={cn("relative flex min-w-0 flex-wrap items-end gap-3", rowClass)}>
+			{modes?.length && modesLabel && <FilterSwitch modes={modes} label={modesLabel} value={mode} class="shrink-0 self-end" />}
+			{textLabel && <FilterText label={textLabel} placeholder={dropdown ? (textPlaceholder ?? " ") : textPlaceholder} id={`${id}-q`} class={fieldClass} />}
+			{
+				inRow.map((field) =>
+					field.kind === "range" ? (
+						<FilterRange field={field} mode={mode} anyText={anyText} minText={minText} maxText={maxText} minLabel={minLabel} maxLabel={maxLabel} dropdown={dropdown} rangeText={rangeText} fromText={fromText} upToText={upToText} id={`${id}-${field.key}`} class={fieldClass} />
+					) : (
+						<FilterChoice field={field} mode={mode} anyText={anyText} dropdown={dropdown} countText={countText} id={`${id}-${field.key}`} class={fieldClass} />
+					),
+				)
+			}
+		</div>
+		{chipFields.map((field) => <FilterChoice field={field} mode={mode} id={`${id}-${field.key}`} class={fieldClass} />)}
+		<button type="button" data-filters-clear hidden class={clearClass}>{clearText}</button>
+		<span data-filters-clear-room aria-hidden="true" class={cn(clearClass, "invisible hidden")}>{clearText}</span>
+		{actions && <div data-filters-actions class="flex flex-wrap items-center gap-2" set:html={actions} />}
+	</div>
+	<FilterChips class={chipsClass} />
+</form>
+
+<script>
+	import { start } from "../lib/filters";
+	start();
+</script>

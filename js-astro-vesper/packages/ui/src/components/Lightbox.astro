@@ -1,0 +1,146 @@
+---
+import { buttonClasses, touchBox } from "../lib/button";
+import { cn, cx } from "../lib/cn";
+import { iconClasses } from "../lib/icon";
+import { uid } from "../lib/id";
+
+export interface Props {
+	/** The dialog's accessible name. Default: "Image viewer". */
+	label?: string;
+	/** The close button's accessible name. Default: "Close". */
+	closeLabel?: string;
+	/** The previous button's accessible name. Default: "Previous image". */
+	prevLabel?: string;
+	/** The next button's accessible name. Default: "Next image". */
+	nextLabel?: string;
+	/** The counter, shown and read aloud: `{n}` is the image's place in the set and `{total}` the set's size. Default: "{n} of {total}". */
+	counterText?: string;
+	/**
+	 * Where the close button sits in the page order, which is the Tab order: `start` (default) makes it the first
+	 * area, drawn at the top; `end` makes it the last control in the bar, after next. Recipes set it; callers do not.
+	 */
+	closeAt?: "start" | "end";
+	/** Classes for the dialog. */
+	class?: string;
+	/** For recipes: the image box. */
+	stageClass?: string;
+	/** For recipes: the bar around the caption and the controls. */
+	barClass?: string;
+	/** For recipes: the row of controls (prev, the counter, next, and close when `closeAt="end"`). */
+	controlsClass?: string;
+	/** For recipes: the caption. */
+	captionClass?: string;
+	/** For recipes: the close button. */
+	closeClass?: string;
+	/** For recipes: the previous button. */
+	prevClass?: string;
+	/** For recipes: the next button. */
+	nextClass?: string;
+	/** For recipes: the visible counter. */
+	counterClass?: string;
+}
+
+/** What a recipe takes: the shell's props less the ones it sets itself (closeAt and the class hooks). */
+export type LightboxRecipeProps = Omit<Props, "closeAt" | "stageClass" | "barClass" | "controlsClass" | "captionClass" | "closeClass" | "prevClass" | "nextClass" | "counterClass">;
+
+const {
+	label = "Image viewer",
+	closeLabel = "Close",
+	prevLabel = "Previous image",
+	nextLabel = "Next image",
+	counterText = "{n} of {total}",
+	closeAt = "start",
+	class: className,
+	stageClass,
+	barClass,
+	controlsClass,
+	captionClass,
+	closeClass,
+	prevClass,
+	nextClass,
+	counterClass,
+} = Astro.props;
+
+// The lightbox family's shell (decision 0013): one closed native modal <dialog> per page, which lib/lightbox.ts fills
+// and opens from any link marked data-lightbox (lightboxAttrs()). No framework (decision 0002): the browser moves
+// focus in and keeps it there, makes the page behind inert and closes on Escape; the script does the rest (see its
+// header). The recipes set only class hooks and closeAt.
+// The dialog fills the viewport: every browser default for a modal dialog is reset (inset, margin, size, border,
+// padding, fill), and it is sized in dynamic viewport units, so a phone's moving address bar never hides the bar.
+// Its ground is the scrim, dark in both modes (decision 0015, principle 2): the backdrop is the scrim at 95%, and the
+// dialog itself is clear over it, so every click lands on the dialog, never on ::backdrop. Text is scrim-fg, the
+// buttons tone="image", the focus ring focus-on-image. The dialog is the named container `lightbox`, so a recipe
+// places its areas by its width.
+// Inside, the frame is one grid (three columns, three rows; an empty row or side column takes no room), padded by the
+// safe areas, so the close button and the bar clear a notch and the home indicator. Areas in page order, which is
+// the Tab order, so a recipe draws them in the same order: close (closeAt="start"), the stage, the bar (the caption,
+// then the controls: prev, the counter, next, and close with closeAt="end"), and the live region.
+// With no recipe classes the areas keep clear of the screen's edges and of each other: close sits in from its corner,
+// the image and the bar are inset 16px, 24px on a wide viewer (on top of the safe areas), and the bar puts 20px
+// above the caption and 16px between the caption and the controls. A recipe replaces these through its class hooks.
+// The stage is a size container (lightbox-stage) that the image fits inside at its own ratio (lightbox-image): the
+// image's box is the picture, so a click beside it lands on the stage and closes. It allows vertical panning and
+// pinch zoom, never none. The script makes the <img> on first open (an <img> needs a src).
+// The visible counter is aria-hidden: one live region (visually hidden, outside the stage, which is aria-busy="true"
+// while an image loads) says the count and the alt when the image changes. A long caption scrolls in its box; the
+// script makes it a Tab stop only then (tabindex="0"), and the dialog's focus-on-image rings it.
+// Motion (decision 0018), under motion-ok only: the backdrop fades in, the image fades and scales up from 98%, and the
+// next image fades in. Under reduced motion or calm it opens and changes at once.
+const id = uid("lightbox");
+const captionId = `${id}-caption`;
+const iconButton = cx(buttonClasses({ variant: "ghost", icon: true, tone: "image" }), touchBox);
+const closeIcon = "M5 5l10 10M15 5L5 15";
+---
+
+<dialog
+	data-lightbox-dialog
+	data-modal
+	data-lightbox-counter-text={counterText}
+	aria-label={label}
+	class={cn(
+		"@container/lightbox fixed inset-0 m-0 size-full h-dvh w-dvw max-h-none max-w-none overflow-hidden border-0 p-0",
+		"bg-transparent text-scrim-fg font-body focus-on-image outline-none",
+		"backdrop:bg-scrim/95 motion-ok:backdrop:transition-opacity motion-ok:backdrop:duration-200 motion-ok:starting:open:backdrop:opacity-0",
+		className,
+	)}
+>
+	<div data-lightbox-frame class="grid size-full grid-cols-[auto_minmax(0,1fr)_auto] grid-rows-[auto_minmax(0,1fr)_auto] safe-area-pad">
+		{
+			closeAt === "start" && (
+				<button type="button" data-lightbox-close autofocus aria-label={closeLabel} class={cn(iconButton, "col-start-3 row-start-1 m-2 justify-self-end @3xl/lightbox:m-4", closeClass)}>
+					<svg class={iconClasses("md")} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path d={closeIcon}></path></svg>
+				</button>
+			)
+		}
+		<div data-lightbox-stage class={cn("lightbox-stage col-span-full row-start-2 grid min-h-0 min-w-0 place-items-center px-4 touch-pan-y touch-pinch-zoom @3xl/lightbox:px-6", stageClass)}></div>
+		<div data-lightbox-bar class={cn("col-span-full row-start-3 grid gap-y-4 px-4 pt-5 pb-4 @3xl/lightbox:px-6", barClass)}>
+			<p id={captionId} data-lightbox-caption hidden class={cn("m-0 max-h-24 max-w-lead overflow-y-auto text-small text-pretty wrap-anywhere text-scrim-fg", captionClass)}></p>
+			<div data-lightbox-controls class={cn("flex items-center gap-2", controlsClass)}>
+				<button type="button" data-lightbox-prev aria-label={prevLabel} class={cn(iconButton, prevClass)}>
+					<svg class={cx(iconClasses("md"), "rtl:-scale-x-100")} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M12.5 4.5L7 10l5.5 5.5"></path>
+					</svg>
+				</button>
+				<span data-lightbox-counter aria-hidden="true" class={cn("text-small tabular-nums text-scrim-fg", counterClass)}></span>
+				<button type="button" data-lightbox-next aria-label={nextLabel} class={cn(iconButton, nextClass)}>
+					<svg class={cx(iconClasses("md"), "rtl:-scale-x-100")} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M7.5 4.5L13 10l-5.5 5.5"></path>
+					</svg>
+				</button>
+				{
+					closeAt === "end" && (
+						<button type="button" data-lightbox-close autofocus aria-label={closeLabel} class={cn(iconButton, closeClass)}>
+							<svg class={iconClasses("md")} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path d={closeIcon}></path></svg>
+						</button>
+					)
+				}
+			</div>
+		</div>
+		<p data-lightbox-live aria-live="polite" class="sr-only"></p>
+	</div>
+</dialog>
+
+<script>
+	import { start } from "../lib/lightbox";
+	start({ dev: import.meta.env.DEV });
+</script>

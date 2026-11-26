@@ -1,0 +1,149 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing, touchBox } from "../lib/button";
+import { cn } from "../lib/cn";
+import { formatDate, isoDate, type DateInput } from "../lib/date";
+import { imageAttrs } from "../lib/image";
+import Avatar from "./Avatar.astro";
+import type { PostAuthor } from "./PostCard.astro";
+
+/** One writer: PostAuthor ({ name, image? }) with an optional link to their page. */
+export interface BylineAuthor extends PostAuthor {
+	/** The author's page. Without it, the name is plain text. */
+	href?: string;
+}
+
+export interface Props extends HTMLAttributes<"div"> {
+	/** One or more. Names join in the locale's list style ("Ada Brook and Ines Moreau"). Empty throws. */
+	authors: BylineAuthor[];
+	/** "YYYY-MM-DD" (or a Date, read in UTC: lib/date.ts). Written as <time datetime>. */
+	date?: DateInput;
+	/** Text shown in place of the formatted date. The datetime stays the date. Shown only with a date. */
+	dateLabel?: string;
+	/** Your own text, e.g. "12 min read". */
+	readingTime?: string;
+	/** The same prop and shape as ArticleHeader's: e.g. { label: "The Last Diners, part 1", href }. After the reading time. */
+	series?: { label: string; href?: string };
+	/** The names' and the date's language, e.g. "de". Default "en". */
+	locale?: string;
+	class?: string;
+}
+
+const { authors, date, dateLabel, readingTime, series, locale = "en", class: className, ...rest } = Astro.props;
+if (authors.length === 0) throw new Error("Byline: one author at least");
+const datetime = date == null ? undefined : isoDate(date);
+const dateText = date == null ? undefined : (dateLabel ?? formatDate(date, locale));
+// The names as the locale's list ("A, B and C"; "A, B und C"): each element part is one author, each literal part the
+// locale's own joiner, so every name keeps its own link and the whole list is real text. Each name is one unit with
+// the punctuation after it ("Ada,") and the word before it ("and Lena"): a joiner splits at its first space, what
+// comes before going with the name before and what comes after with the name after. On a coarse pointer the unit is a
+// box (inline-block, so a line breaks only at the spaces between units, never before a comma or after "and"), padded
+// to 44px tall for one line of text, and the name's link covers it (an ::after over the unit). The names are links in
+// a line of text, under WCAG 2.5.5's inline exception; the 44px-tall unit is an extra on touch, as wide as the name
+// and its joiners, so a short name ("Li") opens no gap before its comma, and no two names' areas overlap. A long name
+// still wraps inside its unit, its comma after its last word. With a mouse the units are plain text.
+const parts = new Intl.ListFormat(locale, { type: "conjunction" }).formatToParts(authors.map((a) => a.name));
+const names: { before: string; author: BylineAuthor; after: string; gap: string }[] = [];
+let lead = "";
+for (const part of parts) {
+	if (part.type === "element") {
+		names.push({ before: lead, author: authors[names.length], after: "", gap: "" });
+		lead = "";
+	} else {
+		const [, after = "", gap = "", before = ""] = part.value.match(/^(\S*)(\s*)([\s\S]*)$/) ?? [];
+		Object.assign(names[names.length - 1], { after, gap });
+		lead = before;
+	}
+}
+// At most three marks, one for each of the first three authors: the photo, or the initials (Avatar's, lib/avatar.ts) for
+// an author with none; with more than three authors a fourth round mark says how many more (+N). All decorative: every
+// name is in the text beside them.
+const faces = authors.slice(0, 3);
+const more = authors.length - faces.length;
+const pieces = [datetime && "date", readingTime && "time", series && "series"].filter(Boolean) as ("date" | "time" | "series")[];
+const actions = Astro.slots.has("actions") ? (await Astro.slots.render("actions")).trim() : "";
+const piece = "min-w-0 max-w-full [overflow-wrap:anywhere]";
+// The meta line never starts a line with a middle dot, as ArticleHeader's: each dot leads the piece after it in a
+// 0.75rem slot, and the row is pulled 1.125rem to the start and clipped 0.75rem in, clear of every ring; its first item
+// is set back by the same 1.125rem.
+// The least width of the marks and names together, in rem (so no preset's spacing changes it): the marks (2.75rem,
+// each after the first 0.625rem under the one before), a 0.75rem gap, and a 10rem name column. The actions wrap under
+// the group only when it and they do not fit side by side: one short name keeps Share on its row at 390, five writers
+// and long names push it under.
+const marks = faces.length + (more > 0 ? 1 : 0);
+const minRem = 2.75 + (marks - 1) * 2.125 + 0.75 + 10;
+// The author line under a post header (decisions 0013, 0015): the photos or initials (md, overlapping by a quarter, each
+// with a page-color ring so the overlap reads), then the names (semibold; links with href, each covering its unit on a
+// coarse pointer: above) over the meta line (the date, reading time and series, small and muted, wrapping between its
+// pieces as ArticleHeader's does; the series link a 44px box on a coarse pointer: touchBox), then the actions slot at
+// the end of the row (a theme's share button). The row wraps by content: the photos and names are one group with a
+// least width (above), and the actions go under it, still at the end, only when both do not fit. The root is a named
+// container (byline). No hairline: add border-b through class.
+---
+
+<div data-byline class={cn("@container/byline font-body", className)} {...rest}>
+	<div data-byline-row class="flex flex-wrap items-center gap-x-3 gap-y-2">
+		<div data-byline-main class="flex min-w-[min(100%,var(--byline-min))] flex-[1_1_0%] items-center gap-x-[0.75rem]" style={`--byline-min: ${minRem}rem`}>
+		<div aria-hidden="true" class="flex shrink-0 items-center">
+			{faces.map((author, i) => (
+				<Avatar
+					name={author.name}
+					image={author.image && { ...imageAttrs(author.image.src, author.image.width, author.image.height), alt: "" }}
+					size="md"
+					decorative
+					class={cn("ring-2 ring-bg", i > 0 && "-ms-[0.625rem]")}
+				/>
+			))}
+			{more > 0 && (
+				<span data-byline-more aria-hidden="true" class="-ms-[0.625rem] inline-grid size-[2.75rem] shrink-0 place-items-center rounded-full bg-avatar-fill text-avatar font-semibold text-avatar-fg ring-2 ring-bg">
+					+{more}
+				</span>
+			)}
+		</div>
+		<div class="grid min-w-0 flex-1 gap-0.5">
+			<p data-byline-names class="m-0 text-body font-semibold text-fg [overflow-wrap:anywhere]">
+				{
+					names.map((n) => (
+						<>
+							{/* A name with no page gets the same padding on purpose: every row of names stays the same height. */}
+							<span data-byline-name class="pointer-coarse:relative pointer-coarse:inline-block pointer-coarse:max-w-full pointer-coarse:py-[calc((2.75rem-1lh)/2)]">{n.before}{n.author.href ? (<a href={n.author.href} class={cn("link-underline rounded-control pointer-coarse:after:absolute pointer-coarse:after:inset-0", focusRing)}>{n.author.name}</a>) : n.author.name}{n.after}</span>{n.gap}
+						</>
+					))
+				}
+			</p>
+			{
+				pieces.length > 0 && (
+					<p data-byline-meta class="m-0 flex flex-wrap items-center gap-x-[0.375rem] text-small text-muted -ms-[1.125rem] [clip-path:inset(-0.75rem_-0.75rem_-0.75rem_0.75rem)] rtl:[clip-path:inset(-0.75rem_0.75rem_-0.75rem_-0.75rem)]">
+						{pieces.map((kind, i) => {
+							const cls = cn(piece, i === 0 && "ms-[1.125rem]");
+							const content =
+								kind === "date" ? (
+									<time class={cls} datetime={datetime}>{dateText}</time>
+								) : kind === "series" && series ? (
+									series.href ? (
+										<a href={series.href} class={cn(cls, "link-underline rounded-control pointer-coarse:inline-flex pointer-coarse:items-center", touchBox, focusRing)}>{series.label}</a>
+									) : (
+										<span class={cls}>{series.label}</span>
+									)
+								) : (
+									<span class={cls}>{readingTime}</span>
+								);
+							// The dot leads the piece after it, in a 0.75rem slot: when that piece starts a line, its dot
+							// falls in the row's clipped start strip, so no line ends with a dot or starts with one.
+							return i === 0 ? (
+								content
+							) : (
+								<span data-byline-group class="inline-flex min-w-0 max-w-full items-baseline gap-x-[0.375rem]">
+									<span aria-hidden="true" class="w-[0.75rem] shrink-0 text-center">·</span>
+									{content}
+								</span>
+							);
+						})}
+					</p>
+				)
+			}
+		</div>
+		</div>
+		{actions && <div data-byline-actions class="ms-auto flex shrink-0 items-center gap-2" set:html={actions} />}
+	</div>
+</div>

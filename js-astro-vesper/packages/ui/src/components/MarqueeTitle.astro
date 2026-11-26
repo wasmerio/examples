@@ -1,0 +1,68 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import type { SectionHeadingTag } from "../lib/heading";
+import type { IconComponent } from "../lib/icon";
+import { statEms } from "../lib/stat";
+import Icon from "./Icon.astro";
+import Marquee from "./Marquee.astro";
+
+export interface Props extends HTMLAttributes<"section"> {
+	/** Required. The title, such as "Selected work": a real heading (visually hidden) carries it, and the moving copies show it. */
+	heading: string;
+	/** Heading element. */
+	headingTag?: SectionHeadingTag;
+	/** The mark after each copy: your icon component (e.g. a star). Default: a dot in the accent. Decorative. */
+	marker?: IconComponent;
+	/** The loop time: --ui-marquee-duration (default 40s) times 1.5 (slow), 1 (normal) or 0.6 (fast). */
+	speed?: "slow" | "normal" | "fast";
+	/** "start" runs toward the start of the line; "end" the other way. */
+	direction?: "start" | "end";
+	/** Renders the page's one MotionPause button above the title. */
+	pause?: boolean;
+	class?: string;
+}
+
+const { heading, headingTag = "h2", marker, speed, direction, pause = false, class: className, style, ...rest } = Astro.props;
+if (!heading?.trim()) throw new Error("MarqueeTitle needs a heading.");
+// The copy's width in em: the title (statEms, as wide as it sets in any kit preset's display face), then the
+// marker and the space around it (about 0.9em), so one copy fills the row exactly.
+const fitEms = Math.ceil((statEms(heading) + 0.9) * 100) / 100;
+// The moving row's edge fade would cut the title's ascenders and descenders (its line height is 0.9), so the
+// viewport reaches a quarter of the title's size past the row on each side (--marquee-bleed), without taking room.
+const bleed = `calc(100cqi / ${fitEms} / 4)`;
+const rootStyle = style && typeof style === "object" ? { "--marquee-bleed": bleed, ...style } : `--marquee-bleed: ${bleed};${style ? ` ${style}` : ""}`;
+// One huge title that moves across the page as decoration (the Marquee shell). The heading is real but visually
+// hidden (the header is sr-only), so the region is named by it and a screen reader hears it once; the moving row is
+// decoration, hidden from screen readers as a whole. Each copy is the title and a marker on one line, fitted to the
+// row (text-fit, --fit-ems): one copy fills the row's width at any size, so the still row (reduced motion, calm) is
+// one copy that fits, even at 390px, and the moving row shows that same copy passing by. With pause, the pause
+// button sits in the header, which then shows: the heading stays visually hidden.
+---
+
+<Marquee
+	{...rest}
+	style={rootStyle}
+	class={className}
+	heading={heading}
+	headingTag={headingTag}
+	speed={speed}
+	direction={direction}
+	pause={pause}
+	decorative={true}
+	contentClass={pause ? undefined : "gap-0"}
+	headerClass={pause ? "relative z-1 [&>[data-section-head]]:sr-only" : "sr-only"}
+	trackClass={undefined}
+	setClass="gap-0 marquee-moves:pe-0"
+>
+	<li data-marquee-title class="text-fit inline-flex min-w-0 items-center text-fg" style={`--fit-ems: ${fitEms};`}>
+		<span>{heading}</span>
+		{
+			marker ? (
+				<Icon icon={marker} size="lg" class="mx-[0.2em] size-[0.5em] shrink-0" />
+			) : (
+				<span data-marquee-dot aria-hidden="true" class="mx-[0.3em] size-[0.25em] shrink-0 rounded-full bg-accent" />
+			)
+		}
+	</li>
+</Marquee>

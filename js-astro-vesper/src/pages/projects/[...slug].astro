@@ -1,0 +1,175 @@
+---
+/**
+ * The projects, one route for both pages, built only while the Projects page is on
+ * (src/theme.config.ts `pages.projects`); off, a static build leaves both out and a server answers 404:
+ *
+ * - /projects (comp "Projects"): the head, then the projects in the kit's Grid (items at least 300px) as cards with
+ *   cut photos, their corners varied so neighbors differ; no projects yet: a short note. The head is the pages
+ *   collection's `projects` entry's title and lead when there is one, else the theme's words (src/utils/sections.ts
+ *   `listHead`).
+ * - /projects/<slug>: "All projects" back to the list, the title and summary, the photo (cut, the container's
+ *   width; it opens large in the page's lightbox), the text beside the year and the link button, then the other
+ *   projects. Every project page carries the lightbox (Base `lightbox`), for the photo and the photos in the text.
+ *
+ * One segment only: /projects/a/b answers 404 (src/utils/sections.ts).
+ */
+import { collectionPageNode, creativeWorkNode } from "@astronomic/theme-core/jsonld";
+import Button from "@astronomic/ui/components/Button.astro";
+import Grid from "@astronomic/ui/components/Grid.astro";
+import Media from "@astronomic/ui/components/Media.astro";
+import { plainHeading } from "@astronomic/ui/lib/emphasis.ts";
+import type { CutCorner } from "@astronomic/ui/lib/image.ts";
+import BodyProse from "~/components/BodyProse.astro";
+import EmptyNote from "~/components/EmptyNote.astro";
+import Icon from "~/components/Icon.astro";
+import KitImage from "~/components/KitImage.astro";
+import PageHead from "~/components/PageHead.astro";
+import PhotoLink from "~/components/PhotoLink.astro";
+import ProjectCard from "~/components/ProjectCard.astro";
+import RichText from "~/components/RichText.astro";
+import { searchIgnore, useContent } from "~/content";
+import { searchSummary } from "~/content/search";
+import Base from "~/layouts/Base.astro";
+import { strings } from "~/theme.strings";
+import { cn } from "~/utils/cn";
+import { pageIds } from "~/utils/ids";
+import { getConfig } from "~/utils/config";
+import { imageSizes, wrap } from "~/utils/layout";
+import { siteOrigin } from "~/utils/public-pages";
+import { projectHref, projectsHref } from "~/utils/routes";
+import { listHead, projectPageOf, projectParams } from "~/utils/sections";
+import { siteSettings } from "~/utils/setup";
+import { toProjectCard } from "~/utils/view";
+
+export async function getStaticPaths() {
+	const content = useContent();
+	const [settings, slugs] = await Promise.all([siteSettings(content), content.projects.slugs()]);
+	return projectParams(getConfig(settings).config, slugs).map((slug) => ({ params: { slug } }));
+}
+
+const content = useContent(Astro);
+const [settings, slugs] = await Promise.all([siteSettings(content), content.projects.slugs()]);
+const { config } = getConfig(settings);
+const at = projectPageOf(Astro.params.slug, config, slugs);
+if (!at) {
+	return Astro.rewrite("/404");
+}
+const project = at.kind === "project" ? await content.projects.get(at.slug) : undefined;
+if (at.kind === "project" && !project) {
+	return Astro.rewrite("/404");
+}
+const [{ items }, pageSlugs] = await Promise.all([content.projects.list(), at.kind === "index" ? content.pages.slugs() : ([] as string[])]);
+const t = strings.projects;
+/** The index's pages entry, when there is one: its words head the list. */
+const listPage = at.kind === "index" && pageSlugs.includes("projects") ? await content.pages.get("projects") : undefined;
+const head = listHead(listPage, t);
+/** The photos' cut corners, in turn (comp: top-end, bottom-start, top-start). */
+const CORNERS: CutCorner[] = ["top-end", "bottom-start", "top-start"];
+const others = project ? items.filter((p) => p.slug !== project.slug).slice(0, 3) : [];
+const ignore = searchIgnore(content);
+// One project is a CreativeWork by the site's owner; the index is a CollectionPage.
+const origin = siteOrigin(Astro);
+const jsonLd = project
+	? creativeWorkNode(origin, {
+			name: plainHeading(project.title),
+			path: project.seo?.canonical || projectHref(project.slug),
+			description: project.seo?.description || project.summary,
+			image: project.seo?.image ?? project.image?.src,
+		})
+	: collectionPageNode(origin, { path: listPage?.seo?.canonical || projectsHref(), name: plainHeading(head.title), description: listPage?.seo?.description || head.lead });
+---
+
+{
+	project ? (
+		<Base
+			title={project.seo?.title ?? project.title}
+			description={project.seo?.description || project.summary}
+			image={project.seo?.image ?? project.image?.src}
+			imageAlt={project.seo?.image ? undefined : project.image?.alt}
+			canonical={project.seo?.canonical}
+			entry={project}
+			index={{ kind: "projects", title: project.title, summary: searchSummary("projects", project) }}
+			card
+			jsonLd={jsonLd}
+			lightbox
+		>
+			<article class={cn(wrap, "pt-16 max-tablet:pt-8")}>
+				<a href={projectsHref()} class="v-back">
+					<Icon name="ui/arrow-left" />
+					{t.all}
+				</a>
+				<PageHead title={project.title} lead={project.summary} class="pt-6" />
+				{project.image && (
+					<PhotoLink image={project.image} class="v-proj-fig">
+						<Media
+							src={project.image as never}
+							alt={project.image.alt}
+							width={project.image.width}
+							height={project.image.height}
+							shape="cut"
+							cutCorner="top-end"
+							imageComponent={KitImage}
+							loading="eager"
+							fetchpriority="high"
+							sizes={imageSizes.container.sizes}
+							ratioClass="aspect-[16/9] max-tablet:aspect-[4/3]"
+						/>
+					</PhotoLink>
+				)}
+				<div class="v-proj-body">
+					<BodyProse>
+						<RichText value={project.body} />
+					</BodyProse>
+					{(project.year || project.link) && (
+						<div data-proj-facts>
+							{project.year && <p class="m-0 v-meta">{project.year}</p>}
+							{project.link && (
+								<Button href={project.link} variant="secondary">
+									{t.visit}
+									<Icon name="ui/arrow" class="size-4" />
+								</Button>
+							)}
+						</div>
+					)}
+				</div>
+				{others.length > 0 && (
+					<section aria-labelledby={pageIds.moreProjects} class="v-more" {...ignore}>
+						<h2 id={pageIds.moreProjects} class="v-heading">
+							{t.more}
+						</h2>
+						<Grid as="ul" role="list" min="300px" class="v-proj-grid">
+							{others.map((p, i) => (
+								<ProjectCard project={toProjectCard(p)} corner={CORNERS[i % CORNERS.length]} headingTag="h3" />
+							))}
+						</Grid>
+					</section>
+				)}
+			</article>
+		</Base>
+	) : (
+		<Base
+			title={listPage?.seo?.title ?? head.title}
+			description={listPage?.seo?.description || head.lead}
+			image={listPage?.seo?.image}
+			canonical={listPage?.seo?.canonical}
+			entry={listPage}
+			card
+			jsonLd={jsonLd}
+		>
+			<div class={wrap}>
+				<PageHead title={head.title} lead={head.lead} />
+				<div class="v-page-body">
+					{items.length > 0 ? (
+						<Grid as="ul" role="list" min="300px" class="v-proj-grid">
+							{items.map((p, i) => (
+								<ProjectCard project={toProjectCard(p)} corner={CORNERS[i % CORNERS.length]} headingTag="h2" />
+							))}
+						</Grid>
+					) : (
+						<EmptyNote />
+					)}
+				</div>
+			</div>
+		</Base>
+	)
+}

@@ -1,0 +1,123 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import type { SectionHeadingTag } from "../lib/heading";
+import { uid } from "../lib/id";
+import type { NavAction } from "../lib/nav";
+import Button from "./Button.astro";
+import SectionHead from "./SectionHead.astro";
+
+export interface Props extends HTMLAttributes<"section"> {
+	heading: string;
+	/** Turn one *phrase* in the heading into <em> (lib/emphasis.ts). Off by default: the heading shows as typed. */
+	emphasis?: boolean;
+	/** A short mark after the heading, such as "(12)". Shown beside the heading, outside it, so the heading's name stays plain. Shown only with a heading. */
+	mark?: string;
+	/** What the mark says to a screen reader, such as "12 projects". Without it, the mark is read as written. */
+	markLabel?: string;
+	/** One or two sentences under the heading. */
+	text?: string;
+	/** Buttons on the band (Button tone="cta"). Default variants: the first is `primary`, the rest `secondary`. */
+	actions?: Omit<NavAction, "size">[];
+	/** Heading element. */
+	headingTag?: SectionHeadingTag;
+	/** For recipes: the alignment of the text and the actions. */
+	align?: "start" | "center";
+	/** For recipes: the heading, after its own classes (a smaller type role). */
+	headingClass?: string;
+	/** For recipes: the row that holds the padded body and the media block. */
+	contentClass?: string;
+	/** For recipes: the padded body that holds the text block and the actions block. */
+	bodyClass?: string;
+	/** For recipes: the text block, SectionHead's root (eyebrow, heading, text), at max-w-head. */
+	textClass?: string;
+	/** For recipes: the actions block (the Buttons and the default slot). */
+	actionsClass?: string;
+	/** For recipes: the media block, unpadded, so an image can reach the band's edge. */
+	mediaClass?: string;
+	class?: string;
+}
+
+/** A recipe's props: the shell's, less the ones that set the layout, which the recipe sets itself. */
+export type CtaBandRecipeProps = Omit<Props, "align" | "headingClass" | "contentClass" | "bodyClass" | "textClass" | "actionsClass" | "mediaClass">;
+
+const {
+	heading,
+	emphasis = false,
+	mark,
+	markLabel,
+	text,
+	actions = [],
+	headingTag = "h2",
+	align = "start",
+	headingClass,
+	contentClass,
+	bodyClass,
+	textClass,
+	actionsClass,
+	mediaClass,
+	class: className,
+	...rest
+} = Astro.props;
+const headingId = uid("cta");
+const center = align === "center";
+// The named slots are rendered first, so one whose content is empty (a recipe passes its slots on in an
+// expression, which always fills them) leaves no wrapper.
+const eyebrow = Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+const media = Astro.slots.has("media") ? (await Astro.slots.render("media")).trim() : "";
+const extra = Astro.slots.has("default") ? (await Astro.slots.render("default")).trim() : "";
+// The CTA family's shell (decision 0013): the region named by its heading, and the order eyebrow, heading, text,
+// actions, the default slot, then the media block. The text block is SectionHead; its lead keeps the band's text
+// color (text-inherit, not SectionHead's muted) at the narrow width. The band is always a full-color band: the
+// band when a preset sets --ui-band, else the accent; border-band gives a border a caller adds the band's edge.
+// focus-on-cta puts a band-fg ring on every focusable element inside, and the action Buttons take tone="cta"
+// (inverted on the band). The band is a named container (cta) for the recipes' queries. The row holds the padded
+// body and the unpadded media block, so a recipe's image can reach the band's edge; the band's corners clip it
+// (overflow-hidden). The body pads with the blocks roles, never section, which a preset may set very wide for page
+// sections. Recipes lay out the wrappers with the class props; align is for recipes, which do not pass it on. On a
+// narrow band nothing sets the body's width: below a 24rem band the action Buttons fill the row, and a long action
+// label wraps to a second line inside the button's height (text-control's line height of 1), and a long word or a
+// form in the default slot breaks or shrinks to fit. The band's heading keeps the title role (SectionHead's default is
+// the smaller section role): the band is the page's closing statement. A recipe's own headingClass still wins.
+---
+
+<section aria-labelledby={headingId} class={cn("@container/cta overflow-hidden rounded-card bg-band text-band-fg border-band focus-on-cta", className)} {...rest}>
+	<div data-cta-row class={cn("grid", contentClass)}>
+		<div data-cta-body class={cn("grid min-w-0 gap-blocks p-blocks @3xl/cta:px-blocks-item @3xl/cta:py-group", center && "justify-items-center text-center", bodyClass)}>
+			<SectionHead
+				data-cta-text
+				heading={heading}
+				emphasis={emphasis}
+				mark={mark}
+				markLabel={markLabel}
+				markClass="text-inherit"
+				text={text}
+				headingTag={headingTag}
+				id={headingId}
+				align={align}
+				headingClass={cn("text-title", headingClass)}
+				leadClass="@3xl/cta:mt-5 max-w-lead-narrow text-inherit"
+				class={textClass}
+			>
+				{eyebrow && <Fragment slot="eyebrow" set:html={eyebrow} />}
+			</SectionHead>
+			{
+				(actions.length > 0 || extra) && (
+					<div data-cta-actions class={cn("grid min-w-0 justify-items-start gap-item", center && "justify-items-center", actionsClass)}>
+						{actions.length > 0 && (
+							<div class={cn("flex flex-wrap gap-3 *:grow @sm/cta:*:grow-0", center && "justify-center")}>
+								{actions.map((action, i) => (
+									<Button href={action.href} variant={action.variant ?? (i === 0 ? "primary" : "secondary")} tone="cta" class="max-w-full whitespace-normal text-center">
+										{action.label}
+									</Button>
+								))}
+							</div>
+						)}
+						{extra && <div data-cta-slot class="min-w-0 max-w-full text-body @md/cta:text-lead font-semibold [overflow-wrap:anywhere] [&_a]:text-inherit" set:html={extra} />}
+					</div>
+				)
+			}
+		</div>
+		{media && <div data-cta-media class={cn("min-w-0", mediaClass)} set:html={media} />}
+	</div>
+</section>

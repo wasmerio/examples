@@ -1,0 +1,183 @@
+---
+/**
+ * Search results, look-free: the states and, in static mode, the browser
+ * search. The theme gives the look.
+ *
+ * - `mode="request"`: the source searched on the server; pass `query`, `hits`
+ *   (already cut to the limit) and `more`. Rendered here; no client work.
+ * - `mode="static"`: Pagefind (`staticSearch()`). Renders `data-state="loading"`
+ *   and a hit template; the script reads `?q=`, searches and fills the list.
+ *
+ * The default slot is a function `(hit) => <li>…</li>`: one list item per hit.
+ * Mark its elements `data-hit="href"` (the link), `"title"` (its text; else
+ * the link's text), `"excerpt"` and `"kind"` (render these only when set),
+ * and `"image"` (render it only when `hit.image` is set): an <img>, or an
+ * element holding one. In static mode the script sets its `src` and `alt`
+ * (an empty `alt` when the element is `aria-hidden="true"`: the picture is
+ * decoration beside the title), or removes the element when the hit has no
+ * image; the template's blank hit has an image with an empty `src`, so render
+ * a plain <img> for it.
+ * Named slots:
+ *
+ * - `header` (optional): rendered first, outside every live region (the page
+ *   title, the search box). It may be a function of the count text.
+ * - `empty` (no query) and `none` (no hits; `<span data-search-query>` gets
+ *   the query). The none block sits in its own polite live region.
+ * - `count` (optional): a function `(text) => markup` holding one element
+ *   with `data-count-text aria-live="polite"`. The script writes the count
+ *   there. Without it (and without such an element in `header`), the part
+ *   renders `<p data-count-text aria-live="polite">`.
+ *
+ * A named function slot needs an element wrapper, which Astro drops:
+ * `<p slot="count">{(text) => <p data-count-text aria-live="polite">{text}</p>}</p>`.
+ * A `<Fragment slot="count">` wrapper does not pass the text.
+ * `text` strings take `{n}` and `{q}`.
+ */
+import { cn } from "@astronomic/ui/lib/cn.ts";
+import type { ShownHit } from "../content/search.ts";
+import { fill, shown } from "../search-client.ts";
+
+export type SearchPageText = {
+	loading: string;
+	failed: string;
+	/** Shown in `astro dev`, where there is no built index. */
+	devOnly: string;
+	/** Static mode with JavaScript off: search cannot run. */
+	noScript: string;
+	count: { one: string; many: string; more: string };
+	titleFor: string;
+};
+
+interface Props {
+	mode: "request" | "static";
+	query?: string;
+	hits?: ShownHit[];
+	more?: boolean;
+	/** The most hits shown. Undefined means no limit; 0 throws. */
+	limit?: number;
+	/** Collection key → kind label. */
+	kinds?: Record<string, string>;
+	text: SearchPageText;
+	class?: string;
+	listClass?: string;
+}
+
+const { mode, query = "", hits = [], more = false, limit, kinds = {}, text, class: className, listClass } = Astro.props;
+// Checks the limit in both modes (0 throws).
+shown([], limit);
+
+const state = mode === "static" ? "loading" : !query ? "empty" : hits.length ? "results" : "none";
+const countText = state === "results" ? fill(more ? text.count.more : hits.length === 1 ? text.count.one : text.count.many, { n: hits.length, q: query }) : "";
+
+const renderHit = (hit: ShownHit) => Astro.slots.render("default", [hit]);
+const items = mode === "request" ? await Promise.all(hits.map(renderHit)) : [];
+// The template's blank hit sets every optional field, so the theme renders each element.
+const template = mode === "static" ? await renderHit({ href: "", title: " ", excerpt: " ", kind: " ", image: { src: "", alt: "" } }) : "";
+const header = Astro.slots.has("header") ? await Astro.slots.render("header", [countText]) : "";
+const count = Astro.slots.has("count") ? await Astro.slots.render("count", [countText]) : header.includes("data-count-text") ? "" : undefined;
+// Set by staticSearch() from Astro's trailingSlash: Pagefind's URLs keep their slash only for "always".
+const keepTrailingSlash = import.meta.env.ASTRONOMIC_SEARCH_KEEP_TRAILING_SLASH === true || undefined;
+const config = mode === "static" ? JSON.stringify({ limit, kinds, text, keepTrailingSlash }).replace(/</g, "\\u003c") : "";
+---
+
+<div data-search-page data-mode={mode} data-state={state} class={cn(className)}>
+	{header && <Fragment set:html={header} />}
+	<div data-search-block="empty" hidden={state !== "empty"}><slot name="empty" /></div>
+	<p data-search-status role="status" hidden={state !== "loading"} class="noscript:hidden">{mode === "static" ? text.loading : ""}</p>
+	{mode === "static" && <noscript><p data-search-noscript>{text.noScript}</p></noscript>}
+	{count === undefined ? <p data-count-text aria-live="polite">{countText}</p> : count && <Fragment set:html={count} />}
+	{/* Its own live region (always rendered), so "no results" is announced when the block shows. */}
+	<div data-search-announce aria-live="polite"><div data-search-block="none" hidden={state !== "none"}><slot name="none" /></div></div>
+	<ul data-search-results role="list" class={cn(listClass)} hidden={state !== "results"}>
+		{items.map((item) => <Fragment set:html={item} />)}
+	</ul>
+	{
+		mode === "static" && (
+			<>
+				<template data-search-hit set:html={template} />
+				<script type="application/json" data-search-config set:html={config} />
+			</>
+		)
+	}
+</div>
+
+<script>
+	import { fill, queryFrom, searchHits, type PagefindApi } from "../search-client.ts";
+	import type { SearchPageText } from "./SearchPage.astro";
+
+	type Config = { limit?: number; kinds?: Record<string, string>; text: SearchPageText; keepTrailingSlash?: boolean };
+
+	const INDEX = "/pagefind/pagefind.js";
+
+	function setState(root: HTMLElement, state: string) {
+		root.dataset.state = state;
+		const show = (el: Element | null, on: boolean) => el?.toggleAttribute("hidden", !on);
+		show(root.querySelector('[data-search-block="empty"]'), state === "empty");
+		show(root.querySelector('[data-search-block="none"]'), state === "none");
+		show(root.querySelector("[data-search-status]"), state === "loading" || state === "failed");
+		show(root.querySelector("[data-search-results]"), state === "results");
+	}
+
+	function setCount(root: HTMLElement, value: string) {
+		const target = root.querySelector("[data-count-text]");
+		if (target) target.textContent = value;
+	}
+
+	async function run(root: HTMLElement) {
+		// Request mode is server-only: the server's hits stay as rendered, and Pagefind never loads.
+		if (root.dataset.mode !== "static" || root.dataset.bound === "true") return;
+		root.dataset.bound = "true";
+		const config: Config = JSON.parse(root.querySelector("script[data-search-config]")?.textContent ?? "{}");
+		const { text } = config;
+		const q = queryFrom(location.search);
+
+		const path = location.pathname.replace(/\/$/, "") || "/";
+		for (const action of new Set([path, `${path}/`])) {
+			for (const input of document.querySelectorAll<HTMLInputElement>(`form[action="${CSS.escape(action)}"] input[name="q"]`)) input.value = q;
+		}
+		if (!q) return setState(root, "empty");
+		document.title = fill(text.titleFor, { q });
+		for (const span of root.querySelectorAll("[data-search-query]")) span.textContent = q;
+
+		const load = (): Promise<PagefindApi> => import(/* @vite-ignore */ INDEX);
+		const { state, hits, more } = await searchHits(load, q, config);
+		if (state === "failed") {
+			const status = root.querySelector("[data-search-status]");
+			if (status) status.textContent = import.meta.env.DEV ? text.devOnly : text.failed;
+			return setState(root, "failed");
+		}
+
+		const template = root.querySelector<HTMLTemplateElement>("template[data-search-hit]");
+		const list = root.querySelector("[data-search-results]");
+		if (!template || !list) return;
+		list.replaceChildren(
+			...hits.map((hit) => {
+				const item = template.content.cloneNode(true) as DocumentFragment;
+				const link = item.querySelector<HTMLAnchorElement>('[data-hit="href"]');
+				if (link) link.href = hit.href;
+				const title = item.querySelector('[data-hit="title"]') ?? link;
+				if (title) title.textContent = hit.title;
+				for (const key of ["excerpt", "kind"] as const) {
+					const el = item.querySelector(`[data-hit="${key}"]`);
+					if (!el) continue;
+					if (hit[key]) el.textContent = hit[key];
+					else el.remove();
+				}
+				const frame = item.querySelector<HTMLElement>('[data-hit="image"]');
+				const img = frame instanceof HTMLImageElement ? frame : frame?.querySelector("img");
+				if (frame && img && hit.image?.src) {
+					img.src = hit.image.src;
+					img.alt = frame.getAttribute("aria-hidden") === "true" ? "" : (hit.image.alt ?? "");
+				} else frame?.remove();
+				return item;
+			}),
+		);
+		if (state === "none") return setState(root, "none");
+		setCount(root, fill(more ? text.count.more : hits.length === 1 ? text.count.one : text.count.many, { n: hits.length, q }));
+		setState(root, "results");
+	}
+
+	const start = () => document.querySelectorAll<HTMLElement>("[data-search-page]").forEach((root) => void run(root));
+	start();
+	document.addEventListener("astro:page-load", start);
+</script>

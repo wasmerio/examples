@@ -1,0 +1,123 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing, touchBox } from "../lib/button";
+import { stretchedLink } from "../lib/card";
+import { cn } from "../lib/cn";
+import { formatDate, isoDate, type DateInput } from "../lib/date";
+import { headingType } from "../lib/display";
+import type { ItemHeadingTag } from "../lib/heading";
+import { imageAttrs, type DecorativeImage, type ImageComponent } from "../lib/image";
+import Avatar from "./Avatar.astro";
+import Card from "./Card.astro";
+import Media from "./Media.astro";
+
+/** A post's topic. With href, a link to the topic's page; without, plain text. */
+export interface PostTopic {
+	label: string;
+	href?: string;
+}
+
+/** A post's author. The photo is decoration: the name is right beside it. */
+export interface PostAuthor {
+	name: string;
+	image?: DecorativeImage;
+}
+
+// The post's fields sit in Props itself: the props parser reads one base per type.
+export interface Props extends Omit<HTMLAttributes<"article">, "title"> {
+	/** The post's URL. The title is the only link to it. */
+	href: string;
+	title: string;
+	/** "YYYY-MM-DD" (or a Date, read in UTC: lib/date.ts). Written as <time datetime>. Without it, no <time>: the meta line shows the topic and the reading time, or is left out. */
+	date?: DateInput;
+	/** Text shown in place of the formatted date, such as "Updated 3 days ago". The datetime stays the date. Shown only with a date. */
+	dateLabel?: string;
+	/** A line or two about the post, cut at three lines. */
+	excerpt?: string;
+	/** The post's picture, as decoration: the part writes alt="", since the title says what the post is. */
+	image?: DecorativeImage;
+	/** Your image component for the picture (Media's imageComponent). Not for the author's Avatar. */
+	imageComponent?: ImageComponent;
+	/** How wide the picture shows, for imageComponent's sizes. Recipes set it. */
+	imageSizes?: string;
+	/** The post's topic, first in the meta line (before the date). */
+	topic?: PostTopic;
+	/** The post's author, alone in the footer. */
+	author?: PostAuthor;
+	/** Your own text, such as "5 min read". Last in the meta line. */
+	readingTime?: string;
+	/** The date's language, e.g. "de" (formatDate in lib/date.ts). Default "en". */
+	locale?: string;
+	/** The title element. Required: a recipe passes childHeadingTag(...) (lib/heading.ts). */
+	headingTag: ItemHeadingTag;
+	/** For recipes: the title. */
+	titleClass?: string;
+	class?: string;
+}
+
+/** One post's content (the recipes' items). The data type only: PostCard and PostRow both take it. */
+export type PostItem = Pick<Props, "href" | "title" | "date" | "dateLabel" | "excerpt" | "image" | "topic" | "author" | "readingTime">;
+
+const { href, title, date, dateLabel, excerpt, image, imageComponent, imageSizes, topic, author, readingTime, locale = "en", headingTag: Heading, titleClass, class: className, ...rest } = Astro.props;
+const datetime = date == null ? undefined : isoDate(date);
+const dateText = date == null ? undefined : (dateLabel ?? formatDate(date, locale));
+// The posts family's card (decisions 0013, 0015): a kit Card as the post's <article>, one link through the title
+// (stretchedLink, lib/card.ts: its ::after covers the card, which is relative), so a click anywhere opens the post and
+// the focus ring goes round the card. Source order is the visual order: the picture (alt="", the title says it), the
+// meta line (the topic, the date, the reading time), the title, the excerpt (three lines at most), then the footer
+// (the author alone). The topic leads the meta line (in the footer beside the author's photo and
+// name it would read as one crowded run), so Tab reaches the topic first, then the title: the topic sits above the title,
+// and Tab follows what the eye reads. The topic link sits above the stretched area (relative z-10), so a click on it
+// follows the topic; on a touch screen it is a 44px box (touchBox, decision 0015: a link that stands alone in a meta
+// line), so a tap near it never opens the post by mistake. No "Read more": the title is the link. The card fills its
+// grid row, so footers line up on the bottom edge.
+// The topic is as quiet as the date (in fg at the medium weight it would compete with the title): the
+// meta line's own muted text, size and weight, so the line reads as one gray line. No underline at rest (even
+// a light one draws the eye): a thin underline shows on hover and on focus, as the title's does. The
+// title stays the card's main link. text-inherit: the line's muted, over any base link color.
+const topicLink = "text-inherit no-underline decoration-ui underline-offset-4 hover:underline focus-visible:underline";
+const meta = Boolean(topic || datetime || readingTime);
+---
+
+<Card as="article" data-post-card class={cn("relative h-full", className)} {...rest}>
+	{
+		image && (
+			<Fragment slot="media">
+				<Media src={image.src} alt="" width={image.width} height={image.height} ratio={image.ratio ?? "16/9"} focalPoint={image.focalPoint} loading={image.loading} imageComponent={imageComponent} sizes={imageSizes} />
+			</Fragment>
+		)
+	}
+	{
+		meta && (
+			<p data-post-meta class="m-0 text-small text-muted">
+				{/* "Product · Oct 15, 2026 · 5 min read", all muted, a middle dot (hidden from screen readers) before each
+				    piece after the first. The printed date and the reading time each stay whole ("8 min read"
+				    never splits), and each dot is bound to the piece after it, so a line breaks only before a dot, never
+				    after one. The buyer's own topic and dateLabel may wrap. Whatever is missing leaves no dot; with none
+				    of the three there is no line. */}
+				{topic &&
+					(topic.href ? (
+						<a data-post-topic href={topic.href} class={cn("relative z-10 rounded-control pointer-coarse:inline-flex pointer-coarse:items-center", topicLink, touchBox, focusRing)}>
+							{topic.label}
+						</a>
+					) : (
+						<span data-post-topic>{topic.label}</span>
+					))}
+				{datetime && <>{topic && <>{" "}<span aria-hidden="true">·&nbsp;</span></>}<time class={dateLabel ? undefined : "whitespace-nowrap"} datetime={datetime}>{dateText}</time></>}
+				{readingTime && <>{(topic || datetime) && " "}<span class="whitespace-nowrap">{(topic || datetime) && <span aria-hidden="true">· </span>}{readingTime}</span></>}
+			</p>
+		)
+	}
+	<Heading class={cn("m-0 text-heading text-balance [overflow-wrap:anywhere]", headingType, titleClass)}><a href={href} class={stretchedLink}>{title}</a></Heading>
+	{excerpt && <p data-post-excerpt class="m-0 line-clamp-3 text-body text-pretty text-muted">{excerpt}</p>}
+	{
+		author && (
+			<Fragment slot="footer">
+				<span class="inline-flex min-w-0 items-center gap-2 text-small text-muted">
+					<Avatar name={author.name} image={author.image ? { ...imageAttrs(author.image.src, author.image.width, author.image.height), alt: "" } : undefined} size="sm" decorative />
+					{author.name}
+				</span>
+			</Fragment>
+		)
+	}
+</Card>

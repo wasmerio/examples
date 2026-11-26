@@ -1,0 +1,100 @@
+---
+import { cn } from "../lib/cn";
+import { headingType } from "../lib/display";
+import { childHeadingTag, type ItemHeadingTag } from "../lib/heading";
+import StepItemPart, { type StepsItem } from "./StepItem.astro";
+import Steps, { type StepsRecipeProps } from "./Steps.astro";
+
+export type { StepsItem } from "./StepItem.astro";
+
+export interface Props extends StepsRecipeProps {
+	/** The step title element when there is no heading. With a heading, titles sit one level under it. */
+	itemHeadingTag?: ItemHeadingTag;
+	items: StepsItem[];
+	/** Where each step's meta sits: under the title (below, the default) or above it, as a timing line read first. A step's own metaPlacement wins. */
+	metaPlacement?: "below" | "above";
+	/** Each step's meta type and color, after its own classes. A step's own metaClass wins. */
+	metaClass?: string;
+	/**
+	 * The marker's outline: circle (the default, fully round) or square (the control's corners, rounded-control, so it
+	 * follows the theme's square-ish or soft controls).
+	 */
+	markerShape?: "circle" | "square";
+	/**
+	 * For recipes: the marker, after its own classes, such as a filled accent tile at another size. A plain rounded-*
+	 * class here (no variant) sets the corners in place of markerShape's, such as a theme's own tile radius.
+	 */
+	markerClass?: string;
+}
+
+const { itemHeadingTag = "h3", items, metaPlacement = "below", metaClass, markerShape = "circle", markerClass, ...props } = Astro.props;
+const tag = childHeadingTag({ heading: props.heading, headingTag: props.headingTag, itemHeadingTag });
+// The steps family's columns recipe (decision 0013): each step starts with a marker, its number in a small round
+// frame (the control size, a hairline edge, the heading role and face, tabular, in the accent color), so a row of steps
+// reads as a path and never as a row of stats (StatsGrid owns the big figure). Below a 32rem steps container (every
+// phone, and a narrow column) the steps are a list: one under another, each with the marker beside its text (top edges
+// met), so a phone reads a short list, not a tall stack. From 32rem the steps sit in columns, the marker above the
+// text, and a hairline runs from the marker to the end of its column (the last step has none). The columns are chosen
+// from the count so no step is left alone in a row: two make one row of two and three one row of three; four make two
+// rows of two, then one row of four from 56rem; five make three and two, then one row of five from 64rem (each about
+// 11rem wide there); six make two rows of three; seven or more sit two to a row, then four to a row from 56rem, so
+// seven or nine leave one step alone in a last row (no column count avoids it for every width). One step stays one
+// column. Only an item's own fields reach the part, so a CMS entry's other fields never reach the markup. The
+// recipe's own props come after the rest, so its layout always wins.
+const n = items.length;
+const columns =
+	n === 2
+		? "@lg/steps:grid-cols-2"
+		: n === 3
+			? "@lg/steps:grid-cols-3"
+			: n === 4
+				? "@lg/steps:grid-cols-2 @4xl/steps:grid-cols-4"
+				: n === 5
+					? "@lg/steps:grid-cols-3 @5xl/steps:grid-cols-5"
+					: n === 6
+						? "@lg/steps:grid-cols-3"
+						: n > 6
+							? "@lg/steps:grid-cols-2 @4xl/steps:grid-cols-4"
+							: undefined;
+// The marker: a circle with no fill, so it sits on whatever surface the section has. The number is in the heading face
+// (as the step's title), in place of the step role's large display figure. markerShape="square" gives it the control's
+// corners (rounded-control) in place of the circle; markerClass comes last, so a theme can fill it (bg-accent
+// text-on-accent border-transparent) or size it (size-10), with the number still hidden from a screen reader.
+// A theme's own corners in markerClass (a plain rounded-*, such as rounded-gc-tile) replace the shape's: the kit's cn()
+// cannot tell a theme's radius name from rounded-control, so the shape's class is left out rather than merged.
+const ownCorners = /(?:^|\s)rounded(?:-\S+)?(?=\s|$)/.test(markerClass ?? "");
+const marker = cn(
+	"inline-grid size-control shrink-0 place-items-center",
+	ownCorners ? undefined : markerShape === "square" ? "rounded-control" : "rounded-full",
+	"border-ui border-solid border-border text-heading leading-none tabular-nums",
+	headingType,
+	markerClass,
+);
+// The head: the marker, then from 32rem a hairline from it to the end of the column, an item's gap after the marker,
+// centered on it. Not on the last step, so the path ends with the last marker.
+const head =
+	"items-center gap-item @lg/steps:after:h-0 @lg/steps:after:min-w-0 @lg/steps:after:flex-1 @lg/steps:after:border-t-ui @lg/steps:after:border-solid @lg/steps:after:border-border @lg/steps:after:content-[''] [li:last-child_&]:after:hidden";
+// Each step: below 32rem two columns, the marker beside the text an item apart; from there the part's own single
+// column, the head above the text. Both sides are conditions, so neither depends on the order of the rules.
+const step = "items-start @max-lg/steps:grid-cols-[auto_minmax(0,1fr)] @max-lg/steps:gap-x-item";
+---
+
+<Steps {...props} align="start" contentClass={undefined} headerClass={undefined} listClass={columns}>
+	{Astro.slots.has("eyebrow") && <Fragment slot="eyebrow"><slot name="eyebrow" /></Fragment>}
+	{
+		items.map((item, i) => (
+			<StepItemPart
+				number={i + 1}
+				title={item.title}
+				meta={item.meta}
+				text={item.text}
+				headingTag={tag}
+				metaPlacement={item.metaPlacement ?? metaPlacement}
+				metaClass={item.metaClass ?? metaClass}
+				numberClass={marker}
+				headClass={head}
+				class={step}
+			/>
+		))
+	}
+</Steps>

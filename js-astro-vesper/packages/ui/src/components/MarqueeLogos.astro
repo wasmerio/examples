@@ -1,0 +1,82 @@
+---
+import { focusRing } from "../lib/button";
+import { cn } from "../lib/cn";
+import { displayType } from "../lib/display";
+import { relFor } from "../lib/nav";
+import type { LogoStripItem } from "./LogoStrip.astro";
+import Marquee, { type MarqueeRecipeProps } from "./Marquee.astro";
+
+export type { LogoStripItem } from "./LogoStrip.astro";
+
+export interface Props extends MarqueeRecipeProps {
+	/** One or more clients: { name, logo?, href?, target? }, as LogoStrip's. Empty throws. */
+	items: LogoStripItem[];
+	/**
+	 * Where the label goes (with a label, not a heading). side (default): in a start column beside the row from a 48rem
+	 * marquee container, above it below that. stacked: above the row at every width, on one line with the pause
+	 * button. hidden: not shown, still the region's name for a screen reader (for a caller that shows its own label
+	 * beside the strip). hidden takes no pause: put a MotionPause in your own label column; pause with it stops the build.
+	 * When your label is visible beside the strip, use labelledBy (the shell's) instead, so the name is read once.
+	 */
+	labelLayout?: "side" | "stacked" | "hidden";
+}
+
+const { items, labelLayout = "side", ...props } = Astro.props;
+if (!items?.length) throw new Error("MarqueeLogos needs at least one item.");
+// With labelledBy (and no heading) the caller's own element names the strip and there is no label to place.
+const withLabel = !props.heading && !props.labelledBy;
+const side = withLabel && labelLayout === "side";
+const hidden = withLabel && labelLayout === "hidden";
+// hidden: the whole header is visually hidden, so it takes no row and no gap, and the label still names the region. A
+// pause button in it would be a hidden control, so the pair stops the build.
+if (hidden && props.pause) throw new Error('MarqueeLogos labelLayout="hidden" takes no pause: put a MotionPause in your own label column.');
+const itemBase = "inline-flex min-h-logo min-w-0 items-center text-inherit marquee-moves:whitespace-nowrap no-underline";
+// Client logos or names in a moving row (the Marquee shell). With a label, the label and the pause button sit in a
+// start column beside the row from a 48rem marquee container (about one to three), and above it, on one line, below
+// that; with a heading, the header sits above the row. labelLayout="stacked" keeps the label above the row at every
+// width; "hidden" hides the header visually, so the label only names the region (a caller's own label column shows the
+// words, and its own MotionPause if the strip needs one). With labelledBy, the caller's visible element names the
+// region and the strip draws no label; labelLayout does not apply. Each item is LogoStrip's: a logo image h-logo tall (its alt
+// always the name) or the name as text in display type, a link with the kit's focus ring and relFor's rel, fading to
+// the muted color (a name) or 70% opacity (an image) on hover, the fade only where motion is allowed. Only an item's
+// own fields reach the markup. The recipe's own props come after the rest, so its layout always wins.
+---
+
+<Marquee
+	{...props}
+	decorative={false}
+	contentClass={side ? "@3xl/marquee:grid-cols-[minmax(0,1fr)_minmax(0,3fr)] @3xl/marquee:items-center" : undefined}
+	headerClass={side ? "@3xl/marquee:flex-col @3xl/marquee:items-start" : hidden ? "sr-only" : undefined}
+	trackClass={undefined}
+	setClass={cn("text-heading leading-tight text-fg", displayType)}
+>
+	{Astro.slots.has("eyebrow") && <Fragment slot="eyebrow"><slot name="eyebrow" /></Fragment>}
+	{
+		items.map(({ name, logo, href, target }) => {
+			const content = logo ? (
+				<img
+					src={logo.src}
+					alt={name}
+					width={logo.width}
+					height={logo.height}
+					loading="lazy"
+					decoding="async"
+					class={cn("block h-logo w-auto max-w-logo object-contain", href && "group-hover/logo:opacity-70 motion-ok:transition-opacity motion-ok:duration-150")}
+				/>
+			) : (
+				<span class="min-w-0 [overflow-wrap:anywhere] [text-box-trim:trim-both] [text-box-edge:cap_alphabetic]">{name}</span>
+			);
+			return (
+				<li data-logo class="flex min-w-0">
+					{href ? (
+						<a href={href} target={target} rel={relFor(target)} class={cn(itemBase, "group/logo rounded-control hover:text-muted motion-ok:transition-colors motion-ok:duration-150", focusRing)}>
+							{content}
+						</a>
+					) : (
+						<span class={itemBase}>{content}</span>
+					)}
+				</li>
+			);
+		})
+	}
+</Marquee>

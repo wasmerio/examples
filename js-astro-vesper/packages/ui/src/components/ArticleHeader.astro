@@ -1,0 +1,167 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing, touchBox } from "../lib/button";
+import { cn } from "../lib/cn";
+import { formatDate, isoDate, type DateInput } from "../lib/date";
+import { displayType } from "../lib/display";
+import { pillClasses } from "../lib/pill";
+import type { PostTopic } from "./PostCard.astro";
+
+export interface Props extends Omit<HTMLAttributes<"header">, "title"> {
+	/** The post's title. */
+	title: string;
+	/** The standfirst: one or two sentences under the title. */
+	text?: string;
+	/** Default h1: a post header opens its page. h2 when the page has its own h1. */
+	headingTag?: "h1" | "h2";
+	/** "YYYY-MM-DD" (or a Date, read in UTC: lib/date.ts). Written as <time datetime>. */
+	date?: DateInput;
+	/** Text shown in place of the formatted date, such as "Updated 3 days ago". The datetime stays the date. Shown only with a date. */
+	dateLabel?: string;
+	/** Your own text, e.g. "12 min read". */
+	readingTime?: string;
+	/** Your own text, e.g. "Part 1 of 4". With a link, the series page. */
+	series?: { label: string; href?: string };
+	/** The post's topic, as a pill. With href, a link to the topic's page. */
+	topic?: PostTopic;
+	/** The date's language, e.g. "de" (formatDate in lib/date.ts). Default "en". */
+	locale?: string;
+	/** start or center, inside the same structure. */
+	align?: "start" | "center";
+	/** For recipes: page, or image when the text sits on the photo, under the recipe's own scrim. */
+	tone?: "page" | "image";
+	/** For recipes: the row that holds the text and the photo. */
+	contentClass?: string;
+	/** For recipes: the text block (a named container, article-text, the title sizes to). */
+	textClass?: string;
+	/** For recipes: the title, after its own classes. */
+	headingClass?: string;
+	/** For recipes: the photo box. */
+	mediaClass?: string;
+	class?: string;
+}
+
+/** A recipe's props: the shell's, less the ones that set the layout and the surface, which the recipe sets itself. */
+export type ArticleHeaderRecipeProps = Omit<Props, "tone" | "contentClass" | "textClass" | "headingClass" | "mediaClass">;
+
+const {
+	title,
+	text,
+	headingTag: Heading = "h1",
+	date,
+	dateLabel,
+	readingTime,
+	series,
+	topic,
+	locale = "en",
+	align = "start",
+	tone = "page",
+	contentClass,
+	textClass,
+	headingClass,
+	mediaClass,
+	class: className,
+	...rest
+} = Astro.props;
+const onImage = tone === "image";
+const datetime = date == null ? undefined : isoDate(date);
+const dateText = date == null ? undefined : (dateLabel ?? formatDate(date, locale));
+// The pieces after the topic, joined by middle dots.
+const pieces = [datetime && "date", series && "series", readingTime && "time"].filter(Boolean) as ("date" | "series" | "time")[];
+const hasMeta = Boolean(topic) || pieces.length > 0;
+// The named slots are rendered first, so one whose content is empty (a recipe passes its slots on in an expression,
+// which always fills them) leaves no wrapper.
+const byline = Astro.slots.has("byline") ? (await Astro.slots.render("byline")).trim() : "";
+const media = Astro.slots.has("media") ? (await Astro.slots.render("media")).trim() : "";
+// A piece of the meta line: a flex item that stays whole while it fits a line (the row wraps between pieces), and
+// breaks inside only when it is wider than the row (a long series label, a long localised date). Never nowrap.
+const piece = "min-w-0 max-w-full [overflow-wrap:anywhere]";
+const centred = align === "center";
+// The first item's set-back in a start-aligned row (see below); none in a centered one.
+const lead = centred ? undefined : "ms-[1.125rem]";
+// The meta row never starts a line with a middle dot: each dot leads the piece after it in a 0.75rem slot with a
+// 0.375rem gap each side; the row is pulled 1.125rem to the start and clipped 0.75rem in (clip-path, which leaves the
+// focus rings and hit areas on the other sides alone), and its first item is set back by the same 1.125rem. So a dot
+// that would start a line is cut away, and the clip line sits 0.375rem (6px) before every item, clear of its ring.
+// Under align="center" the meta items have no dots: they are split by space, and each line is centered.
+// A link in the meta line: underlined. On the page the kit's text
+// link and ring; on a photo the text's own scrim-fg color (link-underline would set the page's fg), and the text
+// block's focus-on-image ring. On a coarse pointer it is a 44px box (touchBox), its text centered in it, as Byline's
+// series link is: the row grows on touch only, and the box stays inside its own piece, so it overlaps no other item.
+const touchLink = cn("pointer-coarse:inline-flex pointer-coarse:items-center", touchBox);
+const metaLink = onImage ? cn("underline decoration-ui underline-offset-4", touchLink) : cn("link-underline rounded-control", touchLink, focusRing);
+// The article family's shell (decisions 0013, 0015, 0016): the top of one post. A <header>, not a <section>: it sits
+// inside the theme's <article>, so it is that article's header, not a region of its own. The order: the meta line (the
+// topic as a pill, then the date, series and reading time, a middle dot between them), the title (the page's h1 by
+// default, in the display role, sized to the text block), the standfirst, then the byline slot; then the media slot.
+// The header is a named container (article-header) for the recipes' queries, and the text block is one too
+// (article-text), so the display title sizes to the text's own box. The theme owns the box: its width, a breakout
+// from wide screens (a wider box, with contentClass padding to keep the text on the content edge) and the post grid
+// under it. Under tone="image" the text turns scrim-fg, the topic pill takes its image colors, and the text block's
+// focus-on-image rings every link in it (that utility styles descendants, not its host), so the pill and the series
+// link carry no ring of their own. The topic pill keeps its small size and gets a 44px hit area (tap-area); the series
+// link is a 44px box on a coarse pointer (touchBox).
+---
+
+<header data-article-header class={cn("@container/article-header", className)} {...rest}>
+	<div data-article-row class={cn("grid gap-blocks", contentClass)}>
+		<div
+			data-article-text
+			data-on-image={onImage ? "" : undefined}
+			class={cn("@container/article-text grid min-w-0 gap-item", align === "center" && "justify-items-center text-center", onImage && "text-scrim-fg focus-on-image", textClass)}
+		>
+			{
+				hasMeta && (
+					<div
+						data-article-meta
+						class={cn(
+							"flex flex-wrap items-center gap-y-2 text-small",
+							centred
+								? "justify-center gap-x-[0.75rem]"
+								: "-ms-[1.125rem] gap-x-[0.375rem] [clip-path:inset(-0.75rem_-0.75rem_-0.75rem_0.75rem)] rtl:[clip-path:inset(-0.75rem_0.75rem_-0.75rem_-0.75rem)]",
+							!onImage && "text-muted",
+						)}
+					>
+						{topic &&
+							(topic.href ? (
+								<a href={topic.href} class={cn(pillClasses({ tone }), "tap-area me-1 max-w-full", lead, !onImage && focusRing)}>{topic.label}</a>
+							) : (
+								<span class={cn(pillClasses({ tone }), "me-1 max-w-full", lead)}>{topic.label}</span>
+							))}
+						{pieces.map((kind, i) => {
+							const cls = cn(piece, i === 0 && !topic && lead);
+							const content =
+								kind === "date" ? (
+									<time data-article-piece class={cls} datetime={datetime}>{dateText}</time>
+								) : kind === "series" && series ? (
+									series.href ? (
+										<a data-article-piece href={series.href} class={cn(cls, metaLink)}>{series.label}</a>
+									) : (
+										<span data-article-piece class={cls}>{series.label}</span>
+									)
+								) : (
+									<span data-article-piece class={cls}>{readingTime}</span>
+								);
+							// The dot leads the piece after it, in a 0.75rem slot: when that piece starts a line, its dot
+							// falls in the row's clipped start strip, so no line ends with a dot or starts with one. A
+							// centered row has no dots: its items are split by space, and each line is centered.
+							return i === 0 || centred ? (
+								content
+							) : (
+								<span data-article-group class="inline-flex min-w-0 max-w-full items-baseline gap-x-[0.375rem]">
+									<span aria-hidden="true" class="w-[0.75rem] shrink-0 text-center">·</span>
+									{content}
+								</span>
+							);
+						})}
+					</div>
+				)
+			}
+			{/* One long word breaks rather than overflow. */}
+			<Heading class={cn("m-0 max-w-head text-display text-balance [overflow-wrap:anywhere]", displayType, headingClass)}>{title}</Heading>
+			{text && <p class={cn("m-0 max-w-lead text-lead text-pretty", onImage ? "text-scrim-fg" : "text-muted")}>{text}</p>}
+			{byline && <div data-article-byline class="mt-item min-w-0 justify-self-stretch text-start" set:html={byline} />}
+		</div>
+		{media && <div data-article-media class={cn("min-w-0", mediaClass)} set:html={media} />}
+	</div>
+</header>

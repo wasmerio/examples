@@ -1,0 +1,138 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import { controlClasses } from "../lib/field";
+import { uid } from "../lib/id";
+import { POPOVER_TEXTS, anchorName } from "../lib/popover";
+import Icon from "./Icon.astro";
+
+export interface Props extends HTMLAttributes<"div"> {
+	/** What the panel is about ("Home type"): the panel's name, and the first words of the trigger's name. */
+	label: string;
+	/** The trigger's words as the page first draws them ("Any type"). Default: anyText. */
+	triggerText?: string;
+	/** What the script keeps the trigger's words in step with: the picks of "choices", or the two ends of a "range". Unset: the words stay as you wrote them. */
+	summary?: "choices" | "range";
+	/** The words for nothing picked ("Any type"). */
+	anyText?: string;
+	/** The words for two or more choices; {n} is the count ("{n} types"). */
+	countText?: string;
+	/** The words for both ends of a range; {min} and {max} are the options' words. */
+	rangeText?: string;
+	/** The words for a minimum only ("{min}+"). */
+	fromText?: string;
+	/** The words for a maximum only ("Up to {max}"). */
+	upToText?: string;
+	/** The panel's columns: 2 sets two PopoverGroups side by side, with a line between. */
+	cols?: 1 | 2;
+	/** The trigger can't be used, and the panel's controls do not submit. */
+	disabled?: boolean;
+	/** The trigger's id. Default: a page-unique id. The panel's id adds "-panel". */
+	id?: string;
+	/** More classes for the outer box, merged with cn(). */
+	class?: string;
+	/** More classes for the trigger. */
+	triggerClass?: string;
+	/** More classes for the panel. */
+	panelClass?: string;
+}
+
+const {
+	label,
+	summary,
+	anyText = POPOVER_TEXTS.anyText,
+	triggerText = anyText,
+	countText = POPOVER_TEXTS.countText,
+	rangeText = POPOVER_TEXTS.rangeText,
+	fromText = POPOVER_TEXTS.fromText,
+	upToText = POPOVER_TEXTS.upToText,
+	cols = 1,
+	disabled = false,
+	id = uid("popover"),
+	class: className,
+	triggerClass,
+	panelClass,
+	...rest
+} = Astro.props;
+const panelId = `${id}-panel`;
+const anchor = anchorName(id);
+const summaryData = summary
+	? { "data-popover-summary": summary, "data-popover-any": anyText, "data-popover-count": countText, "data-popover-range": rangeText, "data-popover-from": fromText, "data-popover-up-to": upToText }
+	: {};
+// The trigger slot is content inside the button: it must not hold a link or a button.
+const customTrigger = Astro.slots.has("trigger");
+// A button and a native popover panel: the browser opens and closes it, closes it on Escape and on an outside click, and
+// puts it in the top layer, so no ancestor's overflow can clip it. The controls in the panel are the caller's (real
+// checkboxes and radios, through PopoverOption), so they submit with the form around them, with or without JavaScript.
+// The anchor's name is per part: an inline style, since a class could not name an id. The panel's place is the
+// popover-panel utility (theme.css): under the trigger, flipped when it does not fit; the @position-try below is the last
+// resort, for a panel that fits neither side at its full height. The rule is here, not in theme.css, so a site whose pages
+// use neither a Popover nor the filters ships no bytes of it. Any page with filters does, even plain ones, since the filter
+// parts import this file; there it is one rule that nothing reads. A panel's display is only ever set while it is open, as the closed state must stay hidden.
+---
+
+<div {...rest} {...summaryData} data-popover class={cn("group/popover relative grid", className)}>
+	<button
+		type="button"
+		id={id}
+		popovertarget={panelId}
+		aria-haspopup="dialog"
+		aria-controls={panelId}
+		disabled={disabled}
+		data-popover-trigger
+		style={`anchor-name:${anchor}`}
+		class={cn(controlClasses, "h-control cursor-pointer rounded-control ps-3.5 pe-10 text-start disabled:cursor-not-allowed pointer-coarse:min-h-11", triggerClass)}
+	>
+		{
+			customTrigger ? (
+				<slot name="trigger" />
+			) : (
+				<span class="block truncate">
+					<span class="sr-only" data-popover-name>{label}: </span>
+					<span data-popover-text>{triggerText}</span>
+				</span>
+			)
+		}
+	</button>
+	<Icon size="sm" class="pointer-events-none absolute end-3.5 top-1/2 -translate-y-1/2 text-muted group-has-[:popover-open]/popover:rotate-180 motion-ok:transition-transform motion-ok:duration-200">
+		<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4" /></svg>
+	</Icon>
+	<div
+		id={panelId}
+		popover="auto"
+		role="dialog"
+		aria-label={label}
+		data-popover-panel
+		data-popover-cols={cols === 2 ? "2" : undefined}
+		style={`position-anchor:${anchor}`}
+		class={cn(
+			"popover-panel rounded-card border-ui border-solid border-border bg-surface p-1.5 text-fg shadow-popover outline-none",
+			"open:grid",
+			cols === 2 && "open:grid-cols-2",
+			"motion-ok:transition-[opacity,translate] motion-ok:duration-200 motion-ok:open:starting:-translate-y-1 starting:motion-ok:open:opacity-0",
+			panelClass,
+		)}
+	>
+		{
+			disabled ? (
+				<fieldset disabled class="contents">
+					<slot />
+				</fieldset>
+			) : (
+				<slot />
+			)
+		}
+	</div>
+</div>
+
+<style is:global>
+	@position-try --popover-fit {
+		max-block-size: calc(100% - 0.75rem);
+		min-block-size: min(8rem, calc(100% - 0.75rem));
+	}
+</style>
+
+<script>
+	import { start } from "../lib/popover";
+	start();
+</script>

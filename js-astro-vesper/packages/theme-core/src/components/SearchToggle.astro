@@ -1,0 +1,111 @@
+---
+/**
+ * Phone search: a button beside the menu button (below the Navbar's md fold point,
+ * nav-md:, the kit's --breakpoint-nav-md: 768px unless the theme moves it) that opens the
+ * search row under the header. The layout renders the row with
+ * `data-search-row` and the id passed as `controls`. Spacing beside the
+ * menu button comes in through `class`.
+ *
+ * Without JavaScript the button is hidden and the row is always shown
+ * (`@media (scripting: none)`), so phones still get a search box.
+ *
+ * Works with or without Astro's <ClientRouter />: the script binds the
+ * button when it runs and again on `astro:page-load` (each page swap brings a
+ * fresh header; a bound button is skipped).
+ */
+import { buttonClasses } from "@astronomic/ui/lib/button.ts";
+import { cn } from "@astronomic/ui/lib/cn.ts";
+import { iconClasses } from "@astronomic/ui/lib/icon.ts";
+
+interface Props {
+	/** Id of the search row. */
+	controls: string;
+	/** The button's name, e.g. "Search". */
+	label: string;
+	class?: string;
+}
+
+const { controls, label, class: className } = Astro.props;
+---
+
+{/* The icons go through the kit's icon utility (its line weight); a variant hides the one not in use, as a plain
+display class would fight the utility's own display. */}
+<button
+	type="button"
+	data-search-toggle
+	aria-expanded="false"
+	aria-controls={controls}
+	aria-label={label}
+	class={cn(
+		buttonClasses({ variant: "ghost", icon: true }),
+		// Same 40px box as the menu button; the hit area reaches 44px.
+		"group relative before:absolute before:-inset-[2px] before:content-['']",
+		"nav-md:hidden noscript:hidden",
+		className,
+	)}
+>
+	<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true" class={cn(iconClasses("md"), "group-aria-expanded:hidden")}>
+		<circle cx="8.75" cy="8.75" r="5.25"></circle>
+		<path d="M12.75 12.75 17 17"></path>
+	</svg>
+	<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true" class={cn(iconClasses("md"), "group-not-aria-expanded:hidden")}>
+		<path d="M5 5l10 10M15 5L5 15"></path>
+	</svg>
+</button>
+
+<script>
+	function parts() {
+		const toggle = document.querySelector<HTMLButtonElement>("[data-search-toggle]");
+		const row = toggle ? document.getElementById(toggle.getAttribute("aria-controls") ?? "") : null;
+		return toggle && row ? { toggle, row } : null;
+	}
+
+	function setOpen(open: boolean) {
+		const found = parts();
+		if (!found) return;
+		found.toggle.setAttribute("aria-expanded", String(open));
+		found.row.toggleAttribute("data-open", open);
+	}
+
+	const isOpen = () => parts()?.toggle.getAttribute("aria-expanded") === "true";
+
+	function init() {
+		const found = parts();
+		// Each page swap brings a fresh header; bind it once.
+		if (!found || found.toggle.dataset.bound === "true") return;
+		const { toggle, row } = found;
+		toggle.dataset.bound = "true";
+
+		toggle.addEventListener("click", () => {
+			const open = !isOpen();
+			setOpen(open);
+			if (open) row.querySelector("input")?.focus();
+		});
+
+		// Escape closes the row and returns focus to the button.
+		const onEscape = (event: KeyboardEvent) => {
+			if (event.key !== "Escape" || !isOpen()) return;
+			event.preventDefault();
+			setOpen(false);
+			toggle.focus();
+		};
+		toggle.addEventListener("keydown", onEscape);
+		row.addEventListener("keydown", onEscape);
+	}
+
+	// The mobile menu (a dialog) and the search row are never open together:
+	// opening the menu closes the row. Bound once, on the document.
+	document.addEventListener(
+		"click",
+		(event) => {
+			const target = event.target instanceof Element ? event.target : null;
+			if (target?.closest('header button[aria-haspopup="dialog"]')) setOpen(false);
+		},
+		true,
+	);
+
+	// Close on navigation, before the old page is swapped out.
+	document.addEventListener("astro:before-swap", () => setOpen(false));
+	init();
+	document.addEventListener("astro:page-load", init);
+</script>

@@ -1,0 +1,54 @@
+---
+/**
+ * One category's posts, every page (`/articles/category/design`, `/articles/category/design/page/2`): the articles
+ * list with the filter set to it. A category with no posts, or a page past the last, answers 404.
+ */
+import { collectionPageNode } from "@astronomic/theme-core/jsonld";
+import ArticlesPage from "~/components/ArticlesPage.astro";
+import { searchKind, useContent } from "~/content";
+import Base from "~/layouts/Base.astro";
+import { strings } from "~/theme.strings";
+import { categoryPaths, usedTerms } from "~/utils/articles";
+import { getConfig } from "~/utils/config";
+import { articlesHref, categoryHref, hasPage, PER_PAGE, pageCount, restPage } from "~/utils/routes";
+import { pageAt, siteOrigin } from "~/utils/public-pages";
+import { siteSettings } from "~/utils/setup";
+import { toPostRow } from "~/utils/view";
+
+export const getStaticPaths = () => categoryPaths(useContent());
+
+const content = useContent(Astro);
+const page = restPage(Astro.params.page);
+const categories = await usedTerms(content, "category");
+const category = categories.find((c) => c.slug === Astro.params.slug);
+if (!category || !page || !hasPage(page, category.count)) {
+	return Astro.rewrite("/404");
+}
+const [{ items }, settings] = await Promise.all([content.posts.list({ category: category.slug, limit: PER_PAGE, offset: (page - 1) * PER_PAGE }), siteSettings(content)]);
+const { config } = getConfig(settings);
+const t = strings.articles;
+// Its own share card only when it is a public page (src/utils/public-pages.ts): a term whose every post is hidden from
+// search engines has none, so it shares the home card.
+const card = page === 1 && (await pageAt(categoryHref(category.slug))) !== undefined;
+const filters = [{ label: t.all, href: articlesHref() }, ...categories.map((c) => ({ label: c.label, href: categoryHref(c.slug), current: c.slug === category.slug }))];
+const title = t.categoryTitle(category.label);
+const jsonLd = collectionPageNode(siteOrigin(Astro), {
+	path: categoryHref(category.slug, page),
+	name: page > 1 ? t.pageOf(title, page) : title,
+	description: t.categoryText(category.label, category.count),
+});
+---
+
+<Base title={page > 1 ? t.pageOf(title, page) : title} description={t.categoryText(category.label, category.count)} jsonLd={jsonLd} card={card}>
+	<ArticlesPage
+		title={category.label}
+		lead={t.categoryText(category.label, category.count)}
+		posts={items.map(toPostRow)}
+		filters={filters}
+		search={!!searchKind(content)}
+		thumbs={config.thumbnails} layout={config.articleList}
+		current={page}
+		total={pageCount(category.count)}
+		href={(n) => categoryHref(category.slug, n)}
+	/>
+</Base>

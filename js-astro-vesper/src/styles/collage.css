@@ -1,0 +1,676 @@
+/*
+ * Photo frames with a cut corner (comp.html "Collage band" and "Latest writing"): the collage band on the home page
+ * (v-band: its packed grids per layout, count and breakpoint, its corner maps, its prints and mats, and its hover)
+ * and the post rows' thumbnails (v-thumb). Every look file sets the frame tokens (--v-print, --v-print-pad,
+ * --v-print-shadow, --v-print-lift, --v-mat, --v-mat-t, --v-mat-bg, --v-edge, --v-edge-w, --v-edge-shadow). In Clear
+ * the frame is empty (no paper, mat, edge or resting shadow), so each frame is one cut photo; the collage photo's
+ * resting shadow and hover lift are --v-print-shadow and --v-print-lift (a warm print's in Field notes, the mat's
+ * shadow and the shared --v-lift in Trail map, none and --v-lift in Clear).
+ *
+ * The cut is the kit's media-cut utility on each nested layer (the frame, the picture, the photo), never on the box
+ * that holds the shadow, the hover scale or the focus ring, so nothing of those is clipped.
+ * Every transition and transform here sits under prefers-reduced-motion: no-preference (scripts/units/motion.test.mjs).
+ */
+
+/*
+ * The collage band (components/CollageBand.astro). Its grid packs the band's rectangle exactly: flush edges, one even
+ * gutter (--v-g), no holes; the photos crop to their cells (object-fit: cover). The layout is `data-collage` on <html>
+ * (src/theme.config.ts), the count `data-count` on the band (4, 5 or 6). Each layout, count and breakpoint has its own
+ * grid (desktop over 1100px, tablet 601 to 1100px, phone up to 600px); a breakpoint with no rule of its own keeps the
+ * wider one's. docs/design/vesper/collage-grids.md has every grid and corner map as a table, and
+ * scripts/units/collage.test.mjs checks each is a full rectangle with every shown photo once.
+ *
+ * Markup: the band > [data-band-grid] > [data-ph] (a link: the photo's own, or, with none and with alt text, one to
+ * its large file that opens in the lightbox; else a box. The grid cell, and the box that grows, lifts and takes the
+ * focus ring) > figure[data-ph-frame] (the print's paper or the mat's edge) >
+ * [data-ph-pic] (the picture box, or the mat) > img, plus the figcaption.
+ *
+ * The cut corner of each photo comes from the layout, not the photo: per layout, count and breakpoint,
+ * a map sets --cut-clip on all three cut layers, so neighbors' cuts face each other across a gutter (never at a corner
+ * of the band). CSS cannot set data-cut, so the map sets the clip itself (--v-cut-ts/te/bs/be name the corners in the
+ * writing direction; right to left mirrors them), plus two flags the frame's insides read: --v-cb (1: a bottom cut)
+ * and --v-ce (1: a cut at the end side). A bottom cut keeps a print's inner cut parallel above its caption, and moves
+ * the caption or the map label clear of the slice.
+ *
+ * Hover and keyboard focus (a photo with a link): only that photo grows (scale 1.055) and lifts above its neighbors
+ * with a soft shadow, and the others dim a touch; nothing reflows. Only with motion allowed, and hover only with a
+ * pointer that hovers (focus on every device).
+ */
+@utility v-band {
+  position: relative;
+  padding: 8px 0 24px;
+
+  & [data-band-grid] {
+    --v-g: 20px;
+    display: grid;
+    gap: var(--v-g);
+    margin-inline: auto;
+  }
+
+  & [data-ph] {
+    position: relative;
+    display: block;
+    min-width: 0;
+    min-height: 0;
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--ui-radius-media);
+    /* The look's resting shadow (a print's in Field notes, the mat's in Trail map), following the cut. */
+    filter: var(--v-print-shadow, none);
+  }
+  & [data-ph]:nth-child(1) { grid-area: a; }
+  & [data-ph]:nth-child(2) { grid-area: b; }
+  & [data-ph]:nth-child(3) { grid-area: c; }
+  & [data-ph]:nth-child(4) { grid-area: d; }
+  & [data-ph]:nth-child(5) { grid-area: e; }
+  & [data-ph]:nth-child(6) { grid-area: f; }
+
+  /* The cut layers' corners in the writing direction, and no cut until the layout's map names one. */
+  & :is([data-ph-frame], [data-ph-pic], img) {
+    --v-cut-ts: var(--cut-tl);
+    --v-cut-te: var(--cut-tr);
+    --v-cut-bs: var(--cut-bl);
+    --v-cut-be: var(--cut-br);
+    --v-cb: 0;
+    --v-ce: 0;
+    &:dir(rtl) {
+      --v-cut-ts: var(--cut-tr);
+      --v-cut-te: var(--cut-tl);
+      --v-cut-bs: var(--cut-br);
+      --v-cut-be: var(--cut-bl);
+    }
+  }
+
+  /* The frame: the print's paper (--v-print, --v-print-pad) around the picture and the caption. */
+  & [data-ph-frame] {
+    --ui-cut-size: var(--v-cut);
+    container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    margin: 0;
+    padding: var(--v-print-pad, 0px);
+    background: var(--v-print, transparent);
+    border-radius: var(--ui-radius-media);
+  }
+  /*
+   * The picture: the frame's cut again, parallel, --v-print-pad in. In its own box that cut is c + p·√2 − p − y, where
+   * y is the inset at the cut's edge: the padding for a top cut, --v-pb (the paper under the picture, caption and
+   * all) for a bottom cut. On a mat look it is the mat (--v-mat-bg).
+   */
+  & [data-ph-pic] {
+    --v-cy: calc(var(--v-print-pad, 0px) + var(--v-cb) * (var(--v-pb, var(--v-print-pad, 0px)) - var(--v-print-pad, 0px)));
+    --v-pc: max(0px, calc(var(--v-cut) + 1.4142 * var(--v-print-pad, 0px) - var(--v-print-pad, 0px) - var(--v-cy)));
+    --ui-cut-size: var(--v-pc);
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background: var(--v-mat-bg, var(--ui-surface-2));
+    border-radius: max(0px, calc(var(--ui-radius-media) - var(--v-print-pad, 0px)));
+  }
+  /* The photo, --v-mat in from the picture on every side (a mat look), with the cut once more, parallel (c − m·(2 − √2)). */
+  & [data-ph-pic] > img {
+    --ui-cut-size: max(0px, calc(var(--v-pc) - 0.5858 * var(--v-mat, 0px)));
+    position: absolute;
+    inset: var(--v-mat, 0px);
+    width: calc(100% - 2 * var(--v-mat, 0px));
+    height: calc(100% - 2 * var(--v-mat, 0px));
+    object-fit: cover;
+    filter: var(--v-photo);
+    border-radius: max(0px, calc(var(--ui-radius-media) - var(--v-print-pad, 0px) - var(--v-mat, 0px)));
+  }
+
+  /*
+   * The caption: place, year and the map label, read with the photo in every look. Clear shows none of it; Field
+   * notes shows the place and the year on the print, Trail map the map label on the photo (below). A part a look
+   * does not show is hidden the screen-reader way, so the caption reads the same everywhere.
+   */
+  & figcaption {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* The layouts' widths and gutters. Mosaic: a wide grid past the text column, near full bleed with side gutters. */
+  :root[data-collage="mosaic"] & {
+    & [data-band-grid] { width: min(1480px, 100% - 2 * var(--v-gut)); }
+    @media (max-width: 600px) {
+      & [data-band-grid] { --v-g: 12px; }
+    }
+  }
+  /* Row: one full-bleed strip, edge to edge (two or three rows on smaller screens). */
+  :root[data-collage="row"] & {
+    & [data-band-grid] { --v-g: 14px; width: 100%; }
+    @media (max-width: 600px) {
+      & [data-band-grid] { --v-g: 10px; }
+    }
+  }
+  /* Contact sheet: even frames, 3:2 (square on phones), narrower than the text column's wrap; rows take the frames' height. */
+  :root[data-collage="sheet"] & {
+    & [data-band-grid] { --v-g: 16px; width: min(980px, 100% - 2 * var(--v-gut)); }
+    & [data-ph] { aspect-ratio: 3 / 2; }
+    @media (max-width: 600px) {
+      & [data-band-grid] { --v-g: 10px; }
+      & [data-ph] { aspect-ratio: 1; }
+    }
+  }
+
+  /*
+   * The grids and corner maps, per layout and count; the 6-photo grids are the comp's. Mosaic: tall photos run both
+   * rows, the wide and small ones share their columns; on a phone it shows four photos for every count (6: photos
+   * 1, 2, 4 and 5, as the comp; 5 and 4: the first four), two facing pairs. Row: one strip, then two offset rows
+   * (three for five photos on a phone, so no photo is narrower than 120px). Contact sheet: even frames; five photos
+   * put the first one large over four cells.
+   */
+  :root[data-collage="mosaic"] &[data-count="6"] {
+    & [data-band-grid] {
+      aspect-ratio: 2.65;
+      grid-template-columns: 1fr 1.5fr 1fr 1.3fr;
+      grid-template-rows: 1.38fr 1fr;
+      grid-template-areas: "a b d f" "a c d e";
+    }
+    & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+    & [data-ph]:is(:nth-child(2), :nth-child(5)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+    & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+    & [data-ph]:is(:nth-child(4), :nth-child(6)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+
+    @media (max-width: 1100px) {
+      & [data-band-grid] {
+        aspect-ratio: 1.45;
+        grid-template-columns: 1fr 1.15fr 1fr;
+        grid-template-rows: 1.25fr 1fr 1fr;
+        grid-template-areas: "a b b" "a c d" "f e d";
+      }
+      & [data-ph]:is(:nth-child(1), :nth-child(3)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:is(:nth-child(2), :nth-child(4)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:nth-child(6) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+      & [data-ph]:nth-child(5) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+    }
+
+    @media (max-width: 600px) {
+      & [data-band-grid] {
+        aspect-ratio: 0.82;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 0.9fr 1fr;
+        grid-template-areas: "a b" "a d" "e d";
+      }
+      & [data-ph]:is(:nth-child(3), :nth-child(6)) { display: none; }
+      & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:nth-child(5) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+      & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+    }
+  }
+
+  :root[data-collage="mosaic"] &[data-count="5"] {
+    & [data-band-grid] {
+      aspect-ratio: 2.65;
+      grid-template-columns: 1fr 1.5fr 1fr 1.3fr;
+      grid-template-rows: 1.38fr 1fr;
+      grid-template-areas: "a b d e" "a c d e";
+    }
+    & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+    & [data-ph]:is(:nth-child(2), :nth-child(5)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+    & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+    & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+
+    @media (max-width: 1100px) {
+      & [data-band-grid] {
+        aspect-ratio: 1.45;
+        grid-template-columns: 1fr 1.15fr 1fr;
+        grid-template-rows: 1.25fr 1fr 1fr;
+        grid-template-areas: "a b b" "a c d" "e e d";
+      }
+      & [data-ph]:is(:nth-child(1), :nth-child(3)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:is(:nth-child(2), :nth-child(4)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:nth-child(5) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+    }
+
+    @media (max-width: 600px) {
+      & [data-band-grid] {
+        aspect-ratio: 0.82;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 0.9fr 1fr;
+        grid-template-areas: "a b" "a c" "d c";
+      }
+      & [data-ph]:nth-child(5) { display: none; }
+      & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+      & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+    }
+  }
+
+  :root[data-collage="mosaic"] &[data-count="4"] {
+    & [data-band-grid] {
+      aspect-ratio: 2.65;
+      grid-template-columns: 1fr 1.6fr 1fr;
+      grid-template-rows: 1.2fr 1fr;
+      grid-template-areas: "a b c" "a b d";
+    }
+    & [data-ph]:is(:nth-child(1), :nth-child(4)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+    & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+    & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+
+    @media (max-width: 1100px) {
+      & [data-band-grid] {
+        aspect-ratio: 1.45;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 0.9fr 1fr;
+        grid-template-areas: "a b" "a c" "d c";
+      }
+      & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+      & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+    }
+
+    @media (max-width: 600px) {
+      & [data-band-grid] {
+        aspect-ratio: 0.82;
+      }
+    }
+  }
+
+  :root[data-collage="row"] &[data-count="6"] {
+    & [data-band-grid] {
+      aspect-ratio: 4.3;
+      grid-template-columns: 3fr 4.6fr 2.7fr 3fr 4.6fr 3fr;
+      grid-template-rows: 1fr;
+      grid-template-areas: "a b c d e f";
+    }
+    & [data-ph]:is(:nth-child(1), :nth-child(5)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+    & [data-ph]:is(:nth-child(2), :nth-child(6)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+    & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+    & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+
+    @media (max-width: 1100px) {
+      & [data-band-grid] {
+        aspect-ratio: 1.9;
+        grid-template-columns: repeat(12, 1fr);
+        grid-template-rows: 1fr 1fr;
+        grid-template-areas: "a a a a b b b b b c c c" "d d d e e e e e f f f f";
+      }
+      & [data-ph]:is(:nth-child(1), :nth-child(6)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:is(:nth-child(3), :nth-child(4)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+      & [data-ph]:nth-child(5) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+    }
+
+    @media (max-width: 600px) {
+      & [data-band-grid] {
+        aspect-ratio: 1.25;
+      }
+    }
+  }
+
+  :root[data-collage="row"] &[data-count="5"] {
+    & [data-band-grid] {
+      aspect-ratio: 3.7;
+      grid-template-columns: 3fr 4.6fr 2.7fr 4.6fr 3fr;
+      grid-template-rows: 1fr;
+      grid-template-areas: "a b c d e";
+    }
+    & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+    & [data-ph]:is(:nth-child(2), :nth-child(5)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+    & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+    & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+
+    @media (max-width: 1100px) {
+      & [data-band-grid] {
+        aspect-ratio: 1.9;
+        grid-template-columns: repeat(12, 1fr);
+        grid-template-rows: 1fr 1fr;
+        grid-template-areas: "a a a a a b b b b b b b" "c c c c d d d d d e e e";
+      }
+      & [data-ph]:is(:nth-child(1), :nth-child(5)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+      & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+    }
+
+    @media (max-width: 600px) {
+      & [data-band-grid] {
+        aspect-ratio: 0.85;
+        grid-template-rows: 1fr 1.15fr 1fr;
+        grid-template-areas: "a a a a a b b b b b b b" "c c c c c c c c c c c c" "d d d d d d d e e e e e";
+      }
+      & [data-ph]:is(:nth-child(1), :nth-child(4)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:is(:nth-child(2), :nth-child(5)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+    }
+  }
+
+  :root[data-collage="row"] &[data-count="4"] {
+    & [data-band-grid] {
+      aspect-ratio: 3.15;
+      grid-template-columns: 3fr 4.6fr 4.6fr 3fr;
+      grid-template-rows: 1fr;
+      grid-template-areas: "a b c d";
+    }
+    & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+    & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+    & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+    & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+
+    @media (max-width: 1100px) {
+      & [data-band-grid] {
+        aspect-ratio: 1.9;
+        grid-template-columns: repeat(12, 1fr);
+        grid-template-rows: 1fr 1fr;
+        grid-template-areas: "a a a a a b b b b b b b" "c c c c c c c d d d d d";
+      }
+      & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+      & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+    }
+
+    @media (max-width: 600px) {
+      & [data-band-grid] {
+        aspect-ratio: 1.25;
+      }
+    }
+  }
+
+  :root[data-collage="sheet"] &[data-count="6"] {
+    & [data-band-grid] {
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-areas: "a b c" "d e f";
+    }
+    & [data-ph]:is(:nth-child(1), :nth-child(6)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+    & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+    & [data-ph]:is(:nth-child(3), :nth-child(4)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+    & [data-ph]:nth-child(5) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+  }
+
+  :root[data-collage="sheet"] &[data-count="5"] {
+    & [data-band-grid] {
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-areas: "a a b c" "a a d e";
+    }
+    & [data-ph]:nth-child(1) { aspect-ratio: auto; }
+    & [data-ph]:is(:nth-child(1), :nth-child(5)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+    & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+    & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+    & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+
+    @media (max-width: 600px) {
+      & [data-band-grid] {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-areas: "a a" "b c" "d e";
+      }
+      & [data-ph]:nth-child(1) { aspect-ratio: 2 / 1; }
+      & [data-ph]:is(:nth-child(4), :nth-child(5)) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+      & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+    }
+  }
+
+  :root[data-collage="sheet"] &[data-count="4"] {
+    & [data-band-grid] {
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-areas: "a b c d";
+    }
+    & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+    & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+    & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+    & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+
+    @media (max-width: 600px) {
+      & [data-band-grid] {
+        grid-template-columns: repeat(2, 1fr);
+        grid-template-areas: "a b" "c d";
+      }
+      & [data-ph]:nth-child(1) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-te); --v-cb: 0; --v-ce: 1; }
+      & [data-ph]:nth-child(2) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-ts); --v-cb: 0; --v-ce: 0; }
+      & [data-ph]:nth-child(3) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-be); --v-cb: 1; --v-ce: 1; }
+      & [data-ph]:nth-child(4) :is([data-ph-frame], [data-ph-pic], img) { --cut-clip: var(--v-cut-bs); --v-cb: 1; --v-ce: 0; }
+    }
+  }
+
+  /*
+   * Field notes: each photo is a print (comp "L2"): the paper (--v-print, --v-print-pad) with a soft shadow
+   * (--v-print-shadow), and under the picture a one-line caption in the display face, italic: the place, then the
+   * year pushed to the end. The year drops in a print 250px wide or less, the caption in one 180px or less (container
+   * queries on the frame), and Mosaic on a phone and the contact sheet show none (the contact sheet's prints keep a
+   * deeper lower margin instead). A bottom cut moves the caption clear of the slice.
+   */
+  :root[data-look="field"] & {
+    --v-cap-pt: 9px;
+    --v-cap-pb: 10px;
+    --v-cap-fs: 0.90625rem;
+    @media (max-width: 900px) {
+      --v-cap-pt: 7px;
+      --v-cap-pb: 8px;
+      --v-cap-fs: 0.8125rem;
+    }
+    & [data-ph-pic] {
+      --v-pb: calc(var(--v-print-pad, 0px) + var(--v-cap-pt) + var(--v-cap-pb) + var(--v-cap-fs) * 1.25);
+    }
+    & figcaption {
+      position: static;
+      display: flex;
+      gap: 10px;
+      align-items: baseline;
+      width: auto;
+      height: auto;
+      overflow: visible;
+      clip-path: none;
+      padding-block: var(--v-cap-pt) var(--v-cap-pb);
+      padding-inline: calc(3px + var(--v-cb) * (1 - var(--v-ce)) * var(--v-cut) * 0.8) calc(3px + var(--v-cb) * var(--v-ce) * var(--v-cut) * 0.8);
+      color: var(--v-body);
+      font-family: var(--ui-font-display);
+      font-style: italic;
+      font-size: var(--v-cap-fs);
+      line-height: 1.25;
+    }
+    & [data-ph-place] {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    & [data-ph-year] {
+      flex: none;
+      margin-inline-start: auto;
+      color: var(--ui-muted);
+      font-variant-numeric: oldstyle-nums;
+    }
+    & [data-ph-geo] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    @container (max-width: 250px) {
+      & [data-ph-year] {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+      }
+    }
+    @container (max-width: 180px) {
+      & figcaption {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+      }
+      & [data-ph-pic] {
+        --v-pb: var(--v-print-pad, 0px);
+      }
+    }
+  }
+  :root[data-look="field"][data-collage="mosaic"] & {
+    @media (max-width: 600px) {
+      & figcaption {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+      }
+      & [data-ph-pic] {
+        --v-pb: var(--v-print-pad, 0px);
+      }
+    }
+  }
+  :root[data-look="field"][data-collage="sheet"] & {
+    & [data-ph-frame] {
+      padding-bottom: calc(var(--v-print-pad, 0px) * 2.2);
+    }
+    & [data-ph-pic] {
+      --v-pb: calc(var(--v-print-pad, 0px) * 2.2);
+    }
+    & figcaption {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+  }
+
+  /*
+   * Trail map: each photo sits on an even mat (--v-mat, --v-mat-bg) inside a 1px edge line that follows the cut (the
+   * frame's fill, --v-print, shows through its 1px padding), with a soft shadow that follows the shape too
+   * (--v-edge-shadow, on the photo's box above). On the photo, a small map label: the coordinates and the elevation,
+   * clear of a bottom-end cut; none on a photo 210px wide or less.
+   */
+  :root[data-look="trail"] & {
+    & figcaption {
+      inset-block-end: calc(8px + var(--v-print-pad, 0px) + var(--v-mat, 0px));
+      inset-inline-end: calc(8px + var(--v-print-pad, 0px) + var(--v-mat, 0px) + var(--v-cb) * var(--v-ce) * var(--v-cut) * 0.8);
+      width: auto;
+      height: auto;
+      overflow: visible;
+      clip-path: none;
+      padding: 5px 8px;
+      border-radius: 3px;
+      background: var(--ui-surface);
+      color: var(--ui-fg);
+      font-family: var(--v-font-meta);
+      font-size: 0.65625rem;
+      letter-spacing: 0.01em;
+      line-height: 1.2;
+    }
+    & :is([data-ph-place], [data-ph-year]) {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    @container (max-width: 210px) {
+      & figcaption {
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip-path: inset(50%);
+      }
+    }
+  }
+
+  /* Keyboard focus and hover: the photo grows in place and lifts (--v-print-lift: a print's own in Field notes); every
+     other photo dims a touch, a link or not. Focus does it on every device (a keyboard on a tablet too); hover only
+     with a pointer that hovers. */
+  @media (prefers-reduced-motion: no-preference) {
+    & [data-ph] {
+      transition: transform 0.5s var(--v-ease-out), filter 0.5s var(--v-ease-out);
+    }
+    & [data-ph-pic] > img {
+      transition: filter 0.4s;
+    }
+    & [data-ph]:focus-visible {
+      z-index: 3;
+      transform: scale(1.055);
+      filter: var(--v-print-lift, var(--v-lift));
+    }
+    & [data-band-grid]:has([data-ph]:focus-visible) [data-ph]:not(:hover, :focus-visible) [data-ph-pic] > img {
+      filter: var(--v-photo) saturate(0.78) brightness(0.97);
+    }
+  }
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    & [data-ph]:hover {
+      z-index: 3;
+      transform: scale(1.055);
+      filter: var(--v-print-lift, var(--v-lift));
+    }
+    & [data-band-grid]:has([data-ph]:hover) [data-ph]:not(:hover, :focus-visible) [data-ph-pic] > img {
+      filter: var(--v-photo) saturate(0.78) brightness(0.97);
+    }
+  }
+}
+
+/*
+ * A post row's thumbnail (components/PostRow.astro; comp ".thumb"): a square with one cut corner, the corner fixed in
+ * the markup (data-cut on each layer: rows alternate bottom-start and top-start, so neighbors' cuts face each other).
+ * The box holds the shadow; [data-thumb-edge] the cut and the look's 1px edge (--v-edge-w); [data-thumb-mat] the mat
+ * (--v-mat-t) with a parallel cut; [data-thumb-photo] the photo with another, so the mat stays even and the hover
+ * zoom stays inside it. A 30px cut (26px on phones, where the thumbnail is a wide crop above the text).
+ */
+@utility v-thumb {
+  --v-tc: 30px;
+  position: relative;
+  aspect-ratio: 1;
+  /* The mat's soft shadow (Trail map), following the cut. */
+  filter: var(--v-edge-shadow, none);
+
+  & [data-thumb-edge] {
+    --ui-cut-size: var(--v-tc);
+    height: 100%;
+    padding: var(--v-edge-w, 0px);
+    background: var(--v-edge, transparent);
+    border-radius: var(--ui-radius-media);
+  }
+  & [data-thumb-mat] {
+    --ui-cut-size: calc(var(--v-tc) - 0.5858 * var(--v-edge-w, 0px));
+    height: 100%;
+    overflow: hidden;
+    padding: var(--v-mat-t, 0px);
+    background: var(--v-mat-bg, var(--ui-surface-2));
+    border-radius: max(0px, calc(var(--ui-radius-media) - var(--v-edge-w, 0px)));
+  }
+  & [data-thumb-photo] {
+    --ui-cut-size: max(0px, calc(var(--v-tc) - 0.5858 * (var(--v-edge-w, 0px) + var(--v-mat-t, 0px))));
+    height: 100%;
+    overflow: hidden;
+    background: var(--ui-surface-2);
+    border-radius: max(0px, calc(var(--ui-radius-media) - var(--v-edge-w, 0px) - var(--v-mat-t, 0px)));
+  }
+  & img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: var(--v-photo);
+  }
+
+  @media (max-width: 600px) {
+    --v-tc: 26px;
+    aspect-ratio: 2 / 1;
+  }
+
+  /* The photo zooms a little inside its frame while the row is hovered. */
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    & img {
+      transition: transform 0.6s var(--v-ease-out);
+    }
+    [data-post]:hover & img {
+      transform: scale(1.05);
+    }
+  }
+}

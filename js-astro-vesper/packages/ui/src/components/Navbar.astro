@@ -1,0 +1,274 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing } from "../lib/button";
+import { cn } from "../lib/cn";
+import { displayType } from "../lib/display";
+import { navCollapse, relFor, type NavAction, type NavCollapse, type NavLink, type NavPhone } from "../lib/nav";
+import Button from "./Button.astro";
+import MobileMenu from "./MobileMenu.astro";
+import NavShrink from "./NavShrink.astro";
+import PhoneLink from "./PhoneLink.astro";
+
+export interface Props extends HTMLAttributes<"header"> {
+	links: NavLink[];
+	/**
+	 * Call-to-action links. Shown on desktop (unless the `actions` slot is used)
+	 * and in the mobile menu.
+	 */
+	actions?: NavAction[];
+	/** Accessible name of the navigation landmark and the mobile menu. */
+	label?: string;
+	/** Visible title of the mobile menu panel. Default: "Menu". */
+	menuTitle?: string;
+	/**
+	 * Visible text on the mobile menu's open button, such as "Menu" (MobileMenu's openText): a bordered pill with the
+	 * words in place of the icon-only button, in the bar's colors. Off by default.
+	 */
+	menuText?: string;
+	/**
+	 * The mobile menu panel's shape (MobileMenu's panel): `drawer` (default), a tall floating panel at the end of the
+	 * screen; or `card`, a floating card just under the bar, on the bar's side edges, with the card corners.
+	 */
+	menuPanel?: "drawer" | "card";
+	class?: string;
+	/** Classes for the inner row, e.g. a max width that matches the page container. Recipes set its layout here too. */
+	contentClass?: string;
+	/** Classes for the desktop link list layout, e.g. its type size or gap. */
+	linksClass?: string;
+	/** Desktop link look: "plain" (color change) or "rule" (2px bottom rule on hover and on the current page). */
+	linkStyle?: "plain" | "rule";
+	/**
+	 * Below which fold point the links fold into the mobile menu: "md" (default) or "lg". They are the theme's
+	 * --breakpoint-nav-md (768px unless the theme sets it) and --breakpoint-nav-lg (1024px): lib/nav.ts.
+	 */
+	collapse?: NavCollapse;
+	/**
+	 * For recipes: the order of the three desktop areas in the markup, so the Tab order follows the recipe's layout.
+	 * "brand-links-end" (default): the brand, the links, the end group. "links-brand-end": the links first, for a
+	 * layout with the brand in the middle. "brand-end-links": the end group before the links, for a layout with the
+	 * links on a row under the brand and the end group. Below the fold point the links are hidden, so the order is
+	 * the brand, the end group, the menu button either way.
+	 */
+	areaOrder?: "brand-links-end" | "links-brand-end" | "brand-end-links";
+	/** For recipes: the brand wrapper. */
+	brandClass?: string;
+	/** For recipes: the end group that holds the actions and the utilities, shown at every width. */
+	endClass?: string;
+	/** Keeps the bar at the top of the viewport as the page scrolls (position: sticky), above the page content. */
+	sticky?: boolean;
+	/** Insets the bar from the page edges, with the card radius, edge and shadow, and no bottom rule. */
+	floating?: boolean;
+	/**
+	 * With floating: the bar narrows to its content's width, centered, once the page scrolls, and widens again at the
+	 * top. Implies sticky. Above the fold point only. A small script (NavShrink); without it the bar stays sticky at
+	 * its normal width. Ignored without floating.
+	 */
+	shrink?: boolean;
+	/**
+	 * Each link label, in the bar and in the menu, rolls up on hover and keyboard focus and the same words roll in
+	 * from below (the text-roll utility). Read once; still under reduced motion and the calm setting (decision 0018).
+	 * Off by default.
+	 */
+	roll?: boolean;
+	/**
+	 * A number to call: a PhoneLink in the end group before the actions, at every width (the label over the number above
+	 * the fold point, a 44px round link with your icon below it), and a "Call {number}" row in the mobile menu (callText
+	 * sets its words). The icon is required. iconOnlyBelow: "nav-phone" moves the phone's fold to theme.css's
+	 * --breakpoint-nav-phone, so the number stays after the links fold; unset, it folds with them. Off by default.
+	 */
+	phone?: NavPhone;
+}
+
+/** A recipe's props: the shell's, less the ones that set the layout, which the recipe sets itself. */
+export type NavbarRecipeProps = Omit<Props, "areaOrder" | "brandClass" | "endClass">;
+
+// The navbar family's shell (decision 0013): the <header> and its <nav> landmark, the fold point (collapse) and the
+// MobileMenu. The nav's children are three areas, the brand wrapper, the link list (the <ul>, a direct child,
+// as sites select it) and one end group with the actions (hidden below the fold point) and the utilities (shown at
+// every width), then the menu button (shown below the fold point). areaOrder sets the order of the three in the
+// markup, so a recipe lays out at most three desktop columns, or two rows, and the Tab order follows them. Recipes
+// lay out the row and the wrappers with the class props. By default the link list takes the free space (flex-1)
+// and the end group sits at the end (ms-auto, which matters below the fold point, where the list is hidden).
+// The bar sits on the page, or on --ui-nav-bg with --ui-nav-blur when a preset sets them, or on the band when a
+// preset sets --ui-band (surface-nav). surface-nav rebinds no token, so the bar's own text names the band colors
+// (text-on-band, text-on-band-muted, border-on-band-border), the action Buttons and the MobileMenu's open button
+// take tone="band", and the focus ring is the band's text color (focus-on-band), since the band may be the accent.
+// The brand wraps rather than run under the links: its wrapper and the wrapper's children may shrink (min-w-0),
+// and a long word breaks ([overflow-wrap:anywhere]). The link list grows from a zero basis and never shrinks below
+// its widest link, so its links wrap first and the brand breaks inside a word only once they are at that minimum.
+// sticky: the header sticks at the top, at z-30, above the page; the open menu covers it, as its panel is a modal
+// <dialog> in the browser's top layer, above every z-index. It marks the header data-nav-sticky, data-nav-collapse (the fold point)
+// and, with floating, data-nav-floating, and theme.css sets scroll-padding-top on a page that has one
+// (--ui-nav-offset, else a height that covers the kit's bars), so in-page jumps and focused elements land below the bar, with no script. floating: the header is a
+// see-through inset (p-item) with no rule, which lets clicks through to the page beside the bar
+// (pointer-events-none, back on for the <nav>), and the bar's surface, blur and band colors move to the <nav>,
+// with the card radius, edge and shadow. Under a preset with no shadow the edge alone shows it.
+// shrink (with floating; it implies sticky): the header is marked data-nav-shrink and renders NavShrink, whose script
+// (lib/nav-shrink.ts) marks it data-nav-shrunk once the page scrolls past a few pixels. Then, above the fold point,
+// the <nav> takes its content's width (the link list's flex-1 has no free space to take, so the groups sit side by
+// side with the nav's gap between them), centered at every width it passes through (mx-auto, which does nothing at the
+// full width, and never past the header: max-w-full), and its width transitions (the script measures both widths, so
+// it works in every browser; none under reduced motion). The narrow width and the transition are inline styles the
+// script sets, not classes: every theme scans the kit's source, so a class here would ship in every site's CSS. The
+// header's height and inset never change, so nothing under the bar moves. Without floating there is no inset to
+// narrow into, so shrink does nothing.
+// The menu button's wrapper is display: none above the fold point, wherever the theme sets it. MobileMenu renders its
+// button and its panel (a native <dialog>) on the server and opens it with a small script, no island, so the button
+// is in the first paint and nothing loads at the fold point.
+// roll: each link (here and in the MobileMenu) takes text-roll, and its label (not the index or the badge) the
+// utility's two spans, the inner one carrying the same plain words in data-label (README, Rolling links). The utility
+// moves it under the motion gate only, so under reduced motion and calm the label stays still. Without roll the
+// markup is as before.
+// Without JavaScript (@media (scripting: none)) the menu cannot open, so below the fold point the wrapper hides and
+// the bar shows its own link list instead (navCollapse's fallback classes): the <nav> wraps, and the list takes a full
+// row of its own, last (order-last), under the brand and the end group, its links wrapping, each a box at least 44px
+// tall. The actions stay hidden there (a theme that needs one without JavaScript repeats it in the utilities, as
+// Lodestar does). Tab follows the markup, so it reaches the list before the end group.
+const {
+	links,
+	actions = [],
+	label = "Main",
+	menuTitle = "Menu",
+	menuText,
+	menuPanel = "drawer",
+	class: className,
+	contentClass,
+	linksClass,
+	linkStyle = "plain",
+	collapse = "md",
+	areaOrder = "brand-links-end",
+	brandClass,
+	endClass,
+	sticky = false,
+	floating = false,
+	shrink: shrinkProp = false,
+	roll = false,
+	phone,
+	...rest
+} = Astro.props;
+const shrink = shrinkProp && floating;
+const isSticky = sticky || shrink;
+const bp = navCollapse[collapse];
+// The actions, utilities and menu slots are rendered first, as Hero's are, so an empty one (a recipe passes its slots
+// on in an expression, which always fills them) counts as none: the buttons stay, and no utilities wrapper is left.
+// The menu slot is rendered last, so a part in both the utilities and the menu slot (a light and dark switch) puts
+// its script after the bar's copy, where it was before the slot.
+// The menu slot goes into the MobileMenu panel after the actions (the actions prop, or the actions slot's copy),
+// whether or not there are actions: something that sits in the bar on wider screens but has no room there on a
+// narrow phone, shown in one place or the other by the caller's own classes (Dispatch's light and dark switch below
+// 360px). Unlike the actions slot, it is not a copy of anything in the bar, so it may hold a part with a script.
+const actionsSlot = Astro.slots.has("actions") ? (await Astro.slots.render("actions")).trim() : "";
+const utilities = Astro.slots.has("utilities") ? (await Astro.slots.render("utilities")).trim() : "";
+const menuSlot = Astro.slots.has("menu") ? (await Astro.slots.render("menu")).trim() : "";
+// The emergency slot (a PhoneLink with urgent, say) goes first in the end group, at every width. With neither it nor
+// phone, the end group's markup is as before.
+const emergency = Astro.slots.has("emergency") ? (await Astro.slots.render("emergency")).trim() : "";
+const hasActionsSlot = Boolean(actionsSlot);
+// The three areas in the markup order areaOrder names.
+const areas = areaOrder.split("-") as ("brand" | "links" | "end")[];
+const brandWrap = cn("flex min-w-0 items-center gap-2 text-heading [overflow-wrap:anywhere] [&>*]:min-w-0", displayType, brandClass);
+---
+
+<header
+	class={cn(
+		"font-body focus-on-band",
+		floating ? "p-item pointer-events-none" : "surface-nav border-b-ui border-solid",
+		isSticky && "sticky top-0 z-30",
+		className,
+	)}
+	data-nav-sticky={isSticky ? "" : undefined}
+	data-nav-floating={floating ? "" : undefined}
+	data-nav-collapse={isSticky ? collapse : undefined}
+	data-nav-shrink={shrink ? "" : undefined}
+	{...rest}
+>
+	<nav
+		aria-label={label}
+		class={cn(
+			"flex items-center gap-6 px-6 py-4",
+			floating && "pointer-events-auto surface-nav rounded-card border-card border-solid shadow-card",
+			shrink && "mx-auto max-w-full",
+			bp.fallbackRow,
+			contentClass,
+		)}
+	>
+		{
+			areas.map((area) =>
+				area === "brand" ? (
+					<div data-nav-brand class={brandWrap}>
+						<slot name="brand" />
+					</div>
+				) : area === "links" ? (
+					<ul data-nav-links class={cn(bp.desktop, bp.fallbackLinks, "flex-1 flex-wrap items-center gap-5 m-0 p-0 list-none text-body text-on-band-muted", linksClass)}>
+						{
+							links.map((link) => (
+								<li>
+									<a
+										href={link.href}
+										target={link.target}
+										rel={relFor(link.target)}
+										aria-current={link.current ? "page" : undefined}
+										class={cn(
+											bp.fallbackLink,
+											// Square corners under the rule: a bottom border on a rounded box curls up at both ends.
+											linkStyle !== "rule" && "rounded-control",
+											"text-inherit no-underline hover:text-on-band motion-ok:transition-[color] motion-ok:duration-150 aria-[current=page]:text-on-band aria-[current=page]:font-semibold",
+											linkStyle === "rule" &&
+												"inline-flex items-baseline py-1.5 border-b-2 border-solid border-transparent motion-ok:transition-[color,border-color] hover:border-on-band aria-[current=page]:border-on-band",
+											focusRing,
+											roll && "text-roll",
+										)}
+									>
+										{link.index && <span data-nav-index class="mr-2 text-nav-index text-on-band-muted tabular-nums in-aria-[current=page]:text-inherit">{link.index}</span>}
+										{roll ? <span data-roll><span data-roll-label data-label={link.label}>{link.label}</span></span> : link.label}
+										{link.badge && <span class="sr-only">{" "}</span>}
+										{link.badge && <span data-nav-badge class="ml-1.5 rounded-control border border-on-band-border px-1.5 py-px text-nav-badge font-medium text-on-band-muted in-aria-[current=page]:text-inherit in-aria-[current=page]:border-current">{link.badge}</span>}
+									</a>
+								</li>
+							))
+						}
+					</ul>
+				) : (
+					<div data-nav-end class={cn("ms-auto flex items-center gap-6", endClass)}>
+						{emergency && <div data-nav-emergency class="flex min-w-0 items-center" set:html={emergency} />}
+						{phone && <PhoneLink number={phone.number} label={phone.label} icon={phone.icon} tone="band" iconOnlyBelow={phone.iconOnlyBelow ?? collapse} />}
+						<div data-nav-actions class={cn(bp.desktop, "items-center gap-3")}>
+							{
+								hasActionsSlot ? (
+									<Fragment set:html={actionsSlot} />
+								) : (
+									actions.map((action, i) => (
+										<Button href={action.href} size={action.size ?? "sm"} variant={action.variant ?? (i === actions.length - 1 ? "primary" : "ghost")} tone="band">
+											{action.label}
+										</Button>
+									))
+								)
+							}
+						</div>
+
+						{utilities && <div data-nav-utilities class="flex min-w-0 items-center gap-3" set:html={utilities} />}
+					</div>
+				),
+			)
+		}
+
+		<div data-nav-menu class={cn(bp.mobile, "noscript:hidden")}>
+			{
+				actions.length > 0 || !hasActionsSlot ? (
+					menuSlot ? (
+						<MobileMenu tone="band" roll={roll} links={links} actions={actions} label={label} title={menuTitle} openText={menuText} panel={menuPanel} phone={phone}>
+							<Fragment set:html={menuSlot} />
+						</MobileMenu>
+					) : (
+						<MobileMenu tone="band" roll={roll} links={links} actions={actions} label={label} title={menuTitle} openText={menuText} panel={menuPanel} phone={phone} />
+					)
+				) : (
+					<MobileMenu tone="band" roll={roll} links={links} label={label} title={menuTitle} openText={menuText} panel={menuPanel} phone={phone}>
+						<Fragment set:html={actionsSlot + menuSlot} />
+					</MobileMenu>
+				)
+			}
+		</div>
+	</nav>
+	{shrink && <NavShrink />}
+</header>

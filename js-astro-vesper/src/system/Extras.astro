@@ -1,0 +1,99 @@
+---
+/**
+ * Vesper's own foundations, for /system/foundations: the looks and the accents (picked in src/theme.config.ts), with
+ * the one in use marked, each as swatches in light and dark, and the collage layouts. The swatches read the look and
+ * accent files themselves (every file in src/styles/looks/ and accents.json), so a new file shows here with no edit.
+ * The --v-* tokens are listed by the foundations page itself (`tokens` in astro.config.mjs).
+ */
+import accents from "../styles/accents/accents.json";
+import { COLLAGES, getConfig } from "../utils/config";
+
+const { config } = getConfig();
+/** Every look file's text, by its id (the file name). */
+const files = import.meta.glob<string>("../styles/looks/*.css", { query: "?raw", import: "default", eager: true });
+const looks = Object.entries(files)
+	.map(([path, css]) => ({ id: path.replace(/^.*\/(.*)\.css$/, "$1"), css }))
+	.sort((a, b) => a.id.localeCompare(b.id));
+/** The swatches each look shows: the ground, the cards, the ink, body text, muted text, hairlines. */
+const SWATCH_TOKENS = ["--ui-bg", "--ui-surface", "--ui-fg", "--v-body", "--ui-muted", "--ui-border"];
+/** A token's value in a block of CSS (the first declaration), or undefined. */
+const valueIn = (block: string, token: string) => new RegExp(`${token}:\\s*([^;]+);`).exec(block)?.[1]?.trim();
+/** A look's light block (the first rule) and its dark block (the one for data-theme="dark"). */
+function modes(css: string) {
+	const light = css.slice(0, css.indexOf("}"));
+	const darkAt = css.search(/\[data-theme="dark"\]\s*\{/);
+	const dark = darkAt < 0 ? "" : css.slice(darkAt, css.indexOf("}", darkAt));
+	return [
+		{ mode: "Light", values: SWATCH_TOKENS.map((token) => ({ token, value: valueIn(light, token) })) },
+		{ mode: "Dark", values: SWATCH_TOKENS.map((token) => ({ token, value: valueIn(dark, token) })) },
+	];
+}
+const collages: Record<(typeof COLLAGES)[number], string> = {
+	mosaic: "Mosaic: a wide grid past the text column.",
+	row: "Row: one full-width row; two offset rows on smaller screens.",
+	sheet: "Contact sheet: an even sheet of frames.",
+};
+const h3 = "m-0 text-small font-semibold";
+const note = "m-0 max-w-prose text-body text-muted";
+const swatch = "inline-block size-5 rounded-full border-ui border-solid border-border";
+---
+
+<div class="grid gap-12" data-v-extras>
+	<section aria-labelledby="v-looks" class="grid gap-3">
+		<h3 id="v-looks" class={h3}>Looks</h3>
+		<p class={note}>A look sets the colors, the fonts and the photo treatment; the markup is the same in every look. Pick one in src/theme.config.ts. Swatches: the ground, the cards, the ink, body text, muted text and hairlines.</p>
+		<ul class="m-0 grid list-none gap-3 p-0 text-small">
+			{
+				looks.map((l) => (
+					<li class="grid gap-1">
+						<span class="flex flex-wrap gap-x-3">
+							<code class="font-mono">{l.id}</code>
+							{l.id === config.look && <span class="font-semibold">In use</span>}
+						</span>
+						{modes(l.css).map((m) => (
+							<span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+								<span class="w-12 text-muted">{m.mode}</span>
+								{m.values.map((v) => v.value && <span aria-hidden="true" class={swatch} style={`background: ${v.value}`} title={`${v.token} ${v.value}`} />)}
+								<span class="text-muted">{m.values.map((v) => `${v.token} ${v.value ?? "(none)"}`).join(", ")}</span>
+							</span>
+						))}
+					</li>
+				))
+			}
+		</ul>
+	</section>
+	<section aria-labelledby="v-accents" class="grid gap-3">
+		<h3 id="v-accents" class={h3}>Accents</h3>
+		<p class={note}>An accent colors links, buttons, the focus ring and small accent text, the same in every look. Each is a color and the text on it, in light and in dark mode.</p>
+		<ul class="m-0 grid list-none gap-2 p-0 text-small">
+			{
+				accents.map((a) => (
+					<li class="flex flex-wrap items-center gap-x-3 gap-y-1">
+						<span aria-hidden="true" class={swatch} style={`background: ${a.light}`} />
+						<span aria-hidden="true" class={swatch} style={`background: ${a.dark}`} />
+						<code class="font-mono">{a.id}</code>
+						<span class="text-muted">
+							{a.label}: light {a.light} with {a.fgLight} on it; dark {a.dark} with {a.fgDark} on it
+						</span>
+						{a.id === config.accent && <span class="font-semibold">In use</span>}
+					</li>
+				))
+			}
+		</ul>
+	</section>
+	<section aria-labelledby="v-collages" class="grid gap-3">
+		<h3 id="v-collages" class={h3}>Collage layouts</h3>
+		<p class={note}>The photo band on the home page packs 4, 5 or 6 photos into one rectangle; each layout owns its grids and the cut corners. Pick one in src/theme.config.ts.</p>
+		<ul class="m-0 grid list-none gap-2 p-0 text-small">
+			{
+				COLLAGES.map((id) => (
+					<li class="flex flex-wrap gap-x-3">
+						<code class="font-mono">{id}</code>
+						<span class="text-muted">{collages[id]}</span>
+						{id === config.collage && <span class="font-semibold">In use</span>}
+					</li>
+				))
+			}
+		</ul>
+	</section>
+</div>

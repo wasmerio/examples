@@ -1,0 +1,163 @@
+---
+/**
+ * The Vesper blocks with the site's content, for /system/sections: the home page's blocks in their home order (the
+ * intro, the collage band, post rows with and without a thumbnail, the side cards), then the blocks the other pages
+ * use (project cards, talks, uses, the work history) and the forms (the newsletter card in both states, the search
+ * box). Each block opens with a quiet strip: its name, then the file to edit. A block with no content to show is left
+ * out. The page container comes from src/system/Layout.astro.
+ */
+import SearchForm from "@astronomic/theme-core/components/SearchForm.astro";
+import Grid from "@astronomic/ui/components/Grid.astro";
+import { useContent } from "~/content";
+import { safeHref } from "~/content/links";
+import { strings } from "~/theme.strings";
+import CollageBand from "../components/CollageBand.astro";
+import Intro from "../components/Intro.astro";
+import NewsletterCard from "../components/NewsletterCard.astro";
+import PostList from "../components/PostList.astro";
+import ProjectCard from "../components/ProjectCard.astro";
+import SideCards from "../components/SideCards.astro";
+import TalkList from "../components/TalkList.astro";
+import UsesList from "../components/UsesList.astro";
+import WorkRows from "../components/WorkRows.astro";
+import { getConfig } from "../utils/config";
+import { homeCards, loadHome } from "../utils/home";
+import { formOrigin } from "../utils/public-pages";
+import { navLinks, nowHref, nowName, searchHref } from "../utils/routes";
+import { cvHref, newsletterState, siteIsLive, siteSettings } from "../utils/setup";
+import { talksByYear, toCollagePhoto, toPostRow, toProjectCard, toProjectItem, toTalk, toUsesGroups, toWorkRow } from "../utils/view";
+
+const content = useContent(Astro);
+const settings = await siteSettings(content);
+const { config } = getConfig(settings);
+const [home, { items: projects }, { items: talks }, { items: uses }] = await Promise.all([
+	loadHome(content, config),
+	config.pages.projects ? content.projects.list() : { items: [] },
+	config.pages.speaking ? content.talks.list() : { items: [] },
+	config.pages.uses ? content.uses.list() : { items: [] },
+]);
+const t = strings.home;
+const status = settings.nowStatus?.trim();
+const now = config.nowLine && status ? { label: nowName(settings.nowLabel, strings.home.now), status, href: config.pages.now ? nowHref() : undefined } : undefined;
+const socials = navLinks(settings.socials, config).flatMap((item) => {
+	const href = safeHref(item.href);
+	return href === undefined ? [] : [{ label: item.label, href, icon: item.icon }];
+});
+const cvFile = cvHref(settings);
+const cards = homeCards({ jobs: home.jobs.length, cvFile, projects: home.projects.length, projectsOn: config.pages.projects });
+const origin = formOrigin(Astro);
+const newsletter = newsletterState(settings, { origin, live: siteIsLive(origin) });
+const rows = home.posts.map(toPostRow);
+const withThumb = rows.find((p) => p.thumbnail);
+const withoutThumb = rows.find((p) => !p.thumbnail) ?? (withThumb ? { ...withThumb, thumbnail: undefined } : undefined);
+const jobs = home.jobs.map((job) => toWorkRow(job, strings.work.now));
+
+const label = "m-0 mb-8 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 bg-surface-2 px-3 py-2 text-small";
+const labelName = "font-semibold text-fg";
+const labelPath = "font-mono text-v-meta text-muted wrap-anywhere";
+---
+
+<div class="grid gap-24 pb-16">
+	<div>
+		<p class={label}><span class={labelName}>Intro (the headline, the bio, the Now line, social links)</span><code class={labelPath}>src/components/Intro.astro</code></p>
+		<Intro headline={settings.headline} bio={settings.bio} now={now} socials={socials} />
+	</div>
+	{
+		home.collage.length > 0 && (
+			<div>
+				<p class={label}><span class={labelName}>CollageBand ({home.collage.length} photos, the {config.collage} layout)</span><code class={labelPath}>src/components/CollageBand.astro, src/styles/collage.css</code></p>
+				<CollageBand photos={home.collage.map(toCollagePhoto)} label={t.collage} />
+			</div>
+		)
+	}
+	{
+		withThumb && (
+			<div>
+				<p class={label}><span class={labelName}>PostRow with a thumbnail</span><code class={labelPath}>src/components/PostRow.astro</code></p>
+				<div>
+					<PostList posts={[withThumb]} thumbs headingTag="h2" />
+				</div>
+			</div>
+		)
+	}
+	{
+		withoutThumb && (
+			<div>
+				<p class={label}><span class={labelName}>PostRow without a thumbnail (thumbnails off, or a post with none)</span><code class={labelPath}>src/components/PostRow.astro</code></p>
+				<div>
+					<PostList posts={[withoutThumb]} thumbs={false} headingTag="h2" />
+				</div>
+			</div>
+		)
+	}
+	<div>
+		<p class={label}><span class={labelName}>SideCards (the newsletter, Work, Projects)</span><code class={labelPath}>src/components/SideCards.astro</code></p>
+		<div>
+			<SideCards
+				label={t.side(settings.name)}
+				newsletter={{ state: newsletter, note: settings.newsletterNote }}
+				work={cards.work ? { jobs, cvFile } : undefined}
+				projects={cards.projects ? home.projects.map(toProjectItem) : undefined}
+				class="max-w-sm"
+			/>
+		</div>
+	</div>
+	{
+		projects.length > 0 && (
+			<div>
+				<p class={label}><span class={labelName}>ProjectCard (kit Card with a cut Media)</span><code class={labelPath}>src/components/ProjectCard.astro</code></p>
+				<div>
+					<Grid as="ul" role="list" min="300px" class="v-proj-grid">
+						{projects.slice(0, 3).map((p, i) => (
+							<ProjectCard project={toProjectCard(p)} corner={(["top-end", "bottom-start", "top-start"] as const)[i]} headingTag="h2" />
+						))}
+					</Grid>
+				</div>
+			</div>
+		)
+	}
+	{
+		talks.length > 0 && (
+			<div>
+				<p class={label}><span class={labelName}>TalkList (talks by year)</span><code class={labelPath}>src/components/TalkList.astro</code></p>
+				<div>
+					<TalkList years={talksByYear(talks.map(toTalk))} />
+				</div>
+			</div>
+		)
+	}
+	{
+		uses.length > 0 && (
+			<div>
+				<p class={label}><span class={labelName}>UsesList (kit DescriptionList per group)</span><code class={labelPath}>src/components/UsesList.astro</code></p>
+				<div>
+					<UsesList groups={toUsesGroups(uses)} />
+				</div>
+			</div>
+		)
+	}
+	{
+		jobs.length > 0 && (
+			<div>
+				<p class={label}><span class={labelName}>WorkRows (the work history)</span><code class={labelPath}>src/components/WorkRows.astro</code></p>
+				<div>
+					<WorkRows jobs={jobs} />
+				</div>
+			</div>
+		)
+	}
+	<div>
+		<p class={label}><span class={labelName}>{newsletter.kind === "form" ? "NewsletterCard with no action: Follow by RSS" : "NewsletterCard with an action (a sample action)"}</span><code class={labelPath}>src/components/NewsletterCard.astro</code></p>
+		<div>
+			<div class="max-w-sm">
+				<NewsletterCard state={newsletter.kind === "form" ? { kind: "rss" } : { kind: "form", props: { action: "#" } }} headingId="system-newsletter" />
+			</div>
+		</div>
+	</div>
+	<div>
+		<p class={label}><span class={labelName}>The search box (on /articles and /search)</span><code class={labelPath}>src/components/ArticlesPage.astro</code></p>
+		<div>
+			<SearchForm variant="row" action={searchHref()} strings={strings.search.form} class="max-w-xl" />
+		</div>
+	</div>
+</div>

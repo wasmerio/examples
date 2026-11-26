@@ -1,0 +1,91 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing } from "../lib/button";
+import { cn } from "../lib/cn";
+import type { IconComponent } from "../lib/icon";
+import Icon from "./Icon.astro";
+
+export interface AreaChip {
+	/** The town, such as "Westerville". */
+	label: string;
+	/** The town's own page. Without it the town shows as text (area pages off). */
+	href?: string;
+	/** A small tag after the town, such as "Home base". */
+	note?: string;
+	/**
+	 * This chip is the page you are on, such as the town's own page: aria-current="page" and the inverted look (its
+	 * colors swapped: the text color as the fill, the surface as the text), so the reader sees where they are in the list.
+	 */
+	current?: boolean;
+}
+
+export interface Props extends HTMLAttributes<"ul"> {
+	items: AreaChip[];
+	/** The list's accessible name. */
+	label?: string;
+	/** Your icon component (a map pin), before each town. Decoration. */
+	icon?: IconComponent;
+	/** page: on the page or a card. band: on the band (surface-band), in the band's own colors. */
+	tone?: "page" | "band";
+	/** Each chip (the link, or the text without a link). */
+	itemClass?: string;
+	class?: string;
+}
+
+const { items = [], label = "Towns we serve", icon, tone = "page", itemClass, class: className, ...rest } = Astro.props;
+const text = (value: unknown) => String(value ?? "").trim();
+// A town without a label leaves no chip.
+const chips = items
+	.map((item) => ({ label: text(item?.label), href: text(item?.href), note: text(item?.note), current: item?.current === true }))
+	.filter((chip) => chip.label);
+const band = tone === "band";
+// The towns served (decision 0015): a list named by its label (role="list" keeps it one in Safari with the bullets
+// gone), the chips in a row that wraps and never scrolls. Each chip is a pill at least 44px tall at every pointer, a
+// link to the town's page or, without an href, the town as plain text. Your icon sits before the town in the accent on
+// the page (decoration, at 3:1) or in the band's text on the band; the note is a small uppercase tag. On the page a chip
+// is the card surface with a hairline that turns the text color on hover; on the band it is the band's rule and text,
+// with a 6% tint on hover and the band's focus ring (focus-on-band). A link on the page takes the kit's accent ring
+// (focusRing). Colors change at once, with no transition (0018: transform and opacity only). The current chip (the page
+// you are on) takes aria-current="page" and is inverted: on the page the chip's colors swapped (the text color as the fill,
+// the surface as the text), on the band the band's text as the fill and the band's own color as the text; its icon
+// and note take the chip's text. Its classes come after itemClass, so a theme's chip fill never hides where you are.
+// Forced colors (Windows High Contrast) drop the fills, so there the current chip also takes an underline and a 2px
+// Highlight outline drawn inside its edge: where you are survives without color.
+const chipClass = cn(
+	"inline-flex min-h-11 max-w-full items-center gap-2 rounded-pill border-ui border-solid py-1.5 ps-3 pe-4 text-small font-semibold text-pretty no-underline [overflow-wrap:anywhere]",
+	band ? "border-on-band-border text-on-band" : "border-border bg-surface text-fg",
+	itemClass,
+);
+const hoverClass = band ? "hover:bg-on-band-tint" : cn("hover:border-fg", focusRing);
+const forcedCurrent = "forced-colors:underline forced-colors:decoration-2 forced-colors:underline-offset-4 forced-colors:outline-2 forced-colors:-outline-offset-2 forced-colors:outline-solid forced-colors:outline-[Highlight]";
+const currentClass = cn(band ? "border-on-band bg-on-band text-on-band-surface hover:bg-on-band" : "border-fg bg-fg text-surface hover:border-fg", forcedCurrent);
+---
+
+{
+	chips.length > 0 && (
+		<ul role="list" aria-label={label} data-area-chips class={cn("m-0 flex list-none flex-wrap gap-2 p-0", band && "focus-on-band", className)} {...rest}>
+			{chips.map((chip) => {
+				const body = (
+					<>
+						{icon && <Icon icon={icon} size="sm" class={cn("shrink-0", chip.current ? "text-current" : band ? "text-on-band" : "text-accent")} />}
+						<span>{chip.label}</span>
+						{chip.note && <span data-area-chips-note class={cn("text-eyebrow font-bold uppercase tracking-wider", chip.current ? "text-current" : band ? "text-on-band-muted" : "text-muted")}>{chip.note}</span>}
+					</>
+				);
+				return (
+					<li class="flex min-w-0 max-w-full">
+						{chip.href ? (
+							<a href={chip.href} aria-current={chip.current ? "page" : undefined} class={cn(chipClass, hoverClass, chip.current && currentClass)}>
+								{body}
+							</a>
+						) : (
+							<span aria-current={chip.current ? "page" : undefined} class={cn(chipClass, chip.current && currentClass)}>
+								{body}
+							</span>
+						)}
+					</li>
+				);
+			})}
+		</ul>
+	)
+}

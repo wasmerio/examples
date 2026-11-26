@@ -1,0 +1,103 @@
+---
+/**
+ * One article (comp "Article"): the head (back link, the category with a link to its page, date and reading time,
+ * title, summary, tags, the cut photo), the text with its table of contents (with none, the text and the head's
+ * words sit in one centered column), then the series' parts when the post is in a series, the author box and the
+ * previous and next posts (by date). Parts about other entries are left out of the static search index. Every article
+ * carries the lightbox (Base `lightbox`): the photo and the photos in the text open large in it.
+ */
+import { bodyText, readingTime } from "@astronomic/theme-core/content";
+import { updatedAfter } from "@astronomic/theme-core/date";
+import { blogPostingNode } from "@astronomic/theme-core/jsonld";
+import { slugParams } from "@astronomic/theme-core/routes";
+import SeriesList from "@astronomic/ui/components/SeriesList.astro";
+import { formatDate } from "@astronomic/ui/lib/date.ts";
+import { plainHeading } from "@astronomic/ui/lib/emphasis.ts";
+import ArticleBody from "~/components/ArticleBody.astro";
+import ArticleHead from "~/components/ArticleHead.astro";
+import AuthorCard from "~/components/AuthorCard.astro";
+import PrevNext from "~/components/PrevNext.astro";
+import RichText from "~/components/RichText.astro";
+import { searchIgnore, useContent } from "~/content";
+import { seriesParts } from "~/content/rules";
+import { searchSummary } from "~/content/search";
+import Base from "~/layouts/Base.astro";
+import { strings } from "~/theme.strings";
+import { neighbors } from "~/utils/articles";
+import { wrap } from "~/utils/layout";
+import { siteOrigin } from "~/utils/public-pages";
+import { aboutHref, categoryHref, postHref } from "~/utils/routes";
+import { siteSettings } from "~/utils/setup";
+
+export async function getStaticPaths() {
+	return slugParams(await useContent().posts.slugs());
+}
+
+const content = useContent(Astro);
+const slug = Astro.params.slug;
+const post = slug ? await content.posts.get(slug) : undefined;
+if (!post) {
+	return Astro.rewrite("/404");
+}
+const [settings, { items: all }, about] = await Promise.all([siteSettings(content), content.posts.list(), content.pages.get("about")]);
+const t = strings.article;
+const ignore = searchIgnore(content);
+const minutes = readingTime(bodyText(post.body));
+const { previous, next } = neighbors(all, post.slug);
+const link = (p?: { slug: string; title: string }) => (p ? { href: postHref(p.slug), title: p.title } : undefined);
+const parts = seriesParts(all, post).map((p) => ({
+	title: p.title,
+	href: p.current ? undefined : postHref(p.slug),
+	meta: p.date ? formatDate(p.date, strings.locale, { dateStyle: "long" }) : undefined,
+	current: p.current,
+}));
+// The post as a BlogPosting: its author is the site's owner; a series has no page of its own, so only its name.
+const jsonLd = blogPostingNode(siteOrigin(Astro), {
+	title: plainHeading(post.title),
+	description: post.seo?.description || post.summary,
+	image: post.seo?.image ?? post.thumbnail?.src,
+	path: post.seo?.canonical || postHref(post.slug),
+	date: post.date,
+	updated: post.updated,
+	series: post.series && { name: post.series.label },
+});
+---
+
+<Base
+	title={post.seo?.title ?? post.title}
+	description={post.seo?.description || post.summary}
+	image={post.seo?.image ?? post.thumbnail?.src}
+	imageAlt={post.seo?.image ? undefined : post.thumbnail?.alt}
+	canonical={post.seo?.canonical}
+	entry={post}
+	index={{ kind: "posts", title: post.title, summary: searchSummary("posts", post) }}
+	type="article"
+	card
+	jsonLd={jsonLd}
+	lightbox
+>
+	<article class={`${wrap} v-art-head`}>
+		<ArticleHead
+			title={post.title}
+			date={post.date}
+			updated={updatedAfter(post.date, post.updated)}
+			minutes={minutes}
+			lead={post.summary}
+			tags={post.tags}
+			category={post.category ? { label: post.category.label, href: categoryHref(post.category.slug) } : undefined}
+			image={post.thumbnail}
+		/>
+		<ArticleBody>
+			<RichText value={post.body} />
+			<footer slot="foot" class="v-art-foot" {...ignore}>
+				{
+					post.series && parts.length > 1 && (
+						<SeriesList title={post.series.label} label={t.series} parts={parts} positionText={t.seriesPosition} class="v-series" />
+					)
+				}
+				<AuthorCard name={settings.name} bio={settings.tagline ?? settings.role} avatar={settings.avatar} href={about ? aboutHref() : undefined} />
+				<PrevNext previous={link(previous)} next={link(next)} />
+			</footer>
+		</ArticleBody>
+	</article>
+</Base>

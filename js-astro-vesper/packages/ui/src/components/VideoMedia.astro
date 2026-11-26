@@ -1,0 +1,102 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { buttonClasses, touchBox } from "../lib/button";
+import { cn } from "../lib/cn";
+import { imageAttrs, type CutCorner, type FocalPoint, type ImageSource, type MediaRatio } from "../lib/image";
+import { mediaFrame, transitionNameStyle } from "../lib/media-frame";
+
+export interface VideoSource {
+	/** The file's URL. */
+	src: string;
+	/** Its type, so the browser skips a file it cannot play. */
+	type: "video/mp4" | "video/webm";
+}
+
+export interface Props extends Omit<HTMLAttributes<"figure">, "children"> {
+	/**
+	 * One or more files, the smallest first (WebM before MP4); the browser plays the first it can. With none (a video
+	 * not uploaded yet) the poster shows as a still picture, with label as its alt, and there is no button.
+	 */
+	sources: VideoSource[];
+	/** The still shown before play, under reduced motion, and with no script: a URL or an imported image. */
+	poster: ImageSource;
+	/** What the video shows, for the play button's name ("Play: the studio at work"). */
+	label: string;
+	/**
+	 * Plays muted and looped by itself when motion is allowed (no reduced motion, the theme not calm, the page not
+	 * paused). Off: the poster and a play button. Default true.
+	 */
+	autoplay?: boolean;
+	/** The frame's shape, `width/height`. The video fills it and is cropped. Default `"16/9"`. */
+	ratio?: MediaRatio;
+	/** Classes for the frame's shape in place of `ratio` (`aspect-[4/3] md:aspect-video`), as on Media. */
+	ratioClass?: string;
+	/** `"rect"` (default), `"circle"` (always square) or `"cut"` (one corner sliced off), as on Media. */
+	shape?: "rect" | "circle" | "cut";
+	/** With `shape="cut"`: the corner to cut, in the writing direction. Default: `"top-end"`. */
+	cutCorner?: CutCorner;
+	/** The point of the video to keep in view when the frame crops it, as on Media (`"50% 30%"`, `"top"`). */
+	focalPoint?: FocalPoint;
+	/** A short line under the video, in muted text. The whole is then a `<figure>` with a `<figcaption>`. */
+	caption?: string;
+	/** `"metadata"` (default) loads the length and first frame; `"none"` loads nothing until play, for a video far down the page. */
+	preload?: "none" | "metadata";
+	/**
+	 * A view-transition-name for the frame (a work card that grows into the case study's hero), set only when motion
+	 * is allowed. The theme opts into view transitions; the same name must be on one element per page.
+	 */
+	transitionName?: string;
+	class?: string;
+}
+
+const { sources, poster, label, autoplay = true, ratio = "16/9", ratioClass, shape = "rect", cutCorner, focalPoint, caption, preload = "metadata", transitionName, class: className, ...rest } = Astro.props;
+const still = imageAttrs(poster);
+const hasCaption = Boolean(caption) || Astro.slots.has("caption");
+const Tag = hasCaption ? "figure" : "div";
+const { frameClass, ratioStyle, focalStyle, corner } = mediaFrame({ shape, cutCorner, ratio, ratioSet: Astro.props.ratio !== undefined, ratioClass, focalPoint, part: "VideoMedia", dev: import.meta.env.DEV });
+const frameStyle = [ratioStyle, transitionNameStyle(transitionName, "VideoMedia")].filter(Boolean).join("; ") || undefined;
+const playable = sources.length > 0;
+// The button sits in the frame's bottom-end corner; in the middle of a circle (its corners are clipped); and at the
+// bottom-start when the cut takes the bottom-end corner.
+const place = shape === "circle" ? "inset-0 m-auto" : corner === "bottom-end" ? "start-3 bottom-3" : "end-3 bottom-3";
+// The frame is Media's (lib/media-frame.ts) on a box, as Media draws it around your own image component: the video
+// fills the box and is cropped. The box is the positioning context for the button, and carries focus-on-image, so the
+// button's focus ring reads on any frame. The button (lib/video.ts shows it) is a toggle: aria-pressed is true while
+// the video is meant to play. Its name stays "Play: …"; the icon shows pause while it plays. The script (with sources only) is bundled
+// once per page.
+---
+
+<Tag data-video-media="" data-video-autoplay={playable && autoplay ? "" : undefined} class={cn("m-0 grid min-w-0 content-start gap-item", className)} {...rest}>
+	<div data-media-frame data-cut={corner} style={frameStyle} class={cn("relative overflow-hidden", frameClass, playable && "focus-on-image", transitionName && "motion-ok:[view-transition-name:var(--vt-name)]")}>
+		{
+			playable ? (
+				<>
+					<video muted loop playsinline controls aria-label={label} preload={preload} poster={still.src} width={still.width} height={still.height} class="block size-full object-cover" style={focalStyle}>
+						{sources.map((s) => <source src={s.src} type={s.type} />)}
+					</video>
+					<button type="button" data-video-toggle hidden aria-pressed="false" class={cn(buttonClasses({ variant: "primary", size: "lg", icon: true, tone: "image" }), touchBox, "group absolute rounded-full", place)}>
+						<span class="sr-only">Play: {label}</span>
+						<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="size-5 shrink-0 group-aria-pressed:hidden">
+							<path d="M8 5.5v13l10.5-6.5z" />
+						</svg>
+						<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" class="size-5 shrink-0 not-group-aria-pressed:hidden">
+							<path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" />
+						</svg>
+					</button>
+				</>
+			) : (
+				<img src={still.src} alt={label} width={still.width} height={still.height} loading="lazy" decoding="async" class="block size-full object-cover" style={focalStyle} />
+			)
+		}
+	</div>
+	{hasCaption && <figcaption class="text-small text-pretty text-muted">{Astro.slots.has("caption") ? <slot name="caption" /> : caption}</figcaption>}
+</Tag>
+
+{
+	playable && (
+		<script>
+			import { start } from "../lib/video";
+			start();
+		</script>
+	)
+}

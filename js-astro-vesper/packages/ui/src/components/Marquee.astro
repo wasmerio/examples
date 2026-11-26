@@ -1,0 +1,117 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import type { SectionHeadingTag } from "../lib/heading";
+import { uid } from "../lib/id";
+import MotionPause from "./MotionPause.astro";
+import SectionHead from "./SectionHead.astro";
+
+export interface Props extends HTMLAttributes<"section"> {
+	/** The region's name, such as "Clients", shown small above or beside the row. With a heading, the heading names it instead. One of heading or label is required. */
+	label?: string;
+	/**
+	 * The id of an element of yours that names the region (a label you show beside the strip). With it the shell
+	 * shows no label of its own and the region is named by your element only, so the name is read once. A heading
+	 * still wins over it.
+	 */
+	labelledBy?: string;
+	/** The section heading. With it, the region is named by it. */
+	heading?: string;
+	/** Turn one *phrase* in the heading into <em> (lib/emphasis.ts). Off by default: the heading shows as typed. */
+	emphasis?: boolean;
+	/** A short mark after the heading, such as "(12)". Shown only with a heading. */
+	mark?: string;
+	/** What the mark says to a screen reader, such as "12 clients". Without it, the mark is read as written. */
+	markLabel?: string;
+	/** One or two sentences under the heading. Shown only with a heading. */
+	text?: string;
+	/** Heading element. */
+	headingTag?: SectionHeadingTag;
+	/** The loop time: --ui-marquee-duration (default 40s) times 1.5 (slow), 1 (normal) or 0.6 (fast). */
+	speed?: "slow" | "normal" | "fast";
+	/** "start" runs toward the start of the line (left, or right in a right-to-left page); "end" the other way. */
+	direction?: "start" | "end";
+	/** Renders the page's one MotionPause button in the header. Put it on the first marquee of the page only. */
+	pause?: boolean;
+	/** For recipes: the moving row is decoration (a title the heading already carries): it is hidden from screen readers. */
+	decorative?: boolean;
+	/** For recipes: the row that holds the header and the moving row. */
+	contentClass?: string;
+	/** For recipes: the header (the heading or the label, and the pause button). */
+	headerClass?: string;
+	/** For recipes: the track that moves (it holds the set and its copy). */
+	trackClass?: string;
+	/** For recipes: each copy of the set (a <ul>), such as its gaps and type. */
+	setClass?: string;
+	class?: string;
+}
+
+/** A recipe's props: the shell's, less the ones that set the layout, which the recipe sets itself. */
+export type MarqueeRecipeProps = Omit<Props, "decorative" | "contentClass" | "headerClass" | "trackClass" | "setClass">;
+
+const {
+	label,
+	labelledBy,
+	heading,
+	emphasis = false,
+	mark,
+	markLabel,
+	text,
+	headingTag = "h2",
+	speed = "normal",
+	direction = "start",
+	pause = false,
+	decorative = false,
+	contentClass,
+	headerClass,
+	trackClass,
+	setClass,
+	class: className,
+	...rest
+} = Astro.props;
+if (!heading && !label && !labelledBy) throw new Error("Marquee needs a heading, a label or labelledBy: the moving row is a region, and a region needs a name.");
+const items = Astro.slots.has("default") ? (await Astro.slots.render("default")).trim() : "";
+if (!items) throw new Error("Marquee needs at least one item.");
+const nameId = uid("marquee");
+// labelledBy (no heading): the caller's element names the region, and the shell draws no label. The header then
+// holds only the pause button, and without one there is no header at all.
+const external = !heading && labelledBy ? labelledBy : undefined;
+const eyebrow = heading && Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+const SPEED = { slow: 1.5, normal: 1, fast: 0.6 } as const;
+const vars = `--marquee-speed: ${SPEED[speed] ?? 1}; --marquee-direction: ${direction === "end" ? "reverse" : "normal"};`;
+// The marquee family's shell (decisions 0013, 0015, 0018): a region named by its heading (SectionHead) or its label,
+// a header with the page's one pause button when asked, then the viewport (the marquee utility, theme.css). The
+// viewport holds a track of two copies of the set: the first is the real list, the second is aria-hidden and inert,
+// so a screen reader hears each item once and a keyboard reaches each link once. The default slot is the set's
+// items (<li>s; a recipe writes them), rendered once and written into both copies. Still by default: one set that
+// wraps, the copy hidden; only where motion is allowed and scripts run (so the Pause motion button can show) does the copy show and the track loop, pausing on hover and
+// with the pause button; while focus is inside it, it is still again. The viewport is not focusable; links inside it are. speed and
+// direction become the viewport's working values (--marquee-speed, --marquee-direction). The root is a named
+// container (marquee); the viewport is a container of its own, so a set is at least as wide as the row it moves in.
+// A decorative row (MarqueeTitle) is hidden from screen readers as a whole: the heading carries the words.
+---
+
+<section aria-labelledby={external ?? nameId} class={cn("@container/marquee", className)} {...rest}>
+	<div data-marquee-row class={cn("grid gap-blocks", contentClass)}>
+		{(!external || pause) && <div data-marquee-header class={cn("flex min-w-0 flex-wrap items-center justify-between gap-x-blocks gap-y-2", headerClass)}>
+			{
+				external ? null : heading ? (
+					<SectionHead heading={heading} emphasis={emphasis} mark={mark} markLabel={markLabel} text={text} headingTag={headingTag} id={nameId}>
+						{eyebrow && <Fragment slot="eyebrow" set:html={eyebrow} />}
+					</SectionHead>
+				) : (
+					<p id={nameId} data-marquee-label class="m-0 text-small text-pretty text-muted">
+						{label}
+					</p>
+				)
+			}
+			{pause && <MotionPause />}
+		</div>}
+		<div data-marquee aria-hidden={decorative ? "true" : undefined} class="marquee min-w-0" style={vars}>
+			<div data-marquee-track class={cn("flex", trackClass)}>
+				<ul role="list" data-marquee-set class={cn("m-0 flex min-w-0 list-none items-center gap-x-blocks gap-y-item p-0 marquee-moves:pe-blocks", setClass)} set:html={items} />
+				<ul role="list" data-marquee-set data-marquee-copy aria-hidden="true" inert class={cn("m-0 flex min-w-0 list-none items-center gap-x-blocks gap-y-item p-0 marquee-moves:pe-blocks", setClass)} set:html={items} />
+			</div>
+		</div>
+	</div>
+</section>

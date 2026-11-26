@@ -1,0 +1,192 @@
+---
+/**
+ * Every page's frame: the meta tags (theme-core's SeoHead), the look on <html>, the skip link, the floating nav
+ * (sticky, the first child of <body>; SiteNav.astro), the <main> landmark (marked for static search when the page
+ * passes `index`), the footer and, on a page whose photos open large (`lightbox`), the kit's LightboxBar.
+ *
+ * The look comes from getConfig(settings), read per request, never at module load: `data-look`, `data-accent`,
+ * `data-collage` and `data-thumbs` (present when post thumbnails are on) on <html>, so a later CMS setting needs no
+ * page change. Light and dark follow the reader's system; `data-theme="light"` or `"dark"` on <html> pins one (the
+ * look files and vesper.css), as the nav's switch (the kit's ModeToggle) and the screenshots do. The kit's inline
+ * no-flash script (modeScript), first in <head>, applies a saved choice before the first paint.
+ *
+ * Structured data: every page carries the site's WebSite and the owner's Person (src/utils/jsonld.ts) and the page's
+ * own nodes (`jsonLd`); pageMeta drops them on a noindex page.
+ *
+ * The nav and the footer drop links to the optional pages that are off (navLinks, src/utils/routes.ts), and name their
+ * links to /now with the settings' `nowLabel` when it is set (withNowLabel).
+ */
+import SearchIndex from "@astronomic/theme-core/components/SearchIndex.astro";
+import SeoHead from "@astronomic/theme-core/components/SeoHead.astro";
+import LightboxBar from "@astronomic/ui/components/LightboxBar.astro";
+import type { JsonLdNode } from "@astronomic/theme-core/jsonld";
+import { currentPath, isCurrentPath } from "@astronomic/theme-core/routes";
+import { pageMeta, publicOrigin } from "@astronomic/theme-core/seo";
+import { shareImagePath } from "@astronomic/theme-core/share";
+import { plainHeading } from "@astronomic/ui/lib/emphasis.ts";
+import { modeScript } from "@astronomic/ui/lib/mode.ts";
+import { systemLinks } from "@astronomic/ui/system/link";
+import { searchKind, useContent } from "~/content";
+import { safeHref } from "~/content/links";
+import { strings } from "~/theme.strings";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteNav from "../components/SiteNav.astro";
+import hostGrotesk from "../assets/fonts/HostGrotesk-latin.woff2?url";
+import onest from "../assets/fonts/Onest-latin.woff2?url";
+import vollkorn from "../assets/fonts/Vollkorn-latin.woff2?url";
+import commissioner from "../assets/fonts/Commissioner-latin.woff2?url";
+import sora from "../assets/fonts/Sora-latin.woff2?url";
+import publicSans from "../assets/fonts/PublicSans-latin.woff2?url";
+import { getConfig, type LookId } from "../utils/config";
+import { mainId } from "../utils/ids";
+import { siteNodes } from "../utils/jsonld";
+import { homeHref, navLinks, rssHref, searchHref, withNowLabel } from "../utils/routes";
+import { siteSettings } from "../utils/setup";
+import "../styles/global.css";
+
+interface Props {
+	title: string;
+	pageTitle?: string | null;
+	description?: string | null;
+	/** The share image (the entry's SEO image, else its photo). Without one, the page's card or the home card. */
+	image?: string | null;
+	/** The share image's alt text (when it is the entry's photo). */
+	imageAlt?: string;
+	canonical?: string | null;
+	/** The entry this page shows, for source hooks (e.g. EmDash page contributions). */
+	entry?: { ref?: { source: string; collection: string; id: string }; slug: string; seo?: { noindex?: boolean } };
+	/** Keeps the page out of search results. The entry's `seo.noindex` does too. */
+	noindex?: boolean;
+	/** `og:type`: "article" for a post. */
+	type?: "website" | "article";
+	/** True when the page has its own share card (it is in the public page inventory); else it shares the home card. */
+	card?: boolean;
+	/**
+	 * The entry's data for static search (Pagefind): its collection, title and summary. Entry pages pass it;
+	 * structural pages (home, lists, search) do not, so they stay out of the index.
+	 */
+	index?: { kind: string; title: string; summary?: string; image?: string; imageAlt?: string };
+	/** The page's own JSON-LD nodes (paths, not URLs: the builders make them absolute), after the site's. */
+	jsonLd?: JsonLdNode | (JsonLdNode | undefined)[];
+	/**
+	 * The page has photos that open large (links with data-lightbox="photos"): one LightboxBar, once, at the end of
+	 * <body>. Set by route (every article and project; home, /now and /about when their photos open), not by count.
+	 */
+	lightbox?: boolean;
+}
+
+const { title: rawTitle, pageTitle: rawPageTitle, description, image, imageAlt, canonical, entry, noindex = false, type = "website", card = false, index: rawIndex, jsonLd, lightbox = false } = Astro.props;
+// A heading's emphasis marker (*phrase*) never reaches <title>, the meta tags or the search index: plain text only
+// (plainHeading is not a sanitizer; Astro escapes these where they are written).
+const title = plainHeading(rawTitle);
+const pageTitle = rawPageTitle ? plainHeading(rawPageTitle) : rawPageTitle;
+const index = rawIndex ? { ...rawIndex, title: plainHeading(rawIndex.title) } : undefined;
+const content = useContent(Astro);
+const { Head, BodyStart, BodyEnd } = content.hooks;
+const [settings, menu, footerMenu] = await Promise.all([siteSettings(content), content.menu("primary"), content.menu("footer")]);
+// Per request: the config file, then the settings' config group (none in version 1), then VESPER_CONFIG in a test build.
+const { config } = getConfig(settings);
+
+const siteTitle = settings.title;
+const here = currentPath(Astro.url);
+const noIndex = noindex || !!entry?.seo?.noindex;
+const search = searchKind(content);
+// Static search indexes only the pages that pass `index` (never a noindex page). Server builds render no index markup.
+const indexed = search === "static" && !!index && !noIndex;
+const origin = publicOrigin({ site: Astro.site, url: Astro.url, output: import.meta.env.CONTENT_OUTPUT });
+const pageNodes = [jsonLd ?? []].flat().filter((n): n is JsonLdNode => !!n);
+const graph = [...siteNodes(settings, origin), ...pageNodes];
+const page = pageMeta({
+	title,
+	pageTitle,
+	description,
+	// The page's image wins; else its own card (a noindex page has none); else the home card.
+	image: image ?? shareImagePath(card && !noIndex ? here : "/"),
+	imageAlt: image ? imageAlt : undefined,
+	canonical,
+	entry,
+	noindex: noIndex,
+	siteTitle,
+	siteTagline: settings.tagline,
+	site: origin,
+	url: here,
+	type,
+	feed: { title: siteTitle, path: rssHref() },
+	jsonLd: graph,
+});
+
+type Item = { label: string; href: string; target?: string; children?: Item[] };
+/** True when `href` is the current page or a section that contains it. */
+const isCurrent = (href: string) => isCurrentPath(here, href);
+/**
+ * Menu links as nav links, without the optional pages that are off. Both sources already leave out a link a page
+ * may not use (src/content/links.ts); this keeps the rule for any other source, so an unchecked href never reaches
+ * the page. The nav and the footer are flat: a child item is left out.
+ */
+const linksOf = (items: Item[]) =>
+	navLinks(withNowLabel(items, settings.nowLabel), config).flatMap((item) => {
+		const href = safeHref(item.href);
+		return href === undefined ? [] : [{ label: item.label, href, current: isCurrent(href), target: item.target }];
+	});
+const socials = navLinks(settings.socials, config).flatMap((item) => {
+	const href = safeHref(item.href);
+	return href === undefined ? [] : [{ label: item.label, href, icon: item.icon }];
+});
+const footerLinks = linksOf(footerMenu);
+if (search) footerLinks.push({ label: strings.footer.search, href: searchHref(), current: isCurrent(searchHref()), target: undefined });
+// The design system's pages, only while they are on (`astro dev`, or a build with ASTRONOMIC_SYSTEM=1): the start page
+// as "Design system", then the others by their own names.
+for (const [i, link] of (systemLinks ?? []).entries()) {
+	footerLinks.push({ label: i === 0 ? strings.footer.designSystem : link.label, href: link.href, current: link.href.replace(/\/$/, "") === here, target: undefined });
+}
+
+// The fonts every page paints with, fetched with the page: only the chosen look's display and body files. Every
+// look's @font-face is declared, so a look set per request still loads its fonts (the others are never fetched).
+const lookFonts: Record<LookId, string[]> = { clear: [hostGrotesk, onest], field: [vollkorn, commissioner], trail: [sora, publicSans] };
+const fontFiles = lookFonts[config.look];
+---
+
+<!doctype html>
+<html lang={strings.locale} data-look={config.look} data-accent={config.accent} data-collage={config.collage} data-thumbs={config.thumbnails ? "" : undefined}>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="generator" content={Astro.generator} />
+		<script is:inline set:html={modeScript} />
+		<title>{page.title}</title>
+		{fontFiles.map((href) => <link rel="preload" href={href} as="font" type="font/woff2" crossorigin />)}
+		{/* The product always owns its meta tags. Source hooks only add to them. */}
+		<SeoHead page={page} />
+		{Head && <Head page={page} />}
+	</head>
+	<body class="v-site flex min-h-dvh flex-col">
+		{BodyStart && <BodyStart page={page} />}
+
+		<a href={`#${mainId}`} class="fixed top-3 left-3 z-50 -translate-y-[200%] rounded-control bg-fg px-4 py-3 text-bg no-underline focus:translate-y-0">
+			{strings.site.skipLink}
+		</a>
+
+		<SiteNav links={linksOf(menu)} name={settings.name} role={settings.role} avatar={settings.avatar} home={here === homeHref()} />
+
+		<main id={mainId} tabindex="-1" class="flex-1 outline-none" data-pagefind-body={indexed ? "" : undefined}>
+			{indexed && <SearchIndex {...index} />}
+			<slot />
+		</main>
+
+		<SiteFooter links={footerLinks} socials={socials} name={settings.name} sampleContent={!!settings.sampleContent} builtWith={config.builtWith} />
+
+		{
+			lightbox && (
+				<LightboxBar
+					label={strings.lightbox.label}
+					closeLabel={strings.lightbox.close}
+					prevLabel={strings.lightbox.prev}
+					nextLabel={strings.lightbox.next}
+					counterText={strings.lightbox.counter}
+				/>
+			)
+		}
+
+		{BodyEnd && <BodyEnd page={page} />}
+	</body>
+</html>

@@ -1,0 +1,121 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing } from "../lib/button";
+import { cn } from "../lib/cn";
+import { displayType } from "../lib/display";
+import type { SectionHeadingTag } from "../lib/heading";
+import { uid } from "../lib/id";
+import type { UiImage } from "../lib/image";
+import { relFor } from "../lib/nav";
+import SectionHead from "./SectionHead.astro";
+
+export interface LogoStripItem {
+	/** Also the logo's alt text, always. */
+	name: string;
+	/** Without a logo, the name shows as text. Its alt is ignored: the alt is the name. */
+	logo?: UiImage;
+	href?: string;
+	/** Link target, e.g. "_blank". */
+	target?: string;
+}
+
+export interface Props extends HTMLAttributes<"section"> {
+	items: LogoStripItem[];
+	/** The section heading. Without it there is no section: a <div> holds the label and the list. */
+	heading?: string;
+	/** Turn one *phrase* in the heading into <em> (lib/emphasis.ts). Off by default: the heading shows as typed. */
+	emphasis?: boolean;
+	/** A short mark after the heading, such as "(12)". Shown beside the heading, outside it, so the heading's name stays plain. Shown only with a heading. */
+	mark?: string;
+	/** What the mark says to a screen reader, such as "12 projects". Without it, the mark is read as written. */
+	markLabel?: string;
+	/** One or two sentences under the heading. Shown only with a heading. */
+	text?: string;
+	/** Heading element. */
+	headingTag?: SectionHeadingTag;
+	/** A short label before the list when there is no heading, e.g. "Recent clients". It names the list. */
+	label?: string;
+	/** For recipes: the alignment of the header (SectionHead); a recipe aligns its own list. */
+	align?: "start" | "center";
+	/** For recipes: the row that holds the header (or the label) and the list. */
+	contentClass?: string;
+	/** For recipes: the header (SectionHead), or the label. */
+	headerClass?: string;
+	/** For recipes: the list of logos, its layout (a wrapping row, or a grid). */
+	listClass?: string;
+	/** For recipes: each logo's <li>. */
+	itemClass?: string;
+	class?: string;
+}
+
+/** A recipe's props: the shell's, less the ones that set the layout, which the recipe sets itself. */
+export type LogoStripRecipeProps = Omit<Props, "align" | "contentClass" | "headerClass" | "listClass" | "itemClass">;
+
+const { items, heading, emphasis = false, mark, markLabel, text, headingTag = "h2", label, align = "start", contentClass, headerClass, listClass, itemClass, class: className, ...rest } = Astro.props;
+const headingId = heading ? uid("logos") : undefined;
+const labelId = !heading && label ? uid("logos") : undefined;
+const eyebrow = heading && Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+const Root = heading ? "section" : "div";
+const itemBase = "inline-flex min-h-logo min-w-0 items-center text-inherit no-underline";
+// A linked image keeps its own colors, so a color change on the link would not show: it fades a step on hover,
+// with the link's timing.
+const imageHover = "group-hover/logo:opacity-70 motion-ok:transition-opacity motion-ok:duration-150";
+// The logos family's shell (decisions 0013, 0015): with a heading, the region named by it, then SectionHead; else a
+// <div> with an optional short label. One <ul role="list">, named by the heading or the label; on its own it stacks the
+// logos, and each recipe sets the list's layout (a wrapping row, or a grid of cells). The shell owns each item: a logo
+// image (h-logo tall, --ui-logo-h; at most max-w-logo wide; its alt is always the name, so data such as "Acme logo"
+// never reaches a screen reader), or the name as text, trimmed to the cap height so it centers on the logos in a box at
+// least a logo tall (min-h-logo), so wrapped rows keep one pitch, and free to break so a long name never overflows its
+// cell; a link takes the kit's focus ring and relFor's rel, and on hover a name fades to the muted color and an image
+// logo to 70% opacity. Only an item's own fields render, so a CMS entry's other fields never reach the markup. The root
+// is a named container (logos). No motion but the hover fade.
+---
+
+<Root aria-labelledby={headingId} class={cn("@container/logos", className)} {...rest}>
+	<div data-logos-row class={cn("grid gap-blocks", contentClass)}>
+		{
+			heading ? (
+				<SectionHead data-logos-header heading={heading} emphasis={emphasis} mark={mark} markLabel={markLabel} text={text} headingTag={headingTag} id={headingId} align={align} class={headerClass}>
+					{eyebrow && <Fragment slot="eyebrow" set:html={eyebrow} />}
+				</SectionHead>
+			) : (
+				label && <p id={labelId} data-logos-label class={cn("m-0 text-small text-pretty text-muted", headerClass)}>{label}</p>
+			)
+		}
+		<ul
+			role="list"
+			data-logos-list
+			aria-labelledby={headingId ?? labelId}
+			class={cn("m-0 grid min-w-0 list-none gap-item p-0 text-heading leading-tight text-fg", displayType, listClass)}
+		>
+			{
+				items.map((item) => {
+					const content = item.logo ? (
+						<img
+								src={item.logo.src}
+								alt={item.name}
+								width={item.logo.width}
+								height={item.logo.height}
+								loading="lazy"
+								decoding="async"
+								class={cn("block h-logo w-auto max-w-logo object-contain", item.href && imageHover)}
+							/>
+					) : (
+						<span class="min-w-0 [overflow-wrap:anywhere] [text-box-trim:trim-both] [text-box-edge:cap_alphabetic]">{item.name}</span>
+					);
+					return (
+						<li data-logo class={cn("flex min-w-0", itemClass)}>
+							{item.href ? (
+								<a href={item.href} target={item.target} rel={relFor(item.target)} class={cn(itemBase, "group/logo rounded-control hover:text-muted motion-ok:transition-[color,background-color,border-color,text-decoration-color] motion-ok:duration-150", focusRing)}>
+									{content}
+								</a>
+							) : (
+								<span class={itemBase}>{content}</span>
+							)}
+						</li>
+					);
+				})
+			}
+		</ul>
+	</div>
+</Root>

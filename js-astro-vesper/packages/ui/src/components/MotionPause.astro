@@ -1,0 +1,56 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing, touchBox } from "../lib/button";
+import { cn } from "../lib/cn";
+
+export interface Props extends Omit<HTMLAttributes<"button">, "type" | "aria-pressed"> {
+	/** The button's words. The label stays the same when pressed: aria-pressed says it is paused. */
+	label?: string;
+	class?: string;
+}
+
+const { label = "Pause motion", class: className, ...rest } = Astro.props;
+// The page's one pause button (decision 0018): a toggle that sets data-motion-paused on <html>, which freezes every
+// marquee, stops every autoplaying video and turns the motion-ok variant off, and keeps the choice for the session (lib/motion.ts bindPause; the theme's
+// inline motionScript puts it back before the first paint on the next page). It shows only where something moves
+// (motion-allowed: no reduced motion, not calm; not motion-ok, which the pause itself turns off) and only with a script: it renders with the hidden attribute, which
+// bindPause takes off as it binds the button, so with no script it stays hidden. It reads as a small underlined
+// text link in the current color, 44px tall on touch screens. A small icon before the label shows the state, by
+// aria-pressed alone: two bars while things move, a play triangle once paused, when the underline also goes. Its script binds every button on the page once, again
+// after a ClientRouter swap, where it also puts the pause back on the new <html>.
+---
+
+<button
+	type="button"
+	data-motion-pause
+	aria-pressed="false"
+	hidden
+	class={cn(
+		"group hidden motion-allowed:inline-flex m-0 cursor-pointer items-center gap-1.5 rounded-control border-0 bg-transparent p-0 text-small text-inherit underline underline-offset-4 aria-pressed:no-underline",
+		touchBox,
+		focusRing,
+		className,
+	)}
+	{...rest}
+>
+	<svg data-motion-pause-icon="pause" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true" class="size-3 shrink-0 group-aria-pressed:hidden">
+		<path d="M2.5 1.5h2.5v9H2.5zM7 1.5h2.5v9H7z" />
+	</svg>
+	<svg data-motion-pause-icon="play" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true" class="size-3 shrink-0 not-group-aria-pressed:hidden">
+		<path d="M3 1.5v9l7.5-4.5z" />
+	</svg>
+	{label}
+</button>
+
+<script>
+	import { bindPause, restorePause } from "../lib/motion";
+
+	const w = window as unknown as { __auiMotionPause?: boolean };
+	if (!w.__auiMotionPause) {
+		w.__auiMotionPause = true;
+		// ClientRouter replaces the <html> attributes on each navigation: put the session's pause back before paint.
+		document.addEventListener("astro:after-swap", () => restorePause(window));
+		document.addEventListener("astro:page-load", () => bindPause(document));
+	}
+	bindPause(document);
+</script>

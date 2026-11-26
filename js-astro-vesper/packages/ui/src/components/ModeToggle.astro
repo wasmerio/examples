@@ -1,0 +1,113 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { buttonClasses, type ButtonSize, type ButtonVariant } from "../lib/button";
+import { cn } from "../lib/cn";
+import type { Mode } from "../lib/mode";
+
+export interface Props extends Omit<HTMLAttributes<"button">, "type" | "aria-pressed"> {
+	/**
+	 * The button's accessible name ("Dark mode" by default); its pressed state says whether dark mode is on. With
+	 * visible text (the default slot) the text is the name and no aria-label is set, unless you pass label: then it
+	 * must start with the visible words, so speech users can say what they see.
+	 */
+	label?: string;
+	/** Button's variants (ghost by default: an icon on the bar). */
+	variant?: ButtonVariant;
+	size?: ButtonSize;
+	/**
+	 * The surface it sits on, as Button's tone: `page`, `band` (the Navbar's bar), `image` (under a scrim; put
+	 * focus-on-image on an ancestor), `cta` (the CTA band; put focus-on-cta on the band).
+	 */
+	tone?: "page" | "image" | "band" | "cta";
+	/**
+	 * The look the site opens in with nothing saved: "system" (the default: the reader's system setting), "light" or
+	 * "dark". A press back to it clears the saved choice. Use the same base in the page's no-flash script,
+	 * modeScriptFor(base) from lib/mode.ts.
+	 */
+	base?: Mode;
+	class?: string;
+}
+
+const { label, variant = "ghost", size = "sm", tone = "page", base = "system", class: className, ...rest } = Astro.props;
+// With a default slot (visible text, such as the label's own words), it is a Button with the moon before the text, as
+// in a menu panel; without one, Button's icon shape.
+const text = Astro.slots.has("default");
+// The name: the visible text when there is some (WCAG 2.5.3, label in name), else label, "Dark mode" by default.
+const name = label ?? (text ? undefined : "Dark mode");
+// One light and dark switch (lib/mode.ts): a toggle button (aria-pressed: dark mode on or off) in Button's icon shape
+// and colors for its surface, a 44px hit area on touch (tap-area). A press shows the other look and saves it;
+// pressing back to the base's look (the system's, by default) clears the choice, so the page opens in its base again.
+// Put modeScript (lib/mode.ts) in the page's <head> so a saved choice applies before the first paint; with a light or
+// dark base, put modeScriptFor(base) there instead, with the same base: the head script sets that look when nothing
+// is saved, and records the base for page swaps. With no JavaScript it cannot work, so it is
+// hidden. The moon is outlined in light mode and filled in dark mode. A light or dark base is written on the button
+// (data-mode-base) for the script; the system base writes nothing, so the markup is as before.
+---
+
+<button
+	type="button"
+	data-mode-toggle
+	aria-label={name}
+	aria-pressed="false"
+	data-mode-base={base === "system" ? undefined : base}
+	class={cn(buttonClasses({ variant, size, icon: !text, tone }), "tap-area noscript:hidden", className)}
+	{...rest}
+>
+	<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ui-icon size-4.5">
+		<path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7z"></path>
+	</svg>
+	{text && <slot />}
+</button>
+
+<script>
+	import { applyMode, isDark, nextMode, pageBase, parseMode, saveMode, savedMode } from "../lib/mode";
+
+	const root = document.documentElement;
+	const query = matchMedia("(prefers-color-scheme: dark)");
+	const store = (): Storage | undefined => {
+		try {
+			return localStorage;
+		} catch {
+			return undefined;
+		}
+	};
+	/** The mode on the page now: the attribute modeScript (or a press) set, else the system. */
+	const current = () => (root.dataset.theme === "dark" || root.dataset.theme === "light" ? root.dataset.theme : "system");
+	/** The base mode the page's switch names (data-mode-base), else the system. */
+	const baseOf = (el: HTMLElement | null) => parseMode(el?.dataset.modeBase);
+
+	function sync() {
+		const dark = isDark(current(), query.matches);
+		for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode-toggle]")) {
+			button.setAttribute("aria-pressed", String(dark));
+			// The moon fills in dark mode: a presentation attribute, so the kit ships no extra CSS rule for it.
+			button.querySelector("svg")?.setAttribute("fill", dark ? "currentColor" : "none");
+		}
+	}
+
+	function bind() {
+		for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode-toggle]")) {
+			if (button.dataset.bound !== undefined) continue;
+			button.dataset.bound = "";
+			button.addEventListener("click", () => {
+				const base = baseOf(button);
+				const mode = nextMode(current(), query.matches, base);
+				applyMode(root, mode);
+				saveMode(store(), mode, base);
+				sync();
+			});
+		}
+		sync();
+	}
+
+	const w = window as unknown as { __auiModeToggle?: boolean };
+	if (!w.__auiModeToggle) {
+		w.__auiModeToggle = true;
+		query.addEventListener("change", sync);
+		// ClientRouter replaces the <html> attributes on each navigation: put the saved mode back before paint.
+		// The base modeScriptFor recorded comes first, so a page with no switch keeps it.
+		document.addEventListener("astro:after-swap", () => applyMode(root, savedMode(store(), pageBase(window, document.querySelector<HTMLElement>("[data-mode-toggle]")))));
+		document.addEventListener("astro:page-load", bind);
+	}
+	bind();
+</script>

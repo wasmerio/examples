@@ -1,0 +1,138 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing, touchBox } from "../lib/button";
+import { cn } from "../lib/cn";
+import { headingType } from "../lib/display";
+import type { SectionHeadingTag } from "../lib/heading";
+import { uid } from "../lib/id";
+import SectionHead from "./SectionHead.astro";
+
+/** One column of an index table. */
+export interface IndexColumn {
+	/** The key in each row's cells. */
+	key: string;
+	/** The column header, e.g. "Award". */
+	label: string;
+	/** "end" for a year or a count: set at the end, in figures of one width. */
+	align?: "start" | "end";
+}
+
+/** One row of an index table. */
+export interface IndexRow {
+	/** The row's text, by column key. A column with no cell here shows an empty cell. */
+	cells: Record<string, string>;
+	/** With it, the first column's text is a link to this page. */
+	href?: string;
+}
+
+export interface Props extends HTMLAttributes<"section"> {
+	/** The section heading. Without it there is no section and no header: a <div> holds only the table. */
+	heading?: string;
+	/** Turn one *phrase* in the heading into <em> (lib/emphasis.ts). Off by default: the heading shows as typed. */
+	emphasis?: boolean;
+	/** A short mark after the heading, such as "(12)". Shown only with a heading. */
+	mark?: string;
+	/** What the mark says to a screen reader, such as "12 awards". Without it, the mark is read as written. */
+	markLabel?: string;
+	/** One or two sentences under the heading. Shown only with a heading. */
+	text?: string;
+	/** Heading element. */
+	headingTag?: SectionHeadingTag;
+	/** The table's name when there is no heading (a <caption>, visually hidden). One of heading or caption is required. */
+	caption?: string;
+	/** The columns, in order. Empty throws. */
+	columns: IndexColumn[];
+	/** One or more rows. Empty throws. */
+	rows: IndexRow[];
+	/** For recipes: the alignment of the header (SectionHead) only. */
+	align?: "start" | "center";
+	/** For recipes: the row that holds the header and the table. */
+	contentClass?: string;
+	/** For recipes: the header (SectionHead). */
+	headerClass?: string;
+	/** For recipes: the table. */
+	tableClass?: string;
+	class?: string;
+}
+
+/** A recipe's props: the shell's, less the ones that set the layout, which the recipe sets itself. */
+export type IndexTableRecipeProps = Omit<Props, "align" | "contentClass" | "headerClass" | "tableClass">;
+
+const { heading, emphasis = false, mark, markLabel, text, headingTag = "h2", caption, columns, rows, align = "start", contentClass, headerClass, tableClass, class: className, ...rest } = Astro.props;
+if (!columns?.length) throw new Error("IndexTable needs at least one column.");
+if (!rows?.length) throw new Error("IndexTable needs at least one row.");
+if (!heading && !caption) throw new Error("IndexTable needs a heading or a caption: a table needs a name.");
+const headingId = heading ? uid("index") : undefined;
+const eyebrow = heading && Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+const Root = heading ? "section" : "div";
+// The last end-aligned column after the first: on a phone it shares the first cell's line, at the end.
+const endAt = columns.reduce((at, c, i) => (i > 0 && c.align === "end" ? i : at), -1);
+/** A cell's classes: its place in the phone's two-column row, its type and its alignment. */
+const cellClass = (i: number) =>
+	cn(
+		"p-0 align-baseline empty:hidden @xl/index-table:table-cell @xl/index-table:empty:table-cell @xl/index-table:py-5 @xl/index-table:pe-4 @xl/index-table:last:pe-0",
+		i === 0 ? cn("col-start-1 min-w-0 text-subhead text-balance text-fg [overflow-wrap:anywhere]", headingType, endAt < 0 && "col-span-2") : "text-pretty text-muted",
+		i > 0 && i === endAt && "col-start-2 row-start-1",
+		i > 0 && i !== endAt && "col-span-2 min-w-0 [overflow-wrap:anywhere]",
+		columns[i].align === "end" && i > 0 && "text-end whitespace-nowrap tabular-nums",
+	);
+// The index table family's shell (decisions 0013, 0015): with a heading, the region named by it, then SectionHead a
+// block above the table; without one, a plain <div> with the table alone, named by its caption. A real <table> with
+// explicit roles (table, row, columnheader, cell), because the phone layout changes display, which strips a table's
+// meaning in some engines. The root is a named container (index-table). From a 36rem container it is a table: a
+// header row of small muted labels, then ruled rows (a hairline above each, one under the last), the first column in
+// the subhead role in heading type, the others muted, an end column (a year, a count) at the end in figures of one
+// width. Below that the header row is visually hidden and each row is a two-column grid: the first cell and the last
+// end column on one line, the other cells under them. With href the first cell's text is the row's one link, 44px tall
+// on touch screens, with the kit's focus ring. A row shows only its columns' cells, in the columns' order; a missing
+// cell is empty.
+---
+
+<Root aria-labelledby={headingId} class={cn("@container/index-table", className)} {...rest}>
+	<div data-index-table-row class={cn("grid gap-blocks", contentClass)}>
+		{
+			heading && (
+				<SectionHead data-index-table-header heading={heading} emphasis={emphasis} mark={mark} markLabel={markLabel} text={text} headingTag={headingTag} id={headingId} align={align} class={headerClass}>
+					{eyebrow && <Fragment slot="eyebrow" set:html={eyebrow} />}
+				</SectionHead>
+			)
+		}
+		<table role="table" data-index-table aria-labelledby={caption ? undefined : headingId} class={cn("block w-full min-w-0 border-collapse @xl/index-table:table", tableClass)}>
+			{caption && <caption class="sr-only">{caption}</caption>}
+			<thead class="sr-only @xl/index-table:not-sr-only @xl/index-table:table-header-group">
+				<tr role="row">
+					{
+						columns.map(({ label, align: at }, i) => (
+							<th role="columnheader" scope="col" class={cn("p-0 pb-3 text-start align-bottom text-small font-normal text-muted @xl/index-table:pe-4 @xl/index-table:last:pe-0", at === "end" && i > 0 && "text-end")}>
+								{label}
+							</th>
+						))
+					}
+				</tr>
+			</thead>
+			<tbody class="block @xl/index-table:table-row-group">
+				{
+					rows.map(({ cells, href }) => (
+						<tr
+							role="row"
+							data-index-table-item
+							class="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-1 border-0 border-t-ui border-solid border-border py-4 last:border-b-ui @xl/index-table:table-row @xl/index-table:py-0"
+						>
+							{columns.map(({ key }, i) => (
+								<td role="cell" class={cellClass(i)}>
+									{i === 0 && href ? (
+										<a href={href} class={cn("inline-block rounded-control text-inherit no-underline underline-offset-4 hover:underline", touchBox, focusRing)}>
+											{cells[key] ?? ""}
+										</a>
+									) : (
+										(cells[key] ?? "")
+									)}
+								</td>
+							))}
+						</tr>
+					))
+				}
+			</tbody>
+		</table>
+	</div>
+</Root>

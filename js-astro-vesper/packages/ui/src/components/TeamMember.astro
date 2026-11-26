@@ -1,0 +1,115 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { initials } from "../lib/avatar";
+import { focusRing } from "../lib/button";
+import { stretchedLink } from "../lib/card";
+import { cn } from "../lib/cn";
+import { displayType, headingType } from "../lib/display";
+import type { ItemHeadingTag } from "../lib/heading";
+import type { IconComponent } from "../lib/icon";
+import { imageAttrs, type DecorativeImage, type ImageComponent } from "../lib/image";
+import Avatar from "./Avatar.astro";
+import Icon from "./Icon.astro";
+import Media from "./Media.astro";
+
+/** One of a person's links. The label shows; a screen reader hears it with the name ("Ada Brook on LinkedIn"). */
+export interface TeamLink {
+	label: string;
+	href: string;
+	/** Your icon component (Lucide's, or your own), shown before the label. */
+	icon?: IconComponent;
+}
+
+// The person's fields sit in Props itself: the props parser reads one base per type.
+export interface Props extends Omit<HTMLAttributes<"div">, "role"> {
+	name: string;
+	/** Their job, e.g. "Design lead". */
+	role: string;
+	/**
+	 * Their own page. With it, the name is the card's one link, stretched over the whole card (photo and text), so a
+	 * click anywhere opens the page; their own links stay above it and are reached by Tab after it. Without it, no
+	 * link: the card is as before.
+	 */
+	href?: string;
+	/** Their photo, as decoration: the part writes alt="", since the name is right under it. */
+	image?: DecorativeImage;
+	/** Your image component for the photo (Media's imageComponent). Photo variant only: the avatar variant draws a small Avatar, which needs no srcset. */
+	imageComponent?: ImageComponent;
+	/** How wide the photo shows, for imageComponent's sizes. Recipes set it. */
+	imageSizes?: string;
+	/** A few sentences about them. */
+	bio?: string;
+	links?: TeamLink[];
+	/** A line in their words, above the name (TeamSpotlight). */
+	quote?: string;
+	/** The name element. Required: a recipe passes childHeadingTag(...) (lib/heading.ts). */
+	headingTag: ItemHeadingTag;
+	/** photo (default): a large photo above the name. avatar: a small round Avatar beside it. */
+	variant?: "photo" | "avatar";
+	/** The photo box's ratio, as classes (photo only). */
+	ratioClass?: string;
+	/** For recipes: the photo box. */
+	mediaClass?: string;
+	/** For recipes: the text box (quote, name, role, bio, links). */
+	bodyClass?: string;
+	class?: string;
+}
+
+/** One person's content (the recipes' items). */
+export type TeamMemberItem = Pick<Props, "name" | "role" | "href" | "image" | "bio" | "links" | "quote">;
+
+const { name, role, href, image, imageComponent, imageSizes, bio, links = [], quote, headingTag: Heading, variant = "photo", ratioClass = "aspect-[4/5]", mediaClass, bodyClass, class: className, ...rest } = Astro.props;
+const photo = variant === "photo";
+// The team family's item (decisions 0013, 0015): a named container (team-member). No class queries it; it is there
+// for cqi: the initials' display-split role and a quote's quote role (TeamSpotlight) read cqi, so they size to the
+// person's own box, not the section. photo: the photo (Media, cover, the ratio from ratioClass, 4:5 by default) above
+// the text; with no photo, the initials in the same box, large and in display type, so the box reads as a mark and
+// not a missing image (aria-hidden: the name is right under it), and a row of people never breaks. avatar: the kit
+// Avatar (round, 4rem) beside the text. The order: the quote (if any, in the quote role, display type), the name (the
+// item heading), the role (small, muted), the bio (muted, running-text width), the links. Each link reads
+// "<name> on <label>": the name is visually hidden. With href, the name is a link (stretchedLink, lib/card.ts: its
+// ::after covers the person's box, which turns relative), so the whole card opens their page and the focus ring goes
+// round the card; the photo stays decoration (alt=""), not a second link. The links list sits above the stretched
+// area (relative z-10), so each link is still clicked and tabbed to on its own.
+---
+
+<div data-team-member class={cn("@container/team-member grid min-w-0 content-start gap-item", !photo && "grid-cols-[auto_minmax(0,1fr)] items-center", href && "relative", className)} {...rest}>
+	{
+		photo ? (
+			image ? (
+				<Media src={image.src} alt="" width={image.width} height={image.height} focalPoint={image.focalPoint} loading={image.loading} ratioClass={ratioClass} imageComponent={imageComponent} sizes={imageSizes} class={mediaClass} />
+			) : (
+				<div data-team-initials aria-hidden="true" class={cn("grid place-items-center rounded-media bg-avatar-fill text-display-split leading-none text-avatar-fg", displayType, ratioClass, mediaClass)}>{initials(name)}</div>
+			)
+		) : (
+			<Avatar name={name} image={image ? { ...imageAttrs(image.src, image.width, image.height), alt: "" } : undefined} size="lg" decorative class={mediaClass} />
+		)
+	}
+	<div data-team-body class={cn("grid min-w-0 content-start gap-2", bodyClass)}>
+		{
+			quote && (
+				<blockquote class={cn("m-0 mb-item max-w-lead-narrow text-quote text-balance", displayType)}>
+					<p class="m-0">{quote}</p>
+				</blockquote>
+			)
+		}
+		<Heading class={cn("m-0 text-heading text-balance [overflow-wrap:anywhere]", headingType)}>{href ? <a href={href} class={stretchedLink}>{name}</a> : name}</Heading>
+		<p class="m-0 text-small text-muted">{role}</p>
+		{bio && <p class="m-0 max-w-prose text-body text-pretty text-muted">{bio}</p>}
+		{
+			links.length > 0 && (
+				<ul role="list" class={cn("m-0 mt-1 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-small", href && "relative z-10")}>
+					{links.map((link) => (
+						<li>
+							<a href={link.href} class={cn("link-underline inline-flex items-center gap-1.5 rounded-control", focusRing)}>
+								{link.icon && <Icon icon={link.icon} size="sm" />}
+								<span class="sr-only">{`${name} on `}</span>
+								{link.label}
+							</a>
+						</li>
+					))}
+				</ul>
+			)
+		}
+	</div>
+</div>

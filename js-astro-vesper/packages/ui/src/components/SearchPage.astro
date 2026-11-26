@@ -1,0 +1,265 @@
+---
+/// <reference types="@astronomic-dev/search/astro/virtual" />
+import { mergeStrings } from "@astronomic-dev/search/controller";
+import SearchNoscript from "@astronomic-dev/search/astro/SearchNoscript.astro";
+import assets from "virtual:astronomic-search/assets";
+import { buttonClasses, focusRing, touchBox } from "../lib/button";
+import { cn, cx } from "../lib/cn";
+import { controlClasses } from "../lib/field";
+import { iconClasses } from "../lib/icon";
+import { uid } from "../lib/id";
+import {
+	searchCount,
+	searchCrumb,
+	searchCrumbSep,
+	searchFilterLabel,
+	searchFilterRow,
+	searchGroupCount,
+	searchGroupLabel,
+	searchHeading,
+	searchHeadingMark,
+	searchHeadingSnippet,
+	searchHeadingTitle,
+	searchLabel,
+	searchMark,
+	searchPill,
+	searchPillSelected,
+	searchPills,
+} from "../lib/search-look";
+import { pageStrings, type SearchPageStrings } from "../lib/search-page";
+
+export interface Props {
+	/** The index this page searches. Default: the site's default index. */
+	index?: string;
+	/** The types it shows (its tabs and results). Default: every type of the index. */
+	types?: string[] | string;
+	/** The results' title level. Grouped results put the group's label at this level and the titles one below. Default h2. */
+	headingTag?: "h2" | "h3" | "h4";
+	/** Words for this page, over the site's `strings` setting (only the ones you pass), and the page's own words. */
+	strings?: SearchPageStrings;
+	/** Classes for the <search> element. */
+	class?: string;
+	/** Classes for the search form (the box and its button). */
+	formClass?: string;
+	/** Classes for the box that holds the results. */
+	listClass?: string;
+}
+
+const { index = assets.index, types, headingTag = "h2", strings: own = {}, class: className, formClass, listClass } = Astro.props;
+
+// The Search family's page part (decision 0013): the full search page, on the same controller as the dialog
+// (surface "page": no limit, the index's group.page setting). A <search> landmark holds a GET form with a labeled
+// type="search" box, so with no JavaScript it still submits to the search page (?q=); the package's SearchNoscript
+// shows the site's browse links, since the results need JavaScript. The script keeps the query, the type tab and the
+// filter picks in the URL: typing replaces the history entry, a submit adds one, so Back returns to the last query.
+// Areas in page order, which is the Tab order: the box and its button, the type tabs (one tab stop), the filters, the
+// results (links; each page's matched sections as sub-links), "Show more results". The visible count is not live; one
+// polite live region reads the count once typing stops, and, after "Show more results" (focus stays on it), the new
+// first result with the count. Results show 20 at a time.
+// Every button and link carries tabindex="0": Safari skips plain buttons and links on Tab without one (the tabs get
+// theirs from the controller).
+// The look is the dialog's (lib/search-look.ts; values from search-scope in theme.css): inner lines are the search's
+// hairline, never the preset's border; each filter row starts with a quiet label ("Type", a facet's label) and its
+// pills sit on one line that scrolls sideways below 40rem; tabs and facets share one selected look, and a type or value
+// with no match shows no pill unless it is picked; a group label is quiet type on a soft band with its count at the
+// end; a result shows its breadcrumb (crumbOf(): type › theme, small), its title and a two-line snippet, a lighter rule
+// (--search-rule) under it; its matched sections sit indented in smaller, muted text, their `#` hung in the gutter so
+// title and snippet line up, the title full strength on hover or focus; a match is a soft accent fill.
+// The <template>s are what lib/search-page-app.ts clones, so their classes are in the source. Result text becomes
+// text nodes and <mark>s through the package's marked(), never markup.
+const merged = { ...assets.strings, ...own };
+if (assets.strings.results || own.results) merged.results = { ...assets.strings.results, ...own.results };
+if (assets.strings.keys || own.keys) merged.keys = { ...assets.strings.keys, ...own.keys };
+const strings = { ...mergeStrings(merged), ...pageStrings(merged) };
+const config = JSON.stringify({ manifest: assets.manifest, index: assets.index, keys: [], strings: merged, browse: assets.browse }).replace(/</g, "\\u003c");
+const typeList = Array.isArray(types) ? types.join(",") : types;
+const base = import.meta.env.BASE_URL;
+const action = `${base.endsWith("/") ? base : `${base}/`}search`;
+const id = uid("search-page");
+const Title = headingTag;
+
+// Inner lines are the search's hairline (--search-line).
+const line = "border-solid border-(--search-line)";
+const textLink = cn("inline-flex items-center text-fg link-underline", touchBox, focusRing);
+const link = cx("rounded-control text-fg no-underline hover:underline hover:decoration-accent hover:decoration-2 hover:underline-offset-4", focusRing);
+---
+
+<search data-search-page data-search-index={index} data-search-types={typeList || undefined} class={cn("search-scope @container/search grid min-w-0 gap-blocks text-fg font-body", className)}>
+	<div class="grid min-w-0 gap-item">
+		<form method="get" action={action} data-search-form class={cn("flex min-w-0 items-center gap-2", formClass)}>
+			<label for={`${id}-q`} class="sr-only">{strings.label}</label>
+			<div class="relative min-w-0 flex-1">
+				<svg class={cx(iconClasses("md"), "pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-muted")} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">
+					<path d="M9 15.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM13.75 13.75L17.5 17.5"></path>
+				</svg>
+				<input
+					id={`${id}-q`}
+					data-search-input
+					type="search"
+					name="q"
+					placeholder={strings.placeholder}
+					spellcheck="false"
+					autocapitalize="off"
+					autocorrect="off"
+					autocomplete="off"
+					enterkeyhint="search"
+					class={cn(controlClasses, "h-control-lg rounded-control ps-10 pe-3.5")}
+				/>
+			</div>
+			<button type="submit" tabindex="0" class={cn(buttonClasses({ variant: "primary" }), "h-control-lg shrink-0", touchBox)}>{strings.submit}</button>
+		</form>
+		<div data-search-type-row hidden class={searchFilterRow}>
+			<span aria-hidden="true" class={searchFilterLabel}>{strings.typeText}</span>
+			<div data-search-tabs hidden class={searchPills}></div>
+		</div>
+		<div data-search-facets role="group" aria-label={strings.facetsLabel} hidden class="grid gap-2"></div>
+	</div>
+	<div data-search-panel class="grid min-w-0 gap-item">
+		<p data-search-total hidden class="m-0 text-small text-muted tabular-nums"></p>
+		<div data-search-results class={cn("grid min-w-0 gap-blocks", listClass)}></div>
+		<div data-search-message class="empty:hidden"></div>
+		<div class="empty:hidden">
+			<button type="button" tabindex="0" data-search-more hidden class={cn(buttonClasses({ variant: "secondary" }), touchBox)}>{strings.showMore}</button>
+		</div>
+	</div>
+	<SearchNoscript label={strings.browse} class="flex flex-wrap gap-x-4 gap-y-1 [&>a]:inline-flex [&>a]:items-center [&>a]:text-fg [&>a]:link-underline pointer-coarse:[&>a]:min-h-[2.75rem]" />
+	<div data-search-live class="sr-only"></div>
+	<script is:inline type="application/json" data-search-config set:html={config}></script>
+	<template data-search-template="list">
+		<ol class="m-0 grid min-w-0 list-none p-0"></ol>
+	</template>
+	<template data-search-template="group">
+		<section class="grid min-w-0">
+			<div class={searchGroupLabel}>
+				<Title data-search-group-label class={cx(searchLabel, "text-balance")}></Title>
+				<span data-search-group-count class={searchGroupCount}></span>
+			</div>
+		</section>
+	</template>
+	<template data-search-template="result">
+		<li class="grid min-w-0 gap-1 py-item border-b border-solid border-(--search-rule)">
+			<p data-search-crumb class={cx(searchCrumb, "m-0")}><span data-search-crumb-sep aria-hidden="true" class={searchCrumbSep}>{strings.crumbMark}</span></p>
+			<Title data-search-title class="m-0 text-heading font-medium text-balance [overflow-wrap:anywhere]"><a data-search-link tabindex="0" class={link}></a></Title>
+			<p data-search-snippet class="m-0 line-clamp-2 max-w-prose text-pretty text-muted [overflow-wrap:anywhere]"></p>
+			<ul data-search-headings class="m-0 mt-1.5 grid list-none gap-2 p-0 ps-8"></ul>
+		</li>
+	</template>
+	<template data-search-template="heading">
+		<li class={cx("grid min-w-0", searchHeading)}>
+			<a data-search-link tabindex="0" class={cx(link, "inline-flex items-baseline self-start py-0.5 font-normal", touchBox)}>
+				<span aria-hidden="true" class={searchHeadingMark}>{strings.headingMark}</span>
+				<span data-search-title class={searchHeadingTitle}></span>
+			</a>
+			<p data-search-snippet class={cx(searchHeadingSnippet, "m-0 max-w-prose")}></p>
+		</li>
+	</template>
+	<template data-search-template="mark">
+		<mark class={searchMark}></mark>
+	</template>
+	<template data-search-template="tab">
+		<button type="button" role="tab" class={cx(searchPill, searchPillSelected)}>
+			<span data-search-name></span>
+			<span data-search-count class={searchCount}></span>
+		</button>
+	</template>
+	<template data-search-template="facet-group">
+		<div role="group" class={searchFilterRow}>
+			<span data-search-facet-label class={searchFilterLabel}></span>
+			<div data-search-facet-values class={searchPills}></div>
+		</div>
+	</template>
+	<template data-search-template="facet">
+		<button type="button" tabindex="0" aria-pressed="false" data-action="facet" class={cx(searchPill, searchPillSelected)}>
+			<span data-search-name></span>
+			<span data-search-count class={searchCount}></span>
+		</button>
+	</template>
+	<template data-search-template="loading">
+		<p class="m-0 text-muted">{strings.loading}</p>
+	</template>
+	<template data-search-template="empty">
+		<div class="grid justify-items-start gap-5">
+			<div class="grid justify-items-start gap-3">
+				<p data-search-empty-text class="m-0 font-medium text-pretty [overflow-wrap:anywhere]"></p>
+				<button type="button" tabindex="0" data-action="all-types" class={searchPill}>{strings.searchAllTypes}</button>
+			</div>
+			<div data-search-suggested-links class="grid gap-2.5">
+				<p data-search-suggested-label class={searchLabel}>{strings.suggested}</p>
+				<ul class="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0">
+					<li><a tabindex="0" class={textLink}></a></li>
+				</ul>
+			</div>
+		</div>
+	</template>
+	<template data-search-template="error">
+		<div class="grid justify-items-start gap-3">
+			<p class="m-0 font-medium text-pretty">{strings.unavailable}</p>
+			<button type="button" tabindex="0" data-action="retry" class={searchPill}>{strings.retry}</button>
+			<p data-search-browse-label class={searchLabel}>{strings.browse}</p>
+			<ul data-search-browse class="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0">
+				<li><a tabindex="0" class={textLink}></a></li>
+			</ul>
+		</div>
+	</template>
+</search>
+
+<script>
+	import { PAGE, readUrl } from "../lib/search-page";
+
+	// Until first use this only listens. With a query in the URL it loads the search at once, so the results show on
+	// load; else on hover, focus or typing in the form. It writes the URL's query into the box before that, so a slow
+	// load shows what is being searched. A submit while it loads waits for it (data-search-submit); if the load fails,
+	// the form submits as a plain GET. A load that ends after a ClientRouter navigation mounts nothing: its root is the
+	// old page's (and the new page's URL is not its to rewrite).
+	let navigations = 0;
+	document.addEventListener("astro:before-swap", () => navigations++);
+	// Under the router the page's own history entries hold no state (lib/search-page-app.ts), and the router ignores a
+	// Back or Forward onto one. From another page (the Back button's list) that leaves the wrong page on screen: reload.
+	let path = location.pathname;
+	document.addEventListener("astro:page-load", () => (path = location.pathname));
+	window.addEventListener("popstate", (e) => {
+		if (e.state === null && location.pathname !== path && document.querySelector('[name="astro-view-transitions-enabled"]')) location.reload();
+	});
+	function start(): void {
+		for (const root of document.querySelectorAll<HTMLElement>(PAGE)) {
+			if (root.hasAttribute("data-search-started")) continue;
+			root.setAttribute("data-search-started", "");
+			const input = root.querySelector<HTMLInputElement>("[data-search-input]");
+			const form = root.querySelector("form");
+			const { query } = readUrl(location.search);
+			if (input && query && !input.value) input.value = query;
+			if (!form) continue;
+			let loaded: Promise<void> | null = null;
+			// The navigations count at the last use (a hover, a submit): the load mounts only if none came since.
+			let at = navigations;
+			const current = () => at === navigations && root.isConnected;
+			const events = ["pointerenter", "focusin", "input"] as const;
+			const load = (): Promise<void> => {
+				for (const e of events) form.removeEventListener(e, load);
+				at = navigations;
+				loaded ??= import("../lib/search-page-app").then((app) => {
+					if (current()) return app.mount(root);
+					// The page changed while it loaded (a submit held meanwhile came before that). Dropped on purpose:
+					// acting on it now would search, or leave by a plain GET, from a page the visitor has left.
+					root.removeAttribute("data-search-submit");
+					loaded = null;
+				});
+				return loaded;
+			};
+			const hold = (e: SubmitEvent) => {
+				if (root.hasAttribute("data-search-mounted")) return form.removeEventListener("submit", hold);
+				e.preventDefault();
+				// A submit on the current page: it counts from now, so a navigation before it does not drop it.
+				root.setAttribute("data-search-submit", "");
+				load().catch(() => {
+					if (current()) form.submit();
+				});
+			};
+			form.addEventListener("submit", hold);
+			if (query) load().catch(() => {});
+			else for (const e of events) form.addEventListener(e, load);
+		}
+	}
+	start();
+	document.addEventListener("astro:page-load", start);
+</script>

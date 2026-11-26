@@ -1,0 +1,100 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { stretchedLink } from "../lib/card";
+import { cn } from "../lib/cn";
+import { headingType } from "../lib/display";
+import type { SectionHeadingTag } from "../lib/heading";
+import type { IconComponent } from "../lib/icon";
+import { uid } from "../lib/id";
+import Icon from "./Icon.astro";
+import SectionHead from "./SectionHead.astro";
+
+/** One row of an index list. */
+export interface IndexItem {
+	label: string;
+	/** The row's page. With it, the whole row is one link named by the label. */
+	href?: string;
+	/** Your own short text after the label, e.g. "31 clients" or "6 weeks". */
+	meta?: string;
+}
+
+export interface Props extends HTMLAttributes<"section"> {
+	/** The section heading. Without it there is no section and no header: a <div> holds only the list. */
+	heading?: string;
+	/** Turn one *phrase* in the heading into <em> (lib/emphasis.ts). Off by default: the heading shows as typed. */
+	emphasis?: boolean;
+	/** A short mark after the heading, such as "(12)". Shown beside the heading, outside it, so the heading's name stays plain. Shown only with a heading. */
+	mark?: string;
+	/** What the mark says to a screen reader, such as "12 projects". Without it, the mark is read as written. */
+	markLabel?: string;
+	/** One or two sentences under the heading. Shown only with a heading. */
+	text?: string;
+	/** Heading element. */
+	headingTag?: SectionHeadingTag;
+	/** One or more rows. Empty throws. */
+	items: IndexItem[];
+	/** The mark at the start of each row: your icon component (e.g. a star). Default: a small dot. Decorative. */
+	marker?: IconComponent;
+	/** For recipes: the alignment of the header (SectionHead) only; a recipe lays out its own list. */
+	align?: "start" | "center";
+	/** For recipes: the row that holds the header and the list. */
+	contentClass?: string;
+	/** For recipes: the header (SectionHead). */
+	headerClass?: string;
+	/** For recipes: the list, such as its columns. */
+	listClass?: string;
+	class?: string;
+}
+
+/** A recipe's props: the shell's, less the ones that set the layout, which the recipe sets itself. */
+export type IndexListRecipeProps = Omit<Props, "align" | "contentClass" | "headerClass" | "listClass">;
+
+const { heading, emphasis = false, mark, markLabel, text, headingTag = "h2", items, marker, align = "start", contentClass, headerClass, listClass, class: className, ...rest } = Astro.props;
+if (!items?.length) throw new Error("IndexList needs at least one item.");
+const headingId = heading ? uid("index") : undefined;
+const eyebrow = heading && Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+const Root = heading ? "section" : "div";
+// The index list family's shell (decisions 0013, 0015): with a heading, the region named by it, then SectionHead a
+// block above the list; without one, a plain <div> with the list alone. The root is a named container (index), so the
+// recipes' columns follow the room the list has, not the page; each row is one too (index-item), so a label's subhead
+// role sizes to its own row: smaller in two columns or beside the header, never as large as the heading. The list is one
+// <ul role="list"> on hairlines: one on top of the list (so two columns share it), one under each row. Each row is a
+// grid of the marker (hidden from screen readers: your icon, else a small accent dot), the label and the meta, on one
+// baseline; the meta's column takes its own width up to 40% of the row and wraps inside it, so a long note never
+// pushes the label out. With href the label is a stretched link over the whole row (the <li> is relative), its focus
+// ring inset so the hairlines never cut it; the meta sits outside the link, so the link's name is the label alone and
+// the meta is read after it. Each row has py-5 inside its hairlines, as FaqItem's rows, so a large label has room. On
+// a touch screen every row is at least 2.75rem tall: a 44px target. Only an item's own fields reach the markup.
+---
+
+<Root aria-labelledby={headingId} class={cn("@container/index", className)} {...rest}>
+	<div data-index-row class={cn("grid gap-blocks", contentClass)}>
+		{
+			heading && (
+				<SectionHead data-index-header heading={heading} emphasis={emphasis} mark={mark} markLabel={markLabel} text={text} headingTag={headingTag} id={headingId} align={align} class={headerClass}>
+					{eyebrow && <Fragment slot="eyebrow" set:html={eyebrow} />}
+				</SectionHead>
+			)
+		}
+		<ul role="list" data-index-list class={cn("m-0 grid min-w-0 list-none content-start border-0 border-t-ui border-solid border-border p-0", listClass)}>
+			{
+				items.map(({ label, href, meta }) => (
+					<li
+						data-index-item
+						class="@container/index-item relative grid grid-cols-[auto_minmax(0,1fr)_fit-content(40%)] items-baseline gap-3 border-0 border-b-ui border-solid border-border py-5 pointer-coarse:min-h-[2.75rem]"
+					>
+						{marker ? <Icon icon={marker} size="sm" class="shrink-0 self-center" /> : <span data-index-dot aria-hidden="true" class="size-1.5 shrink-0 self-center rounded-full bg-accent" />}
+						{href ? (
+							<a href={href} class={cn(stretchedLink, "min-w-0 text-fg text-subhead text-balance [overflow-wrap:anywhere] after:rounded-control focus-visible:after:-outline-offset-2", headingType)}>
+								{label}
+							</a>
+						) : (
+							<span class={cn("min-w-0 text-subhead text-balance [overflow-wrap:anywhere]", headingType)}>{label}</span>
+						)}
+						{meta && <span class="text-end text-small text-pretty text-muted tabular-nums [overflow-wrap:anywhere]">{meta}</span>}
+					</li>
+				))
+			}
+		</ul>
+	</div>
+</Root>

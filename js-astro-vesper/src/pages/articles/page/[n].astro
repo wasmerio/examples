@@ -1,0 +1,35 @@
+---
+/** Articles, page 2 and later (page 1 is /articles; a page past the last, or /articles/page/1, answers 404). */
+import { pagedPaths, parsePage } from "@astronomic/theme-core/routes";
+import { collectionPageNode } from "@astronomic/theme-core/jsonld";
+import ArticlesPage from "~/components/ArticlesPage.astro";
+import { searchKind, useContent } from "~/content";
+import Base from "~/layouts/Base.astro";
+import { strings } from "~/theme.strings";
+import { usedTerms } from "~/utils/articles";
+import { getConfig } from "~/utils/config";
+import { siteOrigin } from "~/utils/public-pages";
+import { articlesHref, categoryHref, hasPage, PER_PAGE, pageCount } from "~/utils/routes";
+import { siteSettings } from "~/utils/setup";
+import { toPostRow } from "~/utils/view";
+
+export async function getStaticPaths() {
+	return pagedPaths(await useContent().posts.count(), { perPage: PER_PAGE, param: "n" });
+}
+
+const content = useContent(Astro);
+const page = parsePage(Astro.params.n);
+const count = await content.posts.count();
+if (!page || page < 2 || !hasPage(page, count)) {
+	return Astro.rewrite("/404");
+}
+const [{ items }, categories, settings] = await Promise.all([content.posts.list({ limit: PER_PAGE, offset: (page - 1) * PER_PAGE }), usedTerms(content, "category"), siteSettings(content)]);
+const { config } = getConfig(settings);
+const t = strings.articles;
+const filters = [{ label: t.all, href: articlesHref(), current: true }, ...categories.map((c) => ({ label: c.label, href: categoryHref(c.slug) }))];
+const jsonLd = collectionPageNode(siteOrigin(Astro), { path: articlesHref(page), name: t.pageTitle(page), description: t.text });
+---
+
+<Base title={t.pageTitle(page)} description={t.text} jsonLd={jsonLd}>
+	<ArticlesPage title={t.title} lead={t.text} posts={items.map(toPostRow)} filters={filters} search={!!searchKind(content)} thumbs={config.thumbnails} layout={config.articleList} current={page} total={pageCount(count)} href={articlesHref} />
+</Base>

@@ -1,0 +1,94 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import { headingType, stepType } from "../lib/display";
+import type { ItemHeadingTag } from "../lib/heading";
+
+// The step's fields sit in Props itself: the props parser reads one base per type.
+export interface Props extends Omit<HTMLAttributes<"li">, "title"> {
+	title: string;
+	/** Short timing or phase note, e.g. "Weeks 2–3". */
+	meta?: string;
+	text?: string;
+	/**
+	 * The step's number, shown large (or as the recipe's marker). The list gives the order to a screen reader, so the
+	 * number is hidden from it. A string shows as written, such as an index mark "(01)"; an empty string shows no
+	 * number at all, such as a theme with its index marks off.
+	 */
+	number: number | string;
+	/** The title element. Required: a recipe passes childHeadingTag(...) (lib/heading.ts). */
+	headingTag: ItemHeadingTag;
+	/**
+	 * For recipes: the number's type and frame, in place of the step role (stepType), so a recipe can draw a marker.
+	 * The accent color stays.
+	 */
+	numberClass?: string;
+	/**
+	 * For recipes: a box around the number (data-step-head), for marks that run beside it, such as a path line. Without
+	 * it, the number is the step's first child.
+	 */
+	headClass?: string;
+	/**
+	 * For recipes: the step's head line. The head box (data-step-head, with headClass) holds the number and then the
+	 * meta, as one line at the head of the step ("01 · Weeks 1–2"), in place of the meta under the title. The meta takes
+	 * the head's type and color (headClass).
+	 */
+	metaInHead?: boolean;
+	/**
+	 * Where the meta sits in the text block: under the title (below, the default) or above it, between the head and the
+	 * title, in the DOM too, as a timing line read before the title ("Day 1", then the title). Ignored with metaInHead.
+	 */
+	metaPlacement?: "below" | "above";
+	/** The meta's type and color, after its own classes, such as an uppercase label in the accent text color. */
+	metaClass?: string;
+	/** For recipes: the title, after its own classes, such as a larger type role. */
+	titleClass?: string;
+	/** For recipes: the text block (the title, the meta under it and the text), such as a margin that sets it at the foot. */
+	textClass?: string;
+	class?: string;
+}
+
+/** One step's content (the recipes' items), with its own meta place and classes, over the recipe's. */
+export type StepsItem = Pick<Props, "title" | "meta" | "text" | "metaPlacement" | "metaClass">;
+
+const { number, title, meta, text, headingTag: Title, numberClass, headClass, metaInHead = false, metaPlacement = "below", metaClass, titleClass, textClass, class: className, ...rest } = Astro.props;
+// The steps family's item (decision 0013): one <li>, the order number, then the text block (the title in the heading
+// role, meta in the small role, the text in the body role). The number is a real span in the step role and display
+// type, in the accent, hidden from assistive tech: a screen reader hears a list of N items, in order, and never the
+// large number. A long unbroken word in the title, meta or text breaks rather than overflow. Each step is a named
+// container (step), so its number sizes to its own column. The rows pack at the top, so a step stretched to a taller
+// neighbor keeps its gaps. The text has the running-text width (max-w-prose), so a step in a wide row (StepsList)
+// keeps readable lines. The title-to-text gap is gap-2, as FeatureItem's text block: the same step inside an item in
+// both families. A recipe may restyle the number (numberClass, StepsColumns' marker), and wrap it in a head box
+// (headClass) that holds a mark beside it; StepsList does neither, so its markup is the bare number. A theme's recipe
+// may pass a string number such as "(01)" (an empty one shows none), move the meta into the head
+// box as the step's head line (metaInHead), and restyle the title and the text block (titleClass, textClass). All of
+// these are opt-in: without them the markup is as above. metaPlacement="above" moves the meta above the title (between
+// the head and the title, in the DOM too, so it reads first); metaClass restyles it. Both opt-in as well.
+const numberClasses = cn("text-accent", numberClass ?? stepType);
+const showNumber = number !== "";
+const headMeta = metaInHead && meta;
+const textMeta = meta && !metaInHead;
+const metaClasses = cn("m-0 text-small text-muted", metaClass);
+---
+
+<li data-step class={cn("@container/step grid min-w-0 content-start gap-item", className)} {...rest}>
+	{
+		headClass || metaInHead ? (
+			(showNumber || headMeta) && (
+				<div data-step-head class={cn("flex min-w-0", headClass)}>
+					{showNumber && <span data-step-number aria-hidden="true" class={numberClasses}>{number}</span>}
+					{headMeta && <span data-step-meta class={metaClass}>{meta}</span>}
+				</div>
+			)
+		) : (
+			showNumber && <span data-step-number aria-hidden="true" class={numberClasses}>{number}</span>
+		)
+	}
+	<div data-step-text class={cn("grid min-w-0 content-start gap-2 [overflow-wrap:anywhere]", textClass)}>
+		{textMeta && metaPlacement === "above" && <p class={metaClasses}>{meta}</p>}
+		<Title class={cn("m-0 text-heading text-balance", headingType, titleClass)}>{title}</Title>
+		{textMeta && metaPlacement !== "above" && <p class={metaClasses}>{meta}</p>}
+		{text && <p class="m-0 max-w-prose text-body text-pretty text-muted">{text}</p>}
+	</div>
+</li>

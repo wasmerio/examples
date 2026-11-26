@@ -1,0 +1,128 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import { filterDropdownClasses as drop } from "../lib/field";
+import { FILTERS_TEXTS, rangeOptions } from "../lib/filters";
+import { uid } from "../lib/id";
+import { fieldAnyText, fieldLabel, type ListingField } from "../lib/listing";
+import { POPOVER_TEXTS, rangeText as rangeWords } from "../lib/popover";
+import Field from "./Field.astro";
+import Icon from "./Icon.astro";
+import Popover from "./Popover.astro";
+import PopoverGroup from "./PopoverGroup.astro";
+import PopoverOption from "./PopoverOption.astro";
+import Select from "./Select.astro";
+
+export interface Props extends HTMLAttributes<"fieldset"> {
+	/** A range field (kind "range") from your fields list. */
+	field: ListingField;
+	/** The mode whose steps and label show. */
+	mode?: string;
+	/** The picked range: [min, max], either null. */
+	value?: [number | null, number | null];
+	/** The empty options: anyText for a minimum-only field ("Any"), minText and maxText for Min and Max ("No min", "No max"). */
+	anyText?: string;
+	minText?: string;
+	maxText?: string;
+	/** The selects' names for screen readers, after the legend ("Min", "Max"). A minimum-only field reads minLabel. */
+	minLabel?: string;
+	maxLabel?: string;
+	/** Draws the field as a dropdown: a Popover with Min and Max radio lists; a minimum-only field stays one select, with picker. Same names and values. */
+	dropdown?: boolean;
+	/** A dropdown's words for both ends; {min} and {max} are the options' words. */
+	rangeText?: string;
+	/** A dropdown's words for a minimum only. */
+	fromText?: string;
+	/** A dropdown's words for a maximum only. */
+	upToText?: string;
+	/** The field's controls can't be used and do not submit. */
+	disabled?: boolean;
+	/** The Min select's id (Max adds "-max"), or a dropdown trigger's id. Default: a page-unique id. */
+	id?: string;
+	class?: string;
+}
+
+const {
+	field,
+	mode = "",
+	value = [null, null],
+	anyText = FILTERS_TEXTS.anyText,
+	minText = FILTERS_TEXTS.minText,
+	maxText = FILTERS_TEXTS.maxText,
+	minLabel = "Min",
+	maxLabel = "Max",
+	dropdown = false,
+	rangeText = POPOVER_TEXTS.rangeText,
+	fromText = POPOVER_TEXTS.fromText,
+	upToText = POPOVER_TEXTS.upToText,
+	disabled = false,
+	id = uid("filters"),
+	class: className,
+	...rest
+} = Astro.props;
+const options = rangeOptions(field, mode, { ...FILTERS_TEXTS, anyText, minText, maxText }, value);
+const ends = [
+	{ end: "min", id, label: minLabel, options: options.min, value: value[0] },
+	...(options.max ? [{ end: "max", id: `${id}-max`, label: maxLabel, options: options.max, value: value[1] }] : []),
+];
+// A range field as one fieldset: its legend is the field's label for the mode ("Price", or "Rent"), then Min and Max
+// native selects from the mode's steps, or one "at least" select for a minimum-only field (bound "min": "Any", "3+").
+// Each select has its own label for screen readers ("Price, Min"). The script swaps the options and the legend when
+// the mode changes (lib/filters.ts).
+// With dropdown, a minimum-only field is a Field and one select with picker, as a one-choice FilterChoice: one choice closes
+// on pick, and its label names it. A field with both ends is a Popover whose trigger holds the label over the words for the
+// range, and radios with the same names and values. Each end's group holds a template of its row, for the script to rebuild
+// the list when the mode changes it. Both roots are divs, so a fieldset's own form and name have no place on them, and
+// disabled goes to the controls.
+const asPopover = dropdown && ends.length > 1;
+const asPicker = dropdown && ends.length === 1;
+const label = fieldLabel(field, mode);
+const anyWords = fieldAnyText(field, mode, anyText);
+const pickedWord = (list: { value: string; label: string }[], n: number | null) => (n === null ? "" : (list.find((o) => o.value === String(n))?.label ?? ""));
+const triggerText = rangeWords(pickedWord(options.min, value[0]), pickedWord(options.max ?? [], value[1]), { anyText: anyWords, rangeText, fromText, upToText });
+const { form: _form, name: _name, ...divRest } = rest;
+---
+
+{asPopover ? (
+<div data-filter-field={field.key} data-filter="range" data-filter-dropdown class={cn("grid min-w-0 content-start", className)} {...divRest}>
+	<Popover id={id} label={label} summary="range" anyText={anyWords} rangeText={rangeText} fromText={fromText} upToText={upToText} triggerText={triggerText} cols={2} disabled={disabled} class={drop.root} triggerClass={drop.trigger}>
+		<Fragment slot="trigger">
+			<span data-filter-label={field.key} class={drop.label}>{label}</span>
+			<span data-filter-value class={drop.value}>
+				<span data-popover-text class={drop.text}>{triggerText}</span>
+				<Icon size="sm" class={drop.chevron}><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4" /></svg></Icon>
+			</span>
+		</Fragment>
+		{
+			ends.map((e) => (
+				<PopoverGroup legend={e.label} end={e.end as "min" | "max"}>
+					<template data-filter-option><PopoverOption type="radio" name={`${field.key}-${e.end}`} value="" data-filter-key={field.key} data-filter-end={e.end} /></template>
+					{e.options.map((o) => <PopoverOption type="radio" name={`${field.key}-${e.end}`} value={o.value} checked={o.value === (e.value === null ? "" : String(e.value))} data-filter-key={field.key} data-filter-end={e.end}>{o.label}</PopoverOption>)}
+				</PopoverGroup>
+			))
+		}
+	</Popover>
+</div>
+) : asPicker ? (
+<Field label={label} for={id} class={className} data-filter-field={field.key} {...divRest}>
+	<Select id={id} class="pointer-coarse:min-h-11" name={`${field.key}-min`} data-filter-key={field.key} data-filter-end="min" disabled={disabled} picker>
+		{options.min.map((o) => <option value={o.value} selected={o.value === (value[0] === null ? "" : String(value[0]))}>{o.label}</option>)}
+	</Select>
+</Field>
+) : (
+<fieldset data-filter-field={field.key} data-filter={ends.length > 1 ? "range" : undefined} disabled={disabled} class={cn("m-0 grid min-w-0 content-start gap-1.5 border-0 p-0", className)} {...rest}>
+	<legend data-filter-label={field.key} class="float-start mb-1.5 w-full p-0 text-body font-medium text-fg">{fieldLabel(field, mode)}</legend>
+	<div data-filter-ends class={cn("grid gap-2", ends.length > 1 && "grid-cols-2")}>
+		{
+			ends.map((e) => (
+				<div class="relative min-w-0">
+					<label for={e.id} class="sr-only">{e.label}</label>
+					<Select id={e.id} class="pointer-coarse:min-h-11" name={`${field.key}-${e.end}`} data-filter-key={field.key} data-filter-end={e.end}>
+						{e.options.map((o) => <option value={o.value} selected={o.value === (e.value === null ? "" : String(e.value))}>{o.label}</option>)}
+					</Select>
+				</div>
+			))
+		}
+	</div>
+</fieldset>
+)}

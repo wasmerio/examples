@@ -1,0 +1,88 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import { statType } from "../lib/display";
+import { widestStatEms } from "../lib/stat";
+import type { SectionHeadingTag } from "../lib/heading";
+import { uid } from "../lib/id";
+import SectionHead from "./SectionHead.astro";
+
+export interface StatItem {
+	/** Shown large, e.g. "+38%". */
+	value: string;
+	label: string;
+	/** One short line under the label. */
+	text?: string;
+}
+
+export interface Props extends HTMLAttributes<"section"> {
+	items: StatItem[];
+	/** The section heading. Without it, and without label, a <div> holds only the list. */
+	heading?: string;
+	/** Turn one *phrase* in the heading into <em> (lib/emphasis.ts). Off by default: the heading shows as typed. */
+	emphasis?: boolean;
+	/** A short mark after the heading, such as "(12)". Shown beside the heading, outside it, so the heading's name stays plain. Shown only with a heading. */
+	mark?: string;
+	/** What the mark says to a screen reader, such as "12 projects". Without it, the mark is read as written. */
+	markLabel?: string;
+	/** One or two sentences under the heading. Shown only with a heading. */
+	text?: string;
+	/** Heading element. */
+	headingTag?: SectionHeadingTag;
+	/** Names the stats when there is no heading: the root is then a <section aria-label>. Ignored with a heading. */
+	label?: string;
+	/** For recipes: the alignment of the header and of each stat. */
+	align?: "start" | "center";
+	/** For recipes: the row that holds the header and the list. */
+	contentClass?: string;
+	/** For recipes: the header (SectionHead). */
+	headerClass?: string;
+	/** For recipes: the list (the <dl>), such as its columns. */
+	listClass?: string;
+	/** For recipes: each stat (a <div> in the list), such as its rule or its card. */
+	itemClass?: string;
+	class?: string;
+}
+
+/** A recipe's props: the shell's, less the ones that set the layout, which the recipe sets itself. */
+export type StatsRecipeProps = Omit<Props, "align" | "contentClass" | "headerClass" | "listClass" | "itemClass">;
+
+const { items, heading, emphasis = false, mark, markLabel, text, headingTag = "h2", label, align = "start", contentClass, headerClass, listClass, itemClass, class: className, ...rest } = Astro.props;
+const center = align === "center";
+const headingId = heading ? uid("stats") : undefined;
+const eyebrow = heading && Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+const Root = heading || label ? "section" : "div";
+const statEms = widestStatEms(items.map((item) => item.value));
+// The stats family's shell (decisions 0013, 0015): with a heading, the region named by it, then SectionHead and one
+// <dl>; with only a label, a region named by the label; else a plain <div>. Each stat is a <div> of the label (<dt>)
+// first, then the value (<dd>) and an optional text (<dd>), so a screen reader reads "Projects shipped: 120"; CSS shows
+// the value first (order-first). Each stat is a named container (stat), so its value, in the stat role, sizes to its
+// own column, not the section. A value never breaks (a number split mid-digit misreads): it stays on one line, and the
+// list carries its widest value's width in em (--stat-ems, lib/stat.ts), so the stat role sizes every value to fit that
+// one in its item: short values come out large, and "12,500,000+" still fits a 9rem stat, in every preset. Under the
+// value, the label is in the text color and the optional line small and muted, so they read as two tiers. No count-up:
+// the numbers are text. Only an item's own fields render, so a CMS entry's other fields never reach the markup.
+---
+
+<Root aria-labelledby={headingId} aria-label={heading ? undefined : label} class={cn("@container/stats", className)} {...rest}>
+	<div data-stats-row class={cn("grid gap-blocks", contentClass)}>
+		{
+			heading && (
+				<SectionHead data-stats-header heading={heading} emphasis={emphasis} mark={mark} markLabel={markLabel} text={text} headingTag={headingTag} id={headingId} align={align} class={headerClass}>
+					{eyebrow && <Fragment slot="eyebrow" set:html={eyebrow} />}
+				</SectionHead>
+			)
+		}
+		<dl data-stats-list class={cn("m-0 grid gap-blocks", listClass)} style={`--stat-ems: ${statEms}`}>
+			{
+				items.map((item) => (
+					<div data-stat class={cn("@container/stat grid min-w-0 content-start gap-item", center && "justify-items-center text-center", itemClass)}>
+						<dt class="text-body text-pretty text-fg">{item.label}</dt>
+						<dd class={cn("m-0 order-first whitespace-nowrap", statType)}>{item.value}</dd>
+						{item.text && <dd class="m-0 text-small text-pretty text-muted">{item.text}</dd>}
+					</div>
+				))
+			}
+		</dl>
+	</div>
+</Root>

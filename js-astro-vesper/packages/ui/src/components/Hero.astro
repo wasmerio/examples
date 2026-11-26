@@ -1,0 +1,109 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { cn } from "../lib/cn";
+import { displayType } from "../lib/display";
+import { uid } from "../lib/id";
+import type { NavAction } from "../lib/nav";
+import Button from "./Button.astro";
+import Emphasis from "./Emphasis.astro";
+
+export interface Props extends HTMLAttributes<"section"> {
+	heading: string;
+	/** Turn one *phrase* in the heading into <em> (lib/emphasis.ts). Off by default: the heading shows as typed. */
+	emphasis?: boolean;
+	/** One or two sentences under the heading. */
+	text?: string;
+	/** Buttons, always in the large size. Default variants: the first is `primary`, the rest `secondary`. */
+	actions?: Omit<NavAction, "size">[];
+	/** Heading element. A hero usually opens the page, so the default is `h1`. */
+	headingTag?: "h1" | "h2" | "h3" | "h4";
+	/** For recipes: the text's alignment. */
+	align?: "start" | "center";
+	/**
+	 * For recipes: `image` when the text sits on an image, under the recipe's own scrim. The inherited text and the
+	 * subtitle turn scrim-fg, and the action Buttons take their on-image colors (Button tone="image"); kit parts in
+	 * the slots (a Badge, a Button) keep their own colors. Every focusable element in the text block gets a ring that
+	 * shows on any image (focus-on-image), and a plain link (one with no class) in the slots is underlined, since its
+	 * color is the text's.
+	 */
+	tone?: "page" | "image";
+	/** For recipes: the inner row that holds the text block and the media block. */
+	contentClass?: string;
+	/** For recipes: the text block, the named container (hero-text) the heading sizes to. */
+	textClass?: string;
+	/** For recipes: the heading, after its own classes (a type role, such as HeroSplit's text-display-split). */
+	headingClass?: string;
+	/** For recipes: the box inside the text block that holds the stack, at the reading width (max-w-head). */
+	stackClass?: string;
+	/** For recipes: the media block. */
+	mediaClass?: string;
+	class?: string;
+}
+
+const {
+	heading,
+	emphasis = false,
+	text,
+	actions = [],
+	headingTag: Heading = "h1",
+	align = "start",
+	tone = "page",
+	contentClass,
+	textClass,
+	headingClass,
+	stackClass,
+	mediaClass,
+	class: className,
+	...rest
+} = Astro.props;
+const headingId = uid("hero");
+const onImage = tone === "image";
+// The named slots are rendered first, so one whose content is empty (a recipe passes its slots on in an
+// expression, which always fills them) leaves no wrapper.
+const eyebrow = Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+const media = Astro.slots.has("media") ? (await Astro.slots.render("media")).trim() : "";
+const extra = Astro.slots.has("default") ? (await Astro.slots.render("default")).trim() : "";
+// The hero family's shell (decision 0013): the region named by its heading, and the order eyebrow, heading,
+// subtitle, actions, then the default slot. Recipes lay out the wrappers with the class props (contentClass for the
+// row, textClass, stackClass, mediaClass); align and tone are for recipes, which do not pass them on. The hero is a
+// named container (hero) for the recipes' queries. The text block is one too (hero-text), at its column's full
+// width, so the display heading (cqi) sizes to its column; the reading width (max-w-head) sits on the stack, the box
+// inside it, which is not a container. The stack has no gap, so the parts can group: each part after the first
+// sets its own space above, which holds whichever optional parts are there. The heading sits item under the
+// eyebrow, the subtitle block under the heading, the actions block plus item under what is above them, and the
+// default slot (one box, its children block apart) block under that. The row's gap is group between the text and
+// the media block stacked, and block between them side by side. Under tone="image" the action Buttons get
+// tone="image" too (scrim-fg colors), and the text block's focus ring is focus-on-image (a scrim-fg outline on a
+// scrim edge), so the action Buttons and any link or button in the slots show their focus on any image. A plain
+// link there (no class) is underlined: it is scrim-fg like the text, so the underline is what tells it apart.
+---
+
+<section aria-labelledby={headingId} class={cn("@container/hero", className)} {...rest}>
+	<div data-hero-row class={cn("grid gap-x-blocks gap-y-group", contentClass)}>
+		<div data-hero-text class={cn("@container/hero-text min-w-0", onImage && "text-scrim-fg focus-on-image [&_a:not([class])]:underline", textClass)} data-on-image={onImage ? "" : undefined}>
+			<div data-hero-stack class={cn("grid max-w-head justify-items-start", align === "center" && "mx-auto justify-items-center text-center", stackClass)}>
+				{eyebrow && <div class={cn("flex flex-wrap items-center gap-2", align === "center" && "justify-center")} set:html={eyebrow} />}
+				{/* One long word breaks rather than overflow. */}
+				<Heading id={headingId} class={cn("m-0 text-display text-balance [overflow-wrap:anywhere]", eyebrow && "mt-item", displayType, headingClass)}><Emphasis text={heading} enabled={emphasis} /></Heading>
+				{text && <p class={cn("m-0 mt-blocks max-w-lead text-lead text-pretty", onImage ? "text-scrim-fg" : "text-muted")}>{text}</p>}
+				{
+					actions.length > 0 && (
+						<div class={cn("mt-blocks-item flex flex-wrap gap-3", align === "center" && "justify-center")}>
+							{actions.map((action, i) => {
+								const variant = action.variant ?? (i === 0 ? "primary" : "secondary");
+								return (
+									<Button href={action.href} variant={variant} size="lg" tone={tone}>
+										{action.label}
+									</Button>
+								);
+							})}
+						</div>
+					)
+				}
+				{/* The box spans the stack (justify-self-stretch), so a child at width 100% (a form, a stats row) gets the reading width, not its own content width. */}
+				{extra && <div data-hero-slot class={cn("mt-blocks grid min-w-0 gap-blocks justify-self-stretch", align === "center" ? "justify-items-center" : "justify-items-start")} set:html={extra} />}
+			</div>
+		</div>
+		{media && <div data-hero-media class={cn("min-w-0", mediaClass)} set:html={media} />}
+	</div>
+</section>

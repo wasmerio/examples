@@ -1,0 +1,83 @@
+---
+import type { HTMLAttributes } from "astro/types";
+import { focusRing, touchBox } from "../lib/button";
+import { cn } from "../lib/cn";
+import type { SectionHeadingTag } from "../lib/heading";
+import { uid } from "../lib/id";
+import SectionHead from "./SectionHead.astro";
+
+/** A link after the list, such as { label: "All posts", href: "/blog" }. */
+export interface PostsLink {
+	label: string;
+	href: string;
+}
+
+export interface Props extends HTMLAttributes<"section"> {
+	/** The section heading. Without it there is no section and no header: a <div> holds only the posts. */
+	heading?: string;
+	/** Turn one *phrase* in the heading into <em> (lib/emphasis.ts). Off by default: the heading shows as typed. */
+	emphasis?: boolean;
+	/** A short mark after the heading, such as "(12)". Shown beside the heading, outside it, so the heading's name stays plain. Shown only with a heading. */
+	mark?: string;
+	/** What the mark says to a screen reader, such as "12 projects". Without it, the mark is read as written. */
+	markLabel?: string;
+	/** One or two sentences under the heading. Shown only with a heading. */
+	text?: string;
+	/** Heading element. Each title sits one level under it (childHeadingTag in lib/heading.ts). */
+	headingTag?: SectionHeadingTag;
+	/** A link after the list. Name the page ("All posts"), not "More". */
+	viewAll?: PostsLink;
+	/** Shown in place of the list when there are no posts. Without it, no list and no text. */
+	empty?: string;
+	/** For recipes: the alignment of the header. */
+	align?: "start" | "center";
+	/** For recipes: the row that holds the header, the posts and the link. */
+	contentClass?: string;
+	/** For recipes: the header (SectionHead). */
+	headerClass?: string;
+	/** For recipes: the list of posts (the <ul>). */
+	listClass?: string;
+	class?: string;
+}
+
+/** A recipe's props: the shell's, less the ones that set the layout, which the recipe sets itself. */
+export type PostsRecipeProps = Omit<Props, "align" | "contentClass" | "headerClass" | "listClass">;
+
+const { heading, emphasis = false, mark, markLabel, text, headingTag = "h2", viewAll, empty, align = "start", contentClass, headerClass, listClass, class: className, ...rest } = Astro.props;
+const headingId = heading ? uid("posts") : undefined;
+const eyebrow = heading && Astro.slots.has("eyebrow") ? (await Astro.slots.render("eyebrow")).trim() : "";
+// The posts are rendered first, so an empty list (a recipe maps an empty array) counts as none.
+const posts = Astro.slots.has("default") ? (await Astro.slots.render("default")).trim() : "";
+const Root = heading ? "section" : "div";
+// The posts family's shell (decisions 0013, 0015): with a heading, the region named by it, then SectionHead, the
+// posts and the view-all link (a 44px box on a coarse pointer: touchBox); without one, a plain <div>. The posts sit in
+// one <ul role="list"> (one <li> with an <article> each, from the recipe), with a neutral base: each recipe sets the
+// columns and gaps. With no posts the list is left out: the empty text shows in its place when given, else nothing.
+// The root is a named container (posts), so the recipes' columns follow the room the section has.
+---
+
+<Root aria-labelledby={headingId} class={cn("@container/posts", className)} {...rest}>
+	<div data-posts-row class={cn("grid gap-blocks", contentClass)}>
+		{
+			heading && (
+				<SectionHead data-posts-header heading={heading} emphasis={emphasis} mark={mark} markLabel={markLabel} text={text} headingTag={headingTag} id={headingId} align={align} class={headerClass}>
+					{eyebrow && <Fragment slot="eyebrow" set:html={eyebrow} />}
+				</SectionHead>
+			)
+		}
+		{
+			posts ? (
+				<ul role="list" data-posts-list class={cn("m-0 grid min-w-0 list-none p-0", listClass)} set:html={posts} />
+			) : (
+				empty && <p data-posts-empty class="m-0 max-w-prose text-body text-pretty text-muted">{empty}</p>
+			)
+		}
+		{
+			viewAll && (
+				<p data-posts-view-all class="m-0">
+					<a href={viewAll.href} class={cn("link-underline rounded-control text-body font-medium pointer-coarse:inline-flex pointer-coarse:items-center", touchBox, focusRing)}>{viewAll.label}</a>
+				</p>
+			)
+		}
+	</div>
+</Root>

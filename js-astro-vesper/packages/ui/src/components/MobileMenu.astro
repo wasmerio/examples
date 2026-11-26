@@ -1,0 +1,220 @@
+---
+import { buttonClasses, focusRing, touchBox } from "../lib/button";
+import { cn, cx } from "../lib/cn";
+import { headingType } from "../lib/display";
+import { iconClasses } from "../lib/icon";
+import { uid } from "../lib/id";
+import { relFor, type NavAction, type NavLink, type NavPhone } from "../lib/nav";
+import { telHref } from "../lib/phone";
+import Icon from "./Icon.astro";
+
+export interface Props {
+	links: NavLink[];
+	actions?: NavAction[];
+	/** Accessible name of the panel's navigation. Also the panel title when `title` is not set. */
+	label?: string;
+	/** Visible title of the panel. Default: `label`. */
+	title?: string;
+	/** Accessible name of the open button. Not used with `openText`, whose words name the button. */
+	openLabel?: string;
+	/**
+	 * Visible text on the open button, such as "Menu": the button is then a bordered pill with these words and no icon
+	 * (the secondary look, on the same tone), and the words are its name, so it takes no aria-label. Off by default:
+	 * the icon-only button named by `openLabel`.
+	 */
+	openText?: string;
+	/** Accessible name of the panel's close button. Default: "Close menu". */
+	closeLabel?: string;
+	/**
+	 * The surface the open button sits on: `page` (default) or `band`, an optional band such as the Navbar's bar
+	 * (surface-nav), where it takes the band's ghost colors. The panel is always the page surface.
+	 */
+	tone?: "page" | "band";
+	/** Classes for the open button. */
+	class?: string;
+	/**
+	 * Each link label rolls up on hover and keyboard focus and the same words roll in from below (the text-roll
+	 * utility); read once, still under reduced motion and the calm setting. Off by default. The Navbar passes its own.
+	 */
+	roll?: boolean;
+	/**
+	 * A number to call: a "Call {number}" row with your icon, a 44px link at the end of the panel; callText sets its
+	 * words ({number} is filled in). Navbar passes its own.
+	 */
+	phone?: NavPhone;
+	/**
+	 * The panel's shape: `drawer` (default), a tall floating panel with the panel corners, in from the end of the screen, that slides in; or `card`, a
+	 * floating card under the bar, as wide as it, with the card corners, that drops in. The card's place comes from the
+	 * closest [data-menu-anchor] around the open button, else its closest <nav> (the Navbar's bar); with neither, it
+	 * opens under the button with a 1rem side inset. A long menu scrolls inside the card.
+	 */
+	panel?: "drawer" | "card";
+}
+
+// The navbar family's menu (decision 0013): a server-rendered open button and a native modal <dialog> with the links,
+// the actions and the default slot (more content below the actions, such as the Navbar's actions slot). No framework
+// (decision 0002): a small script (lib/mobile-menu.ts, bundled once per page however many menus render) opens the
+// dialog with showModal(), so the browser moves focus into the panel and keeps it there, makes the page behind inert,
+// closes the panel on Escape and gives focus back to the open button. The script also closes the panel on its close
+// button, on a click on the backdrop and when a link in it is followed (a same-page jump too), and keeps aria-expanded
+// on the open button. Before it opens the panel, it moves the dialog into the closest [data-ui-portal] around the
+// button, else <body> (lib/portal.ts), so the panel takes the page's tokens (or that part's), never the bar's: a theme
+// may set tokens on its bar (an accent, a shadow) or style the links in it, and those must not reach the panel. Once
+// the panel has closed, and before ClientRouter swaps the page, the script puts the dialog back here, so a bar kept
+// with transition:persist keeps its panel. It also closes the panel when the window widens past the fold point. The
+// page behind does not scroll while the panel is open (data-modal, lib/modal.ts; theme.css: html:has(dialog[data-modal][open])).
+// Without JavaScript the open button is hidden (@media (scripting: none)), as it could not open anything: the caller
+// shows its links another way, as the Navbar does with its own link row.
+// panel="card": the dialog is a floating card instead (data-panel="card"). As it opens, the script sets --menu-top,
+// --menu-left and --menu-right on it from the anchor's box (lib/mobile-menu.ts, cardPlace), again on each resize while
+// it is open, and the card sits a half step (0.5rem) under the bar, its sides on the bar's, with the card corners and
+// a full edge; it scrolls inside when it is taller than the room under the bar. theme.css's menu-card-place keeps it
+// inside the screen: each side at least the panel inset and the safe area, at least 12rem of room, clear of the
+// bottom safe area. It drops in (a short move down and a fade) and leaves the same way, with no transition under
+// reduced motion. Without the variables (a script that has not run) it sits 1rem in from the top and the sides.
+// The drawer floats: theme.css's menu-drawer-place sets it in from the top, right and bottom of the screen by the panel
+// inset (--spacing-panel-inset) or the safe area, whichever is larger, with the panel corners (rounded-panel, as
+// Panel), the card shadow and a soft hairline (the text color at 12%, not the border color: a site with a strong ink border got a hard white line in dark mode) all round, over a dark backdrop (the scrim at 50%, as
+// Search's dialog), so the panel stands clear of the page in both modes.
+// It slides in from the end of the screen (physical: placed with right, out by --menu-out, its width plus its gap and
+// room for the shadow) and the backdrop fades in (@starting-style), and both go out the same way
+// (allow-discrete on display and overlay; a browser without it just hides them). Under reduced motion it shows and
+// hides with no transition. The dialog's own box (inset, margin, size, border) is set in full, so the browser's dialog
+// styles never show through.
+// openText: the open button is the secondary pill (a border, the control height, the control radius) with the words
+// in place of the icon, as the words say what it opens and an icon beside them would only crowd a phone's bar. The
+// words are its accessible name, so it drops aria-label (a second name would hide the visible one, WCAG 2.5.3). It
+// is a real 44px box on a touch screen whatever the preset's control height (touchBox). Without it the markup is as
+// before.
+// Without index numbers, the list moves out by the links' padding, so the link text lines up with the title, and the
+// actions and the default slot move out by the same amount (bleed), so the buttons' edges line up with the current
+// link's filled box. With index numbers nothing moves out: the list, the actions and the slot share the title's edges.
+const { links, actions = [], label = "Menu", title, openLabel = "Open menu", openText, closeLabel = "Close menu", tone = "page", class: className, roll = false, phone, panel = "drawer" } = Astro.props;
+const card = panel === "card";
+const id = uid("menu");
+const titleId = `${id}-title`;
+const indexed = links.some((link) => link.index);
+const more = Astro.slots.has("default");
+const bleed = indexed ? "" : "-mx-3";
+// phone: the last row, its callText ("Call {number}" by default, {number} filled in) with your icon (decoration), a link at least 44px tall at every pointer whose
+// words are its name. It lines up with the links (bleed), and a number with fewer than 3 digits leaves no row.
+const phoneHref = phone ? telHref(phone.number) : "";
+const phoneRow = phone && phoneHref ? { href: phoneHref, icon: phone.icon, text: (phone.callText?.trim() || "Call {number}").replaceAll("{number}", String(phone.number).trim()) } : undefined;
+---
+
+<button
+	type="button"
+	data-mobile-menu-open
+	aria-label={openText ? undefined : openLabel}
+	aria-haspopup="dialog"
+	aria-expanded="false"
+	aria-controls={id}
+	class={cn(openText ? cx(buttonClasses({ variant: "secondary", tone }), touchBox) : buttonClasses({ variant: "ghost", icon: true, tone }), "noscript:hidden", className)}
+>
+	{
+		openText ? (
+			openText
+		) : (
+			<svg class={iconClasses("md")} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">
+				<path d="M3 5.5h14M3 10h14M3 14.5h14" />
+			</svg>
+		)
+	}
+</button>
+<dialog
+	id={id}
+	data-mobile-menu
+	data-modal
+	aria-labelledby={titleId}
+	data-panel={card ? "card" : undefined}
+	class={cx(
+		card
+			? "fixed menu-card-place bottom-auto m-0 h-auto w-auto max-w-none flex-col gap-blocks overflow-y-auto overscroll-contain card-pad open:flex"
+			: "fixed menu-drawer-place left-auto m-0 h-auto max-h-none w-[min(20rem,calc(100vw-3rem))] max-w-none flex-col gap-blocks overflow-y-auto overscroll-contain card-pad open:flex",
+		card
+			? "bg-surface text-start text-fg font-body shadow-card rounded-card border-ui border-solid border-border outline-none"
+			: "bg-surface text-start text-fg font-body shadow-card rounded-panel border-ui border-solid border-fg/12 outline-none",
+		card
+			? "-translate-y-2 opacity-0 open:translate-y-0 open:opacity-100 starting:open:-translate-y-2 starting:open:opacity-0 motion-ok:transition-[translate,opacity,display,overlay] motion-ok:transition-discrete motion-ok:duration-200 motion-ok:ease-out"
+			: "translate-x-(--menu-out) open:translate-x-0 starting:open:translate-x-(--menu-out) motion-ok:transition-[translate,display,overlay] motion-ok:transition-discrete motion-ok:duration-300 motion-ok:ease-out",
+		card ? "backdrop:bg-bg/80" : "backdrop:bg-scrim/50",
+		"backdrop:opacity-0 open:backdrop:opacity-100 starting:open:backdrop:opacity-0 motion-ok:backdrop:transition-[opacity,display,overlay] motion-ok:backdrop:transition-discrete motion-ok:backdrop:duration-200",
+	)}
+>
+	<div class="flex items-center justify-between gap-4">
+		<h2 id={titleId} class={cx("m-0 text-heading", headingType)}>{title ?? label}</h2>
+		<button type="button" data-mobile-menu-close aria-label={closeLabel} class={buttonClasses({ variant: "ghost", size: "sm", icon: true })}>
+			<svg class={iconClasses("sm")} viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true">
+				<path d="M5 5l10 10M15 5L5 15"></path>
+			</svg>
+		</button>
+	</div>
+
+	<nav aria-label={label}>
+		<ul class={indexed ? "m-0 grid list-none gap-1 p-0" : "-mx-3 my-0 grid list-none gap-1 p-0"}>
+			{
+				links.map((link) => (
+					<li>
+						<a
+							href={link.href}
+							target={link.target}
+							rel={relFor(link.target)}
+							aria-current={link.current ? "page" : undefined}
+							class={cx(
+								"flex items-center rounded-control px-3 py-2.5 text-body text-fg no-underline not-aria-[current=page]:hover:bg-surface-2 motion-ok:transition-[color,background-color,border-color,text-decoration-color] motion-ok:duration-150",
+								// Current page: inverted fg/bg and weight, like FilterNav. Never the accent (presets keep it for a few marks).
+								"aria-[current=page]:bg-fg aria-[current=page]:text-bg aria-[current=page]:font-semibold",
+								focusRing,
+								roll && "text-roll",
+							)}
+						>
+							{link.index && <span data-nav-index class="mr-2 text-nav-index text-muted tabular-nums in-aria-[current=page]:text-inherit">{link.index}</span>}
+							{roll ? <span data-roll><span data-roll-label data-label={link.label}>{link.label}</span></span> : link.label}
+							{link.badge && <span class="sr-only">{" "}</span>}
+							{link.badge && <span data-nav-badge class="ml-1.5 rounded-control border border-border px-1.5 py-px text-nav-badge font-medium text-muted in-aria-[current=page]:text-inherit in-aria-[current=page]:border-current">{link.badge}</span>}
+						</a>
+					</li>
+				))
+			}
+		</ul>
+	</nav>
+
+	{
+		actions.length > 0 && (
+			<div class={cx("grid gap-item", bleed)}>
+				{actions.map((action, i) => (
+					<a href={action.href} class={cx(buttonClasses({ variant: action.variant ?? (i === actions.length - 1 ? "primary" : "secondary") }), "w-full")}>
+						{action.label}
+					</a>
+				))}
+			</div>
+		)
+	}
+
+	{
+		more && (
+			<div class={cx("grid gap-item", bleed)}>
+				<slot />
+			</div>
+		)
+	}
+
+	{
+		phoneRow && (
+			<a
+				href={phoneRow.href}
+				data-mobile-menu-phone
+				class={cx("flex min-h-11 items-center gap-2 rounded-control px-3 text-body font-semibold text-fg no-underline hover:bg-surface-2", bleed, focusRing)}
+			>
+				<Icon icon={phoneRow.icon} size="md" class="shrink-0 text-accent" />
+				<span class="tabular-nums">{phoneRow.text}</span>
+			</a>
+		)
+	}
+</dialog>
+
+<script>
+	import { start } from "../lib/mobile-menu";
+	import { portalContainer } from "../lib/portal";
+	start(portalContainer);
+</script>

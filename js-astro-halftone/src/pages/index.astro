@@ -1,0 +1,133 @@
+---
+// The cover. One photograph carries the top of the page, the wordmark and the cover lines sit
+// on it, and the desks follow underneath in navigation order. Every section here disappears
+// rather than degrades when the content behind it is missing.
+import Base from '../layouts/Base.astro';
+import Plate from '../components/common/Plate.astro';
+import CoverLines from '../components/common/CoverLines.astro';
+import PlateHead from '../components/common/PlateHead.astro';
+import Card from '../components/article/Card.astro';
+import { coverLines, site } from '../config';
+import { deskHref, deskSpan, getArticles, getDesks, presentAll } from '../lib/content';
+import { t } from '../i18n';
+
+const items = await presentAll(await getArticles());
+
+// The plate wants a lead and coverLines.max teasers. Editors nominate them with `featured`;
+// where they have nominated too few, the newest pieces fill the rest of the column rather
+// than leaving it short.
+const plate = [...items.filter((i) => i.data.featured), ...items]
+  .filter((item, i, all) => all.findIndex((other) => other.href === item.href) === i)
+  .slice(0, 1 + coverLines.max);
+const [lead, ...lines] = plate;
+
+// Nothing prints twice on one page: once a piece is on the plate the desks skip it.
+const printed = new Set(plate.map((i) => i.href));
+const blocks = [];
+for (const desk of await getDesks()) {
+  const filed = items.filter((i) => i.desk.id === desk.id);
+  const picks = filed.filter((i) => !printed.has(i.href)).slice(0, 4);
+  if (picks.length === 0) continue;
+  for (const pick of picks) printed.add(pick.href);
+  // The folio counts everything the desk has filed, not just what fits on the cover.
+  blocks.push({ desk, picks, span: deskSpan(filed) });
+}
+
+const essay = items.find((i) => i.data.format === 'photoessay' && !printed.has(i.href));
+const ui = t(Astro.currentLocale ?? site.locale);
+---
+
+<Base nameplate={false} description={site.description} image={lead?.data.hero}>
+  {lead && (
+    <Plate
+      class="flex min-h-[38rem] flex-col justify-between gap-12 px-4 py-8 sm:min-h-[85vh] sm:py-12"
+      image={lead.data.hero}
+      alt={lead.data.heroAlt}
+      credit={lead.data.heroCredit}
+      focus={lead.data.heroFocus}
+      priority
+    >
+      {/* The masthead sits at the head of the plate and the cover lines at its foot, the
+            way they do on a cover, which also leaves the picture a band of its own between. */}
+      <a
+        class="font-ui text-spot max-w-wide mx-auto block w-full text-[clamp(3.25rem,12vw,8.5rem)] leading-[0.8] font-black tracking-[-0.045em] no-underline"
+        href="/"
+      >
+        {site.name}
+      </a>
+
+      <div class="max-w-wide mx-auto w-full">
+        <PlateHead
+          kicker={lead.kicker}
+          title={lead.data.title}
+          deck={lead.data.deck}
+          href={lead.href}
+        />
+
+        {coverLines.overlay && <CoverLines class="mt-10 max-w-[32rem]" items={lines} />}
+      </div>
+    </Plate>
+  )}
+
+  {
+    /* The fallback for a photograph that cannot carry type: the column drops below the picture
+       onto its own panel. Switched in config.ts, not guessed at per article. */
+    !coverLines.overlay && (
+      <div class="max-w-wide mx-auto px-4">
+        <CoverLines class="max-w-[32rem]" items={lines} />
+      </div>
+    )
+  }
+
+  <div class="max-w-wide mx-auto px-4">
+    {blocks.map(({ desk, picks, span }) => (
+      <section class="mt-14 sm:mt-20" aria-labelledby={`desk-${desk.id}`}>
+        <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-b-2 border-current pb-2">
+          <h2 id={`desk-${desk.id}`} class="font-ui text-base font-extrabold uppercase">
+            <a class="no-underline" href={deskHref(desk.id)}>
+              {desk.data.name}
+            </a>
+          </h2>
+          <span class="text-muted font-mono text-xs">{span}</span>
+        </div>
+
+        <div class="mt-7 grid grid-cols-1 gap-x-7 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+          {picks.map((item, i) => (
+            <Card
+              item={item}
+              size={i === 0 ? 'lead' : 'default'}
+              /* The bar overhead already says which desk this is; a label box only earns
+                   its space when the piece carries its own. */
+              kicker={item.kicker !== desk.data.name}
+              class={i === 0 ? 'lg:col-span-2' : undefined}
+            />
+          ))}
+        </div>
+      </section>
+    ))}
+  </div>
+
+  {essay && (
+    <section class="mt-16 sm:mt-24" aria-labelledby="essay-heading">
+      <Plate
+        class="flex min-h-[26rem] items-end px-4 py-8 sm:min-h-[34rem] sm:py-12"
+        image={essay.data.hero}
+        alt={essay.data.heroAlt}
+        credit={essay.data.heroCredit}
+        focus={essay.data.heroFocus}
+      >
+        <div class="max-w-wide mx-auto w-full">
+          <PlateHead
+            kicker={ui.photoEssay}
+            spot
+            id="essay-heading"
+            as="h2"
+            title={essay.data.title}
+            deck={essay.data.deck}
+            href={essay.href}
+          />
+        </div>
+      </Plate>
+    </section>
+  )}
+</Base>

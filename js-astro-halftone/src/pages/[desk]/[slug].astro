@@ -1,0 +1,203 @@
+---
+// Screen B: an article. The layout branches on `format`, and only on that -- a report runs a
+// wide picture with the rail beside it, a brief opens at the text measure and drops its rail
+// under the body because a thousand words cannot hold a column alongside, and a photo essay
+// puts the headline on the picture and gives the page over to it.
+import { Image } from 'astro:assets';
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Author from '../../components/common/Author.astro';
+import Plate from '../../components/common/Plate.astro';
+import PlateHead from '../../components/common/PlateHead.astro';
+import Rail from '../../components/article/Rail.astro';
+import Rundown from '../../components/article/Rundown.astro';
+import { blog, site } from '../../config';
+import {
+  deskHref,
+  getArticles,
+  getAuthors,
+  present,
+  presentAll,
+  related,
+  shareCard,
+  type Article,
+} from '../../lib/content';
+import { t } from '../../i18n';
+
+export async function getStaticPaths() {
+  return (await getArticles()).map((article) => ({
+    params: { desk: article.data.desk.id, slug: article.id },
+    props: { article },
+  }));
+}
+
+const { article } = Astro.props as { article: Article };
+const locale = Astro.currentLocale ?? site.locale;
+const ui = t(locale);
+const item = await present(article, locale);
+const { Content } = await render(article);
+const authors = await getAuthors(article);
+
+const essay = item.data.format === 'photoessay';
+const blocks = item.data.rail ?? [];
+const pool = await presentAll(await getArticles((other) => other.id !== article.id));
+const more = pool.filter((other) => other.desk.id === item.desk.id).slice(0, 3);
+// A photo essay wants the measure to itself; everything else carries the rail, but only a
+// report is long enough to carry it as a column beside the body.
+const rail = !essay && (blocks.length > 0 || more.length > 0);
+const beside = rail && item.data.format === 'report';
+// Nothing already printed on the page comes round again at the foot of it: what the rail
+// holds is out of the related reading below.
+const shown = new Set(rail ? more.map((other) => other.href) : []);
+const reading = related(
+  item,
+  pool.filter((other) => !shown.has(other.href)),
+);
+
+// The page is set to whatever the widest thing on it needs: body plus rail, or just the body.
+const shell = beside ? 'max-w-article' : 'max-w-content';
+const standfirst = item.data.standfirst ?? item.data.deck;
+const href = deskHref(item.desk.id);
+const url = (path: string) => new URL(path, Astro.site).href;
+
+const jsonLd = [
+  {
+    '@type': 'NewsArticle',
+    headline: item.data.title,
+    description: standfirst,
+    datePublished: item.data.date.toISOString(),
+    image: url(await shareCard(item.data.hero)),
+    author: authors.map((author) => ({ '@type': 'Person', name: author.data.name })),
+    articleSection: item.desk.data.name,
+    ...(item.data.tags && { keywords: item.data.tags.join(', ') }),
+  },
+  {
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: site.name, item: url('/') },
+      { '@type': 'ListItem', position: 2, name: item.desk.data.name, item: url(href) },
+      { '@type': 'ListItem', position: 3, name: item.data.title },
+    ],
+  },
+];
+---
+
+<Base
+  title={item.data.title}
+  description={standfirst}
+  image={item.data.hero}
+  type="article"
+  jsonLd={jsonLd}
+>
+  {essay ? (
+    <Plate
+      class="plate--bottom flex min-h-[30rem] items-end px-4 py-8 sm:min-h-[80vh] sm:py-12"
+      image={item.data.hero}
+      alt={item.data.heroAlt}
+      credit={item.data.heroCredit}
+      focus={item.data.heroFocus}
+      priority
+    >
+      {/* On the same axis as the standfirst and the body below it. The home cover sets its
+            type against the full container because the wordmark is up there with it; an
+            article has one column and the headline belongs at the head of it. */}
+      <div class="max-w-content mx-auto w-full">
+        <PlateHead kicker={item.kicker} title={item.data.title} />
+      </div>
+    </Plate>
+  ) : (
+    <header class:list={[shell, 'mx-auto px-4 pt-10 sm:pt-16']}>
+      <div class="max-w-content">
+        <span class="kicker">{item.kicker}</span>
+        <h1 class="font-ui mt-3 text-[clamp(2rem,5.2vw,3.25rem)] leading-[0.95] font-extrabold tracking-[-0.03em]">
+          {item.data.title}
+        </h1>
+      </div>
+    </header>
+  )}
+  <div class:list={[shell, 'mx-auto px-4', essay && 'pt-8']}>
+    <div class="max-w-content">
+      <p class="mt-5 text-[1.125rem] leading-relaxed sm:text-[1.25rem]">{standfirst}</p>
+      <p class="text-muted mt-6 font-mono text-[0.6875rem] uppercase">
+        {ui.by} {item.byline} · {item.date}
+        {blog.showReadingTime && ` · ${ui.minutes(item.minutes)}`}
+      </p>
+    </div>
+  </div>
+  {
+    /* The essay's picture is already the head of the page; the others set theirs under the
+       headline, at the full width of the body and its rail where there is a rail to match. */
+    !essay && (
+      <figure class:list={[shell, 'mx-auto mt-8 px-4']}>
+        <Image
+          class="aspect-[3/2] w-full object-cover"
+          src={item.data.hero}
+          alt={item.data.heroAlt}
+          widths={[640, 960, 1400]}
+          format="avif"
+          sizes={beside ? '(min-width: 1024px) 60rem, 100vw' : '(min-width: 768px) 42rem, 100vw'}
+          loading="eager"
+          fetchpriority="high"
+          style={`object-position: ${item.data.heroFocus} center`}
+        />
+        <figcaption class="text-muted mt-2 font-mono text-[0.6875rem] leading-snug">
+          {item.data.heroCaption && <span>{item.data.heroCaption} </span>}
+          <span class:list={[item.data.heroCaption && 'opacity-80']}>{item.data.heroCredit}</span>
+        </figcaption>
+      </figure>
+    )
+  }
+  {essay && item.data.heroCaption && (
+    <p class:list={[shell, 'text-muted mx-auto px-4 pt-6 font-mono text-[0.6875rem]']}>
+      {item.data.heroCaption}
+    </p>
+  )}
+  <div
+    class:list={[
+      shell,
+      'mx-auto grid gap-x-10 px-4 pt-10',
+      beside && 'lg:grid-cols-[minmax(0,var(--content-width))_var(--rail-width)]',
+    ]}
+  >
+    {/* min-w-0: a grid item's automatic minimum is its min-content, so one unbreakable line
+        -- a code block, a wide table -- would otherwise widen the whole page instead of
+        scrolling inside its own box. */}
+    <div class="article-body max-w-content min-w-0">
+      <Content />
+    </div>
+    {rail && (
+      <Rail
+        blocks={blocks}
+        more={more}
+        desk={item.desk.data.name}
+        deskHref={href}
+        beside={beside}
+      />
+    )}
+  </div>
+  <div class:list={[shell, 'mx-auto px-4']}>
+    <div class="max-w-content">
+      <p class="border-foreground text-muted mt-12 border-t-2 pt-3 font-mono text-[0.6875rem] uppercase">
+        {ui.filedTo} <a href={href}>{item.desk.data.name}</a>
+      </p>
+      <div class="mt-7 space-y-6">
+        {authors.map((author) => (
+          <Author author={author} role={author.data.role} />
+        ))}
+      </div>
+    </div>
+  </div>
+  {reading.length > 0 && (
+    <section class="max-w-content mx-auto mt-16 px-4 sm:mt-20" aria-labelledby="reading">
+      <h2
+        id="reading"
+        class="font-ui border-b-2 border-current pb-2 text-base font-extrabold uppercase"
+      >
+        {ui.relatedReading}
+      </h2>
+      {/* A list, not another row of cards: at the foot of a long piece a reader is
+          scanning headlines, and the desk blocks on the home page already did cards. */}
+      <Rundown items={reading} />
+    </section>
+  )}
+</Base>

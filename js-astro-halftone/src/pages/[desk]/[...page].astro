@@ -1,0 +1,134 @@
+---
+// Screen C: a desk front. Page one is a cover for the section -- the desk name where the
+// wordmark sits on the home page, then its newest piece and two cover lines. The list picks
+// up from where the plate stopped, so nothing on the page prints twice.
+import type { GetStaticPaths } from 'astro';
+import Base from '../../layouts/Base.astro';
+import Card from '../../components/article/Card.astro';
+import CoverLines from '../../components/common/CoverLines.astro';
+import Plate from '../../components/common/Plate.astro';
+import PlateHead from '../../components/common/PlateHead.astro';
+import { blog, site } from '../../config';
+import { deskHref, deskSpan, getArticles, getDesks, presentAll } from '../../lib/content';
+import { t } from '../../i18n';
+
+export const getStaticPaths = (async ({ paginate }) => {
+  const desks = await getDesks();
+  const routes = await Promise.all(
+    desks.map(async (desk) => {
+      const items = await presentAll(await getArticles((a) => a.data.desk.id === desk.id));
+      // The folio counts the whole desk, not the page, so it is settled here and passed down.
+      return paginate(items, {
+        params: { desk: desk.id },
+        props: { desk, span: deskSpan(items) },
+        pageSize: blog.postsPerPage,
+      });
+    }),
+  );
+  return routes.flat();
+}) satisfies GetStaticPaths;
+
+const { page, desk, span } = Astro.props;
+const first = page.currentPage === 1;
+const [lead, ...rest] = page.data;
+const lines = first ? rest.slice(0, 2) : [];
+const cards = first ? rest.slice(2) : page.data;
+const ui = t(Astro.currentLocale ?? site.locale);
+const folio = `${span} · ${ui.pageOf(page.currentPage, page.lastPage)}`;
+---
+
+<Base title={desk.data.name} description={desk.data.blurb} image={lead?.data.hero}>
+  {first ? (
+    <Plate
+      class="flex min-h-[32rem] flex-col justify-between gap-10 px-4 py-8 sm:min-h-[70vh] sm:py-12"
+      image={lead.data.hero}
+      alt={lead.data.heroAlt}
+      credit={lead.data.heroCredit}
+      focus={lead.data.heroFocus}
+      priority
+    >
+      <div class="max-w-wide mx-auto w-full">
+        <div class="max-w-[32rem]">
+          <h1 class="font-ui text-spot text-[clamp(2.75rem,10vw,7rem)] leading-[0.8] font-black tracking-[-0.045em]">
+            {desk.data.name}
+          </h1>
+          {desk.data.blurb && (
+            <p
+              class="font-ui mt-4 text-[0.9375rem] leading-relaxed"
+              style="color: var(--on-plate-muted)"
+            >
+              {desk.data.blurb}
+            </p>
+          )}
+        </div>
+      </div>
+
+      <div class="max-w-wide mx-auto w-full">
+        {/* The desk name is the heading overhead, so a label box repeating it is dropped
+              here and in the cover lines below; a piece with its own rubric keeps one. */}
+        <PlateHead
+          kicker={lead.kicker === desk.data.name ? undefined : lead.kicker}
+          title={lead.data.title}
+          deck={lead.data.deck}
+          href={lead.href}
+          as="h2"
+        />
+        <CoverLines class="mt-10 max-w-[32rem]" items={lines} as="h3" omitKicker={desk.data.name} />
+      </div>
+    </Plate>
+  ) : (
+    <div class="max-w-article mx-auto px-4 pt-10 sm:pt-16">
+      <div class="flex flex-wrap items-baseline gap-x-6 gap-y-1 border-b-2 border-current pb-2">
+        <h1 class="font-ui text-3xl font-black tracking-[-0.035em] uppercase">
+          <a class="no-underline" href={deskHref(desk.id)}>
+            {desk.data.name}
+          </a>
+        </h1>
+        <span class="text-muted font-mono text-xs">{folio}</span>
+      </div>
+    </div>
+  )}
+
+  {/* The index is set to the width of an article rather than the full container: a row of
+      picture and type reads as a column of entries, not as a spread. */}
+  <div class="max-w-article mx-auto px-4">
+    {first && (
+      <p class="text-muted mt-14 border-b-2 border-current pb-2 font-mono text-xs sm:mt-20">
+        {folio}
+      </p>
+    )}
+
+    {cards.length > 0 && (
+      <ol class="mt-8">
+        {cards.map((item) => (
+          <li class="border-border border-b py-7 first:pt-0">
+            <Card item={item} layout="row" kicker={item.kicker !== desk.data.name} />
+          </li>
+        ))}
+      </ol>
+    )}
+
+    {page.lastPage > 1 && (
+      <nav
+        class="mt-10 grid grid-cols-3 items-baseline gap-4 font-mono text-xs uppercase"
+        aria-label={ui.pagination}
+      >
+        <span>
+          {page.url.prev && (
+            <a class="hover:text-primary no-underline" href={page.url.prev}>
+              {ui.newer}
+            </a>
+          )}
+        </span>
+        <span class="text-muted text-center">{ui.pageOf(page.currentPage, page.lastPage)}</span>
+        <span class="text-end">
+          {page.url.next && (
+            <a class="hover:text-primary no-underline" href={page.url.next}>
+              {ui.older}
+            </a>
+          )}
+        </span>
+      </nav>
+    )}
+  </div>
+</Base>

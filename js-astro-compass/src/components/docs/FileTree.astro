@@ -1,0 +1,58 @@
+---
+import FileTreeNode from './FileTreeNode.astro';
+
+type FileTreeNodeItem = {
+  name: string;
+  isDirectory: boolean;
+  children: FileTreeNodeItem[];
+};
+
+interface Props {
+  items: string[];
+  ariaLabel?: string;
+}
+
+const { items = [], ariaLabel = 'Project file tree' } = Astro.props;
+
+const parseLine = (line: string) => {
+  const normalizedLine = line.replace(/\t/g, '  ');
+  const leadingWhitespace = normalizedLine.match(/^\s*/)?.[0].length ?? 0;
+  const depth = Math.floor(leadingWhitespace / 2);
+  const trimmed = normalizedLine.trim();
+  const isDirectory = trimmed.endsWith('/');
+  const name = isDirectory ? trimmed.slice(0, -1) : trimmed;
+
+  return { depth, name, isDirectory };
+};
+
+const buildTree = (source: string[]) => {
+  const root: FileTreeNodeItem[] = [];
+  const stack: Array<{ depth: number; children: FileTreeNodeItem[] }> = [{ depth: -1, children: root }];
+
+  source
+    .filter((line) => line.trim().length > 0)
+    .map(parseLine)
+    .forEach((entry) => {
+      while (stack.length > 1 && entry.depth <= stack[stack.length - 1].depth) {
+        stack.pop();
+      }
+
+      const node: FileTreeNodeItem = {
+        name: entry.name,
+        isDirectory: entry.isDirectory,
+        children: [],
+      };
+
+      stack[stack.length - 1].children.push(node);
+      stack.push({ depth: entry.depth, children: node.children });
+    });
+
+  return root;
+};
+
+const nodes = buildTree(items);
+---
+
+<div class="docs-file-tree not-prose my-6" role="group" aria-label={ariaLabel}>
+  <FileTreeNode nodes={nodes} />
+</div>

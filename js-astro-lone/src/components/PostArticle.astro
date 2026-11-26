@@ -1,0 +1,81 @@
+---
+import { render } from 'astro:content';
+import { categories as catsCopy, ui } from 'lone/config';
+import { hrefOf, formatDate, tagHref, galleryOf, categoryOf, langOf, readMinutes, type Post } from '../lib/posts';
+import { srcsetOf, measure } from '../lib/images';
+import Gallery from './Gallery.astro';
+import Toc from './Toc.astro';
+
+const { post, older, newer } = Astro.props as {
+  post: Post;
+  older: Post | null;
+  newer: Post | null;
+};
+
+const { Content, headings } = await render(post);
+const shots = galleryOf(post);
+const cover = shots[0] || '';
+const gallery = cover ? shots.slice(1) : shots;
+const tags = (post.data.tags ?? []).map((t) => t.trim()).filter(Boolean);
+const hasBody = Boolean((post.body ?? '').trim());
+const kind = catsCopy.labels[categoryOf(post)] || '';
+const lang = langOf(post);
+// Fall back to the generic empty-state copy: `lone/config` resolves to the
+// CONSUMER's config, so a site that has not added these keys renders an empty
+// paragraph otherwise. Same pattern as ui.tocLabel in Toc.astro.
+const noBody = ui.noBody || ui.emptyStream;
+const mins = readMinutes(post);
+const photos = shots.length;
+const coverSize = cover ? await measure(cover) : { width: 1920, height: 1280 };
+
+---
+
+<article class="note" lang={post.data.lang || undefined}>
+  <header class={`cover-hero${cover ? "" : " is-type"}`}>
+    {cover && <img src={cover} srcset={srcsetOf(cover)} sizes="(max-width: 639px) 100vw, 900px" alt="" width={coverSize.width || 1920} height={coverSize.height || 1280} fetchpriority="high" decoding="async" />}
+    {cover && <div class="cover-scrim" aria-hidden="true"></div>}
+    <div class="cover-copy">
+      <div class="cover-line">
+        <a class="back is-on-photo" href="/">{ui.backToNotes}</a>
+        <span class="cover-dot" aria-hidden="true">·</span>
+        <time class="meta" datetime={post.data.date.toISOString()}>{formatDate(post.data.date)}</time>
+      </div>
+      <h1 class="note-title" lang={post.data.lang || undefined}>{post.data.title}</h1>
+    </div>
+  </header>
+  <div class="page">
+    {post.data.description && (
+      hasBody
+        ? <p class="lede">{post.data.description}</p>
+        : <blockquote class="lede is-voice">{post.data.description}</blockquote>
+    )}
+    <p class="note-facts">
+      {kind && <span class="is-kind">{kind}</span>}
+      <span>{ui.readMin(mins)}</span>
+      {photos > 0 && <span>{ui.photoCount(photos)}</span>}
+      {lang === 'en' && <span>{ui.langEn}</span>}
+      {lang === 'zh' && <span>{ui.langZh}</span>}
+    </p>
+    {tags.length > 0 && (
+      <ul class="note-tags">
+        {tags.map((t) => (
+          <li><a href={tagHref(t)}>{t}</a></li>
+        ))}
+      </ul>
+    )}
+    {post.data.toc && <Toc headings={headings} />}
+    {hasBody ? <div class="prose"><Content /></div> : <p class="no-body" lang={post.data.lang || undefined}>{noBody}</p>}
+    {gallery.length > 0 && <Gallery images={gallery} />}
+    <nav class="post-nav" aria-label={ui.ariaAdjacent}>
+      <div class="post-nav-adj">
+        {older
+          ? <a href={hrefOf(older)}><small>{ui.postNavOlder}</small>{older.data.title}</a>
+          : <span></span>}
+        {newer
+          ? <a class="is-newer" href={hrefOf(newer)}><small>{ui.postNavNewer}</small>{newer.data.title}</a>
+          : <span></span>}
+      </div>
+      <a class="post-nav-all" href="/archive/"><small>{ui.postNavAll}</small>{ui.allNotes}</a>
+    </nav>
+  </div>
+</article>

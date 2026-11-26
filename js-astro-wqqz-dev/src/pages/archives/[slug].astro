@@ -1,0 +1,358 @@
+---
+import Base from '../../layouts/Base.astro';
+import { getCollection, render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+import { TOC } from 'astro-toc';
+import { ChevronRight, ArrowLeft, ArrowRight, Calendar, Clock } from '@lucide/astro';
+import { slugifyTag } from '../../lib/tags';
+import { getArchivePosts } from '../../lib/archive_data';
+import '../../styles/archives.css';
+import 'katex/dist/katex.min.css';
+
+export const getStaticPaths = (async () => {
+  const archive = await getCollection('archives', (p) => !p.data.draft);
+  return archive.map((archive) => ({
+    params: { slug: archive.id },
+    props: { archive },
+  }));
+}) satisfies GetStaticPaths;
+
+const { archive } = Astro.props as { archive: import('astro:content').CollectionEntry<'archives'> };
+const { title, description, date, tags, ogImage } = archive.data as any;
+
+const { Content, headings } = await render(archive);
+type H = { depth?: number; text?: string; title?: string; slug?: string };
+const safeHeadings: H[] = Array.isArray(headings) ? (headings as unknown as H[]) : [];
+const mapDepth = (d: number) => (d <= 2 ? 1 : d === 3 ? 2 : 3);
+const tocItems = safeHeadings
+  .filter((h) => typeof h.depth === 'number' && h.depth >= 2 && h.depth <= 4)
+  .map((h) => {
+    const d = h.depth ?? 2;
+    const t = typeof h.text === 'string' ? h.text : (typeof h.title === 'string' ? h.title : '');
+    const s = typeof h.slug === 'string' && h.slug ? h.slug : undefined;
+    return { depth: mapDepth(d), title: t, url: s ? `#${s}` : undefined };
+  })
+  .filter((i) => Boolean(i.url));
+
+const tagList: string[] = Array.isArray(tags) ? tags : [];
+const primaryTag = tagList.length > 0 ? tagList[0] : undefined;
+const displayTag = (t: string) => (t ? t.charAt(0).toUpperCase() + t.slice(1) : t);
+
+const formatDate = (date: Date) => {
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+};
+const formatShortDate = (d: string) => {
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return d;
+  return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+const posts = await getArchivePosts();
+const idx = posts.findIndex((p) => p.slug === archive.id);
+const older = idx >= 0 && idx < posts.length - 1 ? posts[idx + 1] : null;
+const newer = idx > 0 ? posts[idx - 1] : null;
+
+const pageUrl = Astro.url?.href ?? undefined;
+---
+
+<Base title={title} description={description} ogImage={ogImage}>
+  <div id="main-content" class="flex-1">
+    <div class="mx-auto w-full max-w-6xl px-5 py-10 sm:px-6 sm:py-14">
+      <div class="mx-auto xl:grid xl:grid-cols-[minmax(0,1fr)_15rem] xl:gap-14">
+        <div class="min-w-0">
+          <nav aria-label="Breadcrumb" class="mb-6 print:hidden">
+            <ol class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              <li class="flex items-center gap-1">
+                <a href="/" class="transition-colors hover:text-foreground">Home</a>
+              </li>
+              <li class="flex items-center gap-1">
+                <ChevronRight size={12} class="opacity-60" aria-hidden="true" />
+                <a href="/archives" class="transition-colors hover:text-foreground">Archive</a>
+              </li>
+              <li class="flex items-center gap-1">
+                <ChevronRight size={12} class="opacity-60" aria-hidden="true" />
+                <span aria-current="page" class="font-medium text-foreground">{title}</span>
+              </li>
+            </ol>
+          </nav>
+
+          <header>
+            <h1 class="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{title}</h1>
+            {description && (
+              <p class="mt-3 text-base leading-relaxed text-muted-foreground sm:text-lg">{description}</p>
+            )}
+            <div class="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+              <span class="flex items-center gap-1.5">
+                <Calendar size={13} aria-hidden="true" />
+                <time datetime={date instanceof Date ? date.toISOString().slice(0, 10) : String(date)}>{formatDate(date)}</time>
+              </span>
+              <span class="flex items-center gap-1.5">
+                <Clock size={13} aria-hidden="true" />
+                <span id="read-mins">1 min read</span>
+              </span>
+            </div>
+            {tagList.length > 0 && (
+              <div class="mt-4 flex flex-wrap gap-1.5">
+                {tagList.map((tag) => (
+                  <a
+                    href={`/tags/${slugifyTag(tag)}`}
+                    class="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 font-mono text-[0.6875rem] text-muted-foreground transition-colors hover:border-accent/50 hover:text-accent"
+                  >
+                    <span class="text-accent/70">#</span>{displayTag(tag)}
+                  </a>
+                ))}
+              </div>
+            )}
+          </header>
+
+          <article id="article-content" class="prose mt-8 max-w-none">
+            <Content />
+          </article>
+        </div>
+
+        {tocItems.length > 0 && (
+          <aside class="hidden xl:block">
+            <div class="sticky top-24">
+              <div class="toc" id="toc-root" data-active="0">
+                <h2 class="toc-title">On this page</h2>
+                <TOC toc={tocItems} maxDepth={4} />
+              </div>
+            </div>
+          </aside>
+        )}
+      </div>
+    </div>
+  </div>
+</Base>
+
+{pageUrl && (
+  <script is:inline type="application/ld+json" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "mainEntityOfPage": { "@type": "WebPage", "@id": pageUrl },
+    "headline": title,
+    "description": description,
+    "datePublished": (date as Date)?.toISOString?.() ?? undefined,
+    "dateModified": (date as Date)?.toISOString?.() ?? undefined,
+    "image": ogImage ?? undefined,
+    "articleSection": tagList
+  })} />
+)}
+
+<script is:inline>
+  (() => {
+    const HEADER_OFFSET = (() => {
+      const nav = document.querySelector('nav');
+      return nav ? (nav.getBoundingClientRect().height || 90) : 90;
+    })();
+
+    const tocRoot = document.getElementById('toc-root');
+    if (tocRoot) {
+      const links = Array.from(tocRoot.querySelectorAll('a[href^="#"]'));
+      const linkById = new Map(
+        links
+          .map((a) => {
+            try { return [decodeURIComponent(a.getAttribute('href') || '').slice(1), a]; }
+            catch { return null; }
+          })
+          .filter(Boolean)
+      );
+
+      const isTopLevelItem = (li) => !!(li && !li.parentElement.closest('li'));
+
+      const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      const smoothTo = (target) => {
+        const top = target.getBoundingClientRect().top + window.scrollY - HEADER_OFFSET + 2;
+        window.scrollTo({ top, behavior: prefersReduced ? 'auto' : 'smooth' });
+      };
+
+      const clickScroll = (hash) => {
+        if (!hash.startsWith('#')) return;
+        const target = document.getElementById(hash.slice(1));
+        if (!target) return;
+        smoothTo(target);
+        history.replaceState(null, '', hash);
+      };
+
+      tocRoot.addEventListener('click', (e) => {
+        const a = e.target.closest('a[href^="#"]');
+        if (!a) return;
+        e.preventDefault();
+        const hash = a.getAttribute('href') || '';
+        setActive(a);
+        clickScroll(hash);
+      });
+
+      let currentLink = null;
+      let dividerOffset = 0;
+
+      const updateDividerOffset = () => {
+        const title = tocRoot.querySelector('.toc-title');
+        if (!title) {
+          dividerOffset = 0;
+          tocRoot.style.setProperty('--toc-divider-offset', `0px`);
+          return;
+        }
+        const rTitle = title.getBoundingClientRect();
+        const rToc = tocRoot.getBoundingClientRect();
+        const off = Math.max(0, Math.round(rTitle.bottom - rToc.top));
+        dividerOffset = off;
+        tocRoot.style.setProperty('--toc-divider-offset', `${off}px`);
+      };
+
+      const updateActiveBar = () => {
+        if (!currentLink) return;
+        const el = currentLink;
+        const rEl = el.getBoundingClientRect();
+        const rToc = tocRoot.getBoundingClientRect();
+        let top = rEl.top - rToc.top - dividerOffset;
+        if (!isFinite(top)) top = 0;
+        if (top < 0) top = 0;
+        const height = rEl.height || el.offsetHeight;
+        tocRoot.style.setProperty('--toc-active-top', `${Math.round(top)}px`);
+        tocRoot.style.setProperty('--toc-active-height', `${height}px`);
+        tocRoot.setAttribute('data-active', '1');
+      };
+
+      let followRAF = 0;
+      const monitorDuringTransition = (ms = 450) => {
+        const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (prefersReduced) { updateActiveBar(); return; }
+        cancelAnimationFrame(followRAF);
+        const start = performance.now();
+        const tick = (t) => {
+          updateActiveBar();
+          if (t - start < ms) followRAF = requestAnimationFrame(tick);
+        };
+        followRAF = requestAnimationFrame(tick);
+      };
+      const closestTocItem = (a) => {
+        let el = a;
+        while (el && el.tagName !== 'LI') {
+          el = el.parentElement;
+        }
+        return el;
+      };
+      const collectAncestors = (a) => {
+        const set = new Set();
+        let li = closestTocItem(a);
+        while (li && tocRoot.contains(li)) {
+          set.add(li);
+          const parentUl = li.parentElement;
+          li = parentUl ? parentUl.closest('li') : null;
+        }
+        return set;
+      };
+
+      const collapse = (li) => {
+        li.classList.remove('expanded');
+        li.removeAttribute('aria-expanded');
+      };
+      const expand = (li) => {
+        li.classList.add('expanded');
+        li.setAttribute('aria-expanded', 'true');
+      };
+      const applyExpansion = (a) => {
+        const activeLi = a ? closestTocItem(a) : null;
+        if (!activeLi) {
+          Array.from(tocRoot.querySelectorAll('li')).forEach(collapse);
+          return;
+        }
+        if (isTopLevelItem(activeLi)) {
+          const following = Node.DOCUMENT_POSITION_FOLLOWING;
+          Array.from(tocRoot.querySelectorAll('li')).forEach((li) => {
+            if (li === activeLi || (activeLi.compareDocumentPosition(li) & following)) {
+              collapse(li);
+            }
+          });
+        } else {
+          collectAncestors(a).forEach(expand);
+        }
+      };
+      const setActive = (a) => {
+        if (!a) return;
+        const prev = currentLink;
+        if (prev && prev !== a) prev.removeAttribute('aria-current');
+        currentLink = a;
+        a.setAttribute('aria-current', 'true');
+        applyExpansion(a);
+        updateActiveBar();
+        monitorDuringTransition(300);
+      };
+
+      const computeActiveFromScroll = () => {
+        const t = HEADER_OFFSET + 6;
+        const arr = Array.from(document.querySelectorAll('#article-content h1, #article-content h2, #article-content h3, #article-content h4'))
+          .filter((el) => el.id && linkById.has(el.id))
+          .map((el) => ({ el, top: el.getBoundingClientRect().top }));
+        if (arr.length === 0) return null;
+        const below = arr.filter((p) => p.top <= t);
+        const candidate = below.length
+          ? below.reduce((a, b) => (a.top > b.top ? a : b))
+          : arr[0];
+        const id = candidate.el.id;
+        return linkById.get(id) || null;
+      };
+      let rafScroll = 0;
+      const onScroll = () => {
+        cancelAnimationFrame(rafScroll);
+        rafScroll = requestAnimationFrame(() => {
+          const a = computeActiveFromScroll();
+          if (a) setActive(a);
+        });
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+
+      const initFromHash = () => {
+        const id = decodeURIComponent(location.hash.slice(1));
+        const a = id ? linkById.get(id) : null;
+        updateDividerOffset();
+        setActive(a || null);
+      };
+      window.addEventListener('hashchange', initFromHash);
+      window.addEventListener('load', initFromHash);
+
+      let raf = 0;
+      window.addEventListener('resize', () => {
+        cancelAnimationFrame(raf);
+        raf = requestAnimationFrame(() => {
+          updateDividerOffset();
+          updateActiveBar();
+        });
+      });
+
+      tocRoot.addEventListener('transitionstart', (e) => {
+        const target = e.target;
+        if (!target) return;
+        if (target.matches('.toc-sublist') || target.matches('.toc ul ul')) {
+          monitorDuringTransition(520);
+        }
+      }, true);
+      tocRoot.addEventListener('transitionend', () => {
+        updateActiveBar();
+      }, true);
+
+      const ro = new ResizeObserver(() => { updateDividerOffset(); updateActiveBar(); });
+      ro.observe(tocRoot);
+      const tocInner = tocRoot.querySelector('[data-astro-toc]');
+      if (tocInner) ro.observe(tocInner);
+
+      window.addEventListener('pageshow', () => { updateDividerOffset(); updateActiveBar(); });
+      window.addEventListener('visibilitychange', () => { if (!document.hidden) { updateDividerOffset(); updateActiveBar(); } });
+    }
+
+    (() => {
+      const article = document.getElementById('article-content');
+      const rt = document.getElementById('read-mins');
+      if (!article || !rt) return;
+      const words = ((article.innerText || '').trim().match(/\S+/g) || []).length;
+      const min = Math.max(1, Math.round(words / 230));
+      rt.textContent = `${min} min read`;
+    })();
+  })();
+</script>

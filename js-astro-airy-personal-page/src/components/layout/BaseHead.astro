@@ -1,0 +1,112 @@
+---
+/**
+ * BaseHead.astro
+ * 基础 Head 组件，处理 SEO 元数据和主题初始化脚本
+ *
+ * 数据：
+ * - getSiteConfig: 获取网站配置
+ * 脚本：
+ * - 主题初始化脚本：防止 FOUC，监听系统主题变化和 bfcache 事件
+ *
+ * Props:
+ * - title: 页面标题
+ * - description: 页面描述
+ * - ogImage: Open Graph 图片
+ */
+
+import { getSiteConfig } from "@utils/config";
+import type { BaseLayoutProps as Props } from "@appTypes/site";
+
+const { site: siteConfig } = await getSiteConfig();
+const canonicalURL = new URL(Astro.url.pathname, Astro.site || Astro.url.origin);
+
+const {
+    title = siteConfig.title,
+    description = siteConfig.description,
+    ogImage = siteConfig.ogImage,
+} = Astro.props;
+---
+
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+<!-- 主题设置脚本 -->
+<script is:inline>
+    function applyTheme() {
+        const theme = (() => {
+            try {
+                if (
+                    typeof localStorage !== "undefined" &&
+                    localStorage.getItem("theme")
+                ) {
+                    return localStorage.getItem("theme");
+                }
+            } catch (e) {}
+            if (
+                window.matchMedia &&
+                window.matchMedia("(prefers-color-scheme: dark)").matches
+            ) {
+                return "dark";
+            }
+            return "light";
+        })();
+
+        if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+        } else {
+            document.documentElement.classList.remove("dark");
+        }
+    }
+
+    // 1. 初始加载时立即应用（防止 FOUC）
+    applyTheme();
+
+    // 2. 监听系统主题实时变化：当用户没手动锁定主题时，自动跟随系统切换
+    window
+        .matchMedia("(prefers-color-scheme: dark)")
+        .addEventListener("change", () => {
+            try { if (!localStorage.getItem("theme")) applyTheme(); } catch (e) {}
+        });
+
+    // 3. 监听 bfcache (Back/Forward Cache) 恢复：确保点击浏览器返回按钮时，如果主题在另一页改了，这一页也能同步
+    window.addEventListener("pageshow", (event) => {
+        if (event.persisted) applyTheme();
+    });
+
+    // 4. View Transitions 支持 (如后续启用 ClientRouter)
+    // document.addEventListener("astro:after-swap", applyTheme);
+</script>
+
+<!-- SEO 基础配置 -->
+<title>{title}</title>
+{description && (<meta name="description" content={description} />)}
+<link rel="canonical" href={canonicalURL} />
+<meta name="author" content={siteConfig.author} />
+<meta name="robots" content="index, follow" />
+
+<!-- PWA / 移动端优化 -->
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#1a1a1a" media="(prefers-color-scheme: dark)" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="format-detection" content="telephone=no, email=no, address=no, date=no" />
+<meta name="renderer" content="webkit" />
+
+<!-- 图标 -->
+{siteConfig.brandIcon && (<link rel="icon" type="image/x-icon" href={siteConfig.brandIcon} />)}
+{siteConfig.appleTouchIcon && (<link rel="apple-touch-icon" href={siteConfig.appleTouchIcon} />)}
+
+<!-- Open Graph / Twitter -->
+<meta property="og:type" content="website" />
+<meta property="og:url" content={canonicalURL} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+{ogImage && (<meta property="og:image" content={new URL(ogImage, Astro.url)} />)}
+<meta name="twitter:card" content="summary_large_image" />
+
+<!-- 技术栈 -->
+<meta name="generator" content={Astro.generator} />
+
+<!-- 插槽：允许页面注入额外的 Head 内容（如额外的 CSS） -->
+<slot />

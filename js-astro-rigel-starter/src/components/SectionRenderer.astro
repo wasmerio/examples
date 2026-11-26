@@ -1,0 +1,22 @@
+---
+import { getCollection } from "astro:content";
+import Section from "./Section.astro";
+import schema from "../content/schema";
+
+interface Props { doc: { id?: string; type?: string; data: Record<string, unknown> } }
+const { doc } = Astro.props;
+const sections = Array.isArray(doc.data.sections) ? (doc.data.sections as Record<string, never>[]) : [];
+const definition = schema.documents.find(type => type.name === doc.type);
+const sectionField = definition?.fields.find(field => field.key === "sections");
+const allowed = sectionField?.type === "array" ? sectionField.items?.map(item => "name" in item ? item.name : undefined) : undefined;
+const blog = (await getCollection("blog")).filter((post) => !post.data.draft).sort((a, b) => b.data.date.localeCompare(a.data.date));
+const news = (await getCollection("news")).filter((post) => !post.data.draft);
+---
+<div data-rigel-each="sections" data-rigel-doc={doc.id}>
+  {sections.map(section => <Section docId={doc.id} {section} {blog} {news} />)}
+  {schema.objects.filter(object => object.type === "section" && (!allowed || allowed.includes(object.name))).map(object => (
+    <template data-rigel-item-template={object.name}>
+      <Section docId={doc.id} section={{ _key: "__item__", _type: object.name } as never} {blog} {news} />
+    </template>
+  ))}
+</div>

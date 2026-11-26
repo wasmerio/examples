@@ -1,0 +1,148 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import Navigation from '../../components/Navigation.astro';
+import Footer from '../../components/Footer.astro';
+import { getCollection } from 'astro:content';
+import { siteConfig } from '../../config';
+import { estimateReadingTime } from '../../utils/readingTime';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  const tags = [...new Set(posts.flatMap(post => post.data.tags))];
+
+  return tags.map(tag => ({
+    params: { tag },
+    props: {
+      tag,
+      posts: posts.filter(post => post.data.tags.includes(tag))
+    },
+  }));
+}
+
+const { tag, posts } = Astro.props;
+---
+
+<BaseLayout title={`#${tag} - ${siteConfig.title}`}>
+  <Navigation />
+
+  <main class="container" style="padding-top: 6rem;">
+    <section class="tag-page">
+      <h1>#{tag}</h1>
+      <p class="tag-count">{posts.length} post{posts.length !== 1 ? 's' : ''}</p>
+
+      <div class="posts-list">
+        {posts.map((post, i) => {
+          const readingTime = estimateReadingTime(post.body || '');
+          return (
+            <article class="post-item" style={`--fade-delay: ${i * 0.1}s`}>
+              <div class="post-meta">
+                <time>{post.data.pubDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>
+                <span class="meta-sep">·</span>
+                <span class="reading-time">{readingTime} min read</span>
+              </div>
+              <h2><a href={`/${post.id}`}>{post.data.title}</a></h2>
+              <p>{post.data.description}</p>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  </main>
+
+  <Footer />
+</BaseLayout>
+
+<style>
+  .tag-page {
+    padding: 2rem 0;
+  }
+
+  .tag-page h1 {
+    margin-bottom: 0.5rem;
+  }
+
+  .tag-count {
+    color: var(--text-tertiary);
+    margin-bottom: 2rem;
+  }
+
+  .posts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .post-item {
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .post-item.animate {
+    animation: fadeInUp 0.4s ease var(--fade-delay, 0s) both;
+  }
+
+  .post-item:last-child {
+    border-bottom: none;
+  }
+
+  .post-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+  }
+
+  .post-meta time,
+  .reading-time {
+    color: var(--text-tertiary);
+  }
+
+  .meta-sep {
+    color: var(--border-color-hover);
+  }
+
+  .reading-time {
+    white-space: nowrap;
+  }
+
+  .post-item h2 {
+    margin: 0.5rem 0;
+  }
+
+  .post-item h2 a {
+    color: var(--text-primary);
+  }
+
+  .post-item h2 a:hover {
+    color: var(--color-primary);
+  }
+
+  .post-item p {
+    color: var(--text-secondary);
+    margin: 0;
+  }
+</style>
+
+<script>
+  function initTagPage() {
+    let firstBatch = true;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            // Only the on-load batch keeps the index stagger; scroll reveals animate immediately
+            if (!firstBatch) (entry.target as HTMLElement).style.setProperty('--fade-delay', '0s');
+            entry.target.classList.add('animate');
+            observer.unobserve(entry.target);
+          }
+        });
+        firstBatch = false;
+      },
+      { rootMargin: '0px 0px 60px 0px', threshold: 0 }
+    );
+
+    document.querySelectorAll('.post-item').forEach(el => observer.observe(el));
+  }
+
+  document.addEventListener('astro:page-load', initTagPage);
+</script>

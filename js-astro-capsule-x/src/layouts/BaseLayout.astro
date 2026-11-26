@@ -1,0 +1,81 @@
+---
+import '../styles/global.css';
+import '../styles/callout.css';
+import { siteConfig } from '../config';
+import { ClientRouter } from 'astro:transitions';
+import BackToTop from '../components/BackToTop.astro';
+import CodeBlockCopy from '../components/CodeBlockCopy.astro';
+import Lightbox from '../components/Lightbox.astro';
+import SearchModal from '../components/SearchModal.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = siteConfig.title,
+  description = siteConfig.description
+} = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang={siteConfig.lang}>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    {siteConfig.features?.rss && (
+      <link rel="alternate" type="application/rss+xml" title={siteConfig.title + ' RSS'} href="/rss.xml" />
+    )}
+
+    <ClientRouter />
+
+    {/* Keeps entrance-animated post items hidden from the very first paint, incl. dev where bundled styles inject late */}
+    <style is:inline>
+      .js .post-item:not(.animate) {
+        opacity: 0;
+      }
+      @media print {
+        .post-item {
+          opacity: 1 !important;
+          animation: none !important;
+        }
+      }
+    </style>
+
+    {/* Theme detection script - runs before paint to prevent flash */}
+    <script is:inline>
+      (function() {
+        const saved = localStorage.getItem('theme') || 'auto';
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const effectiveTheme = saved === 'auto' ? (prefersDark ? 'dark' : 'light') : saved;
+        document.documentElement.setAttribute('data-theme', saved);
+        document.documentElement.classList.add(effectiveTheme);
+        // Marks JS availability so entrance animations can hide items before first paint
+        document.documentElement.classList.add('js');
+      })();
+
+      // Re-apply theme after View Transitions swap (before page is visible)
+      document.addEventListener('astro:after-swap', () => {
+        const saved = localStorage.getItem('theme') || 'auto';
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const effectiveTheme = saved === 'auto' ? (prefersDark ? 'dark' : 'light') : saved;
+        document.documentElement.setAttribute('data-theme', saved);
+        document.documentElement.classList.remove('dark', 'light');
+        document.documentElement.classList.add(effectiveTheme);
+        document.documentElement.classList.add('js');
+      });
+    </script>
+  </head>
+  <body>
+    <slot />
+    {siteConfig.features?.backToTop && <BackToTop />}
+    <CodeBlockCopy />
+    {siteConfig.features?.lightbox && <Lightbox />}
+    {siteConfig.features?.search && <SearchModal />}
+  </body>
+</html>

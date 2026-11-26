@@ -1,0 +1,227 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Navigation from '../components/Navigation.astro';
+import Footer from '../components/Footer.astro';
+import { getCollection } from 'astro:content';
+import { siteConfig } from '../config';
+import { estimateReadingTime } from '../utils/readingTime';
+
+const posts = (await getCollection('blog'))
+  .filter(post => !post.data.draft)
+  .sort((a, b) => {
+    // Pinned posts first
+    if (a.data.pinned && !b.data.pinned) return -1;
+    if (!a.data.pinned && b.data.pinned) return 1;
+    // Then by date
+    return b.data.pubDate.valueOf() - a.data.pubDate.valueOf();
+  });
+---
+
+<BaseLayout title={siteConfig.title + ' - Home'}>
+  <Navigation />
+
+  <main class="container" style="padding-top: 6rem;">
+    <section class="hero">
+      <h1>{siteConfig.title}</h1>
+      <p class="hero-description">
+        {siteConfig.description}
+      </p>
+    </section>
+
+    <section class="posts" transition:name="posts">
+      <h2>Recent Posts</h2>
+      {posts.length === 0 ? (
+        <p class="placeholder">No posts yet. Create your first post in <code>src/content/blog/</code></p>
+      ) : (
+        <div class="posts-list">
+          {posts.map((post, i) => {
+            const readingTime = estimateReadingTime(post.body || '');
+            return (
+              <article class={`post-item ${post.data.pinned ? 'pinned' : ''}`} style={`--fade-delay: ${i * 0.1}s`}>
+                <div class="post-meta">
+                  {post.data.pinned && <span class="pin-badge">Pinned</span>}
+                  <time>{post.data.pubDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>
+                  <span class="meta-sep">·</span>
+                  <span class="reading-time">{readingTime} min read</span>
+                </div>
+                <h3><a href={`/${post.id}`}>{post.data.title}</a></h3>
+                <p>{post.data.description}</p>
+                {post.data.tags.length > 0 && (
+                  <div class="post-tags">
+                    {post.data.tags.map(tag => (
+                      <a href={`/tags/${tag}`} class="post-tag">#{tag}</a>
+                    ))}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  </main>
+
+  <Footer />
+</BaseLayout>
+
+<style>
+  .hero {
+    text-align: center;
+    padding: 3rem 0;
+  }
+
+  .hero h1 {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero-description {
+    font-size: 1.25rem;
+    color: var(--text-secondary);
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  .posts {
+    padding: 2rem 0;
+  }
+
+  .posts h2 {
+    margin-bottom: 1.5rem;
+  }
+
+  .placeholder {
+    color: var(--text-tertiary);
+    text-align: center;
+    padding: 3rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px dashed var(--border-color);
+  }
+
+  .posts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .post-item {
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .post-item.animate {
+    animation: fadeInUp 0.4s ease var(--fade-delay, 0s) both;
+  }
+
+  .post-item:last-child {
+    border-bottom: none;
+  }
+
+  .post-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+  }
+
+  .post-meta time,
+  .reading-time {
+    color: var(--text-tertiary);
+  }
+
+  .meta-sep {
+    color: var(--border-color-hover);
+  }
+
+  .reading-time {
+    white-space: nowrap;
+  }
+
+  .post-item h3 {
+    margin: 0.5rem 0;
+  }
+
+  .post-item h3 a {
+    color: var(--text-primary);
+  }
+
+  .post-item h3 a:hover {
+    color: var(--color-primary);
+  }
+
+  .post-item p {
+    color: var(--text-secondary);
+    margin: 0;
+  }
+
+  .post-tags {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .post-tag {
+    color: var(--color-primary);
+    font-size: 0.875rem;
+  }
+
+  .post-tag:hover {
+    text-decoration: underline;
+  }
+
+  .post-item.pinned {
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 0.5rem;
+  }
+
+  .pin-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    background: var(--color-primary);
+    color: white;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .pin-badge::before {
+    content: '📌';
+    font-size: 0.625rem;
+  }
+</style>
+
+<script>
+  function initHomePage() {
+    let firstBatch = true;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            // Only the on-load batch keeps the index stagger; scroll reveals animate immediately
+            if (!firstBatch) (entry.target as HTMLElement).style.setProperty('--fade-delay', '0s');
+            entry.target.classList.add('animate');
+            observer.unobserve(entry.target);
+          }
+        });
+        firstBatch = false;
+      },
+      { rootMargin: '0px 0px 60px 0px', threshold: 0 }
+    );
+
+    document.querySelectorAll('.post-item').forEach(el => observer.observe(el));
+  }
+
+  document.addEventListener('astro:page-load', initHomePage);
+</script>

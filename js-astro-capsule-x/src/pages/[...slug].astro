@@ -1,0 +1,288 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Navigation from '../components/Navigation.astro';
+import Footer from '../components/Footer.astro';
+import TableOfContents from '../components/TableOfContents.astro';
+import ReadingProgress from '../components/ReadingProgress.astro';
+import { getCollection, render } from 'astro:content';
+import { siteConfig } from '../config';
+import { estimateReadingTime } from '../utils/readingTime';
+
+export async function getStaticPaths() {
+  const posts = (await getCollection('blog'))
+    .filter(post => !post.data.draft)
+    .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+  return posts.map((post, index) => ({
+    params: { slug: post.id },
+    props: {
+      post,
+      prev: index < posts.length - 1 ? posts[index + 1] : null,
+      next: index > 0 ? posts[index - 1] : null,
+    },
+  }));
+}
+
+const { post, prev, next } = Astro.props;
+const { Content, headings } = await render(post);
+const readingTime = estimateReadingTime(post.body || '');
+---
+
+<BaseLayout title={post.data.title + ' - ' + siteConfig.title}>
+  <Navigation />
+  {siteConfig.features?.readingProgress && <ReadingProgress />}
+
+  <main class="post-layout" style="padding-top: 6rem;" transition:name="main">
+    <article class="post">
+      <header class="post-header">
+        <h1>{post.data.title}</h1>
+        <div class="post-meta">
+          {post.data.pinned && <span class="pin-badge">Pinned</span>}
+          <time>{post.data.pubDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>
+          <span class="meta-sep">·</span>
+          <span class="reading-time">{readingTime} min read</span>
+          {post.data.tags.length > 0 && (
+            <div class="post-tags">
+              {post.data.tags.map(tag => (
+                <a href={`/tags/${tag}`} class="post-tag">#{tag}</a>
+              ))}
+            </div>
+          )}
+        </div>
+      </header>
+
+      <div class="post-content">
+        <Content />
+      </div>
+
+      {(prev || next) && (
+        <nav class="post-nav" aria-label="Post navigation">
+          {prev ? (
+            <a href={`/${prev.id}`} class="post-nav-link post-nav-prev">
+              <span class="post-nav-label">← Previous</span>
+              <span class="post-nav-title">{prev.data.title}</span>
+            </a>
+          ) : <div />}
+          {next ? (
+            <a href={`/${next.id}`} class="post-nav-link post-nav-next">
+              <span class="post-nav-label">Next →</span>
+              <span class="post-nav-title">{next.data.title}</span>
+            </a>
+          ) : <div />}
+        </nav>
+      )}
+    </article>
+
+    <aside class="post-sidebar">
+      <TableOfContents headings={headings} variant="desktop" />
+    </aside>
+
+    <TableOfContents headings={headings} variant="mobile" />
+  </main>
+
+  <Footer />
+</BaseLayout>
+
+<style>
+  .post-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 720px) 200px;
+    justify-content: center;
+    gap: 2rem;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    align-items: start;
+  }
+
+  .post {
+    min-width: 0;
+    padding: 2rem 0;
+  }
+
+  .post-sidebar {
+    position: sticky;
+    top: 6rem;
+    padding-top: 2rem;
+  }
+
+  .post-header {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .post-header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .post-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    flex-wrap: wrap;
+  }
+
+  .post-meta time,
+  .reading-time {
+    color: var(--text-tertiary);
+  }
+
+  .meta-sep {
+    color: var(--border-color-hover);
+  }
+
+  .reading-time {
+    white-space: nowrap;
+  }
+
+  .post-tags {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .post-tag {
+    color: var(--color-primary);
+    font-size: 0.875rem;
+  }
+
+  .post-tag:hover {
+    text-decoration: underline;
+  }
+
+  .pin-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    background: var(--color-primary);
+    color: white;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .pin-badge::before {
+    content: '📌';
+    font-size: 0.625rem;
+  }
+
+  .post-content {
+    line-height: 1.8;
+  }
+
+  .post-content :global(h2) {
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+  }
+
+  .post-content :global(h3) {
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .post-content :global(p) {
+    margin-bottom: 1.25rem;
+  }
+
+  .post-content :global(ul),
+  .post-content :global(ol) {
+    margin-bottom: 1.25rem;
+    padding-left: 1.5rem;
+  }
+
+  .post-content :global(li) {
+    margin-bottom: 0.5rem;
+  }
+
+  .post-content :global(blockquote) {
+    border-left: 3px solid var(--color-primary);
+    padding-left: 1rem;
+    margin: 1.5rem 0;
+    color: var(--text-secondary);
+    font-style: italic;
+  }
+
+  .post-content :global(img) {
+    border-radius: 8px;
+    margin: 1.5rem 0;
+  }
+
+  /* Prev / Next Navigation */
+  .post-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .post-nav-link {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 1rem 1.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    text-decoration: none;
+    transition: all var(--transition-fast);
+    min-width: 0;
+  }
+
+  .post-nav-link:hover {
+    border-color: var(--color-primary);
+    background: var(--bg-tertiary);
+  }
+
+  .post-nav-next {
+    text-align: right;
+  }
+
+  .post-nav-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .post-nav-title {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .post-nav-link:hover .post-nav-title {
+    color: var(--color-primary);
+  }
+
+  /* Tablet: hide sidebar, single column */
+  @media (max-width: 1080px) {
+    .post-layout {
+      grid-template-columns: 1fr;
+      max-width: 720px;
+    }
+
+    .post-sidebar {
+      display: none;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .post-nav {
+      grid-template-columns: 1fr;
+    }
+
+    .post-nav-next {
+      text-align: left;
+    }
+  }
+</style>

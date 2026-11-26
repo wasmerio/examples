@@ -1,0 +1,95 @@
+---
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import IssueHead from '../../components/issue/IssueHead.astro';
+import TheCut from '../../components/issue/TheCut.astro';
+import Ledger from '../../components/issue/Ledger.astro';
+import SubscribeForm from '../../components/issue/SubscribeForm.astro';
+import { newsletter, site, ui } from '../../config';
+import { formatDate, getIssues, issueHref, type Issue } from '../../lib/issues';
+
+export async function getStaticPaths() {
+  const issues = await getIssues(); // newest first
+  return issues.map((issue, i) => ({
+    params: { slug: issue.id },
+    props: { issue, newer: issues[i - 1], older: issues[i + 1] },
+  }));
+}
+
+interface Props {
+  issue: Issue;
+  newer?: Issue;
+  older?: Issue;
+}
+const { issue, newer, older } = Astro.props;
+const { title, dek, date, updated, ogImage } = issue.data;
+// cut-plugin already removed the members part, so this renders the free part only
+const { Content } = await render(issue);
+const neighbours = [newer, older].filter((x): x is Issue => !!x);
+const url = new URL(issueHref(issue), Astro.site).href;
+const image = ogImage; // absent: site.defaultOgImage
+---
+
+<Base
+  title={title}
+  description={dek}
+  type="article"
+  image={image}
+  jsonLd={[
+    {
+      '@type': 'BlogPosting',
+      headline: title,
+      description: dek,
+      datePublished: date.toISOString(),
+      dateModified: (updated ?? date).toISOString(),
+      author: { '@type': 'Person', name: site.author },
+      url,
+      isAccessibleForFree: !issue.cut.members,
+    },
+    {
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: ui.archive.title,
+          item: new URL('/archive', Astro.site).href,
+        },
+        { '@type': 'ListItem', position: 2, name: title, item: url },
+      ],
+    },
+  ]}
+>
+  <div class="max-w-wide mx-auto px-4 pt-10">
+    <IssueHead issue={issue} as="h1">
+      <div class="max-w-content">
+        {updated && (
+          <p class="font-ui text-muted mt-1 text-[0.9375rem]">
+            {ui.updated} <time datetime={updated.toISOString()}>{formatDate(updated)}</time>
+          </p>
+        )}
+        <div class="prose mt-8">
+          <Content />
+        </div>
+        {issue.cut.members ? (
+          <TheCut cut={issue.cut} />
+        ) : (
+          <section aria-labelledby="next-issue" class="border-foreground mt-12 border-t-[3px] pt-3">
+            <h2 id="next-issue" class="text-xl font-bold">
+              {ui.issue.next}
+            </h2>
+            <p class="mt-1">{ui.issue.cadence(newsletter.cadence)}</p>
+            <div class="mt-4">
+              <SubscribeForm id="end-email" />
+            </div>
+          </section>
+        )}
+        {neighbours.length > 0 && (
+          <nav aria-label={ui.issue.more} class="mt-16">
+            <Ledger issues={neighbours} />
+          </nav>
+        )}
+      </div>
+    </IssueHead>
+  </div>
+</Base>

@@ -1,0 +1,75 @@
+---
+// IMPORTS
+import { type CollectionEntry, getCollection } from "astro:content";
+import { type GetStaticPathsOptions } from "astro";
+import BlogRollLayout from "@layouts/BlogRollLayout.astro";
+import CategoriesPreview from "@components/CategoriesPreview.astro";
+import BlogEntryPreview from "@components/BlogEntryPreview.astro";
+import { languages } from "@i18n/ui";
+
+// Actions
+// Quick type for blog entries
+type Post = CollectionEntry<"blog">;
+
+// Dynamic routing (this was hard!) (currently only gives blog categories)
+export async function getStaticPaths({ paginate }: GetStaticPathsOptions) {
+	// Getting all posts and sort them
+	const posts: CollectionEntry<"blog">[] = (await getCollection("blog")).sort(
+		(a: CollectionEntry<"blog">, b: CollectionEntry<"blog">) =>
+			b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+	);
+
+	//Get all languages
+	const langs = Object.keys(languages);
+
+	// Split tags into languages
+	let splitTags: string[][] = [];
+	langs.map((lang) => {
+		const tags = [
+			...new Set(
+				posts
+					.filter((post) => post.slug.startsWith(lang))
+					.map((post) => post.data.tags)
+					.flat(),
+			),
+		];
+
+		splitTags.push(tags);
+	});
+
+	// Generate routes per language per tag group
+	let i = -1; // Starts on -1 so counter can be updated at the top
+
+	// Map by language
+	return langs.flatMap((lang) => {
+		i = i + 1;
+
+		// Map by tag group
+		return splitTags[i].flatMap((tag) => {
+			// Filter posts by tag (itself part of a group belonging to specific language)
+			const filteredPosts = posts.filter((post) =>
+				post.data.tags.includes(tag),
+			);
+
+			return paginate(filteredPosts, {
+				params: { lang: lang, tag },
+				props: { splitTags },
+				pageSize: 3,
+			});
+		});
+	});
+}
+
+const { splitTags, page } = Astro.props;
+const locale = Astro.params.lang;
+const current = page.url.current.split("/").slice(-1)[0];
+---
+
+<BlogRollLayout page={page} tags={splitTags} locale={locale} section="Tags">
+	<CategoriesPreview tags={splitTags} locale={locale} current={current}/>
+	<section class="blogroll">
+		<ul>
+			{page.data.map((post: Post) => <BlogEntryPreview post={post} locale={locale} />)}
+		</ul>
+	</section>
+</BlogRollLayout>

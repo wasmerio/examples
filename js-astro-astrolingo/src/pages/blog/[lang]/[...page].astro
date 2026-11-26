@@ -1,0 +1,71 @@
+---
+// IMPORTS
+// Astro
+import { type CollectionEntry, getCollection } from "astro:content";
+import { type GetStaticPathsOptions } from "astro";
+
+// Modules
+import CategoriesPreview from "@components/CategoriesPreview.astro";
+import BlogEntryPreview from "@components/BlogEntryPreview.astro";
+import BlogRollLayout from "@layouts/BlogRollLayout.astro";
+
+// Config & content
+import { languages, defaultLang } from "@i18n/ui";
+
+// TYPES
+import type { Multi } from "@types";
+import Pagination from "@components/Pagination.astro";
+type Post = CollectionEntry<"blog">;
+
+// FUNCTIONS & ACTIONS
+// Identify page language
+const locale: keyof Multi = Astro.currentLocale || defaultLang;
+
+// Dynamic routing with pagination
+export async function getStaticPaths({ paginate }: GetStaticPathsOptions) {
+	
+	// Get all posts and sort them
+	const posts: CollectionEntry<"blog">[] = (await getCollection("blog")).sort(
+		(a: CollectionEntry<"blog">, b: CollectionEntry<"blog">) =>
+			b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+	);
+
+	let splitTags: string[][] = [];
+	Object.keys(languages).map((locale) => {
+		const tags = [
+			...new Set(
+				posts
+					.filter((post) => post.slug.startsWith(locale))
+					.map((post) => post.data.tags)
+					.flat(),
+			),
+		];
+		splitTags.push(tags);
+	});
+
+	// Return posts by locale, paginated
+	return Object.keys(languages).flatMap((lang) => {
+		const filteredPosts = posts.filter(
+			(a: { slug: string }) => a.slug.split("/")[0] === lang,
+		);
+
+		return paginate(filteredPosts, {
+			params: { lang },
+			props: { splitTags },
+			pageSize: 3,
+		});
+	});
+}
+
+const { splitTags, page } = Astro.props;
+---
+
+<BlogRollLayout page={page} tags={splitTags} locale={locale} section="Blog">
+	<CategoriesPreview tags={splitTags} locale={locale} />
+	<section class="blogroll">
+		<ul>
+			{page.data.map((post: Post) => <BlogEntryPreview post={post} />)}
+		</ul>
+	</section>
+	<Pagination prevUrl={page.url.prev} nextUrl={page.url.next} />
+</BlogRollLayout>

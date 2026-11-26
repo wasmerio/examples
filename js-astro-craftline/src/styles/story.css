@@ -1,0 +1,839 @@
+/* ------------------------------------------------------------------
+   Home page scroll story (src/components/story/*)
+
+   Default styles = the static fallback: the scene shows chapter 1 (a calm house)
+   and each caption gets a small picture. The pinned, scroll-driven version only
+   turns on when the browser supports view timelines + timeline-scope AND the
+   visitor has not asked for reduced motion.
+
+   Every scroll-driven rule uses longhand properties: a minifier may fold
+   "animation" + "animation-timeline" into one shorthand that Chrome rejects.
+------------------------------------------------------------------ */
+
+.story {
+  --sc-line: #c6d2e5;
+  --sc-wall: #14223c;
+  --sc-water: #7cc4ff;
+  --sc-pipe: color-mix(in oklab, var(--accent) 72%, white);
+  --sc-pipe-new: color-mix(in oklab, var(--accent) 40%, white);
+}
+
+/* ---------- layout (fallback) ---------- */
+.story-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 3rem;
+  padding-block: 2.5rem 4rem;
+}
+.story-frame {
+  width: 100%;
+  max-width: 600px;
+  margin-inline: auto;
+  aspect-ratio: 1;
+  border-radius: 2rem;
+  overflow: clip;
+  box-shadow: 0 40px 80px -48px hsl(var(--shadow) / 0.6);
+}
+.story-frame {
+  position: relative;
+  container-type: size;
+}
+
+/* ---------- scene layers: sky (SVG) · 3D house (CSS) · overlays (SVG) ----------
+   All three share one coordinate system: a 1200×600 canvas, anchored right and centred
+   vertically. One canvas unit is --u px, so a canvas point (x, y) sits at
+   left = 100cqw − (600 − x)·u, top = 50cqh − (300 − y)·u. By default the canvas covers the
+   frame (like preserveAspectRatio "slice"); the SVGs are sized in the same units, and the
+   sky and ground are drawn beyond the canvas for frames that need more of them. */
+.sc-layers {
+  --u: max(100cqw / 1200, 100cqh / 600);
+  position: absolute;
+  inset: 0;
+  perspective: calc(1300 * var(--u));
+  perspective-origin: 50% 20%;
+}
+.sc-svg {
+  position: absolute;
+  right: 0;
+  top: calc(50cqh - 300 * var(--u));
+  display: block;
+  width: calc(1200 * var(--u));
+  height: calc(600 * var(--u));
+  overflow: visible;
+}
+.sc-front {
+  pointer-events: none;
+}
+/* The phone hero keeps its network to the right edge, away from the text. */
+.net-fade {
+  mask-image: linear-gradient(100deg, transparent 35%, #000 92%);
+}
+
+/* The house: 300 wide, 216 tall walls, 114 gable, 200 deep (canvas units). The front face
+   sits on the screen plane (z = 0) exactly where the flat drawing was; the box goes back. */
+.h3d {
+  position: absolute;
+  left: calc(100cqw - 370 * var(--u));
+  top: calc(50cqh + 62 * var(--u));
+  transform: translateZ(calc(-100 * var(--u)));
+}
+.h3d,
+.h3d-r {
+  transform-style: preserve-3d;
+}
+.h3d-r {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.h3d-face {
+  position: absolute;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.h3d-face > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.h3d-front,
+.h3d-back {
+  left: calc(-150 * var(--u));
+  top: calc(-222 * var(--u));
+  width: calc(300 * var(--u));
+  height: calc(330 * var(--u));
+}
+.h3d-front {
+  transform: translateZ(calc(100 * var(--u)));
+}
+.h3d-back {
+  transform: rotateY(180deg) translateZ(calc(100 * var(--u)));
+}
+.h3d-left,
+.h3d-right {
+  left: calc(-100 * var(--u));
+  top: calc(-108 * var(--u));
+  width: calc(200 * var(--u));
+  height: calc(216 * var(--u));
+}
+.h3d-left {
+  transform: rotateY(-90deg) translateZ(calc(150 * var(--u)));
+}
+.h3d-right {
+  transform: rotateY(90deg) translateZ(calc(150 * var(--u)));
+}
+.h3d-floor {
+  left: calc(-150 * var(--u));
+  top: calc(-100 * var(--u));
+  width: calc(300 * var(--u));
+  height: calc(200 * var(--u));
+  background: #0a1426;
+  transform: rotateX(-90deg) translateZ(calc(108 * var(--u)));
+}
+/* Roof: two planes hinged on the ridge (gable peak, y −222), slope 37.2°, 16 units of eave. */
+.h3d-roof {
+  left: calc(-106 * var(--u));
+  top: calc(-116 * var(--u));
+  width: calc(212 * var(--u));
+  height: calc(232 * var(--u));
+  border: calc(3 * var(--u)) solid var(--sc-line);
+  backface-visibility: visible;
+  -webkit-backface-visibility: visible;
+}
+.h3d-roof-l {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 calc(19 * var(--u)), rgb(198 210 229 / 0.16) 0 calc(20 * var(--u))),
+    #15243f;
+  transform: translateY(calc(-222 * var(--u))) rotateZ(-37.23deg) translateX(calc(-105 * var(--u))) rotateX(90deg);
+}
+.h3d-roof-r {
+  background:
+    repeating-linear-gradient(90deg, transparent 0 calc(19 * var(--u)), rgb(198 210 229 / 0.16) 0 calc(20 * var(--u))),
+    #1e3158;
+  transform: translateY(calc(-222 * var(--u))) rotateZ(37.23deg) translateX(calc(105 * var(--u))) rotateX(90deg);
+}
+.h3d-chimney {
+  transform: translate3d(calc(95 * var(--u)), calc(-169 * var(--u)), calc(-40 * var(--u)));
+}
+.h3d-ch {
+  left: calc(-13 * var(--u));
+  top: calc(-37 * var(--u));
+  width: calc(26 * var(--u));
+  height: calc(74 * var(--u));
+  background: #16264a;
+  border: calc(2.5 * var(--u)) solid var(--sc-line);
+}
+.h3d-ch-front {
+  transform: translateZ(calc(13 * var(--u)));
+}
+.h3d-ch-back {
+  transform: rotateY(180deg) translateZ(calc(13 * var(--u)));
+}
+.h3d-ch-left {
+  background: #101b31;
+  transform: rotateY(-90deg) translateZ(calc(13 * var(--u)));
+}
+.h3d-ch-right {
+  background: #1e3158;
+  transform: rotateY(90deg) translateZ(calc(13 * var(--u)));
+}
+.h3d-ch-top {
+  left: calc(-13 * var(--u));
+  top: calc(-13 * var(--u));
+  width: calc(26 * var(--u));
+  height: calc(26 * var(--u));
+  background: #0b1528;
+  border: calc(2.5 * var(--u)) solid var(--sc-line);
+  transform: rotateX(90deg) translateZ(calc(37 * var(--u)));
+}
+
+/* One fixed three-quarter view: the cutaway faces the viewer, the left wall and the roof
+   show. The house never turns: transforming a preserve-3d subtree while the stage is pinned
+   is what made it jump during scroll. */
+.h3d-pose {
+  transform: rotateY(20deg);
+}
+.story-heading {
+  font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2rem);
+  font-weight: 760;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+.story-chapters ol {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.chapter {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--c-line);
+  border-radius: 1.25rem;
+  background: var(--c-surface);
+}
+.vignette {
+  flex: none;
+  width: 96px;
+  height: auto;
+}
+.chapter-text {
+  min-width: 0;
+}
+@media (min-width: 640px) {
+  .vignette {
+    width: 140px;
+  }
+}
+.vg-t {
+  font-family: inherit;
+  fill: #0f1a2a;
+}
+.vg-small {
+  font-size: 8px;
+  font-weight: 600;
+  fill: #5b6577;
+}
+.vg-price {
+  font-size: 16px;
+  font-weight: 800;
+}
+.chapter-time {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+}
+.chapter-title {
+  margin-top: 0.25rem;
+  font-size: 1.1875rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+.chapter-body {
+  margin-top: 0.375rem;
+  color: var(--c-muted);
+  line-height: 1.6;
+}
+
+@media (min-width: 1024px) {
+  .story-grid {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    column-gap: 4rem;
+    align-items: center;
+    padding-block: 4rem 6rem;
+  }
+  .story-hero {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .story-stage {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .story-chapters {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .story-chapters ol {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .chapter {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .vignette {
+    width: 100%;
+  }
+}
+
+/* ---------- scene text and base state ---------- */
+.sc-t {
+  font-family: inherit;
+  fill: #0f1a2a;
+}
+.sc-t-title {
+  font-size: 17px;
+  font-weight: 800;
+}
+.sc-t-field {
+  font-size: 12.5px;
+  font-weight: 500;
+  fill: #5b6577;
+}
+.sc-t-btn {
+  font-size: 13.5px;
+  font-weight: 700;
+  fill: var(--accent-text);
+}
+.sc-quote .sc-t-btn {
+  fill: #fff;
+}
+.sc-t-clock {
+  font-size: 26px;
+  font-weight: 700;
+  fill: #fff;
+}
+.sc-t-app {
+  font-size: 10px;
+  font-weight: 600;
+  fill: #5b6577;
+}
+.sc-t-ntitle {
+  font-size: 13px;
+  font-weight: 800;
+}
+.sc-t-nbody {
+  font-size: 12px;
+  font-weight: 500;
+  fill: #3c4657;
+}
+.sc-t-van {
+  font-size: 12px;
+  font-weight: 800;
+  fill: #0f1a2a;
+}
+.sc-t-chip {
+  font-size: 14.5px;
+  font-weight: 700;
+}
+.sc-t-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  fill: #5b6577;
+}
+.sc-t-price {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.sc-t-badge {
+  font-size: 13px;
+  font-weight: 700;
+  fill: var(--accent);
+}
+/* Things that only exist later in the story start hidden (= chapter 1 picture). */
+.story .hide {
+  opacity: 0;
+}
+.sc-form,
+.sc-form-out,
+.sc-quote,
+.sc-quote-out,
+.sc-done,
+.sc-press,
+.sc-badge,
+.sc-star,
+.sc-puddle,
+.sc-puddle-out,
+.sc-wheel,
+.sc-wiggle,
+.sc-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* ---------- ambient motion (time-based, small) ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .sc-twinkle {
+    animation: sc-twinkle 3.2s ease-in-out infinite;
+    animation-delay: var(--d, 0s);
+  }
+  .sc-flowing {
+    animation: flow 1.6s linear infinite;
+  }
+  .sc-drip {
+    animation: sc-drip 1.35s cubic-bezier(0.55, 0, 1, 0.45) infinite;
+    animation-delay: var(--d, 0s);
+  }
+  .sc-pulse {
+    animation: sc-pulse 1.6s ease-in-out infinite;
+  }
+  .sc-wiggle {
+    animation: sc-wiggle 0.9s ease-in-out infinite;
+  }
+  .sc-flame {
+    animation: glow 2.4s ease-in-out infinite;
+  }
+}
+@keyframes sc-twinkle {
+  50% {
+    opacity: 0.25;
+  }
+}
+@keyframes sc-drip {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+@keyframes sc-pulse {
+  50% {
+    opacity: 0.45;
+    transform: scale(0.9);
+  }
+}
+@keyframes sc-wiggle {
+  50% {
+    transform: rotate(-16deg);
+  }
+}
+
+/* ---------- the pinned, scroll-driven story ---------- */
+@supports (animation-timeline: view()) and (timeline-scope: --a) {
+  @media (prefers-reduced-motion: no-preference) {
+    .story-grid {
+      timeline-scope: --ch1, --ch2, --ch3, --ch4, --ch5, --ch6;
+      /* Where in each caption's pass the scene changes (tuned per layout below). */
+      --ch-range: cover 5% cover 27%;
+      align-items: start;
+      padding-bottom: 2rem;
+    }
+    .vignette {
+      display: none;
+    }
+    .story-stage {
+      position: sticky;
+      top: 4rem;
+      z-index: 2;
+      /* never taller than the square scene needs */
+      height: min(55svh, calc(100vw - 0.5rem));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-block: 0.75rem;
+      background: var(--c-bg);
+      /* paint the page background into the gutters so captions pass underneath cleanly */
+      box-shadow: 0 0 0 100vmax var(--c-bg);
+      clip-path: inset(0 -100vmax -2.5rem);
+    }
+    .story-stage::after {
+      content: "";
+      position: absolute;
+      inset-inline: 0;
+      top: 100%;
+      height: 2.5rem;
+      background: linear-gradient(var(--c-bg), transparent);
+    }
+    /* square, as large as the pinned area allows */
+    .story-frame {
+      width: min(100%, calc(55svh - 1.5rem));
+    }
+    .story-chapters ol {
+      gap: 0;
+      margin-top: 0;
+    }
+    .chapter {
+      min-height: 45svh;
+      padding: 0;
+      border: 0;
+      background: none;
+    }
+    .chapter-time {
+      font-size: 0.875rem;
+    }
+    .chapter-title {
+      font-size: clamp(1.5rem, 1.2rem + 1.4vw, 2.25rem);
+      font-weight: 760;
+      letter-spacing: -0.03em;
+      line-height: 1.12;
+    }
+    .chapter-body {
+      max-width: 32rem;
+      font-size: 1.0625rem;
+    }
+    .chapter-1 {
+      view-timeline-name: --ch1;
+    }
+    .chapter-2 {
+      view-timeline-name: --ch2;
+    }
+    .chapter-3 {
+      view-timeline-name: --ch3;
+    }
+    .chapter-4 {
+      view-timeline-name: --ch4;
+    }
+    .chapter-5 {
+      view-timeline-name: --ch5;
+    }
+    .chapter-6 {
+      view-timeline-name: --ch6;
+    }
+
+    @media (min-width: 640px) {
+      .story-stage {
+        top: 4.5rem;
+        height: min(55svh, calc(100vw - 1.5rem));
+      }
+    }
+
+    @media (min-width: 1024px) {
+      /* The scene is the background of the whole story: container-wide, pinned under the
+         header, with the hero text and then the chapter captions passing over its night sky. */
+      .story-grid {
+        --ch-range: cover 10% cover 60%;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        column-gap: 0;
+        padding-block: 1rem 0;
+      }
+      .story-stage {
+        grid-column: 1 / -1;
+        grid-row: 1 / span 2;
+        align-self: start;
+        top: 5rem;
+        height: calc(100svh - 6rem);
+        padding: 0;
+        z-index: 0;
+        background: none;
+        box-shadow: none;
+        clip-path: none;
+      }
+      .story-stage::after {
+        display: none;
+      }
+      .story-frame {
+        width: 100%;
+        max-width: none;
+        height: 100%;
+        aspect-ratio: auto;
+      }
+      /* On tall-ish wide frames (e.g. 1920×1080) don't scale past the point where the house
+         drifts under the text: keep its centre (x 230) at 62% of the width or further right. */
+      .sc-layers {
+        --u: min(max(100cqw / 1200, 100cqh / 600), 100cqw / 974);
+      }
+      .story-hero,
+      .story-chapters {
+        grid-column: 1;
+        position: relative;
+        z-index: 1;
+        padding-inline: clamp(2rem, 4vw, 4rem);
+        color: #eef2f8;
+      }
+      .story-hero {
+        grid-row: 1;
+        min-height: calc(100svh - 6rem);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding-block: 2rem;
+      }
+      .story-hero .text-muted,
+      .story-hero .lead,
+      .story-chapters .chapter-body {
+        color: rgb(238 242 248 / 0.78);
+      }
+      .story-hero .text-accent-ink,
+      .story-chapters .chapter-time {
+        color: var(--sc-pipe);
+      }
+      .story-hero .btn-secondary {
+        color: #eef2f8;
+        background: rgb(255 255 255 / 0.08);
+        border-color: rgb(255 255 255 / 0.22);
+      }
+      .story-chapters {
+        grid-row: 2;
+      }
+      .story-heading {
+        color: rgb(238 242 248 / 0.6);
+      }
+      .story-chapters ol {
+        display: block;
+      }
+      .chapter {
+        min-height: 60svh;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .chapter-title {
+        font-size: clamp(2rem, 0.9rem + 2.4vw, 3.25rem);
+      }
+      .chapter-body {
+        max-width: 30rem;
+        font-size: 1.1875rem;
+      }
+    }
+
+    /* The caption being read is bright, its neighbours dim, so the column never looks empty. */
+    .chapter-text > * {
+      animation-name: k-caption-focus;
+      animation-timing-function: linear;
+      animation-fill-mode: both;
+      animation-range: cover 15% cover 85%;
+    }
+    .chapter-1 .chapter-text > * { animation-timeline: --ch1; }
+    .chapter-2 .chapter-text > * { animation-timeline: --ch2; }
+    .chapter-3 .chapter-text > * { animation-timeline: --ch3; }
+    .chapter-4 .chapter-text > * { animation-timeline: --ch4; }
+    .chapter-5 .chapter-text > * { animation-timeline: --ch5; }
+    .chapter-6 .chapter-text > * { animation-timeline: --ch6; }
+
+    /* Shared settings for everything the chapters drive. */
+    .sc-light-a, .sc-light-b,
+    .sc-lamp, .sc-flow-a, .sc-crack, .sc-drips, .sc-puddle, .sc-warn,
+    .sc-form, .sc-field1, .sc-field2, .sc-press, .sc-send, .sc-sent, .sc-phone, .sc-trail, .sc-dot, .sc-screen, .sc-notif,
+    .sc-form-out, .sc-trail-out, .sc-phone-out, .sc-route, .sc-pin, .sc-van, .sc-wheel, .sc-beam, .sc-chip,
+    .sc-chip-out, .sc-route-out, .sc-quote, .sc-approve, .sc-approved, .sc-wrench, .sc-wrench-out, .sc-drips-out, .sc-warn-out,
+    .sc-oldseg, .sc-newseg, .sc-flow-b, .sc-puddle-out,
+    .sc-quote-out, .sc-done, .sc-check-ring, .sc-check-mark, .sc-badge, .sc-star, .sc-dawn, .sc-sun, .sc-night, .sc-lamp-out {
+      animation-timing-function: linear;
+      animation-fill-mode: both;
+      animation-range: var(--ch-range);
+    }
+
+    /* 1 · lights go out */
+    .sc-light-a { animation-name: k-out-25-50; animation-timeline: --ch1; }
+    .sc-light-b { animation-name: k-out-45-75; animation-timeline: --ch1; }
+
+    /* 2 · the leak */
+    .sc-lamp { animation-name: k-in-0-20; animation-timeline: --ch2; }
+    .sc-flow-a { animation-name: k-out-30-50; animation-timeline: --ch2; }
+    .sc-crack { animation-name: k-in-25-40; animation-timeline: --ch2; }
+    .sc-drips { animation-name: k-in-30-45; animation-timeline: --ch2; }
+    .sc-puddle { animation-name: k-puddle; animation-timeline: --ch2; }
+    .sc-warn { animation-name: k-in-55-80; animation-timeline: --ch2; }
+
+    /* 3 · the form is sent and lands on the plumber's phone */
+    .sc-form { animation-name: k-card-in; animation-timeline: --ch3; }
+    .sc-field1 { animation-name: k-in-12-22; animation-timeline: --ch3; }
+    .sc-field2 { animation-name: k-in-20-30; animation-timeline: --ch3; }
+    .sc-press { animation-name: k-press; animation-timeline: --ch3; }
+    .sc-send { animation-name: k-out-40-44; animation-timeline: --ch3; }
+    .sc-sent { animation-name: k-in-40-44; animation-timeline: --ch3; }
+    .sc-phone { animation-name: k-phone-in; animation-timeline: --ch3; }
+    .sc-trail { animation-name: k-trail; animation-timeline: --ch3; }
+    .sc-dot { animation-name: k-dot; animation-timeline: --ch3; }
+    .sc-screen { animation-name: k-in-76-84; animation-timeline: --ch3; }
+    .sc-notif { animation-name: k-notif; animation-timeline: --ch3; }
+
+    /* 4 · the van drives over */
+    .sc-form-out { animation-name: k-card-out; animation-timeline: --ch4; }
+    .sc-trail-out { animation-name: k-out-0-25; animation-timeline: --ch4; }
+    .sc-phone-out { animation-name: k-phone-out; animation-timeline: --ch4; }
+    .sc-route { animation-name: k-route; animation-timeline: --ch4; }
+    .sc-pin { animation-name: k-in-38-48; animation-timeline: --ch4; }
+    .sc-van { animation-name: k-drive; animation-timeline: --ch4; }
+    .sc-wheel { animation-name: k-wheel; animation-timeline: --ch4; }
+    .sc-beam { animation-name: k-beam; animation-timeline: --ch4; }
+    .sc-chip { animation-name: k-chip; animation-timeline: --ch4; }
+
+    /* 5 · fixed price, then the repair */
+    .sc-chip-out { animation-name: k-out-0-15; animation-timeline: --ch5; }
+    .sc-route-out { animation-name: k-out-0-20; animation-timeline: --ch5; }
+    .sc-quote { animation-name: k-card-in; animation-timeline: --ch5; }
+    .sc-approve { animation-name: k-out-22-26; animation-timeline: --ch5; }
+    .sc-approved { animation-name: k-in-22-26; animation-timeline: --ch5; }
+    .sc-wrench { animation-name: k-in-20-28; animation-timeline: --ch5; }
+    .sc-wrench-out { animation-name: k-out-72-80; animation-timeline: --ch5; }
+    .sc-drips-out { animation-name: k-out-25-35; animation-timeline: --ch5; }
+    .sc-warn-out { animation-name: k-out-30-40; animation-timeline: --ch5; }
+    .sc-oldseg { animation-name: k-seg-out; animation-timeline: --ch5; }
+    .sc-newseg { animation-name: k-seg-in; animation-timeline: --ch5; }
+    .sc-flow-b { animation-name: k-in-58-70; animation-timeline: --ch5; }
+    .sc-puddle-out { animation-name: k-dry; animation-timeline: --ch5; }
+
+    /* 6 · done: check, guarantee, stars, sunrise */
+    .sc-quote-out { animation-name: k-card-out; animation-timeline: --ch6; }
+    .sc-done { animation-name: k-card-in; animation-timeline: --ch6; }
+    .sc-check-ring { animation-name: k-ring; animation-timeline: --ch6; }
+    .sc-check-mark { animation-name: k-mark; animation-timeline: --ch6; }
+    .sc-badge { animation-name: k-badge; animation-timeline: --ch6; }
+    .sc-star { animation-timeline: --ch6; }
+    .sc-star-1 { animation-name: k-star-1; }
+    .sc-star-2 { animation-name: k-star-2; }
+    .sc-star-3 { animation-name: k-star-3; }
+    .sc-star-4 { animation-name: k-star-4; }
+    .sc-star-5 { animation-name: k-star-5; }
+    .sc-dawn { animation-name: k-in-10-70; animation-timeline: --ch6; }
+    .sc-sun { animation-name: k-sunrise; animation-timeline: --ch6; }
+    .sc-night { animation-name: k-out-10-60; animation-timeline: --ch6; }
+    .sc-lamp-out { animation-name: k-out-0-30; animation-timeline: --ch6; }
+  }
+}
+
+/* ---------- keyframes (names say what happens and where, in % of the chapter range) ---------- */
+@keyframes k-out-25-50 { 0%, 25% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes k-out-45-75 { 0%, 45% { opacity: 1; } 75%, 100% { opacity: 0; } }
+@keyframes k-out-30-50 { 0%, 30% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes k-out-40-44 { 0%, 40% { opacity: 1; } 44%, 100% { opacity: 0; } }
+@keyframes k-out-0-15 { 0% { opacity: 1; } 15%, 100% { opacity: 0; } }
+@keyframes k-out-0-20 { 0% { opacity: 1; } 20%, 100% { opacity: 0; } }
+@keyframes k-out-0-25 { 0% { opacity: 1; } 25%, 100% { opacity: 0; } }
+@keyframes k-out-0-30 { 0% { opacity: 1; } 30%, 100% { opacity: 0; } }
+@keyframes k-out-22-26 { 0%, 22% { opacity: 1; } 26%, 100% { opacity: 0; } }
+@keyframes k-out-25-35 { 0%, 25% { opacity: 1; } 35%, 100% { opacity: 0; } }
+@keyframes k-out-30-40 { 0%, 30% { opacity: 1; } 40%, 100% { opacity: 0; } }
+@keyframes k-out-72-80 { 0%, 72% { opacity: 1; } 80%, 100% { opacity: 0; } }
+@keyframes k-out-10-60 { 0%, 10% { opacity: 1; } 60%, 100% { opacity: 0; } }
+
+@keyframes k-in-0-20 { 0% { opacity: 0; } 20%, 100% { opacity: 1; } }
+@keyframes k-in-12-22 { 0%, 12% { opacity: 0; } 22%, 100% { opacity: 1; } }
+@keyframes k-in-20-28 { 0%, 20% { opacity: 0; } 28%, 100% { opacity: 1; } }
+@keyframes k-in-20-30 { 0%, 20% { opacity: 0; } 30%, 100% { opacity: 1; } }
+@keyframes k-in-22-26 { 0%, 22% { opacity: 0; } 26%, 100% { opacity: 1; } }
+@keyframes k-in-25-40 { 0%, 25% { opacity: 0; } 40%, 100% { opacity: 1; } }
+@keyframes k-in-30-45 { 0%, 30% { opacity: 0; } 45%, 100% { opacity: 1; } }
+@keyframes k-in-38-48 { 0%, 38% { opacity: 0; } 48%, 100% { opacity: 1; } }
+@keyframes k-in-40-44 { 0%, 40% { opacity: 0; } 44%, 100% { opacity: 1; } }
+@keyframes k-in-55-80 { 0%, 55% { opacity: 0; } 80%, 100% { opacity: 1; } }
+@keyframes k-in-58-70 { 0%, 58% { opacity: 0; } 70%, 100% { opacity: 1; } }
+@keyframes k-in-76-84 { 0%, 76% { opacity: 0; } 84%, 100% { opacity: 1; } }
+@keyframes k-in-10-70 { 0%, 10% { opacity: 0; } 70%, 100% { opacity: 1; } }
+
+@keyframes k-puddle {
+  0%, 40% { opacity: 0; transform: scaleX(0.15); }
+  52% { opacity: 1; }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes k-card-in {
+  0% { opacity: 0; transform: translateY(18px) scale(0.94); }
+  16%, 100% { opacity: 1; transform: none; }
+}
+@keyframes k-card-out {
+  0% { opacity: 1; transform: none; }
+  18%, 100% { opacity: 0; transform: translateY(-12px) scale(0.96); }
+}
+@keyframes k-press {
+  0%, 36% { transform: none; }
+  40% { transform: scale(0.93); }
+  44%, 100% { transform: none; }
+}
+@keyframes k-phone-in {
+  0%, 22% { opacity: 0; transform: translateY(24px); }
+  36%, 100% { opacity: 1; transform: none; }
+}
+@keyframes k-phone-out {
+  0%, 35% { opacity: 1; transform: none; }
+  60%, 100% { opacity: 0; transform: translateY(-16px); }
+}
+@keyframes k-trail {
+  0%, 44% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 1; }
+  78%, 100% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+}
+@keyframes k-dot {
+  0%, 44% { opacity: 0; stroke-dashoffset: 0; }
+  47% { opacity: 1; }
+  75% { opacity: 1; }
+  78%, 100% { opacity: 0; stroke-dashoffset: -1; }
+}
+@keyframes k-notif {
+  0%, 80% { opacity: 0; transform: translateY(-14px); }
+  92%, 100% { opacity: 1; transform: none; }
+}
+@keyframes k-route {
+  0%, 8% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 1; }
+  38%, 100% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+}
+@keyframes k-drive {
+  0%, 30% { opacity: 1; transform: translateX(260px); animation-timing-function: cubic-bezier(0.25, 0.6, 0.3, 1); }
+  88%, 100% { opacity: 1; transform: none; }
+}
+@keyframes k-wheel {
+  0%, 30% { transform: rotate(1060deg); animation-timing-function: cubic-bezier(0.25, 0.6, 0.3, 1); }
+  88%, 100% { transform: rotate(0deg); }
+}
+@keyframes k-beam {
+  0%, 28% { opacity: 0; }
+  36%, 80% { opacity: 1; }
+  95%, 100% { opacity: 0; }
+}
+@keyframes k-chip {
+  0%, 55% { opacity: 0; transform: translateY(10px); }
+  70%, 100% { opacity: 1; transform: none; }
+}
+@keyframes k-seg-out {
+  0%, 30% { opacity: 1; transform: none; }
+  42%, 100% { opacity: 0; transform: translateY(16px); }
+}
+@keyframes k-seg-in {
+  0%, 42% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 1; }
+  58%, 100% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+}
+@keyframes k-dry {
+  0%, 62% { opacity: 1; transform: none; }
+  96%, 100% { opacity: 0; transform: scaleX(0.3); }
+}
+@keyframes k-ring {
+  0%, 14% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 1; }
+  38%, 100% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+}
+@keyframes k-mark {
+  0%, 34% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 1; }
+  50%, 100% { opacity: 1; stroke-dasharray: 1 1; stroke-dashoffset: 0; }
+}
+@keyframes k-badge {
+  0%, 46% { opacity: 0; transform: scale(0.85); }
+  58%, 100% { opacity: 1; transform: none; }
+}
+@keyframes k-star-1 { 0%, 58% { opacity: 0; transform: scale(0.3); } 64%, 100% { opacity: 1; transform: none; } }
+@keyframes k-star-2 { 0%, 65% { opacity: 0; transform: scale(0.3); } 71%, 100% { opacity: 1; transform: none; } }
+@keyframes k-star-3 { 0%, 72% { opacity: 0; transform: scale(0.3); } 78%, 100% { opacity: 1; transform: none; } }
+@keyframes k-star-4 { 0%, 79% { opacity: 0; transform: scale(0.3); } 85%, 100% { opacity: 1; transform: none; } }
+@keyframes k-star-5 { 0%, 86% { opacity: 0; transform: scale(0.3); } 92%, 100% { opacity: 1; transform: none; } }
+@keyframes k-sunrise {
+  0%, 10% { opacity: 0; transform: translateY(70px); }
+  50% { opacity: 1; }
+  85%, 100% { opacity: 1; transform: none; }
+}
+
+.story-frame {
+  box-shadow: 0 0 0 1px var(--c-line);
+}
+
+@keyframes k-caption-focus {
+  0% { opacity: 0.25; }
+  30%, 70% { opacity: 1; }
+  100% { opacity: 0.25; }
+}

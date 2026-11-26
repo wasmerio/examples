@@ -1,0 +1,125 @@
+---
+/**
+ * Ambient background: a network of thin pipe runs with small joints, and slow pulses of water
+ * travelling through some of them. Generated at build time from a fixed seed, so every build
+ * draws the same network. Pure SVG + CSS; static under reduced motion.
+ *
+ * Renders a <g> in whatever coordinate box you give it (x, y, w, h), so it can live inside
+ * the scene SVG (desktop) or in its own <svg> (behind the phone hero).
+ */
+interface Props {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  cols?: number;
+  rows?: number;
+  seed?: number;
+}
+const { x, y, w, h, cols = 7, rows = 5, seed = 7 } = Astro.props;
+
+function rng(a: number) {
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = rng(seed);
+const dx = w / (cols - 1);
+const dy = h / (rows - 1);
+const nodes: { x: number; y: number; on: boolean }[][] = [];
+for (let r = 0; r < rows; r++) {
+  nodes.push([]);
+  for (let c = 0; c < cols; c++) {
+    nodes[r].push({
+      x: Math.round(x + c * dx + (rand() - 0.5) * dx * 0.5),
+      y: Math.round(y + r * dy + (rand() - 0.5) * dy * 0.5),
+      on: rand() > 0.12,
+    });
+  }
+}
+const r1 = (n: number) => Math.round(n);
+// Pipe runs between neighbours: one elbow each, like pipework on a plan.
+const runs: string[] = [];
+for (let r = 0; r < rows; r++) {
+  for (let c = 0; c < cols; c++) {
+    const a = nodes[r][c];
+    if (!a.on) continue;
+    const right = nodes[r][c + 1];
+    const down = nodes[r + 1]?.[c];
+    if (right?.on && rand() > 0.22) {
+      const mx = r1((a.x + right.x) / 2);
+      runs.push(`M${a.x} ${a.y}H${mx}V${right.y}H${right.x}`);
+    }
+    if (down?.on && rand() > 0.45) {
+      const my = r1((a.y + down.y) / 2);
+      runs.push(`M${a.x} ${a.y}V${my}H${down.x}V${down.y}`);
+    }
+  }
+}
+// A few long mains for the pulses: left to right along a row, through every joint.
+const mains = [1, 3]
+  .filter((r) => r < rows)
+  .map((r) => {
+    const row = nodes[r];
+    let d = `M${row[0].x} ${row[0].y}`;
+    for (let c = 1; c < cols; c++) {
+      const a = row[c - 1];
+      const b = row[c];
+      const mx = r1((a.x + b.x) / 2);
+      d += `H${mx}V${b.y}H${b.x}`;
+    }
+    return d;
+  });
+const pulses = [
+  ...mains.map((d, i) => ({ d, dur: 9 + i * 2.5, delay: -i * 3.1 })),
+  ...runs.filter((_, i) => i % 5 === 2).map((d, i) => ({ d, dur: 4.5 + (i % 3) * 1.3, delay: -i * 1.7 })),
+];
+const joints = nodes.flat().filter((n) => n.on);
+---
+
+<g class="pipenet" aria-hidden="true" fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <g stroke="currentColor" stroke-opacity=".16" stroke-width="1.2">
+    {runs.map((d) => <path d={d} />)}
+    {mains.map((d) => <path d={d} stroke-opacity=".24" />)}
+  </g>
+  <g fill="var(--c-bg, #0b0e1c)" stroke="currentColor" stroke-opacity=".4" stroke-width="1.2">
+    {joints.map((n) => <circle cx={n.x} cy={n.y} r="2.6" />)}
+  </g>
+  <g stroke="var(--accent)" stroke-width="2.2">
+    {pulses.map((p) => <path class="pulse" pathLength="1" d={p.d} style={`--dur:${p.dur}s;--delay:${p.delay}s`} />)}
+  </g>
+</g>
+
+<style>
+  .pulse {
+    stroke-dasharray: 0.035 1;
+    stroke-dashoffset: 0.035;
+    opacity: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .pulse {
+      animation: pipenet-pulse var(--dur) linear infinite;
+      animation-delay: var(--delay);
+    }
+  }
+  @keyframes pipenet-pulse {
+    0% {
+      stroke-dashoffset: 0.035;
+      opacity: 0;
+    }
+    6% {
+      opacity: 0.95;
+    }
+    90% {
+      opacity: 0.95;
+    }
+    100% {
+      stroke-dashoffset: -1;
+      opacity: 0;
+    }
+  }
+</style>

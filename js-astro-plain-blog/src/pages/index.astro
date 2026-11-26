@@ -1,0 +1,67 @@
+---
+import { getCollection } from "astro:content";
+import Base from "../layouts/Base.astro";
+import { selectPublished } from "../lib/publication.mjs";
+import { socialIcons } from "../lib/social-icons.mjs";
+import { site } from "../config";
+import { sitePath } from "../lib/paths";
+import HomeIntro from "../content/pages/home.md";
+
+const escapeHtml = (value: string) =>
+  value.replace(
+    /[&<>"]/g,
+    (char) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[char]!,
+  );
+const social = site.social ?? [];
+const socialMarkup = social
+  .map((item, index) => {
+    const separator =
+      index === 0 ? "" : index === social.length - 1 ? "和" : "、";
+    const path = escapeHtml(socialIcons[item.icon] ?? "");
+    return `${separator}<a class="social-link" href="${escapeHtml(item.href)}" rel="noreferrer"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="${path}"/></svg><span>${escapeHtml(item.label)}</span></a>`;
+  })
+  .join("");
+const posts = selectPublished(await getCollection("posts"));
+const years = [...new Set(posts.map((post) => post.data.date.slice(0, 4)))];
+---
+
+<Base title="Home" description={site.description}>
+  <h1 class="home-title">{site.name}</h1>
+  <div class="intro">
+    <HomeIntro />
+    {
+      socialMarkup && (
+        <p>
+          也可以在
+          <span set:html={socialMarkup} />
+          看看。
+        </p>
+      )
+    }
+  </div>
+  {posts.length === 0 && <p>还没有公开文章。</p>}
+  {
+    years.map((year) => (
+      <section
+        class="year-group"
+        data-year={year}
+        aria-label={`${year} 年文章`}
+      >
+        <h2>{year}</h2>
+        <ul class="post-list">
+          {posts
+            .filter((post) => post.data.date.startsWith(year))
+            .map((post) => (
+              <li>
+                <a href={sitePath(`blog/${post.id}/`)}>{post.data.title}</a>
+                <time datetime={post.data.date}>
+                  {post.data.date.slice(5).replace("-", "/")}
+                </time>
+              </li>
+            ))}
+        </ul>
+      </section>
+    ))
+  }
+</Base>

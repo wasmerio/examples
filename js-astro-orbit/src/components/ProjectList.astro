@@ -1,0 +1,147 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { withBase } from "../config";
+
+type Props = {
+  projects: CollectionEntry<"projects">[];
+};
+
+const { projects } = Astro.props;
+---
+
+<project-deck class="project-deck">
+  {projects.map((project, index) => (
+    <article class="project-window" data-project-window style={`--window-index:${index}`}>
+      <header class="project-window__bar">
+        <span class="project-window__lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>{String(project.data.order).padStart(2, "0")} / {project.data.category}</span>
+        <a href={project.data.repo} target="_blank" rel="noreferrer" aria-label={`Open ${project.data.title} public repository`}>Repository ↗</a>
+      </header>
+      <div class="project-window__body">
+        <div>
+          <p class="font-mono text-xs uppercase text-accent">{project.data.category}</p>
+          <h3><a href={withBase(`/work/${project.id}/`)}>{project.data.title}</a></h3>
+        </div>
+        <p>{project.data.summary}</p>
+        <strong>{project.data.outcome}</strong>
+        <ul aria-label={`${project.data.title} technologies`}>
+          {project.data.stack.map((item) => <li>{item}</li>)}
+        </ul>
+      </div>
+    </article>
+  ))}
+</project-deck>
+
+<script>
+  class ProjectDeckElement extends HTMLElement {
+    controller?: AbortController;
+
+    connectedCallback() {
+      this.controller?.abort();
+      const controller = new AbortController();
+      this.controller = controller;
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+      this.querySelectorAll<HTMLElement>("[data-project-window]").forEach((projectWindow) => {
+        projectWindow.addEventListener("pointermove", (event) => {
+          if (reducedMotion.matches || window.innerWidth < 768) return;
+          const bounds = projectWindow.getBoundingClientRect();
+          const x = (event.clientX - bounds.left) / bounds.width - 0.5;
+          const y = (event.clientY - bounds.top) / bounds.height - 0.5;
+          projectWindow.style.setProperty("--window-rx", `${y * -4}deg`);
+          projectWindow.style.setProperty("--window-ry", `${x * 5}deg`);
+          projectWindow.style.setProperty("--window-glow-x", `${(x + 0.5) * 100}%`);
+          projectWindow.style.setProperty("--window-glow-y", `${(y + 0.5) * 100}%`);
+        }, { signal: controller.signal });
+        projectWindow.addEventListener("pointerleave", () => {
+          projectWindow.style.removeProperty("--window-rx");
+          projectWindow.style.removeProperty("--window-ry");
+        }, { signal: controller.signal });
+      });
+    }
+
+    disconnectedCallback() {
+      this.controller?.abort();
+    }
+  }
+
+  if (!customElements.get("project-deck")) customElements.define("project-deck", ProjectDeckElement);
+</script>
+
+<style>
+  .project-deck {
+    display: grid;
+    gap: clamp(2rem, 5vw, 5rem);
+    margin-inline: auto;
+    max-width: 94rem;
+    perspective: 1100px;
+  }
+
+  .project-window {
+    --window-rx: 0deg;
+    --window-ry: 0deg;
+    --window-glow-x: 50%;
+    --window-glow-y: 50%;
+    background: var(--theme-raised);
+    border: 1px solid var(--theme-border);
+    box-shadow: 0 2rem 5rem rgb(0 0 0 / 16%);
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+    transform: rotateX(var(--window-rx)) rotateY(var(--window-ry));
+    transform-style: preserve-3d;
+    transition: border-color 180ms ease, box-shadow 180ms ease, transform 160ms ease-out;
+  }
+
+  .project-window::after {
+    background: radial-gradient(circle at var(--window-glow-x) var(--window-glow-y), color-mix(in srgb, var(--theme-accent) 11%, transparent), transparent 34%);
+    content: "";
+    inset: 0;
+    pointer-events: none;
+    position: absolute;
+  }
+
+  .project-window:hover {
+    border-color: color-mix(in srgb, var(--theme-accent) 70%, var(--theme-border));
+    box-shadow: 0 2.5rem 6rem rgb(0 0 0 / 24%);
+  }
+
+  .project-window__bar {
+    align-items: center;
+    background: color-mix(in srgb, var(--theme-surface) 92%, transparent);
+    border-bottom: 1px solid var(--theme-border);
+    color: var(--theme-muted);
+    display: grid;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    gap: 0.75rem;
+    grid-template-columns: auto 1fr auto;
+    min-height: 2.5rem;
+    padding: 0 0.8rem;
+    text-transform: uppercase;
+  }
+
+  .project-window__bar a { color: var(--theme-muted); position: relative; text-decoration: none; z-index: 1; }
+  .project-window__bar a:hover { color: var(--theme-accent); }
+  .project-window__lights { display: flex; gap: 0.25rem; }
+  .project-window__lights i { background: var(--theme-border); border-radius: 50%; height: 0.35rem; width: 0.35rem; }
+  .project-window__lights i:first-child { background: var(--theme-accent); }
+  .project-window__body { display: grid; gap: 1.25rem; min-height: 22rem; padding: clamp(1.5rem, 4vw, 3.25rem); }
+  .project-window__body h3 { font-size: clamp(1.55rem, 3vw, 2.4rem); font-weight: 600; line-height: 1.05; margin-top: 0.4rem; }
+  .project-window__body > p { color: var(--theme-muted); font-size: 0.9rem; line-height: 1.65; max-width: 42rem; }
+  .project-window__body > strong { color: var(--theme-accent); font-size: 0.8rem; font-weight: 500; line-height: 1.55; }
+  .project-window__body ul { display: flex; flex-wrap: wrap; gap: 0.45rem; list-style: none; margin: 0; padding: 0; }
+  .project-window__body li { border: 1px solid var(--theme-border); color: var(--theme-muted); font-family: var(--font-mono); font-size: 0.75rem; padding: 0.4rem 0.55rem; text-transform: uppercase; }
+
+  @media (min-width: 64rem) {
+    .project-deck { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .project-window:nth-child(even) { margin-top: 5rem; }
+    .project-window:nth-child(4n + 1) { transform: translateZ(1rem) rotateX(var(--window-rx)) rotateY(var(--window-ry)); }
+    .project-window:nth-child(4n + 2) { transform: translateZ(-1rem) rotateX(var(--window-rx)) rotateY(var(--window-ry)); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .project-window,
+    .project-window:nth-child(n) { transform: none; transition: none; }
+  }
+</style>

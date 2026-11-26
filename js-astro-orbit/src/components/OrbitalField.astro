@@ -1,0 +1,731 @@
+---
+// Orbital relay network: a planet limb anchored to the viewport, ground stations
+// on the horizon, and satellites that only link to a station while above it.
+---
+
+<orbital-field class="orbital-field" aria-hidden="true">
+  <canvas data-orbital-canvas></canvas>
+</orbital-field>
+
+<script>
+  type Palette = {
+    foreground: string;
+    accent: string;
+    canvas: string;
+    surface: string;
+    light: boolean;
+  };
+
+  type Star = {
+    x: number;
+    y: number;
+    depth: number;
+    size: number;
+    phase: number;
+    accented: boolean;
+  };
+
+  type Satellite = {
+    shell: number;
+    offset: number;
+    speed: number;
+    direction: number;
+  };
+
+  type Placed = {
+    x: number;
+    y: number;
+    angle: number;
+    altitude: number;
+    index: number;
+    shell: number;
+    highlight: number;
+  };
+
+  type Constellation = {
+    name: string;
+    anchor: [number, number];
+    scale: number;
+    stars: [number, number][];
+    links: [number, number][];
+  };
+
+  type Meteor = {
+    phase: number;
+    period: number;
+    spread: number;
+    speed: number;
+    length: number;
+  };
+
+  const STAR_COUNT = 170;
+  const SATELLITE_COUNT = 26;
+  const STATION_LABELS = ["eu-north", "eu-west", "eu-central", "ap-south", "us-east"];
+  const METEOR_COUNT = 7;
+
+  // Star positions are the real asterism shapes, normalised into a unit box.
+  const CONSTELLATIONS: Constellation[] = [
+    {
+      name: "Ursa Major",
+      anchor: [0.12, 0.22],
+      scale: 0.19,
+      stars: [
+        [0.0, 0.28],
+        [0.06, 0.52],
+        [0.3, 0.55],
+        [0.34, 0.37],
+        [0.53, 0.31],
+        [0.74, 0.24],
+        [1.0, 0.0],
+      ],
+      links: [
+        [0, 1],
+        [1, 2],
+        [2, 3],
+        [3, 0],
+        [3, 4],
+        [4, 5],
+        [5, 6],
+      ],
+    },
+    {
+      name: "Cassiopeia",
+      anchor: [0.8, 0.13],
+      scale: 0.14,
+      stars: [
+        [0.0, 0.3],
+        [0.22, 0.62],
+        [0.48, 0.22],
+        [0.72, 0.58],
+        [1.0, 0.05],
+      ],
+      links: [
+        [0, 1],
+        [1, 2],
+        [2, 3],
+        [3, 4],
+      ],
+    },
+    {
+      name: "Orion",
+      anchor: [0.88, 0.46],
+      scale: 0.12,
+      stars: [
+        [0.18, 0.05],
+        [0.72, 0.1],
+        [0.38, 0.48],
+        [0.5, 0.5],
+        [0.62, 0.52],
+        [0.28, 0.95],
+        [0.85, 0.92],
+      ],
+      links: [
+        [0, 1],
+        [0, 2],
+        [1, 4],
+        [2, 3],
+        [3, 4],
+        [2, 5],
+        [4, 6],
+        [5, 6],
+      ],
+    },
+    {
+      name: "Lyra",
+      anchor: [0.42, 0.12],
+      scale: 0.09,
+      stars: [
+        [0.5, 0.0],
+        [0.18, 0.35],
+        [0.72, 0.34],
+        [0.28, 0.78],
+        [0.82, 0.76],
+      ],
+      links: [
+        [0, 1],
+        [0, 2],
+        [1, 3],
+        [2, 4],
+        [3, 4],
+      ],
+    },
+  ];
+
+  const seeded = (seed: number) => {
+    let state = seed >>> 0;
+    return () => {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      return state / 0x100000000;
+    };
+  };
+
+  class OrbitalFieldElement extends HTMLElement {
+    private controller?: AbortController;
+    private resizeObserver?: ResizeObserver;
+    private visibilityObserver?: IntersectionObserver;
+    private themeObserver?: MutationObserver;
+    private frame = 0;
+    private visible = true;
+
+    connectedCallback() {
+      const canvas = this.querySelector("[data-orbital-canvas]");
+      if (!(canvas instanceof HTMLCanvasElement)) return;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+
+      this.controller?.abort();
+      this.controller = new AbortController();
+      const { signal } = this.controller;
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+      const random = seeded(20260820);
+      const stars: Star[] = Array.from({ length: STAR_COUNT }, () => {
+        const roll = random();
+        return {
+          x: random(),
+          y: random(),
+          depth: 0.25 + random() * 0.75,
+          size: roll > 0.94 ? 1.7 : roll > 0.78 ? 1.1 : 0.6,
+          phase: random() * Math.PI * 2,
+          accented: random() > 0.93,
+        };
+      });
+
+      const satellites: Satellite[] = Array.from({ length: SATELLITE_COUNT }, (_, index) => {
+        const shell = index % 2;
+        return {
+          shell,
+          offset: (index / SATELLITE_COUNT) * Math.PI * 2 + shell * 0.24,
+          // Inner shell orbits faster, as it would in reality.
+          speed: shell === 0 ? 0.046 : 0.031,
+          direction: shell === 0 ? 1 : -1,
+        };
+      });
+
+      const pointer = { x: 0, y: 0, targetX: 0, targetY: 0, canvasX: -9999, canvasY: -9999, active: false };
+      const meteors: Meteor[] = Array.from({ length: METEOR_COUNT }, (_, index) => ({
+        phase: random() * 30,
+        period: 6 + random() * 11,
+        spread: (random() - 0.5) * 1.15,
+        speed: 0.85 + random() * 0.5,
+        length: 120 + random() * 210,
+        // Keeps early meteors from all firing on the first frame.
+        ...(index === 0 ? { phase: 2 } : {}),
+      }));
+      let palette: Palette = this.readPalette();
+      let width = 0;
+      let height = 0;
+
+      const resize = () => {
+        const bounds = this.getBoundingClientRect();
+        const ratio = Math.min(window.devicePixelRatio || 1, 2);
+        width = bounds.width;
+        height = bounds.height;
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      };
+
+      const draw = (time = 0) => {
+        if (width === 0 || height === 0) return;
+        const still = reducedMotion.matches;
+        const seconds = still ? 42 : time / 1000;
+        const mobile = width < 640;
+
+        if (still) {
+          pointer.x = 0;
+          pointer.y = 0;
+        } else {
+          pointer.x += (pointer.targetX - pointer.x) * 0.05;
+          pointer.y += (pointer.targetY - pointer.y) * 0.05;
+        }
+
+        context.clearRect(0, 0, width, height);
+        context.lineCap = "round";
+
+        // Anchor the horizon to a fixed fraction of viewport height and derive the
+        // planet centre from it. Radius no longer drags the limb off-screen when
+        // the viewport gets wide.
+        const horizonY = height * (mobile ? 0.88 : 0.78);
+        const radius = Math.max(width * 0.92, height * 1.3);
+        const cx = width / 2 + pointer.x * 14;
+        const cy = horizonY + radius + pointer.y * 8;
+
+        // Widest angle from the planet's vertical axis that is still on screen.
+        const thetaMax = Math.asin(Math.min(1, (width / 2 + 40) / radius));
+
+        const project = (angle: number, altitude: number) => ({
+          x: cx + Math.sin(angle) * (radius + altitude),
+          y: cy - Math.cos(angle) * (radius + altitude),
+        });
+
+        const horizonAt = (x: number) => {
+          const dx = x - cx;
+          if (Math.abs(dx) >= radius) return height + 200;
+          return cy - Math.sqrt(radius * radius - dx * dx);
+        };
+
+        // Fades network elements out behind the hero copy so text stays legible.
+        const clarity = (x: number, y: number) => {
+          const dx = (x - width / 2) / (width * 0.32);
+          const dy = (y - height * 0.46) / (height * 0.4);
+          return Math.min(1, 0.18 + Math.hypot(dx, dy) ** 1.7);
+        };
+
+        // ---- starfield -------------------------------------------------------
+        const starAlpha = palette.light ? 0.5 : 1;
+        stars.forEach((star, index) => {
+          const x = star.x * width - pointer.x * star.depth * 34;
+          const y = star.y * height * 0.92 - pointer.y * star.depth * 22;
+          const limb = horizonAt(x);
+          if (y > limb - 4) return;
+          const twinkle = still ? 0.55 : 0.45 + Math.sin(seconds * 1.6 + star.phase) * 0.28;
+          const fade = Math.min(1, (limb - y) / 90);
+          context.beginPath();
+          context.arc(x, y, star.size, 0, Math.PI * 2);
+          context.fillStyle = star.accented ? palette.accent : palette.foreground;
+          context.globalAlpha = twinkle * fade * star.depth * starAlpha * 0.85;
+          context.fill();
+          if (index % 41 === 0) {
+            context.strokeStyle = palette.accent;
+            context.globalAlpha = 0.16 * fade;
+            context.lineWidth = 0.6;
+            context.beginPath();
+            context.moveTo(x - 6, y);
+            context.lineTo(x + 6, y);
+            context.moveTo(x, y - 6);
+            context.lineTo(x, y + 6);
+            context.stroke();
+          }
+        });
+
+        // ---- constellations --------------------------------------------------
+        context.font = "10px 'IBM Plex Mono', ui-monospace, monospace";
+        context.textAlign = "center";
+        CONSTELLATIONS.forEach((constellation) => {
+          const span = constellation.scale * width;
+          const originX = constellation.anchor[0] * width - pointer.x * 20;
+          const originY = constellation.anchor[1] * height - pointer.y * 13;
+          const points = constellation.stars.map(([sx, sy]) => ({
+            x: originX + (sx - 0.5) * span,
+            y: originY + (sy - 0.5) * span,
+          }));
+          if (points.some((point) => point.y > horizonAt(point.x) - 6)) return;
+
+          const centre = points.reduce(
+            (total, point) => ({ x: total.x + point.x / points.length, y: total.y + point.y / points.length }),
+            { x: 0, y: 0 },
+          );
+          const reach = span * 0.9;
+          const focus = pointer.active
+            ? Math.max(0, 1 - Math.hypot(centre.x - pointer.canvasX, centre.y - pointer.canvasY) / reach)
+            : 0;
+          const veil = clarity(centre.x, centre.y);
+
+          context.lineWidth = 0.7 + focus * 0.5;
+          context.strokeStyle = focus > 0.1 ? palette.accent : palette.foreground;
+          constellation.links.forEach(([from, to]) => {
+            context.globalAlpha = (0.07 + focus * 0.62) * veil;
+            context.beginPath();
+            context.moveTo(points[from].x, points[from].y);
+            context.lineTo(points[to].x, points[to].y);
+            context.stroke();
+          });
+
+          points.forEach((point, index) => {
+            context.beginPath();
+            context.arc(point.x, point.y, (index === 0 ? 1.7 : 1.2) + focus * 1.4, 0, Math.PI * 2);
+            context.fillStyle = focus > 0.1 ? palette.accent : palette.foreground;
+            context.globalAlpha = (0.55 + focus * 0.45) * veil;
+            context.fill();
+          });
+
+          if (focus > 0.12) {
+            context.fillStyle = palette.accent;
+            context.globalAlpha = Math.min(1, (focus - 0.12) * 3) * veil;
+            context.fillText(constellation.name.toUpperCase(), centre.x, centre.y + span * 0.42);
+          }
+        });
+        context.textAlign = "start";
+
+        // ---- meteor shower ---------------------------------------------------
+        // Streaks radiate from a single point, the way a real shower does.
+        if (!still) {
+          const radiant = { x: width * 0.76 - pointer.x * 26, y: -height * 0.08 - pointer.y * 16 };
+          const duration = 1.7;
+          meteors.forEach((meteor) => {
+            const elapsed = (seconds + meteor.phase) % meteor.period;
+            if (elapsed > duration) return;
+            const progress = elapsed / duration;
+            const angle = Math.PI * 0.66 + meteor.spread;
+            const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+            const travel = progress * height * 1.5 * meteor.speed;
+            const head = {
+              x: radiant.x + direction.x * travel,
+              y: radiant.y + direction.y * travel,
+            };
+            if (head.y > horizonAt(head.x)) return;
+            const trail = meteor.length * Math.sin(progress * Math.PI);
+            const tail = { x: head.x - direction.x * trail, y: head.y - direction.y * trail };
+            // Meteors keep most of their brightness through the centre, unlike
+            // the persistent network layers.
+            const envelope = Math.sin(progress * Math.PI) ** 0.7 * (0.5 + clarity(head.x, head.y) * 0.5);
+
+            const streak = context.createLinearGradient(tail.x, tail.y, head.x, head.y);
+            streak.addColorStop(0, "transparent");
+            streak.addColorStop(1, palette.accent);
+            context.strokeStyle = streak;
+            context.globalAlpha = envelope;
+            context.lineWidth = 1.8;
+            context.beginPath();
+            context.moveTo(tail.x, tail.y);
+            context.lineTo(head.x, head.y);
+            context.stroke();
+
+            context.beginPath();
+            context.arc(head.x, head.y, 2, 0, Math.PI * 2);
+            context.fillStyle = palette.accent;
+            context.globalAlpha = envelope;
+            context.fill();
+          });
+        }
+
+        // ---- atmosphere ------------------------------------------------------
+        const glow = context.createLinearGradient(0, horizonY - 190, 0, horizonY + 10);
+        glow.addColorStop(0, "transparent");
+        glow.addColorStop(1, palette.accent);
+        context.save();
+        context.beginPath();
+        context.arc(cx, cy, radius + 170, Math.PI * 1.2, Math.PI * 1.8);
+        context.arc(cx, cy, radius, Math.PI * 1.8, Math.PI * 1.2, true);
+        context.closePath();
+        context.clip();
+        context.fillStyle = glow;
+        context.globalAlpha = palette.light ? 0.1 : 0.16;
+        context.fillRect(0, horizonY - 190, width, 200);
+        context.restore();
+
+        // ---- planet body -----------------------------------------------------
+        context.save();
+        context.beginPath();
+        context.arc(cx, cy, radius, Math.PI, Math.PI * 2);
+        context.lineTo(cx + radius, height + 2);
+        context.lineTo(cx - radius, height + 2);
+        context.closePath();
+        context.clip();
+
+        const body = context.createLinearGradient(0, horizonY, 0, height);
+        body.addColorStop(0, palette.surface);
+        body.addColorStop(1, palette.canvas);
+        context.globalAlpha = 1;
+        context.fillStyle = body;
+        context.fillRect(0, horizonY - 2, width, height - horizonY + 4);
+
+        // Graticule, drawn only inside the planet silhouette.
+        context.lineWidth = 0.6;
+        for (let ring = 1; ring <= 7; ring += 1) {
+          const ringY = horizonY + (ring / 7) ** 1.5 * (height - horizonY) * 1.5;
+          const half = Math.sqrt(Math.max(0, radius * radius - (ringY - cy) ** 2));
+          context.beginPath();
+          context.ellipse(cx, ringY, half, 8 + ring * 6, 0, Math.PI, Math.PI * 2);
+          context.strokeStyle = ring % 3 === 0 ? palette.accent : palette.foreground;
+          context.globalAlpha = ring % 3 === 0 ? 0.14 : 0.07;
+          context.stroke();
+        }
+        for (let meridian = -6; meridian <= 6; meridian += 1) {
+          const angle = (meridian / 6) * thetaMax * 1.5 + pointer.x * 0.04;
+          context.beginPath();
+          context.ellipse(cx, cy, Math.abs(Math.sin(angle)) * radius, radius, 0, Math.PI, Math.PI * 2);
+          context.strokeStyle = meridian === 0 ? palette.accent : palette.foreground;
+          context.globalAlpha = meridian === 0 ? 0.13 : 0.06;
+          context.stroke();
+        }
+        context.restore();
+
+        // Limb: the brightest line in the composition.
+        context.beginPath();
+        context.arc(cx, cy, radius, Math.PI, Math.PI * 2);
+        context.strokeStyle = palette.accent;
+        context.globalAlpha = 0.75;
+        context.lineWidth = 1.15;
+        context.stroke();
+
+        // ---- ground stations -------------------------------------------------
+        const stationSpan = thetaMax * 0.82;
+        const stations = STATION_LABELS.map((label, index) => {
+          const angle = (index / (STATION_LABELS.length - 1) - 0.5) * 2 * stationSpan;
+          return { angle, label, ...project(angle, 0) };
+        });
+
+        // ---- satellites ------------------------------------------------------
+        const innerAltitude = Math.max(height * 0.3, 150);
+        const outerAltitude = Math.max(height * 0.47, 235);
+        const placed: Placed[] = [];
+
+        satellites.forEach((satellite, index) => {
+          const angle = satellite.offset + seconds * satellite.speed * satellite.direction;
+          const wrapped = Math.atan2(Math.sin(angle), Math.cos(angle));
+          if (Math.abs(wrapped) > thetaMax + 0.35) return;
+          const altitude = satellite.shell === 0 ? innerAltitude : outerAltitude;
+          const spot = project(wrapped, altitude);
+          if (spot.y < -60 || spot.y > horizonY + 40) return;
+          const distance = Math.hypot(spot.x - pointer.canvasX, spot.y - pointer.canvasY);
+          const highlight = pointer.active ? Math.max(0, 1 - distance / 130) : 0;
+          placed.push({ ...spot, angle: wrapped, altitude, index, shell: satellite.shell, highlight });
+        });
+
+        // Orbit tracks.
+        context.setLineDash([1, 6]);
+        context.lineWidth = 0.6;
+        [innerAltitude, outerAltitude].forEach((altitude, shell) => {
+          context.beginPath();
+          context.arc(cx, cy, radius + altitude, Math.PI * 1.5 - thetaMax, Math.PI * 1.5 + thetaMax);
+          context.strokeStyle = palette.foreground;
+          context.globalAlpha = shell === 0 ? 0.12 : 0.09;
+          context.stroke();
+        });
+        context.setLineDash([]);
+
+        // Cross-links between neighbours in the same shell.
+        placed.forEach((satellite, index) => {
+          placed.slice(index + 1).forEach((other) => {
+            if (other.shell !== satellite.shell) return;
+            const separation = Math.abs(other.angle - satellite.angle);
+            if (separation > 0.52) return;
+            const strength = 1 - separation / 0.52;
+            const boost = Math.max(satellite.highlight, other.highlight);
+            context.beginPath();
+            context.moveTo(satellite.x, satellite.y);
+            context.lineTo(other.x, other.y);
+            context.strokeStyle = boost > 0.1 ? palette.accent : palette.foreground;
+            context.globalAlpha =
+              strength *
+              (0.22 + boost * 0.55) *
+              clarity((satellite.x + other.x) / 2, (satellite.y + other.y) / 2);
+            context.lineWidth = 0.65 + boost * 0.5;
+            context.stroke();
+          });
+        });
+
+        // Downlinks. A station only sees a satellite while it is above the
+        // station's local horizon, so links genuinely rise and set.
+        const activeStations = new Set<number>();
+        placed.forEach((satellite) => {
+          const cosLimit = radius / (radius + satellite.altitude);
+          const maxSeparation = Math.acos(Math.min(1, cosLimit));
+          stations.forEach((station, stationIndex) => {
+            const separation = Math.abs(satellite.angle - station.angle);
+            if (separation >= maxSeparation) return;
+            const strength = 1 - separation / maxSeparation;
+            if (strength < 0.04) return;
+            if (strength > 0.28) activeStations.add(stationIndex);
+
+            context.beginPath();
+            context.moveTo(station.x, station.y);
+            context.lineTo(satellite.x, satellite.y);
+            context.strokeStyle = palette.accent;
+            context.globalAlpha =
+              strength ** 1.3 *
+              (0.42 + satellite.highlight * 0.5) *
+              clarity((station.x + satellite.x) / 2, (station.y + satellite.y) / 2);
+            context.lineWidth = 0.6 + strength * 0.75;
+            context.stroke();
+
+            if (strength > 0.42 && !still) {
+              const travel = (seconds * 0.45 + stationIndex * 0.27 + satellite.index * 0.13) % 1;
+              const px = station.x + (satellite.x - station.x) * travel;
+              const py = station.y + (satellite.y - station.y) * travel;
+              context.beginPath();
+              context.arc(px, py, 1.9, 0, Math.PI * 2);
+              context.fillStyle = palette.accent;
+              context.globalAlpha = Math.sin(travel * Math.PI) * 0.95 * clarity(px, py);
+              context.fill();
+            }
+          });
+        });
+
+        // Station markers, labelled only while they are carrying traffic.
+        context.font = "10px 'IBM Plex Mono', ui-monospace, monospace";
+        context.textAlign = "center";
+        stations.forEach((station, index) => {
+          const live = activeStations.has(index);
+          const outward = project(station.angle, live ? 15 : 9);
+          context.beginPath();
+          context.moveTo(station.x, station.y);
+          context.lineTo(outward.x, outward.y);
+          context.strokeStyle = live ? palette.accent : palette.foreground;
+          context.globalAlpha = live ? 0.85 : 0.4;
+          context.lineWidth = 1;
+          context.stroke();
+
+          context.beginPath();
+          context.arc(outward.x, outward.y, live ? 2.8 : 1.8, 0, Math.PI * 2);
+          context.fillStyle = live ? palette.accent : palette.foreground;
+          context.globalAlpha = live ? 1 : 0.5;
+          context.fill();
+
+          if (live && !mobile) {
+            context.fillStyle = palette.accent;
+            context.globalAlpha = 0.7;
+            context.fillText(station.label, station.x, station.y + 22);
+          }
+        });
+        context.textAlign = "start";
+
+        // Satellite bodies.
+        placed.forEach((satellite) => {
+          const size = satellite.shell === 0 ? 3 : 2.4;
+          const visibility = clarity(satellite.x, satellite.y);
+          context.save();
+          context.translate(satellite.x, satellite.y);
+          context.rotate(satellite.angle);
+          context.fillStyle = palette.accent;
+          context.globalAlpha = (0.9 + satellite.highlight * 0.1) * visibility;
+          context.fillRect(-size / 2, -size / 2, size, size);
+          context.strokeStyle = palette.accent;
+          context.globalAlpha = 0.55 * visibility;
+          context.lineWidth = 0.8;
+          context.beginPath();
+          context.moveTo(-size * 2.1, 0);
+          context.lineTo(-size * 0.9, 0);
+          context.moveTo(size * 0.9, 0);
+          context.lineTo(size * 2.1, 0);
+          context.stroke();
+          context.restore();
+
+          if (satellite.highlight > 0.05) {
+            context.beginPath();
+            context.arc(satellite.x, satellite.y, 9 + satellite.highlight * 5, 0, Math.PI * 2);
+            context.strokeStyle = palette.accent;
+            context.globalAlpha = satellite.highlight * 0.5;
+            context.lineWidth = 0.8;
+            context.stroke();
+          }
+        });
+
+        // ---- readability vignette -------------------------------------------
+        const vignette = context.createRadialGradient(
+          width / 2,
+          height * 0.44,
+          0,
+          width / 2,
+          height * 0.44,
+          Math.max(width, height) * 0.46,
+        );
+        vignette.addColorStop(0, palette.canvas);
+        vignette.addColorStop(1, "transparent");
+        context.globalAlpha = 0.62;
+        context.fillStyle = vignette;
+        context.fillRect(0, 0, width, height);
+
+        context.globalAlpha = 1;
+        if (!still && this.visible) this.frame = requestAnimationFrame(draw);
+      };
+
+      const restart = () => {
+        cancelAnimationFrame(this.frame);
+        draw(performance.now());
+      };
+
+      this.addEventListener(
+        "pointermove",
+        (event) => {
+          if (reducedMotion.matches) return;
+          const bounds = this.getBoundingClientRect();
+          pointer.targetX = (event.clientX - bounds.left) / bounds.width - 0.5;
+          pointer.targetY = (event.clientY - bounds.top) / bounds.height - 0.5;
+          pointer.canvasX = event.clientX - bounds.left;
+          pointer.canvasY = event.clientY - bounds.top;
+          pointer.active = true;
+        },
+        { signal },
+      );
+
+      this.addEventListener(
+        "pointerleave",
+        () => {
+          pointer.targetX = 0;
+          pointer.targetY = 0;
+          pointer.canvasX = -9999;
+          pointer.canvasY = -9999;
+          pointer.active = false;
+        },
+        { signal },
+      );
+
+      this.resizeObserver = new ResizeObserver(() => {
+        resize();
+        restart();
+      });
+      this.resizeObserver.observe(this);
+
+      this.visibilityObserver = new IntersectionObserver((entries) => {
+        this.visible = entries[0]?.isIntersecting ?? true;
+        if (this.visible) restart();
+        else cancelAnimationFrame(this.frame);
+      });
+      this.visibilityObserver.observe(this);
+
+      this.themeObserver = new MutationObserver(() => {
+        palette = this.readPalette();
+        restart();
+      });
+      this.themeObserver.observe(document.documentElement, { attributeFilter: ["data-theme"] });
+
+      reducedMotion.addEventListener("change", restart, { signal });
+
+      resize();
+      restart();
+    }
+
+    disconnectedCallback() {
+      cancelAnimationFrame(this.frame);
+      this.controller?.abort();
+      this.resizeObserver?.disconnect();
+      this.visibilityObserver?.disconnect();
+      this.themeObserver?.disconnect();
+    }
+
+    private readPalette(): Palette {
+      const styles = getComputedStyle(document.documentElement);
+      const read = (name: string) => styles.getPropertyValue(name).trim();
+      return {
+        foreground: read("--theme-foreground"),
+        accent: read("--theme-accent"),
+        canvas: read("--theme-canvas"),
+        surface: read("--theme-surface"),
+        light: document.documentElement.dataset.theme === "light",
+      };
+    }
+  }
+
+  if (!customElements.get("orbital-field")) {
+    customElements.define("orbital-field", OrbitalFieldElement);
+  }
+</script>
+
+<style>
+  .orbital-field {
+    inset: 0;
+    overflow: hidden;
+    position: absolute;
+  }
+
+  .orbital-field canvas {
+    height: 100%;
+    width: 100%;
+  }
+
+  .orbital-field::after {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--theme-canvas) 55%, transparent),
+      transparent 18% 82%,
+      color-mix(in srgb, var(--theme-canvas) 55%, transparent)
+    );
+    content: "";
+    inset: 0;
+    pointer-events: none;
+    position: absolute;
+  }
+</style>

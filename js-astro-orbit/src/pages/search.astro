@@ -1,0 +1,108 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import { SITE, withBase } from "../config";
+---
+
+<BaseLayout title={`Search | ${SITE.name}`} description={`Search projects and writing by ${SITE.name}.`}>
+  <SiteHeader />
+  <main id="main-content" class="min-h-[calc(100svh-3.5rem)] bg-canvas">
+    <section class="px-6 py-20 sm:px-10 lg:px-[6vw] lg:py-24">
+      <div class="mx-auto max-w-[62rem]">
+        <p class="font-mono text-xs uppercase text-accent">Search / Projects and writing</p>
+        <h1 class="my-8 text-5xl leading-[.95] font-semibold sm:text-6xl">Search</h1>
+
+        <site-search data-endpoint={withBase("/search.json")}>
+          <label class="sr-only" for="search-input">Search projects and writing</label>
+          <input
+            class="w-full border border-border bg-surface px-5 py-4 font-mono text-sm text-foreground caret-accent outline-none transition-colors placeholder:text-muted focus:border-accent"
+            id="search-input"
+            type="search"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Type to search…"
+            data-search-input
+          />
+          <p class="mt-3 font-mono text-xs uppercase text-muted" data-search-status aria-live="polite">Loading index…</p>
+          <ol class="mt-8 list-none border-t border-border p-0" data-search-results></ol>
+        </site-search>
+      </div>
+    </section>
+  </main>
+  <SiteFooter />
+</BaseLayout>
+
+<script>
+  type Entry = {
+    kind: string;
+    title: string;
+    description: string;
+    href: string;
+    terms: string;
+  };
+
+  class SiteSearchElement extends HTMLElement {
+    private entries: Entry[] = [];
+
+    async connectedCallback() {
+      const input = this.querySelector("[data-search-input]");
+      const results = this.querySelector("[data-search-results]");
+      const status = this.querySelector("[data-search-status]");
+      if (!(input instanceof HTMLInputElement) || !(results instanceof HTMLElement) || !(status instanceof HTMLElement)) return;
+
+      try {
+        const response = await fetch(this.dataset.endpoint ?? "/search.json");
+        this.entries = await response.json();
+        status.textContent = `${this.entries.length} entries indexed.`;
+      } catch {
+        status.textContent = "Search index unavailable.";
+        return;
+      }
+
+      const render = (query: string) => {
+        const needle = query.trim().toLowerCase();
+        if (needle.length === 0) {
+          results.replaceChildren();
+          status.textContent = `${this.entries.length} entries indexed.`;
+          return;
+        }
+
+        const matches = this.entries.filter((entry) =>
+          `${entry.title} ${entry.description} ${entry.terms}`.toLowerCase().includes(needle),
+        );
+        status.textContent = matches.length === 1 ? "1 match" : `${matches.length} matches`;
+
+        results.replaceChildren(
+          ...matches.map((entry) => {
+            const item = document.createElement("li");
+            const link = document.createElement("a");
+            link.href = entry.href;
+            link.className = "group grid gap-1 border-b border-border py-6 no-underline";
+            link.innerHTML = `
+              <span class="font-mono text-xs uppercase text-accent"></span>
+              <strong class="text-xl font-medium transition-colors group-hover:text-accent"></strong>
+              <span class="max-w-2xl text-sm leading-6 text-muted"></span>`;
+            const [kind, title, description] = link.querySelectorAll("span, strong");
+            kind.textContent = entry.kind;
+            title.textContent = entry.title;
+            description.textContent = entry.description;
+            item.append(link);
+            return item;
+          }),
+        );
+      };
+
+      input.addEventListener("input", () => render(input.value));
+
+      const initial = new URLSearchParams(location.search).get("q");
+      if (initial) {
+        input.value = initial;
+        render(initial);
+      }
+      input.focus();
+    }
+  }
+
+  if (!customElements.get("site-search")) customElements.define("site-search", SiteSearchElement);
+</script>

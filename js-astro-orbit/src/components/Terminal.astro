@@ -1,0 +1,671 @@
+---
+import { getCollection } from "astro:content";
+import { SITE, SOCIALS } from "../config";
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+const projects = (await getCollection("projects", ({ data }) => !data.draft)).sort(
+  (a, b) => a.data.order - b.data.order,
+);
+const posts = (await getCollection("blog", ({ data }) => !data.draft)).sort(
+  (a, b) => b.data.date.getTime() - a.data.date.getTime(),
+);
+
+const consoleData = {
+  user: SITE.name.split(" ")[0].toLowerCase(),
+  host: "portfolio",
+  name: SITE.name,
+  role: SITE.role,
+  location: SITE.location,
+  tagline: SITE.tagline,
+  base,
+  socials: SOCIALS.map((social) => ({ label: social.label, href: social.href })),
+  projects: projects.map((project) => ({
+    id: project.id,
+    title: project.data.title,
+    category: project.data.category,
+    summary: project.data.summary,
+    outcome: project.data.outcome,
+    stack: project.data.stack,
+    repo: project.data.repo,
+  })),
+  posts: posts.map((post) => ({
+    id: post.id,
+    title: post.data.title,
+    description: post.data.description,
+    date: post.data.date.toISOString().slice(0, 10),
+    linkedin: post.data.linkedin ?? null,
+  })),
+};
+---
+
+<portfolio-terminal data-console={JSON.stringify(consoleData)}>
+  <dialog
+    class="m-auto max-h-[calc(100svh-2rem)] w-[min(60rem,calc(100%-2rem))] overflow-hidden border border-border bg-raised p-0 text-foreground shadow-2xl backdrop:bg-canvas/85 backdrop:backdrop-blur-sm"
+    data-terminal
+    data-base={base}
+    aria-labelledby="terminal-title"
+  >
+    <header class="flex items-center justify-between border-b border-border px-5 py-4 sm:px-6">
+      <div class="flex min-w-0 items-center gap-3">
+        <span class="size-2 shrink-0 bg-accent" aria-hidden="true"></span>
+        <div class="min-w-0">
+          <h2 class="font-mono text-xs font-medium uppercase" id="terminal-title">Command center</h2>
+          <p class="mt-1 font-mono text-xs text-muted">A small shell over this site. Try <span class="text-foreground">ls</span>, <span class="text-foreground">cd work</span>, <span class="text-foreground">cat &lt;name&gt;</span>.</p>
+        </div>
+      </div>
+      <button
+        class="grid size-10 shrink-0 place-items-center border border-transparent font-mono text-lg text-muted transition-colors hover:border-border hover:text-foreground"
+        type="button"
+        data-terminal-close
+        aria-label="Close command center"
+      >
+        <span aria-hidden="true">×</span>
+      </button>
+    </header>
+
+    <section class="border-b border-border bg-surface/45 px-5 py-4 sm:px-6" aria-labelledby="terminal-shortcuts-title">
+      <div class="mb-3 flex items-center justify-between gap-4">
+        <h3 class="font-mono text-xs font-medium uppercase text-muted" id="terminal-shortcuts-title">Quick commands</h3>
+        <span class="hidden font-mono text-xs text-muted sm:inline">↑↓ history · Tab complete · Esc close</span>
+      </div>
+      <div class="grid grid-cols-2 gap-px overflow-hidden border border-border bg-border sm:grid-cols-3">
+        {["help", "neofetch", "ls", "tree", "skills", "status"].map((command, index) => (
+          <button
+            class="bg-raised px-4 py-3 text-left font-mono text-xs transition-colors hover:bg-surface hover:text-accent"
+            type="button"
+            data-terminal-command={command}
+          >
+            <span class="mr-2 text-accent">{String(index + 1).padStart(2, "0")}</span>{command}
+          </button>
+        ))}
+      </div>
+    </section>
+
+    <div
+      class="min-h-[16rem] max-h-[42svh] overflow-y-auto px-5 py-5 font-mono text-sm leading-6 sm:px-6"
+      data-terminal-output
+      role="log"
+      aria-live="polite"
+      aria-relevant="additions"
+    ></div>
+
+    <form class="flex items-center gap-2 border-t border-border bg-canvas/30 px-5 py-4 font-mono text-sm sm:px-6" data-terminal-form>
+      <label class="shrink-0 text-accent" for="terminal-input" data-terminal-prompt>$</label>
+      <input
+        class="min-w-0 flex-1 border-0 bg-transparent text-foreground caret-accent outline-none placeholder:text-muted"
+        id="terminal-input"
+        data-terminal-input
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="Type a command, or help"
+        aria-label="Command"
+      />
+      <span class="hidden shrink-0 text-xs text-muted sm:inline">Enter ↵</span>
+    </form>
+  </dialog>
+</portfolio-terminal>
+
+<script>
+  type Social = { label: string; href: string };
+  type Project = {
+    id: string;
+    title: string;
+    category: string;
+    summary: string;
+    outcome: string;
+    stack: string[];
+    repo: string;
+  };
+  type Post = { id: string; title: string; description: string; date: string; linkedin: string | null };
+  type ConsoleData = {
+    user: string;
+    host: string;
+    name: string;
+    role: string;
+    location: string;
+    tagline: string;
+    base: string;
+    socials: Social[];
+    projects: Project[];
+    posts: Post[];
+  };
+
+  const DIRECTORIES = ["work", "blog"] as const;
+  type Directory = "~" | (typeof DIRECTORIES)[number];
+
+  const COMMANDS = [
+    "help", "man", "ls", "cd", "cat", "pwd", "tree", "open", "search",
+    "neofetch", "whoami", "date", "uptime", "history", "echo", "theme", "banner",
+    "skills", "status", "contact", "github", "linkedin", "clear", "exit",
+  ];
+
+  const ALIASES: Record<string, string> = {
+    ll: "ls -l",
+    la: "ls",
+    cls: "clear",
+    q: "exit",
+    quit: "exit",
+    "..": "cd ..",
+    "?": "help",
+    stack: "skills",
+    projects: "ls work",
+    posts: "ls blog",
+    profile: "whoami",
+  };
+
+  const MANUAL: Record<string, string[]> = {
+    ls: ["ls [path] [-l]", "List entries in the current or given directory."],
+    cd: ["cd <path>", "Change directory. Accepts ~, .., work, blog, ~/work."],
+    cat: ["cat <name>", "Print details for a project, post, or about."],
+    open: ["open [name]", "Navigate the browser to a page."],
+    search: ["search <term>", "Match projects and posts by title, summary and stack."],
+    theme: ["theme [dark|light]", "Switch colour scheme. Toggles when no argument is given."],
+    tree: ["tree", "Print the whole site as a directory tree."],
+    neofetch: ["neofetch", "Print a summary of this site."],
+  };
+
+  class PortfolioTerminalElement extends HTMLElement {
+    private dialog: HTMLDialogElement | null = null;
+    private output: HTMLElement | null = null;
+    private input: HTMLInputElement | null = null;
+    private promptLabel: HTMLElement | null = null;
+    private controller?: AbortController;
+    private history: string[] = [];
+    private historyIndex = 0;
+    private started = Date.now();
+    private cwd: Directory = "~";
+    private data!: ConsoleData;
+
+    connectedCallback() {
+      this.data = JSON.parse(this.dataset.console ?? "{}") as ConsoleData;
+      this.dialog = this.querySelector("[data-terminal]");
+      this.output = this.querySelector("[data-terminal-output]");
+      this.input = this.querySelector("[data-terminal-input]");
+      this.promptLabel = this.querySelector("[data-terminal-prompt]");
+      if (!this.dialog || !this.output || !this.input) return;
+
+      this.controller?.abort();
+      this.controller = new AbortController();
+      const { signal } = this.controller;
+
+      this.reset();
+      this.updatePrompt();
+
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+            event.preventDefault();
+            this.open();
+          }
+        },
+        { signal },
+      );
+
+      document.querySelectorAll("[data-terminal-open]").forEach((button) => {
+        button.addEventListener("click", () => this.open(), { signal });
+      });
+
+      this.querySelector("[data-terminal-close]")?.addEventListener("click", () => this.dialog?.close(), { signal });
+
+      this.querySelectorAll("[data-terminal-command]").forEach((button) => {
+        button.addEventListener(
+          "click",
+          () => {
+            const command = (button as HTMLElement).dataset.terminalCommand ?? "";
+            this.run(command);
+            this.input?.focus();
+          },
+          { signal },
+        );
+      });
+
+      this.querySelector("[data-terminal-form]")?.addEventListener(
+        "submit",
+        (event) => {
+          event.preventDefault();
+          const value = this.input?.value ?? "";
+          if (this.input) this.input.value = "";
+          this.run(value);
+        },
+        { signal },
+      );
+
+      this.input.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            this.recall(-1);
+          } else if (event.key === "ArrowDown") {
+            event.preventDefault();
+            this.recall(1);
+          } else if (event.key === "Tab") {
+            event.preventDefault();
+            this.complete();
+          } else if (event.key === "l" && event.ctrlKey) {
+            event.preventDefault();
+            this.reset();
+          }
+        },
+        { signal },
+      );
+
+      this.dialog.addEventListener(
+        "click",
+        (event) => {
+          if (event.target === this.dialog) this.dialog?.close();
+          else if (!(event.target as HTMLElement).closest("button")) this.input?.focus();
+        },
+        { signal },
+      );
+    }
+
+    disconnectedCallback() {
+      this.controller?.abort();
+    }
+
+    private open() {
+      if (!this.dialog?.open) this.dialog?.showModal();
+      this.input?.focus();
+    }
+
+    private prompt() {
+      return `${this.data.user}@${this.data.host} ${this.cwd} $`;
+    }
+
+    private updatePrompt() {
+      if (this.promptLabel) this.promptLabel.textContent = this.prompt();
+    }
+
+    private write(text = "", tone: "normal" | "muted" | "accent" | "error" = "normal") {
+      const line = document.createElement("p");
+      line.className = {
+        normal: "text-foreground",
+        muted: "text-muted",
+        accent: "text-accent",
+        error: "text-foreground",
+      }[tone];
+      line.style.whiteSpace = "pre-wrap";
+      line.textContent = text || "\u00a0";
+      this.output?.append(line);
+      if (this.output) this.output.scrollTo({ top: this.output.scrollHeight, behavior: "smooth" });
+    }
+
+    private lines(values: string[], tone: "normal" | "muted" | "accent" = "normal") {
+      values.forEach((value) => this.write(value, tone));
+    }
+
+    private reset() {
+      this.output?.replaceChildren();
+      this.write(`${this.data.name} — command center`, "accent");
+      this.write("Type help for commands, or ls to look around.", "muted");
+      this.write();
+    }
+
+    private recall(direction: number) {
+      if (this.history.length === 0 || !this.input) return;
+      this.historyIndex = Math.min(Math.max(this.historyIndex + direction, 0), this.history.length);
+      this.input.value = this.history[this.historyIndex] ?? "";
+    }
+
+    private entries(directory: Directory): string[] {
+      if (directory === "work") return this.data.projects.map((project) => project.id);
+      if (directory === "blog") return this.data.posts.map((post) => post.id);
+      return [...DIRECTORIES, "about", "contact"];
+    }
+
+    /** Accepts bare names as well as work/x, blog/x and ~/work/x. */
+    private basename(target: string) {
+      return target.replace(/^~\//, "").replace(/^\//, "").replace(/^(work|blog)\//, "");
+    }
+
+    private complete() {
+      if (!this.input) return;
+      const value = this.input.value;
+      const parts = value.split(/\s+/);
+      const candidates =
+        parts.length <= 1
+          ? COMMANDS.concat(Object.keys(ALIASES))
+          : this.entries(this.cwd).concat(this.cwd === "~" ? [] : [".."]);
+      const fragment = parts[parts.length - 1] ?? "";
+
+      // Cycle when the fragment is already a complete match.
+      const exact = candidates.indexOf(fragment);
+      const prefix = fragment.replace(/\d+$/, "");
+      const matches = candidates.filter((candidate) => candidate.startsWith(exact >= 0 ? "" : prefix));
+      const pool = exact >= 0 ? candidates.filter((c) => c.startsWith(fragment.slice(0, 2))) : matches;
+      if (pool.length === 0) return;
+
+      if (exact >= 0 && pool.length > 1) {
+        const position = pool.indexOf(fragment);
+        parts[parts.length - 1] = pool[(position + 1) % pool.length];
+        this.input.value = parts.join(" ");
+        return;
+      }
+      if (matches.length === 1) {
+        parts[parts.length - 1] = matches[0];
+        this.input.value = parts.join(" ");
+        return;
+      }
+      this.write(`${this.prompt()} ${value}`, "muted");
+      this.write(matches.join("  "), "muted");
+    }
+
+    private navigate(path: string) {
+      window.location.href = `${this.data.base}${path}`;
+    }
+
+    private run(raw: string) {
+      const value = raw.trim();
+      if (value.length === 0) return;
+
+      this.history.push(value);
+      this.historyIndex = this.history.length;
+      this.write(`${this.prompt()} ${value}`, "muted");
+
+      const expanded = ALIASES[value] ?? ALIASES[value.split(/\s+/)[0]] ?? value;
+      const line = expanded === value ? value : `${expanded}${value.includes(" ") && !ALIASES[value] ? ` ${value.split(/\s+/).slice(1).join(" ")}` : ""}`;
+      const [command, ...args] = line.split(/\s+/);
+      const argument = args.filter((part) => !part.startsWith("-")).join(" ");
+      const flags = args.filter((part) => part.startsWith("-"));
+
+      switch (command) {
+        case "help":
+          this.lines([
+            "NAVIGATE   ls  cd  pwd  cat  tree  open  search",
+            "INSPECT    neofetch  whoami  skills  status  contact",
+            "SHELL      man  history  uptime  echo  date  theme  banner",
+            "LINKS      github  linkedin",
+            "CONTROL    clear  exit",
+            "",
+            "ALIASES    ll  la  cls  q  ..  projects  posts  stack",
+            "Tab completes and cycles, ↑↓ walks history, Ctrl+L clears.",
+            "man <command> explains any of the above.",
+          ]);
+          break;
+
+        case "man": {
+          const entry = MANUAL[argument];
+          if (!argument) this.write("man: which command? Try man ls", "accent");
+          else if (entry) this.lines([entry[0], "", entry[1]]);
+          else this.write(`No manual entry for ${argument}.`, "muted");
+          break;
+        }
+
+        case "history":
+          this.lines(this.history.map((item, index) => `${String(index + 1).padStart(4)}  ${item}`));
+          break;
+
+        case "uptime": {
+          const seconds = Math.floor((Date.now() - this.started) / 1000);
+          const minutes = Math.floor(seconds / 60);
+          this.write(`up ${minutes}m ${seconds % 60}s on this page`);
+          break;
+        }
+
+        case "banner":
+          this.lines([
+            "  ██╗  ██╗     ██╗",
+            "  ██║ ██╔╝     ██║",
+            "  █████╔╝      ██║",
+            "  ██╔═██╗ ██   ██║",
+            "  ██║  ██╗╚█████╔╝",
+            "  ╚═╝  ╚═╝ ╚════╝",
+          ], "accent");
+          break;
+
+        case "contact":
+          if (argument) {
+            this.navigate("/contact/");
+            break;
+          }
+          this.lines(this.data.socials.map((social) => `${social.label.padEnd(10)} ${social.href}`));
+          this.write("open contact to use the page.", "muted");
+          break;
+
+        case "ls": {
+          const target = (this.basename(argument) || argument || this.cwd) as Directory;
+          const directory = DIRECTORIES.includes(target as never) || target === "~" ? target : this.cwd;
+          const long = flags.includes("-l");
+          if (directory === "~") {
+            this.lines(
+              this.entries("~").map((item) =>
+                DIRECTORIES.includes(item as never)
+                  ? long
+                    ? `drwxr-xr-x  ${item}/`
+                    : `${item}/`
+                  : long
+                    ? `-rw-r--r--  ${item}`
+                    : item,
+              ),
+            );
+          } else if (directory === "work") {
+            this.data.projects.forEach((project) =>
+              this.write(
+                long
+                  ? `${project.stack.length} deps  ${project.id.padEnd(28)} ${project.category}`
+                  : `${project.id.padEnd(28)} ${project.category}`,
+              ),
+            );
+          } else {
+            this.data.posts.forEach((post) => this.write(`${post.date}  ${post.id}`));
+          }
+          break;
+        }
+
+        case "cd": {
+          const target = argument.trim();
+          if (!target || target === "~" || target === "/" || target === "..") this.cwd = "~";
+          else {
+            const cleaned = target.replace(/^~\//, "").replace(/^\//, "").replace(/\/$/, "");
+            if (DIRECTORIES.includes(cleaned as never)) this.cwd = cleaned as Directory;
+            else {
+              this.write(`cd: no such directory: ${target}`, "accent");
+              break;
+            }
+          }
+          this.updatePrompt();
+          break;
+        }
+
+        case "pwd":
+          this.write(this.cwd === "~" ? "~" : `~/${this.cwd}`);
+          break;
+
+        case "tree":
+          this.lines([
+            "~",
+            "├── about",
+            "├── work",
+            ...this.data.projects.map((project, index) =>
+              `│   ${index === this.data.projects.length - 1 ? "└──" : "├──"} ${project.id}`,
+            ),
+            "├── blog",
+            ...this.data.posts.map((post, index) =>
+              `│   ${index === this.data.posts.length - 1 ? "└──" : "├──"} ${post.id}`,
+            ),
+            "└── contact",
+          ]);
+          break;
+
+        case "cat": {
+          if (!argument) {
+            this.write("cat: needs a name. Try ls first.", "accent");
+            break;
+          }
+          const name = this.basename(argument);
+          const project = this.data.projects.find((item) => item.id === name);
+          const post = this.data.posts.find((item) => item.id === name);
+          if (project) {
+            this.lines([
+              project.title,
+              "",
+              project.summary,
+              "",
+              `OUTCOME  ${project.outcome}`,
+              `STACK    ${project.stack.join(" · ")}`,
+              `REPO     ${project.repo}`,
+              "",
+              `open ${project.id} to read the full case study.`,
+            ]);
+          } else if (post) {
+            this.lines([
+              post.title,
+              "",
+              post.description,
+              "",
+              `DATE     ${post.date}`,
+              ...(post.linkedin ? [`LINKEDIN ${post.linkedin}`] : []),
+              "",
+              `open ${post.id} to read it.`,
+            ]);
+          } else if (argument === "about") {
+            this.lines([`${this.data.role} in ${this.data.location}.`, this.data.tagline]);
+          } else {
+            this.write(`cat: no such entry: ${argument}`, "accent");
+          }
+          break;
+        }
+
+        case "open": {
+          if (!argument) {
+            this.navigate(this.cwd === "~" ? "/" : `/${this.cwd}/`);
+            break;
+          }
+          const name = this.basename(argument);
+          if (["about", "contact", "work", "blog"].includes(name)) {
+            this.navigate(`/${name}/`);
+            break;
+          }
+          if (this.data.projects.some((item) => item.id === name)) {
+            this.navigate(`/work/${name}/`);
+            break;
+          }
+          if (this.data.posts.some((item) => item.id === name)) {
+            this.navigate(`/blog/${name}/`);
+            break;
+          }
+          this.write(`open: nothing called ${argument}`, "accent");
+          break;
+        }
+
+        case "search": {
+          if (!argument) {
+            this.write("search: needs a term.", "accent");
+            break;
+          }
+          const needle = argument.toLowerCase();
+          const hits = [
+            ...this.data.projects
+              .filter((item) => `${item.title} ${item.summary} ${item.stack.join(" ")}`.toLowerCase().includes(needle))
+              .map((item) => `work/${item.id}   ${item.title}`),
+            ...this.data.posts
+              .filter((item) => `${item.title} ${item.description}`.toLowerCase().includes(needle))
+              .map((item) => `blog/${item.id}   ${item.title}`),
+          ];
+          if (hits.length === 0) this.write(`No matches for "${argument}".`, "muted");
+          else this.lines(hits);
+          break;
+        }
+
+        case "neofetch":
+          this.lines([
+            `  ██╗  ██╗     ${this.data.user}@${this.data.host}`,
+            `  ██║ ██╔╝     ${"-".repeat(this.data.user.length + this.data.host.length + 1)}`,
+            `  █████╔╝      Role      ${this.data.role}`,
+            `  ██╔═██╗      Location  ${this.data.location}`,
+            `  ██║  ██╗     Projects  ${this.data.projects.length}`,
+            `  ╚═╝  ╚═╝     Posts     ${this.data.posts.length}`,
+            `               Theme     ${document.documentElement.dataset.theme}`,
+          ]);
+          break;
+
+        case "whoami":
+          this.write(`${this.data.name} — ${this.data.role}, ${this.data.location}.`);
+          break;
+
+        case "date":
+          this.write(new Date().toString());
+          break;
+
+        case "echo":
+          this.write(argument);
+          break;
+
+        case "theme": {
+          const next =
+            argument === "dark" || argument === "light"
+              ? argument
+              : document.documentElement.dataset.theme === "dark"
+                ? "light"
+                : "dark";
+          document.documentElement.dataset.theme = next;
+          document.documentElement.style.colorScheme = next;
+          localStorage.setItem("portfolio-theme", next);
+          this.write(`Theme set to ${next}.`);
+          break;
+        }
+
+        case "skills":
+          this.lines([
+            "PLATFORM       Kubernetes · Argo CD · Docker",
+            "INFRASTRUCTURE Azure · Terraform · Linux",
+            "OBSERVABILITY  Prometheus · Grafana · Loki",
+            "DEVELOPMENT    TypeScript · Python · GitLab",
+          ]);
+          break;
+
+        case "status":
+          this.lines([
+            "SITE      online",
+            `PROJECTS  ${this.data.projects.length}`,
+            `POSTS     ${this.data.posts.length}`,
+            `LOCATION  ${this.data.location}`,
+            "STATUS    open to interesting problems",
+          ]);
+          break;
+
+        case "github":
+        case "linkedin": {
+          const social = this.data.socials.find((item) => item.label.toLowerCase() === command);
+          if (social) {
+            window.open(social.href, "_blank", "noopener,noreferrer");
+            this.write(`Opening ${social.label}…`, "muted");
+          }
+          break;
+        }
+
+        case "home":
+          this.navigate("/");
+          break;
+
+        case "about":
+        case "work":
+        case "blog":
+          this.navigate(`/${command}/`);
+          break;
+
+        case "clear":
+          this.reset();
+          break;
+
+        case "exit":
+        case "close":
+          this.dialog?.close();
+          break;
+
+        default:
+          this.write(`command not found: ${command}`, "accent");
+          this.write("Type help for the list.", "muted");
+      }
+
+      this.write();
+    }
+  }
+
+  if (!customElements.get("portfolio-terminal")) {
+    customElements.define("portfolio-terminal", PortfolioTerminalElement);
+  }
+</script>

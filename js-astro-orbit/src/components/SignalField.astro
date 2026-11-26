@@ -1,0 +1,166 @@
+<div class="signal-field" aria-hidden="true">
+  <canvas data-signal-field></canvas>
+  <div class="signal-field__fade"></div>
+</div>
+
+<script>
+  const initializedCanvases = new WeakSet<HTMLCanvasElement>();
+
+  const initializeSignalField = (canvas: HTMLCanvasElement) => {
+    if (initializedCanvases.has(canvas)) return;
+    initializedCanvases.add(canvas);
+
+    const context = canvas.getContext("2d");
+    const container = canvas.parentElement;
+    if (!context || !container) return;
+
+    const controller = new AbortController();
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const pointer = { x: 0, y: 0, targetX: 0, targetY: 0, active: false };
+    let width = 0;
+    let height = 0;
+    let frame = 0;
+    let visible = true;
+
+    const resize = () => {
+      const bounds = container.getBoundingClientRect();
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      width = bounds.width;
+      height = bounds.height;
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(height * ratio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    };
+
+    const draw = (time = 0) => {
+      context.clearRect(0, 0, width, height);
+      const styles = getComputedStyle(document.documentElement);
+      const foreground = styles.getPropertyValue("--theme-foreground").trim();
+      const accent = styles.getPropertyValue("--theme-accent").trim();
+      const lineCount = width < 640 ? 13 : 22;
+      const step = width < 640 ? 8 : 6;
+      const phase = reducedMotion.matches ? 0 : time * 0.00008;
+
+      pointer.x += (pointer.targetX - pointer.x) * 0.055;
+      pointer.y += (pointer.targetY - pointer.y) * 0.055;
+
+      for (let line = 0; line < lineCount; line += 1) {
+        const baseline = ((line + 0.5) / lineCount) * height;
+        context.beginPath();
+
+        for (let x = -step; x <= width + step; x += step) {
+          const normalizedX = x / Math.max(width, 1);
+          const drift = Math.sin(normalizedX * 5.2 + line * 0.47 + phase * 5) * height * 0.025;
+          const detail = Math.sin(normalizedX * 13.7 - line * 0.31 - phase * 3) * height * 0.009;
+          let displacement = 0;
+
+          if (pointer.active) {
+            const deltaX = x - pointer.x;
+            const deltaY = baseline + drift + detail - pointer.y;
+            const influence = Math.exp(-(deltaX * deltaX + deltaY * deltaY) / (2 * 180 * 180));
+            displacement = (deltaY > 0 ? 1 : -1) * influence * 38;
+          }
+
+          const y = baseline + drift + detail + displacement;
+          if (x === -step) context.moveTo(x, y);
+          else context.lineTo(x, y);
+        }
+
+        context.strokeStyle = line % 7 === 0 ? accent : foreground;
+        context.globalAlpha = line % 7 === 0 ? 0.38 : 0.105;
+        context.lineWidth = line % 7 === 0 ? 1.1 : 0.7;
+        context.stroke();
+      }
+
+      context.globalAlpha = 1;
+      const markerCount = width < 640 ? 8 : 14;
+      for (let marker = 0; marker < markerCount; marker += 1) {
+        const progress = (marker / markerCount + phase * (0.35 + (marker % 3) * 0.12)) % 1;
+        const x = progress * width;
+        const line = (marker * 7) % lineCount;
+        const y = ((line + 0.5) / lineCount) * height + Math.sin(progress * 5.2 + line * 0.47 + phase * 5) * height * 0.025;
+        context.fillStyle = marker % 4 === 0 ? accent : foreground;
+        context.globalAlpha = marker % 4 === 0 ? 0.8 : 0.32;
+        context.fillRect(x - 1.5, y - 1.5, 3, 3);
+      }
+
+      context.globalAlpha = 1;
+      if (!reducedMotion.matches && visible) frame = requestAnimationFrame(draw);
+    };
+
+    const restart = () => {
+      cancelAnimationFrame(frame);
+      draw(performance.now());
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      resize();
+      restart();
+    });
+    const visibilityObserver = new IntersectionObserver(([entry]) => {
+      visible = entry.isIntersecting;
+      if (visible) restart();
+      else cancelAnimationFrame(frame);
+    });
+
+    resizeObserver.observe(container);
+    visibilityObserver.observe(container);
+    container.addEventListener("pointermove", (event) => {
+      const bounds = container.getBoundingClientRect();
+      pointer.targetX = event.clientX - bounds.left;
+      pointer.targetY = event.clientY - bounds.top;
+      pointer.active = true;
+    }, { signal: controller.signal });
+    container.addEventListener("pointerleave", () => {
+      pointer.active = false;
+    }, { signal: controller.signal });
+    reducedMotion.addEventListener("change", restart, { signal: controller.signal });
+
+    document.addEventListener("astro:before-swap", () => {
+      cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      visibilityObserver.disconnect();
+      controller.abort();
+    }, { once: true });
+
+    resize();
+    restart();
+  };
+
+  const initializeSignalFields = () => {
+    document.querySelectorAll<HTMLCanvasElement>("[data-signal-field]").forEach(initializeSignalField);
+  };
+
+  document.addEventListener("astro:page-load", initializeSignalFields);
+  initializeSignalFields();
+</script>
+
+<style>
+  .signal-field {
+    inset: 0;
+    overflow: hidden;
+    pointer-events: auto;
+    position: absolute;
+  }
+
+  .signal-field canvas {
+    display: block;
+    height: 100%;
+    width: 100%;
+  }
+
+  .signal-field__fade {
+    background: linear-gradient(90deg, var(--theme-canvas) 0%, color-mix(in srgb, var(--theme-canvas) 88%, transparent) 42%, transparent 78%);
+    inset: 0;
+    pointer-events: none;
+    position: absolute;
+  }
+
+  @media (max-width: 47.99rem) {
+    .signal-field__fade {
+      background: linear-gradient(180deg, var(--theme-canvas) 4%, color-mix(in srgb, var(--theme-canvas) 88%, transparent) 55%, transparent 100%);
+    }
+  }
+</style>

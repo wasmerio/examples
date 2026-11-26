@@ -1,0 +1,188 @@
+---
+import { getCollection, render,getEntry } from 'astro:content';
+import type { Page } from 'astro';
+import type { CollectionEntry } from 'astro:content';
+import  Layout  from "../../layouts/Layout.astro";
+import Top from '../../components/TopMenu.astro';
+
+// 1. サイト設定 (settings) を取得（タイトルやテーマカラー用）
+const settingsEntry = await getEntry('settings', 'index');
+const settings = settingsEntry?.data;
+const currentYear = new Date().getFullYear();
+
+// 1. ページネーションの型定義とgetStaticPaths
+export async function getStaticPaths({ paginate }: { paginate: any }) {
+    const memos = await getCollection('memo', ({ data }) => !data.draft);
+
+    // 日付の新しい順にソート
+    memos.sort((a, b) => {
+    const timeA = a.data.date.getTime();
+    const timeB = b.data.date.getTime();
+    if (timeA !== timeB) {
+        return timeB - timeA; // 新しい順
+    }
+    return b.id.localeCompare(a.id); // 秒まで同じならファイル名順
+    });
+
+    return paginate(memos, { pageSize: 10 });
+}
+
+// 2. ページPropsの型定義（AstroのPage型とコレクションエントリを利用）
+interface Props {
+    page: Page<CollectionEntry<'memo'>>;
+}
+
+const { page } = Astro.props;
+
+// 3. ページ内の各記事のContentコンポーネントを事前に生成
+const memosWithContent = await Promise.all(
+    page.data.map(async (memo: CollectionEntry<'memo'>) => {
+        const { Content } = await render(memo);
+        return { ...memo, Content };
+    })
+);
+---
+
+<Layout title={`Memo | ${settings?.siteTitle}`} type='article'>
+    <Top />
+    <div class="memo-wrapper">
+        <h2 class="page-title">Memo</h2>
+        <div class="timeline-list">
+            {memosWithContent.map(({ id, data, Content }) => (
+                <article class="memo-card" data-memo-id={id}>
+                    <div class="memo-header">
+                        {data.date && (
+                            <time datetime={new Date(data.date).toISOString()}>
+                                {new Date(data.date).toLocaleDateString('ja-JP')}
+                            </time>
+                        )}
+                        <h2>{data.title}</h2>
+                    </div>
+                    <!-- 本文エリア -->
+                    <div class="memo-body-container">
+                        <div class="memo-body-content">
+                            <Content />
+                        </div>
+                    </div>
+                    <!-- 続きを読むボタン -->
+                    <button class="read-more-btn" type="button">続きを読む</button>
+                </article>
+            ))}
+        </div>
+    </div>
+        <!-- ページネーション ナビゲーション -->
+        <nav class="pagination">
+            {page.url.prev ? <a href={page.url.prev}>&larr; prev</a> : <span class="disabled">&larr; prev</span>}
+            <span class="page-info">
+                {page.currentPage} / {page.lastPage}
+            </span>
+            {page.url.next ? <a href={page.url.next}>next &rarr;</a> : <span class="disabled">next &rarr;</span>}
+        </nav>
+    <div class="footer">© {currentYear} {settings?.prof.author}.</div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const buttons = document.querySelectorAll('.read-more-btn');
+
+            buttons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const card = button.closest('.memo-card');
+                    if (card) {
+                        const isExpanded = card.classList.toggle('is-expanded');
+                        button.textContent = isExpanded ? '閉じる' : '続きを読む';
+                    }
+                });
+            });
+        });
+    </script>
+</Layout>
+
+<style>
+.memo-timeline {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+}
+
+.memo-card {
+    background: #fff;
+    border: 1px solid #eaeaea;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.memo-header time {
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.memo-header h2 {
+    font-size: 1.1rem;
+    margin: 0.25rem 0 1rem 0;
+}
+
+/* 本文の省略（高さや行数制限） */
+.memo-body-container {
+    max-height: 4.5em; /* おおよそ3行分程度 */
+    overflow: hidden;
+    position: relative;
+    transition: max-height 0.3s ease;
+}
+
+/* 閉じた状態のときに下部にうっすらグラデーションを入れると綺麗です */
+.memo-body-container::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 2rem;
+    background: linear-gradient(transparent, #fff);
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+/* 展開されたときのクラス */
+.memo-card.is-expanded .memo-body-container {
+    max-height: 2000px; /* 十分大きな値、または無制限 */
+}
+
+.memo-card.is-expanded .memo-body-container::after {
+    opacity: 0;
+}
+
+/* ボタンのスタイル */
+.read-more-btn {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 0.5rem 0;
+    margin-top: 0.5rem;
+    text-decoration: underline;
+}
+
+.read-more-btn:hover {
+    color: #000;
+}
+
+/* ページネーション */
+.pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 2rem;
+}
+.pagination a {
+    padding: 0.5rem 1rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    text-decoration: none;
+}
+.pagination .disabled {
+    color: #aaa;
+    pointer-events: none;
+}
+</style>

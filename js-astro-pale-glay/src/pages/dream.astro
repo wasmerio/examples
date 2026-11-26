@@ -1,0 +1,118 @@
+---
+import { getCollection,getEntry} from 'astro:content';
+import  Layout  from "../layouts/Layout.astro";
+import Nameinput from '../components/Nameinput.astro';
+import Top from '../components/TopMenu.astro';
+
+// 1. サイト設定 (settings) を取得（タイトルやテーマカラー用）
+const settingsEntry = await getEntry('settings', 'index');
+const settings = settingsEntry?.data;
+
+const currentYear = new Date().getFullYear();
+
+const allNovelsRaw = await getCollection('novel', ({ data }) => !data.draft);
+
+const allNovels = await Promise.all(
+    allNovelsRaw.map(async (entry) => {
+        const text = entry.body ?? '';
+
+        const cleanText = text
+          .replace(/[#_*`>]/g, '')
+          .replace(/\s+/g, '');
+
+        const charCount = cleanText.length;
+        const readingTime = Math.ceil(charCount / 500);
+
+        // ★ 日付を "YYYY年MM月DD日" の形式に変換する処理
+        let formattedDate = '';
+        if (entry.data.date) {
+            const d = new Date(entry.data.date);
+            const year = d.getFullYear();
+            const month = d.getMonth() + 1; // 月は0始まりなので+1
+            const day = d.getDate();
+            formattedDate = `${year}年${month}月${day}日`;
+        }
+
+        return {
+          ...entry,
+          charCount,
+          readingTime,
+          formattedDate, // フォーマット済みの日付を保持
+        };
+    })
+);
+
+const partners = [
+  ...new Set([
+    ...allNovels.flatMap((o) => o.data.cc),
+  ]),
+];
+
+---
+
+<Layout title={`Dream | ${settings?.siteTitle}`} type='article'>
+	<Top />
+	<div class="dream-container">
+		<div class="dream-header">
+			<h2 class="page-title">Dream</h2>
+			<div class="name" id="dream">
+				<h2 class="h2-a">Name Entry</h2>
+				<div class="entry">
+					<input id="dreamName" placeholder="Your Name Here" />　
+					<button id="saveName">Save</button>
+				</div>
+			</div>
+		</div>
+		{partners.map((partner) =>{
+			const partnerOneshots = allNovels.filter((o) =>
+				o.data.cc.includes(partner),
+			);
+
+			// ★ ここでお相手ごとの小説を公開日（date）の新しい順にソートする
+			partnerOneshots.sort((a, b) => {
+				const dateA = a.data.date ? new Date(a.data.date).getTime() : 0;
+				const dateB = b.data.date ? new Date(b.data.date).getTime() : 0;
+				// 日付が異なる場合は新しい順
+				if (dateA !== dateB) {
+					return dateB - dateA;
+				}
+				// 日付が同じ（または両方ない）場合はファイル名（ID）の逆順などで安定させる
+				return b.id.localeCompare(a.id);
+			});
+			return(
+			<div class="dream-main">
+				<h2 class="cc-name">{partner}</h2>
+				{partnerOneshots.length > 0 && (
+					<>
+					<div class="novel-item-container">
+						{partnerOneshots.map((entry) =>(
+							<div class="novel-item">
+								<div class="novel-info">
+									<a href={`/novel/${entry.id}`}><h3 class="novel-item-title">{entry.data.title}</h3></a>
+									<p class="meta">{entry.charCount}文字（約{entry.readingTime}分）</p>
+									{entry.data.desc &&(
+										<p class="desc">{entry.data.desc}</p>
+									)}
+									{entry.data.tags.length > 0 && (
+										<ul class="novel-tags">
+											{entry.data.tags.map((tag) => (
+												<li>{tag}</li>
+											))}
+										</ul>
+									)}
+									{entry.formattedDate && (
+										<span class="novel-date">{entry.formattedDate}</span>
+									)}
+								</div>
+							</div>
+						))}
+					</div>
+					</>
+				)}
+			</div>
+			);
+		})}
+    </div>
+	<div class="footer">© {currentYear} {settings?.prof.author}.</div>
+    <Nameinput />
+</Layout>

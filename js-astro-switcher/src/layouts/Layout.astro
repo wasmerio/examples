@@ -1,0 +1,182 @@
+---
+import '../styles/global.css';
+import { SITE } from '../config/site.mjs';
+import type { SEOProps } from '../types/seo';
+import { ClientRouter } from 'astro:transitions';
+
+interface Props extends SEOProps {
+  lang?: string;
+}
+
+const {
+  title = SITE.title,
+  description = SITE.description,
+  canonicalURL,
+  ogTitle = title,
+  ogDescription = description,
+  ogImage = SITE.ogImage,
+  ogType = 'website',
+  twitterCard = 'summary_large_image',
+  twitterTitle = ogTitle,
+  twitterDescription = ogDescription,
+  twitterImage = ogImage,
+  noindex = false,
+  nofollow = false,
+  lang = SITE.defaultLanguage,
+} = Astro.props;
+
+// Construct full URLs
+const currentPath = Astro.url.pathname;
+const canonicalPath = canonicalURL || currentPath;
+const siteURL = new URL(canonicalPath, SITE.url);
+
+// Handle image URLs - support both absolute URLs and relative paths
+const getFullImageUrl = (image: string): string => {
+  if (image.startsWith('http://') || image.startsWith('https://')) {
+    return image;
+  }
+  return new URL(image, SITE.url).href;
+};
+
+const fullOgImage = getFullImageUrl(ogImage);
+const fullTwitterImage = getFullImageUrl(twitterImage);
+
+// Build robots meta content
+const robotsContent = [
+  noindex ? 'noindex' : 'index',
+  nofollow ? 'nofollow' : 'follow',
+].join(', ');
+---
+
+<!doctype html>
+<html lang={lang}>
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="generator" content={Astro.generator} />
+		
+		<!-- Resource Hints -->
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		
+		<!-- Premium Theme Fonts - Loaded asynchronously to prevent render blocking -->
+		<!-- Aurora Theme: Poppins (sans) + Cormorant Garamond (serif) + Fira Code (mono) -->
+		<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&family=Fira+Code:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+		<noscript>
+			<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Cormorant+Garamond:wght@400;500;600;700&family=Fira+Code:wght@400;500;600;700&display=swap" rel="stylesheet" />
+		</noscript>
+		<!-- Obsidian Theme: Space Grotesk (sans) + IBM Plex Serif (serif) + JetBrains Mono (mono) -->
+		<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Serif:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+		<noscript>
+			<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Serif:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+		</noscript>
+		
+		<!-- Preload Critical Resources -->
+		<link rel="preload" href="/favicon.svg" as="image" type="image/svg+xml" />
+		
+		<!-- Primary Meta Tags -->
+		<title>{title}</title>
+		<meta name="title" content={title} />
+		<meta name="description" content={description} />
+		<meta name="robots" content={robotsContent} />
+		<link rel="canonical" href={siteURL.href} />
+		
+		<!-- Open Graph / Facebook -->
+		<meta property="og:type" content={ogType} />
+		<meta property="og:url" content={siteURL.href} />
+		<meta property="og:title" content={ogTitle} />
+		<meta property="og:description" content={ogDescription} />
+		<meta property="og:image" content={fullOgImage} />
+		<meta property="og:site_name" content={SITE.title} />
+		
+		<!-- Twitter -->
+		<meta name="twitter:card" content={twitterCard} />
+		<meta name="twitter:url" content={siteURL.href} />
+		<meta name="twitter:title" content={twitterTitle} />
+		<meta name="twitter:description" content={twitterDescription} />
+		<meta name="twitter:image" content={fullTwitterImage} />
+		
+		<!-- View Transitions -->
+		<ClientRouter />
+	</head>
+	<body class="min-h-screen" style="background-color: var(--token-color-background, #ffffff); color: var(--token-color-text-primary, #111827);">
+		<script is:inline>
+			/**
+			 * Early Theme Initialization
+			 * 
+			 * Architecture Decision: This script runs BEFORE page render to prevent
+			 * theme flash (FOUC - Flash of Unstyled Content). We use is:inline so it
+			 * executes immediately, not after Astro processes it.
+			 * 
+			 * Why inline script:
+			 * 1. Executes synchronously before page paint
+			 * 2. No external dependencies
+			 * 3. Works even if JavaScript is slow to load
+			 * 4. Prevents visual flash when switching themes
+			 */
+			(function() {
+				// Available color themes (light/dark are modes, not themes)
+				const availableThemes = ['blue', 'green', 'purple', 'orange', 'aurora', 'obsidian'];
+				const storedTheme = localStorage.getItem('theme');
+				const storedMode = localStorage.getItem('mode');
+				
+				// Set theme (default to blue if not set)
+				// Architecture: Validate against available themes to prevent invalid states
+				const theme = storedTheme && availableThemes.includes(storedTheme) 
+					? storedTheme 
+					: 'blue';
+				document.documentElement.setAttribute('data-theme', theme);
+				
+				// Set mode (default based on system preference if not set)
+				// Architecture: Respects user's system preference if no explicit choice
+				let mode = storedMode === 'light' || storedMode === 'dark' 
+					? storedMode 
+					: (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+				document.documentElement.setAttribute('data-mode', mode);
+			})();
+			
+			/**
+			 * View Transition Support
+			 * 
+			 * Architecture Decision: Re-apply theme on Astro view transitions because:
+			 * 1. View transitions don't trigger full page reload
+			 * 2. Data attributes might not persist across transitions
+			 * 3. Ensures theme consistency during client-side navigation
+			 * 
+			 * This is necessary for Astro's view transitions feature.
+			 */
+			document.addEventListener('astro:page-load', function() {
+				const storedTheme = localStorage.getItem('theme');
+				const storedMode = localStorage.getItem('mode');
+				if (storedTheme) {
+					document.documentElement.setAttribute('data-theme', storedTheme);
+				}
+				if (storedMode === 'light' || storedMode === 'dark') {
+					document.documentElement.setAttribute('data-mode', storedMode);
+				}
+			});
+			
+			// Also listen for after-swap to ensure theme persists
+			document.addEventListener('astro:after-swap', function() {
+				const storedTheme = localStorage.getItem('theme');
+				const storedMode = localStorage.getItem('mode');
+				if (storedTheme) {
+					document.documentElement.setAttribute('data-theme', storedTheme);
+				}
+				if (storedMode === 'light' || storedMode === 'dark') {
+					document.documentElement.setAttribute('data-mode', storedMode);
+				}
+			});
+		</script>
+		<a
+			href="#main-content"
+			class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2"
+			style="background-color: var(--token-color-text-inverse, #000000); color: var(--token-color-background, #ffffff); --tw-ring-color: var(--token-color-text-inverse, #000000);"
+		>
+			Skip to main content
+		</a>
+		<slot />
+	</body>
+</html>

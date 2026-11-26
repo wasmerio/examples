@@ -1,0 +1,177 @@
+---
+/**
+ * Modal Component
+ * 
+ * A theme-aware modal/dialog component for displaying content, forms, and confirmations.
+ * 
+ * Architecture Decisions:
+ * 1. Uses semantic tokens exclusively - no hardcoded colors
+ * 2. Accessible by default - ARIA attributes, focus trap, keyboard navigation
+ * 3. Supports multiple sizes and variants - flexible for different use cases
+ * 4. Backdrop with blur option - modern, polished appearance
+ * 5. Animation uses motion tokens - consistent timing across themes
+ * 
+ * This component requires client-side JavaScript for interactivity.
+ * Use with client:load or client:visible directive.
+ */
+
+export interface Props {
+  id: string;
+  title?: string;
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'fullscreen';
+  variant?: 'default' | 'alert' | 'form';
+  showBackdrop?: boolean;
+  backdropBlur?: boolean;
+  closeOnBackdropClick?: boolean;
+  class?: string;
+}
+
+const {
+  id,
+  title,
+  size = 'md',
+  variant = 'default',
+  showBackdrop = true,
+  backdropBlur = false,
+  closeOnBackdropClick = true,
+  class: className = '',
+} = Astro.props;
+
+const sizeClasses = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-2xl',
+  fullscreen: 'max-w-full h-full m-0 rounded-none',
+};
+
+const variantStyles = {
+  default: {
+    background: 'var(--token-color-background, #ffffff)',
+    border: '1px solid var(--token-color-border, #e5e7eb)',
+  },
+  alert: {
+    background: 'var(--token-color-background, #ffffff)',
+    border: '2px solid var(--token-color-error, #ef4444)',
+  },
+  form: {
+    background: 'var(--token-color-surface, #f9fafb)',
+    border: '1px solid var(--token-color-border, #e5e7eb)',
+  },
+};
+
+const style = variantStyles[variant];
+const motionDuration = 'var(--token-motion-duration-normal)';
+const motionEasing = 'var(--token-motion-easing-default)';
+const modalId = id || `modal-${Math.random().toString(36).substr(2, 9)}`;
+---
+
+<div
+  id={modalId}
+  class="fixed inset-0 z-50 hidden items-center justify-center p-4"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby={title ? `${modalId}-title` : undefined}
+  style={`
+    background-color: ${showBackdrop ? 'rgba(0, 0, 0, 0.5)' : 'transparent'};
+    backdrop-filter: ${backdropBlur ? 'blur(4px)' : 'none'};
+    transition: opacity ${motionDuration} ${motionEasing};
+  `}
+  onclick={closeOnBackdropClick ? `if (event.target === this) { window.closeModal('${modalId}'); }` : undefined}
+>
+  <div
+    class={`${sizeClasses[size]} w-full rounded-lg shadow-lg ${className}`}
+    style={`
+      background-color: ${style.background};
+      ${style.border ? `border: ${style.border};` : ''}
+      box-shadow: var(--token-shadow-5, 0 20px 25px -5px rgb(0 0 0 / 0.1));
+      transition: transform ${motionDuration} ${motionEasing}, opacity ${motionDuration} ${motionEasing};
+    `}
+    onclick={(e) => e.stopPropagation()}
+  >
+        {title && (
+      <div
+        class="flex items-center justify-between border-b p-6"
+        style="border-color: var(--token-color-border, #e5e7eb);"
+      >
+        {title && (
+          <h2
+            id={`${modalId}-title`}
+            class="text-xl font-semibold"
+            style="color: var(--token-color-text-primary, #111827);"
+          >
+            {title}
+          </h2>
+        )}
+        <button
+          type="button"
+          class="ml-auto rounded-lg p-1 transition-colors cursor-pointer"
+          style="color: var(--token-color-text-muted, #374151);"
+          onclick={`window.closeModal('${modalId}');`}
+          aria-label="Close modal"
+        >
+          <svg
+            class="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      </div>
+    )}
+    <div class="p-6">
+      <slot />
+    </div>
+    <slot name="footer" />
+  </div>
+</div>
+
+<script is:inline>
+  /**
+   * Modal utility functions
+   * 
+   * Architecture Decision: These utilities are separate from the component
+   * to allow programmatic control of modals from anywhere in the app.
+   */
+  window.openModal = function(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      // Focus trap - focus first focusable element
+      const firstFocusable = modal.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (firstFocusable) firstFocusable.focus();
+      // Prevent body scroll
+      document.body.style.overflow = 'hidden';
+    }
+  };
+
+  window.closeModal = function(modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      // Restore body scroll
+      document.body.style.overflow = '';
+    }
+  };
+
+  // Handle ESC key
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      const openModal = document.querySelector('[role="dialog"]:not(.hidden)');
+      if (openModal) {
+        const modalId = openModal.id;
+        window.closeModal(modalId);
+      }
+    }
+  });
+</script>

@@ -1,0 +1,217 @@
+---
+/**
+ * Tabs Component
+ * 
+ * A theme-aware tabs component for organizing content.
+ * 
+ * Architecture Decisions:
+ * 1. Uses semantic tokens exclusively - no hardcoded colors
+ * 2. Accessible by default - ARIA tabs pattern, keyboard navigation
+ * 3. Supports horizontal and vertical layouts - flexible usage
+ * 4. Multiple variants - different visual styles
+ * 5. Smooth transitions using motion tokens - consistent timing
+ * 
+ * This component requires client-side JavaScript for interactivity.
+ * Use with client:load or client:visible directive.
+ */
+
+export interface TabItem {
+  id: string;
+  label: string;
+  content: string;
+  icon?: string;
+}
+
+export interface Props {
+  items: TabItem[];
+  defaultTab?: string;
+  variant?: 'default' | 'pills' | 'underlined';
+  orientation?: 'horizontal' | 'vertical';
+  class?: string;
+}
+
+const {
+  items,
+  defaultTab,
+  variant = 'default',
+  orientation = 'horizontal',
+  class: className = '',
+} = Astro.props;
+
+const variantStyles = {
+  default: {
+    activeBg: 'var(--token-color-surface, #f9fafb)',
+    activeColor: 'var(--token-color-text-primary, #111827)',
+    inactiveColor: 'var(--token-color-text-muted, #374151)',
+    border: '1px solid var(--token-color-border, #e5e7eb)',
+  },
+  pills: {
+    activeBg: 'var(--token-color-primary, #000000)',
+    activeColor: 'var(--token-color-primary-foreground, #ffffff)',
+    inactiveColor: 'var(--token-color-text-muted, #374151)',
+    border: 'none',
+  },
+  underlined: {
+    activeBg: 'transparent',
+    activeColor: 'var(--token-color-primary, #000000)',
+    inactiveColor: 'var(--token-color-text-muted, #374151)',
+    border: 'none',
+    underline: '2px solid var(--token-color-primary, #000000)',
+  },
+};
+
+const style = variantStyles[variant];
+const motionDuration = 'var(--token-motion-duration-normal)';
+const motionEasing = 'var(--token-motion-easing-default)';
+const tabsId = `tabs-${Math.random().toString(36).substr(2, 9)}`;
+const activeTabId = defaultTab || items[0]?.id;
+---
+
+<div
+  class={`${orientation === 'vertical' ? 'flex gap-4' : ''} ${className}`}
+  role="tablist"
+  aria-orientation={orientation}
+>
+  <div
+    class={`flex ${orientation === 'horizontal' ? 'flex-row border-b' : 'flex-col border-r'} gap-1`}
+    style={`
+      border-color: var(--token-color-border, #e5e7eb);
+      ${orientation === 'vertical' ? 'min-width: 200px;' : ''}
+    `}
+  >
+    {items.map((item, index) => {
+      const tabId = `${tabsId}-tab-${index}`;
+      const panelId = `${tabsId}-panel-${index}`;
+      const isActive = item.id === activeTabId;
+      
+      return (
+        <button
+          key={item.id}
+          type="button"
+          id={tabId}
+          role="tab"
+          aria-selected={isActive ? 'true' : 'false'}
+          aria-controls={panelId}
+          tabindex={isActive ? '0' : '-1'}
+          class={`px-4 py-2 text-sm font-medium rounded-t-lg transition-all cursor-pointer ${
+            orientation === 'vertical' ? 'rounded-t-lg rounded-b-lg text-left' : ''
+          }`}
+          style={`
+            background-color: ${isActive ? style.activeBg : 'transparent'};
+            color: ${isActive ? style.activeColor : style.inactiveColor};
+            ${variant === 'underlined' && isActive ? `border-bottom: ${style.underline};` : ''}
+            transition-duration: ${motionDuration};
+            transition-timing-function: ${motionEasing};
+          `}
+          onclick={`
+            const tabs = document.querySelectorAll('[role="tab"][aria-controls^="${tabsId}-panel"]');
+            const panels = document.querySelectorAll('[role="tabpanel"][id^="${tabsId}-panel"]');
+            
+            // Update all tabs
+            tabs.forEach((tab, idx) => {
+              const isSelected = tab.id === '${tabId}';
+              tab.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+              tab.setAttribute('tabindex', isSelected ? '0' : '-1');
+              
+              // Update styles
+              if (isSelected) {
+                tab.style.backgroundColor = '${style.activeBg}';
+                tab.style.color = '${style.activeColor}';
+                ${variant === 'underlined' ? `tab.style.borderBottom = '${style.underline}';` : ''}
+              } else {
+                tab.style.backgroundColor = 'transparent';
+                tab.style.color = '${style.inactiveColor}';
+                ${variant === 'underlined' ? 'tab.style.borderBottom = "none";' : ''}
+              }
+            });
+            
+            // Update all panels
+            panels.forEach((panel, idx) => {
+              const isSelected = panel.id === '${panelId}';
+              panel.setAttribute('aria-hidden', isSelected ? 'false' : 'true');
+              panel.style.display = isSelected ? 'block' : 'none';
+            });
+          `}
+          onmouseenter={(e) => {
+            if (!isActive) {
+              e.currentTarget.style.backgroundColor = 'var(--token-color-hover, rgba(0, 0, 0, 0.05))';
+            }
+          }}
+          onmouseleave={(e) => {
+            if (!isActive) {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }
+          }}
+        >
+          {item.label}
+        </button>
+      );
+    })}
+  </div>
+  
+  <div class={orientation === 'vertical' ? 'flex-1' : 'mt-4'}>
+    {items.map((item, index) => {
+      const panelId = `${tabsId}-panel-${index}`;
+      const tabId = `${tabsId}-tab-${index}`;
+      const isActive = item.id === activeTabId;
+      
+      return (
+        <div
+          key={item.id}
+          id={panelId}
+          role="tabpanel"
+          aria-labelledby={tabId}
+          aria-hidden={isActive ? 'false' : 'true'}
+          style={`
+            display: ${isActive ? 'block' : 'none'};
+            color: var(--token-color-text-primary, #111827);
+          `}
+          set:html={item.content}
+        >
+        </div>
+      );
+    })}
+  </div>
+</div>
+
+<script is:inline>
+  /**
+   * Keyboard navigation for tabs
+   * 
+   * Architecture Decision: Handles arrow key navigation following
+   * ARIA tabs pattern for accessibility.
+   */
+  document.addEventListener('keydown', function(e) {
+    const tab = e.target;
+    if (!tab || tab.getAttribute('role') !== 'tab') return;
+    
+    const tablist = tab.closest('[role="tablist"]');
+    if (!tablist) return;
+    
+    const tabs = Array.from(tablist.querySelectorAll('[role="tab"]'));
+    const currentIndex = tabs.indexOf(tab);
+    const orientation = tablist.getAttribute('aria-orientation') || 'horizontal';
+    
+    let nextIndex = currentIndex;
+    
+    if (orientation === 'horizontal') {
+      if (e.key === 'ArrowLeft') {
+        nextIndex = currentIndex > 0 ? currentIndex - 1 : tabs.length - 1;
+      } else if (e.key === 'ArrowRight') {
+        nextIndex = currentIndex < tabs.length - 1 ? currentIndex + 1 : 0;
+      }
+    } else {
+      if (e.key === 'ArrowUp') {
+        nextIndex = currentIndex > 0 ? currentIndex - 1 : tabs.length - 1;
+      } else if (e.key === 'ArrowDown') {
+        nextIndex = currentIndex < tabs.length - 1 ? currentIndex + 1 : 0;
+      }
+    }
+    
+    if (nextIndex !== currentIndex && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      tabs[nextIndex].click();
+      tabs[nextIndex].focus();
+    }
+  });
+</script>

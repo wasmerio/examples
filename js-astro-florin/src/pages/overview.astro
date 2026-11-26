@@ -1,0 +1,213 @@
+---
+import { url } from '../lib/url';
+// Florin — hero screen "Overview". Built from Veritheme components via the MCP.
+import FlorinShell from '../components/FlorinShell.astro';
+import FlorinModals from '../components/FlorinModals.astro';
+import FlorinCard from '../components/FlorinCard.astro';
+import {
+  CreditCard, ArrowLeftRight, Receipt, Send, ArrowUpRight, ArrowDownLeft,
+  Plus, Building2, Landmark, ChartPie,
+} from '@lucide/astro';
+
+// `good` drives the trend colour by whether the change is FAVOURABLE, not by its
+// sign — a drop in spending is good, so it stays green even though it's −5.2%.
+const kpis = [
+  { label: 'Total balance', value: '$128,540.00', trend: '+3.4%',  good: true, sub: 'across 3 accounts' },
+  { label: 'Income · July',  value: '$52,300.00', trend: '+12.0%', good: true, sub: 'vs last month' },
+  { label: 'Spending · July', value: '$18,940.00', trend: '−5.2%', good: true, sub: 'vs last month' },
+  { label: 'Savings rate',   value: '42%',         trend: '+6 pts', good: true, sub: 'of net income' },
+];
+
+// Bar height is the value's share of the axis (60k), so the chart scales
+// with whatever height its card is given.
+const CF_AXIS = 60000;
+const cfPct = (v: number) => `${((v / CF_AXIS) * 100).toFixed(1)}%`;
+const usd = (v: number) => `$${v.toLocaleString('en-US')}`;
+const cashflow = [
+  { m: 'Feb', inc: 28400, exp: 17200 },
+  { m: 'Mar', inc: 34900, exp: 20600 },
+  { m: 'Apr', inc: 25100, exp: 28300 },
+  { m: 'May', inc: 41800, exp: 21900 },
+  { m: 'Jun', inc: 47600, exp: 27400 },
+  { m: 'Jul', inc: 52300, exp: 18940 },
+];
+
+const categories = [
+  { icon: Building2, label: 'Payroll & contractors', amount: '$8,420', pct: 'vt-w-4/5' },
+  { icon: CreditCard, label: 'Software & SaaS',        amount: '$3,110', pct: 'vt-w-2/5' },
+  { icon: Landmark,   label: 'Office & rent',          amount: '$2,600', pct: 'vt-w-1/3' },
+  { icon: Receipt,    label: 'Travel & meals',         amount: '$1,540', pct: 'vt-w-1/4' },
+];
+
+const tx = [
+  { name: 'Stripe Payout',     cat: 'Income',   icon: ArrowDownLeft, date: 'Jul 21', acct: 'Main · USD', amount: '+$12,480.00', pos: true,  status: 'Settled', tone: 'vt-badge-success' },
+  { name: 'AWS',               cat: 'Software',  icon: ArrowUpRight,  date: 'Jul 20', acct: 'Main · USD', amount: '−$2,314.90',  pos: false, status: 'Cleared', tone: 'vt-badge-info' },
+  { name: 'Figma',             cat: 'Software',  icon: ArrowUpRight,  date: 'Jul 20', acct: 'Main · USD', amount: '−$144.00',    pos: false, status: 'Cleared', tone: 'vt-badge-info' },
+  { name: 'Contractor · Lee',  cat: 'Payroll',   icon: ArrowUpRight,  date: 'Jul 19', acct: 'Payroll',    amount: '−$4,200.00',  pos: false, status: 'Pending', tone: 'vt-badge-warning' },
+  { name: 'Wire · Nord GmbH',  cat: 'Income',    icon: ArrowDownLeft, date: 'Jul 18', acct: 'Main · EUR', amount: '+€6,900.00',  pos: true,  status: 'Settled', tone: 'vt-badge-success' },
+  { name: 'WeWork',            cat: 'Office',     icon: ArrowUpRight,  date: 'Jul 17', acct: 'Main · USD', amount: '−$2,600.00',  pos: false, status: 'Failed',  tone: 'vt-badge-danger' },
+];
+---
+
+<FlorinShell
+  active="overview"
+  title="Florin — Overview"
+  description="Florin — an open-source fintech dashboard built with Veritheme. Re-skins to any brand live. Pure CSS components, dark mode."
+>
+  <!-- Title + actions -->
+  <div class="vt-flex vt-items-center vt-justify-between vt-gap-4">
+    <div>
+      <h1 class="vt-heading-md">Overview</h1>
+      <p class="vt-body-sm vt-text-foreground-muted vt-mt-1">Good morning, Sofia — here's your money today.</p>
+    </div>
+    <div class="vt-flex vt-items-center vt-gap-2">
+      <button type="button" class="vt-btn vt-btn-bordered vt-hidden vt-sm:flex" data-modal-open="add-money-modal"><ArrowDownLeft class="vt-w-4 vt-h-4" /> Request</button>
+      <button type="button" class="vt-btn vt-btn-primary" data-modal-open="send-modal"><Send class="vt-w-4 vt-h-4" /> Send money</button>
+    </div>
+  </div>
+
+  <!-- KPI tiles (Stats Card; the trend colour follows `good`, not the sign) -->
+  <div class="vt-grid vt-grid-cols-1 vt-sm:grid-cols-2 fl-kpi-4 vt-gap-4">
+    {kpis.map((k) => (
+      <div class:list={['vt-card vt-stats-card', { 'vt-stats-card-down': !k.good }]}>
+        <div class="vt-stats-card-content">
+          <p class="vt-stats-card-label">{k.label}</p>
+          <p class="vt-stats-card-value">{k.value}</p>
+        </div>
+        <div class="vt-stats-card-trend">
+          <span class="vt-stats-card-delta">{k.trend}</span>
+          <span class="vt-stats-card-note">{k.sub}</span>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <!-- Cash flow + card visual -->
+  <div class="fl-split">
+    <div class="fl-span-2 vt-card vt-flex vt-flex-col">
+      <div class="vt-card-body vt-flex-1 vt-flex vt-flex-col">
+        <div class="vt-flex vt-items-start vt-justify-between vt-gap-4">
+          <div>
+            <h2 class="vt-label-md">Cash flow</h2>
+            <p class="vt-caption vt-text-foreground-muted vt-mt-0.5">Income vs spending · last 6 months</p>
+          </div>
+          <div class="vt-flex vt-items-center vt-gap-4">
+            <span class="vt-flex vt-items-center vt-gap-1.5 vt-caption vt-text-foreground-secondary"><span class="vt-w-2 vt-h-2 vt-rounded-sm vt-bg-brand-fill"></span> Income</span>
+            <span class="vt-flex vt-items-center vt-gap-1.5 vt-caption vt-text-foreground-secondary"><span class="vt-w-2 vt-h-2 vt-rounded-sm vt-bg-surface-strong"></span> Spending</span>
+          </div>
+        </div>
+        <div class="vt-flex vt-items-end vt-gap-4 vt-mt-6 fl-chart-fill">
+          {cashflow.map((c) => (
+            <div class="vt-flex-1 vt-flex vt-items-end vt-justify-center vt-gap-1.5 vt-h-full">
+              <div class="fl-cf-bar vt-rounded-t vt-bg-brand-fill" style={`--h: ${cfPct(c.inc)}`} data-tip={`${c.m} · Income ${usd(c.inc)}`}></div>
+              <div class="fl-cf-bar vt-rounded-t vt-bg-surface-strong" style={`--h: ${cfPct(c.exp)}`} data-tip={`${c.m} · Spending ${usd(c.exp)}`}></div>
+            </div>
+          ))}
+        </div>
+        <div class="vt-flex vt-gap-4 vt-mt-2">
+          {cashflow.map((c) => (
+            <span class="vt-flex-1 vt-text-center vt-caption vt-text-foreground-muted">{c.m}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <div class="vt-card vt-flex vt-flex-col">
+      <div class="vt-card-body vt-flex-1 vt-flex vt-flex-col vt-justify-center">
+        <div class="fl-card-stack">
+          <FlorinCard brand name="Business" kind="Physical" last="4921" exp="08/28" net="VISA" balanceLabel="Main · USD balance" balance="$84,140.00" />
+          <div class="vt-grid vt-grid-cols-2 vt-gap-2 vt-mt-4">
+          <button type="button" class="vt-btn vt-btn-bordered vt-btn-sm" data-modal-open="add-money-modal"><Plus class="vt-w-4 vt-h-4" /> Add money</button>
+          <button type="button" class="vt-btn vt-btn-bordered vt-btn-sm" data-modal-open="move-modal"><ArrowLeftRight class="vt-w-4 vt-h-4" /> Move</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent transactions + spending by category -->
+  <div class="fl-split">
+    <div class="fl-span-2 vt-card">
+      <div class="vt-card-header vt-flex vt-items-center vt-justify-between vt-gap-4">
+        <div>
+          <h2 class="vt-label-md">Recent transactions</h2>
+          <p class="vt-caption vt-text-foreground-muted vt-mt-0.5">Across all accounts</p>
+        </div>
+        <a href={url('/transactions')} class="vt-link">View all</a>
+      </div>
+      <!-- Table component; the card is its frame, so no second vt-table-wrap border inside it -->
+      <div class="vt-overflow-x-auto">
+        <table class="vt-table">
+          <thead>
+            <tr>
+              <th scope="col">Merchant</th>
+              <th scope="col" class="vt-hidden vt-md:table-cell">Account</th>
+              <th scope="col" class="vt-hidden vt-md:table-cell">Date</th>
+              <th scope="col" class="vt-hidden vt-md:table-cell">Status</th>
+              <th scope="col" class="vt-table-numeric">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tx.map((t) => (
+              <tr>
+                <td>
+                  <div class="vt-flex vt-items-center vt-gap-3">
+                    <div class:list={['vt-icon-badge vt-icon-badge-sm', { 'fl-tone-success': t.pos }]}><t.icon class="vt-icon-badge-icon" /></div>
+                    <div class="vt-min-w-0">
+                      <p class="vt-label-md vt-truncate">{t.name}</p>
+                      <p class="vt-caption vt-text-foreground-muted">{t.cat}</p>
+                    </div>
+                  </div>
+                </td>
+                <td class="vt-table-muted vt-hidden vt-md:table-cell">{t.acct}</td>
+                <td class="vt-table-muted vt-hidden vt-md:table-cell">{t.date}</td>
+                <td class="vt-hidden vt-md:table-cell"><span class={`vt-badge vt-badge-soft ${t.tone}`}>{t.status}</span></td>
+                <td class:list={['vt-table-numeric vt-table-strong vt-whitespace-nowrap', { 'fl-text-success': t.pos }]}>{t.amount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="vt-card">
+      <div class="vt-card-body">
+        <div class="vt-flex vt-items-center vt-justify-between vt-gap-2">
+          <div>
+            <h2 class="vt-label-md">Spending by category</h2>
+            <p class="vt-caption vt-text-foreground-muted vt-mt-0.5">July · $18,940 total</p>
+          </div>
+          <ChartPie class="vt-w-4 vt-h-4 vt-text-foreground-muted" />
+        </div>
+        <div class="vt-space-y-4 vt-mt-5">
+          {categories.map((c) => (
+            <div>
+              <div class="vt-flex vt-items-center vt-justify-between vt-gap-2">
+                <div class="vt-flex vt-items-center vt-gap-2 vt-min-w-0">
+                  <div class="vt-icon-badge vt-icon-badge-sm"><c.icon class="vt-icon-badge-icon" /></div>
+                  <p class="vt-label-md vt-truncate">{c.label}</p>
+                </div>
+                <span class="vt-body-sm vt-whitespace-nowrap vt-flex-shrink-0">{c.amount}</span>
+              </div>
+              <div class="vt-progress vt-progress-sm vt-mt-2">
+                <div class={`vt-progress-bar ${c.pct}`}></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <FlorinModals />
+</FlorinShell>
+
+<style>
+  /* The library has no chart: a bar's height is data, read from --h (share of the axis). */
+  .fl-cf-bar {
+    flex: 1;
+    max-width: var(--vt-spacing-7);
+    height: var(--h, 0%);
+    cursor: pointer;
+  }
+</style>

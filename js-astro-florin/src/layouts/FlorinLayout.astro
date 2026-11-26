@@ -1,0 +1,147 @@
+---
+import { url } from '../lib/url';
+// Standalone Florin layout: page chrome + live re-theming toolbar.
+// All styling comes from the published veritheme package (CSS-only design
+// system) plus florin.css for what the library does not ship. Florin's colour
+// themes (florin-themes.css) switch via data-theme on <html>, dark via .dark.
+import 'veritheme/css';
+import '../styles/florin.css';
+import '../styles/florin-themes.css';
+import { Moon, Sun, Palette } from '@lucide/astro';
+
+// Florin's own themes, derived from one brand colour (see florin-themes.css).
+const themes = [
+  { name: 'default', label: 'Blue' },
+  { name: 'florin-mint', label: 'Mint' },
+];
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Florin" />
+  <meta name="author" content="Siarhei Tarasenka" />
+  <meta name="generator" content={Astro.generator} />
+  <link rel="icon" type="image/svg+xml" href={url('/favicon.svg')}>
+  <script is:inline>
+    // Runs before paint: set the theme preset + dark mode with no flash.
+    // Dark follows an explicit stored choice, otherwise the OS preference.
+    (function () {
+      var root = document.documentElement;
+      try {
+        var theme = localStorage.getItem('florin-theme');
+        if (theme === 'default' || theme === 'florin-mint') root.setAttribute('data-theme', theme);
+      } catch (e) {}
+      if (!root.hasAttribute('data-theme')) root.setAttribute('data-theme', 'default');
+      try {
+        var stored = localStorage.getItem('florin-mode'); // 'dark' | 'light' | null
+        var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (dark) root.classList.add('dark');
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body class="vt-bg-surface-page vt-text-foreground-primary vt-min-h-screen">
+  <slot />
+
+  <!-- Theming toolbar: pick a Florin colour theme + toggle dark mode. -->
+  <div data-theme-toolbar class="vt-toolbar vt-toolbar-floating vt-fixed vt-bottom-4 vt-right-4 vt-z-50">
+    <div id="theme-panel" class="vt-hidden vt-items-center vt-gap-1">
+      <div class="vt-btn-group" role="group" aria-label="Colour theme">
+        {themes.map((th) => (
+          <button type="button" class="vt-btn vt-btn-secondary vt-btn-sm" data-theme-pick={th.name} aria-pressed="false"><span>{th.label}</span></button>
+        ))}
+      </div>
+      <button id="mode-toggle" type="button" class="vt-toolbar-btn" title="Toggle dark mode" aria-label="Toggle dark mode" aria-pressed="false">
+        <span id="mode-moon" class="vt-flex"><Moon class="vt-w-4 vt-h-4" /></span>
+        <span id="mode-sun" class="vt-hidden"><Sun class="vt-w-4 vt-h-4" /></span>
+      </button>
+    </div>
+    <button id="theme-fab" type="button" class="vt-toolbar-btn" title="Theme options" aria-label="Theme options" aria-expanded="false" aria-controls="theme-panel">
+      <Palette class="vt-w-4 vt-h-4" />
+    </button>
+  </div>
+
+  <script is:inline>
+    (function () {
+      var root = document.documentElement;
+      var fab = document.getElementById('theme-fab');
+      var panel = document.getElementById('theme-panel');
+      var picks = document.querySelectorAll('[data-theme-pick]');
+      var modeBtn = document.getElementById('mode-toggle');
+      var moon = document.getElementById('mode-moon');
+      var sun = document.getElementById('mode-sun');
+
+      fab.addEventListener('click', function () {
+        var open = panel.classList.toggle('vt-flex');
+        panel.classList.toggle('vt-hidden', !open);
+        fab.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+
+      function syncTheme() {
+        var current = root.getAttribute('data-theme') || 'default';
+        picks.forEach(function (b) {
+          var on = b.getAttribute('data-theme-pick') === current;
+          b.classList.toggle('vt-active', on);
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+      }
+      syncTheme();
+      picks.forEach(function (b) {
+        b.addEventListener('click', function () {
+          var name = b.getAttribute('data-theme-pick');
+          root.setAttribute('data-theme', name);
+          try { localStorage.setItem('florin-theme', name); } catch (e) {}
+          syncTheme();
+        });
+      });
+
+      // Reflect the current dark state (set pre-paint from OS/stored) in the toggle.
+      function syncMode() {
+        var dark = root.classList.contains('dark');
+        modeBtn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+        moon.classList.toggle('vt-hidden', dark);
+        moon.classList.toggle('vt-flex', !dark);
+        sun.classList.toggle('vt-hidden', !dark);
+        sun.classList.toggle('vt-flex', dark);
+      }
+      syncMode();
+
+      modeBtn.addEventListener('click', function () {
+        var dark = root.classList.toggle('dark');
+        try { localStorage.setItem('florin-mode', dark ? 'dark' : 'light'); } catch (e) {}
+        syncMode();
+      });
+
+      // Follow the OS theme live — until the visitor picks a mode explicitly.
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      var onOsChange = function (e) {
+        var stored = null;
+        try { stored = localStorage.getItem('florin-mode'); } catch (err) {}
+        if (stored) return; // explicit choice wins
+        root.classList.toggle('dark', e.matches);
+        syncMode();
+      };
+      if (mq.addEventListener) mq.addEventListener('change', onOsChange);
+      else if (mq.addListener) mq.addListener(onOsChange);
+    })();
+  </script>
+</body>
+</html>

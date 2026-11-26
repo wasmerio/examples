@@ -1,0 +1,419 @@
+---
+import { url } from '../lib/url';
+// Florin — Analytics. KPI row, cashflow chart, spend channels, top merchants.
+import FlorinShell from '../components/FlorinShell.astro';
+import { Download, Building2, CreditCard, Landmark, Receipt, Send } from '@lucide/astro';
+
+const periods = ['7D', '30D', '12M'];
+
+// The business is net-positive, so "runway/burn" framing is wrong — show margin.
+const kpis = [
+  { label: 'Net income',    value: '$33,360',  trend: '+18.2%', up: true, spark: [22, 26, 24, 30, 28, 36, 40] },
+  { label: 'Monthly spend', value: '$18,940',  trend: '−5.2%',  up: true, spark: [34, 30, 32, 28, 26, 24, 22] },
+  { label: 'Net margin',    value: '64%',      trend: '+4 pts', up: true, spark: [48, 52, 50, 55, 58, 60, 64] },
+  { label: 'Avg. balance',  value: '$121,300', trend: '+3.9%',  up: true, spark: [90, 96, 100, 108, 112, 116, 121] },
+];
+
+// Income vs spending: [label, income, spending] in units of $400. The bars
+// scale to an axis top of 200 units ($80k); the script re-draws on period switch.
+const DATA = {
+  '7d': [['Mon', 70, 44], ['Tue', 96, 52], ['Wed', 60, 64], ['Thu', 120, 40], ['Fri', 150, 58], ['Sat', 84, 36], ['Sun', 110, 48]],
+  '30d': [['W1', 110, 72], ['W2', 150, 64], ['W3', 96, 88], ['W4', 176, 70]],
+  '12m': [['Aug', 80, 48], ['Sep', 96, 56], ['Oct', 64, 64], ['Nov', 112, 48], ['Dec', 128, 80], ['Jan', 96, 56], ['Feb', 112, 64], ['Mar', 128, 64], ['Apr', 96, 96], ['May', 128, 56], ['Jun', 160, 80], ['Jul', 160, 64]],
+};
+const AXIS_TOP = 200;
+const barPct = (v) => `${((v / AXIS_TOP) * 100).toFixed(1)}%`;
+const money = (v) => `$${(v * 400).toLocaleString('en-US')}`;
+
+// Shares sum to 100%.
+const channels = [
+  { icon: Building2,  label: 'Payroll & contractors', pct: '45%' },
+  { icon: CreditCard, label: 'Software & SaaS',        pct: '17%' },
+  { icon: Landmark,   label: 'Office & rent',          pct: '15%' },
+  { icon: Receipt,    label: 'Travel & meals',         pct: '13%' },
+  { icon: Send,       label: 'Fees & other',           pct: '10%' },
+];
+
+const merchants = [
+  { name: 'Ramp Payroll', cat: 'Payroll',  txns: '18', amount: '$8,420.00' },
+  { name: 'AWS',          cat: 'Software',  txns: '6',  amount: '$3,110.00' },
+  { name: 'WeWork',       cat: 'Office',    txns: '1',  amount: '$2,600.00' },
+  { name: 'Delta',        cat: 'Travel',    txns: '4',  amount: '$1,540.00' },
+  { name: 'Figma',        cat: 'Software',  txns: '2',  amount: '$288.00' },
+];
+
+// Catmull-Rom → cubic-bezier smoothing, shared by the area chart and sparklines.
+function smooth(pts) {
+  if (pts.length < 2) return '';
+  let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+function sparkPath(vals) {
+  const w = 100, h = 32, p = 3, mx = Math.max(...vals), mn = Math.min(...vals);
+  const px = (i) => p + (i * (w - 2 * p)) / (vals.length - 1);
+  const py = (v) => h - p - ((v - mn) / (mx - mn || 1)) * (h - 2 * p);
+  return smooth(vals.map((v, i) => [px(i), py(v)]));
+}
+
+// ── Cash balance — smoothed area chart (12-month trend, $k) ──
+const balance = [82, 86, 89, 95, 101, 98, 107, 114, 111, 120, 127, 133];
+const balMonths = ['Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'];
+const AW = 720, AH = 200, AP = 10;
+const N = balance.length, SLOT = AW / N;
+const bMax = Math.max(...balance), bMin = Math.min(...balance);
+// Points sit at slot centres so they line up with the flex-1 month labels below.
+const ax = (i) => SLOT * (i + 0.5);
+const ay = (v) => AH - AP - ((v - bMin) / (bMax - bMin || 1)) * (AH - 2 * AP - 24);
+const balPts = balance.map((v, i) => [ax(i), ay(v)]);
+const balLine = smooth(balPts);
+const balArea = `${balLine} L ${ax(N - 1).toFixed(1)} ${AH} L ${ax(0).toFixed(1)} ${AH} Z`;
+const balGrid = [0, 0.25, 0.5, 0.75, 1].map((t) => AP + t * (AH - 2 * AP));
+// Dots are drawn as HTML (not inside the stretched SVG) so they stay perfectly round.
+const balDots = balance.map((v, i) => ({
+  left: (ax(i) / AW) * 100,
+  top: (ay(v) / AH) * 100,
+  tip: `${balMonths[i]} · $${(v * 1000).toLocaleString('en-US')}`,
+}));
+
+// ── Spending mix — donut (stroke-dasharray segments) ─────────
+// Monochrome brand ramp — reads cleanly and re-themes as one hue.
+const mix = [
+  { label: 'Payroll',  pct: 45, op: 1 },
+  { label: 'Software', pct: 17, op: 0.66 },
+  { label: 'Office',   pct: 15, op: 0.44 },
+  { label: 'Travel',   pct: 13, op: 0.28 },
+  { label: 'Other',    pct: 10, op: 0.15 },
+];
+const DR = 54, CIRC = 2 * Math.PI * DR;
+const mixTotal = 18940;
+let mAcc = 0;
+const donut = mix.map((s) => {
+  const seg = {
+    ...s,
+    dash: (s.pct / 100) * CIRC,
+    offset: -(mAcc / 100) * CIRC,
+    tip: `${s.label} · $${Math.round((mixTotal * s.pct) / 100).toLocaleString('en-US')} (${s.pct}%)`,
+  };
+  mAcc += s.pct;
+  return seg;
+});
+---
+
+<FlorinShell active="analytics" title="Florin — Analytics" description="Florin analytics — net income, burn, runway, spend channels. Built with Veritheme.">
+  <!-- Title + period -->
+  <div class="vt-flex vt-items-center vt-justify-between vt-gap-4">
+    <div>
+      <h1 class="vt-heading-md">Analytics</h1>
+      <p class="vt-body-sm vt-text-foreground-muted vt-mt-1">Cash performance · last 12 months</p>
+    </div>
+    <button type="button" class="vt-btn vt-btn-bordered"><Download class="vt-w-4 vt-h-4" /> Export</button>
+  </div>
+
+  <!-- KPIs: Stats Card with its sparkline -->
+  <div class="vt-grid vt-grid-cols-2 vt-lg:grid-cols-4 vt-gap-4">
+    {kpis.map((k) => (
+      <div class={`vt-card vt-stats-card ${k.up ? '' : 'vt-stats-card-down'}`}>
+        <div class="vt-stats-card-content">
+          <p class="vt-stats-card-label">{k.label}</p>
+          <p class="vt-stats-card-value">{k.value}</p>
+        </div>
+        <div class="vt-flex vt-items-end vt-justify-between vt-gap-3">
+          <div class="vt-stats-card-trend vt-whitespace-nowrap">
+            <span class="vt-stats-card-delta">{k.trend}</span>
+          </div>
+          <div class="vt-w-20 vt-flex-shrink-0" data-tip={`${k.label}: ${k.trend} · last 7 mo`}>
+            <svg viewBox="0 0 100 32" class="vt-stats-card-chart" preserveAspectRatio="none" aria-hidden="true">
+              <path d={sparkPath(k.spark)} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+            </svg>
+          </div>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <!-- Cash balance (area) + Spending mix (donut) -->
+  <div class="fl-split">
+    <!-- Area chart -->
+    <div class="fl-span-2 vt-card vt-flex vt-flex-col">
+      <div class="vt-card-body vt-flex-1 vt-flex vt-flex-col">
+        <div class="vt-flex vt-items-start vt-justify-between vt-gap-4">
+          <div>
+            <h2 class="vt-label-md">Cash balance</h2>
+            <p class="vt-caption vt-text-foreground-muted vt-mt-0.5">12 months · $133,000 today</p>
+          </div>
+          <span class="vt-badge vt-badge-soft vt-badge-success">+62% YoY</span>
+        </div>
+        <div class="vt-relative vt-mt-5 fl-chart-fill fl-area-box" data-area-chart>
+          <svg viewBox={`0 0 ${AW} ${AH}`} class="vt-absolute vt-inset-0 vt-w-full vt-h-full vt-block fl-area" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <linearGradient id="balArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" class="fl-area-stop" stop-opacity="0.16" />
+                <stop offset="100%" class="fl-area-stop" stop-opacity="0" />
+              </linearGradient>
+            </defs>
+            {balGrid.map((y) => (
+              <line x1="0" x2={AW} y1={y} y2={y} class="fl-area-grid" stroke-width="1" vector-effect="non-scaling-stroke" />
+            ))}
+            <path d={balArea} fill="url(#balArea)" />
+            <path d={balLine} class="fl-area-line" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+          </svg>
+          <!-- Round dots as HTML — immune to the non-uniform SVG stretch -->
+          {balDots.map((d, i) => (
+            <span
+              class="fl-area-dot vt-w-3 vt-h-3 vt-rounded-full vt-bg-surface-card vt-border-2 vt-border-success-fill"
+              style={`--x: ${d.left.toFixed(2)}%; --y: ${d.top.toFixed(2)}%`}
+              data-dot={i}
+            ></span>
+          ))}
+          <!-- Full-height hover columns → tooltip per month (aligned to slot centres) -->
+          <div class="vt-absolute vt-inset-0 vt-flex" data-area-cols>
+            {balDots.map((d) => (
+              <div class="vt-flex-1 vt-h-full" data-tip={d.tip}></div>
+            ))}
+          </div>
+        </div>
+        <div class="vt-flex vt-mt-2 fl-every-other">
+          {balMonths.map((m) => (
+            <span class="vt-flex-1 vt-text-center vt-caption vt-text-foreground-muted">{m}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <!-- Donut -->
+    <div class="vt-card">
+      <div class="vt-card-body">
+        <div>
+          <h2 class="vt-label-md">Spending mix</h2>
+          <p class="vt-caption vt-text-foreground-muted vt-mt-0.5">This month · $18,940</p>
+        </div>
+        <div class="vt-relative vt-flex vt-justify-center vt-mt-4">
+          <svg width="152" height="152" viewBox="0 0 120 120" role="img" aria-label="Spending mix by category">
+            <g transform="rotate(-90 60 60)">
+              <circle cx="60" cy="60" r={DR} fill="none" class="fl-donut-track" stroke-width="12" />
+              {donut.map((s) => (
+                <circle
+                  cx="60" cy="60" r={DR} fill="none"
+                  class="fl-donut-seg" style={`--op: ${s.op}`} stroke-width="12"
+                  stroke-dasharray={`${s.dash.toFixed(2)} ${(CIRC - s.dash).toFixed(2)}`}
+                  stroke-dashoffset={s.offset.toFixed(2)}
+                  data-tip={s.tip}
+                />
+              ))}
+            </g>
+          </svg>
+          <div class="vt-absolute vt-inset-0 vt-flex vt-flex-col vt-items-center vt-justify-center">
+            <span class="vt-heading-md">$18.9k</span>
+            <span class="vt-caption vt-text-foreground-muted">total spend</span>
+          </div>
+        </div>
+        <div class="vt-space-y-2 vt-mt-5">
+          {mix.map((s) => (
+            <div class="vt-flex vt-items-center vt-justify-between vt-gap-2">
+              <span class="vt-flex vt-items-center vt-gap-2 vt-min-w-0">
+                <span class="fl-swatch vt-w-2 vt-h-2 vt-rounded-sm vt-flex-shrink-0" style={`--op: ${s.op}`}></span>
+                <span class="vt-truncate">{s.label}</span>
+              </span>
+              <span class="vt-text-foreground-muted vt-whitespace-nowrap">{s.pct}%</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Income vs spending (bars) -->
+  <div class="vt-card">
+    <div class="vt-card-body">
+      <div class="vt-flex vt-flex-wrap vt-items-start vt-justify-between vt-gap-4">
+        <div>
+          <h2 class="vt-label-md">Income vs spending</h2>
+          <p class="vt-caption vt-text-foreground-muted vt-mt-0.5">$33,360 avg. net flow</p>
+        </div>
+        <div class="vt-flex vt-items-center vt-gap-4">
+          <span class="vt-items-center vt-gap-1.5 vt-caption vt-text-foreground-secondary vt-hidden vt-sm:flex"><span class="vt-w-2 vt-h-2 vt-rounded-sm vt-bg-brand-fill"></span> Income</span>
+          <span class="vt-items-center vt-gap-1.5 vt-caption vt-text-foreground-secondary vt-hidden vt-sm:flex"><span class="vt-w-2 vt-h-2 vt-rounded-sm vt-bg-surface-strong"></span> Spending</span>
+          <div class="vt-btn-group">
+            {periods.map((p, i) => (
+              <button type="button" class={i === 2 ? 'vt-active' : undefined} data-period={p.toLowerCase()}>{p}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div data-chart-bars class="fl-bar-row vt-flex vt-items-end vt-h-48 vt-mt-6">
+        {DATA['12m'].map((r) => (
+          <div class="vt-flex-1 vt-flex vt-items-end vt-justify-center vt-gap-1.5 vt-h-full">
+            <div class="fl-bar vt-rounded-t vt-bg-brand-fill" style={`--h: ${barPct(r[1])}`} data-tip={`${r[0]} · Income ${money(r[1])}`}></div>
+            <div class="fl-bar vt-rounded-t vt-bg-surface-strong" style={`--h: ${barPct(r[2])}`} data-tip={`${r[0]} · Spending ${money(r[2])}`}></div>
+          </div>
+        ))}
+      </div>
+      <div data-chart-labels class="fl-bar-row fl-every-other vt-flex vt-mt-2">
+        {DATA['12m'].map((r) => (
+          <span class="vt-flex-1 vt-min-w-0 vt-text-center vt-caption vt-text-foreground-muted">{r[0]}</span>
+        ))}
+      </div>
+    </div>
+  </div>
+
+  <!-- Channels + top merchants -->
+  <div class="fl-split">
+    <div class="vt-card">
+      <div class="vt-card-body">
+        <div>
+          <h2 class="vt-label-md">Spending by channel</h2>
+          <p class="vt-caption vt-text-foreground-muted vt-mt-0.5">Share of $18,940</p>
+        </div>
+        <div class="vt-space-y-4 vt-mt-5">
+          {channels.map((c) => (
+            <div>
+              <div class="vt-flex vt-items-center vt-justify-between vt-gap-2">
+                <div class="vt-flex vt-items-center vt-gap-2 vt-min-w-0">
+                  <div class="vt-icon-badge vt-icon-badge-sm"><c.icon class="vt-w-4 vt-h-4" /></div>
+                  <p class="vt-label-md vt-truncate">{c.label}</p>
+                </div>
+                <span class="vt-caption vt-text-foreground-muted vt-whitespace-nowrap">{c.pct}</span>
+              </div>
+              <div class="vt-progress vt-progress-sm vt-mt-2" role="progressbar" aria-label={c.label} aria-valuenow={parseInt(c.pct)} aria-valuemin="0" aria-valuemax="100"><div class="vt-progress-bar fl-share" style={`--w: ${c.pct}`}></div></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <div class="fl-span-2 vt-card">
+      <div class="vt-card-header vt-flex vt-items-center vt-justify-between vt-gap-4">
+        <h2 class="vt-label-md">Top merchants</h2>
+        <a href={url('/transactions')} class="vt-link">View all</a>
+      </div>
+      <div class="vt-overflow-x-auto">
+        <table class="vt-table">
+          <thead>
+            <tr>
+              <th scope="col">Merchant</th>
+              <th scope="col" class="vt-hidden vt-md:table-cell">Category</th>
+              <th scope="col" class="vt-table-numeric">Txns</th>
+              <th scope="col" class="vt-table-numeric">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {merchants.map((m) => (
+              <tr>
+                <td class="vt-table-strong">{m.name}</td>
+                <td class="vt-table-muted vt-hidden vt-md:table-cell">{m.cat}</td>
+                <td class="vt-table-numeric vt-table-muted">{m.txns}</td>
+                <td class="vt-table-numeric vt-table-strong vt-whitespace-nowrap">{m.amount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline define:vars={{ DATA, AXIS_TOP }}>
+    (function () {
+      // Re-draws the bars for a period; each bar grows from 0 to its --h.
+      var bars = document.querySelector('[data-chart-bars]');
+      var labels = document.querySelector('[data-chart-labels]');
+      function pct(v) { return (v / AXIS_TOP * 100).toFixed(1) + '%'; }
+      function bar(fill, tip) {
+        var el = document.createElement('div');
+        el.className = 'fl-bar vt-rounded-t ' + fill;
+        el.style.setProperty('--h', '0%');
+        el.setAttribute('data-tip', tip);
+        return el;
+      }
+      function render(period) {
+        var rows = DATA[period]; if (!rows || !bars) return;
+        bars.innerHTML = ''; labels.innerHTML = '';
+        var cols = rows.map(function (r) {
+          var col = document.createElement('div');
+          col.className = 'vt-flex-1 vt-flex vt-items-end vt-justify-center vt-gap-1.5 vt-h-full';
+          var inc = bar('vt-bg-brand-fill', r[0] + ' · Income $' + (r[1] * 400).toLocaleString('en-US'));
+          var exp = bar('vt-bg-surface-strong', r[0] + ' · Spending $' + (r[2] * 400).toLocaleString('en-US'));
+          col.appendChild(inc); col.appendChild(exp); bars.appendChild(col);
+          var lbl = document.createElement('span');
+          lbl.className = 'vt-flex-1 vt-min-w-0 vt-text-center vt-caption vt-text-foreground-muted';
+          lbl.textContent = r[0]; labels.appendChild(lbl);
+          return [inc, exp, r[1], r[2]];
+        });
+        requestAnimationFrame(function () { requestAnimationFrame(function () {
+          cols.forEach(function (c) { c[0].style.setProperty('--h', pct(c[2])); c[1].style.setProperty('--h', pct(c[3])); });
+        }); });
+      }
+      document.querySelectorAll('[data-period]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          document.querySelectorAll('[data-period]').forEach(function (b) { b.classList.remove('vt-active'); });
+          btn.classList.add('vt-active');
+          render(btn.getAttribute('data-period'));
+        });
+      });
+      render('12m'); // take over the server-rendered bars with an animated draw-in
+    })();
+
+    // Area chart: emphasise the matching dot while hovering a month column.
+    (function () {
+      var cols = document.querySelectorAll('[data-area-cols] > div');
+      var dots = document.querySelectorAll('[data-dot]');
+      cols.forEach(function (col, i) {
+        var dot = dots[i]; if (!dot) return;
+        col.addEventListener('mouseenter', function () { dot.classList.add('fl-is-active'); });
+        col.addEventListener('mouseleave', function () { dot.classList.remove('fl-is-active'); });
+      });
+    })();
+  </script>
+</FlorinShell>
+
+<!-- Global: the bar chart's bars are created by the script above, so scoped
+     (data-astro-cid) selectors would not reach them. -->
+<style is:global>
+  /* The library has no chart: bar height is data, read from --h (share of the axis). */
+  .fl-bar {
+    flex: 1;
+    max-width: var(--vt-spacing-7);
+    height: var(--h, 0%);
+    cursor: pointer;
+    transition: height 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  /* Bars and their labels share one column gap so labels sit under their pair;
+     the gap tightens on phones, where twelve months must fit (no vt-sm:gap-*). */
+  .fl-bar-row { gap: var(--vt-spacing-1_5); }
+  @media (min-width: 640px) {
+    .fl-bar-row { gap: var(--vt-spacing-3); }
+  }
+  /* Area chart colours come from tokens (SVG attributes cannot read utilities). */
+  .fl-area-stop { stop-color: hsl(var(--vt-success-fill)); }
+  .fl-area-grid { stroke: hsl(var(--vt-border-default)); }
+  /* The area chart grows with its card, from the 192px it always had. */
+  .fl-chart-fill.fl-area-box { min-height: var(--vt-spacing-48); }
+  .fl-area-line { stroke: hsl(var(--vt-success-fill)); }
+  /* Area dots sit on the data points: position is data, read from --x / --y. */
+  .fl-area-dot {
+    position: absolute;
+    left: var(--x);
+    top: var(--y);
+    transform: translate(-50%, -50%);
+    transition: transform var(--vt-transition-fast);
+  }
+  .fl-area-dot.fl-is-active { transform: translate(-50%, -50%) scale(1.7); }
+  /* Donut and legend: one brand hue, stepped by opacity (--op) per category. */
+  .fl-donut-track { stroke: hsl(var(--vt-surface-subtle)); }
+  .fl-donut-seg { stroke: hsl(var(--vt-brand-fill) / var(--op)); cursor: pointer; }
+  .fl-swatch { background: hsl(var(--vt-brand-fill) / var(--op)); }
+  /* On a dark card the faint steps sank into the background: there the steps
+     run from the brand toward the (light) text colour instead, by lightness. */
+  .dark .fl-donut-seg { stroke: color-mix(in oklab, hsl(var(--vt-brand-fill)) calc(var(--op) * 100%), hsl(var(--vt-foreground-primary))); }
+  .dark .fl-swatch { background: color-mix(in oklab, hsl(var(--vt-brand-fill)) calc(var(--op) * 100%), hsl(var(--vt-foreground-primary))); }
+  /* Progress has no value class: the bar's width is the channel's share (--w). */
+  .fl-share { width: var(--w); }
+  @media (prefers-reduced-motion: reduce) {
+    .fl-bar, .fl-area-dot { transition: none; }
+  }
+</style>

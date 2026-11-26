@@ -1,0 +1,192 @@
+---
+// Visitor clock + weather, opt-in from site.config.yaml.
+// The clock uses the visitor's own timezone (no network). Weather is looked up
+// for the visitor's location via a keyless IP geolocation call, then Open-Meteo.
+// No API key ever reaches the browser; set `geoEndpoint` if you run your own.
+import { weather as w } from '../lib/config';
+
+const enabled = w.enabled === true;
+const units = w.units === 'fahrenheit' ? 'fahrenheit' : 'celsius';
+const fixed = w.mode === 'fixed';
+const zhLabel = w.labelZh ?? w.label ?? '';
+const label = Astro.url.pathname.startsWith('/zh') ? zhLabel : (w.label ?? zhLabel);
+---
+
+{enabled && (
+  <span
+    class="wc"
+    data-units={units}
+    data-geo={w.geoEndpoint ?? ''}
+    data-mode={fixed ? 'fixed' : 'visitor'}
+    data-lat={fixed ? (w.latitude ?? '') : (w.fallbackLatitude ?? '')}
+    data-lon={fixed ? (w.longitude ?? '') : (w.fallbackLongitude ?? '')}
+    data-tz={fixed ? (w.timezone ?? '') : ''}
+    data-label={label}
+  >
+    <span class="wc-time" data-wc-time aria-live="off">--:--:--</span>
+    <span class="wc-sep" data-wc-sep aria-hidden="true">·</span>
+    <span class="wc-place" data-wc-place></span>
+    <span class="wc-temp" data-wc-temp></span>
+    <span class="wc-cond" data-wc-cond></span>
+  </span>
+)}
+
+<script>
+  const root = document.querySelector<HTMLElement>('.wc');
+  if (root) {
+    const zh = document.documentElement.lang.startsWith('zh');
+    const units = root.dataset.units || 'celsius';
+    const mark = units === 'fahrenheit' ? '°F' : '°C';
+    const timeEl = root.querySelector<HTMLElement>('[data-wc-time]')!;
+    const placeEl = root.querySelector<HTMLElement>('[data-wc-place]')!;
+    const tempEl = root.querySelector<HTMLElement>('[data-wc-temp]')!;
+    const condEl = root.querySelector<HTMLElement>('[data-wc-cond]')!;
+    const sep = root.querySelector<HTMLElement>('[data-wc-sep]')!;
+
+    // Clock: the visitor's timezone, to the second.
+    const tz = root.dataset.tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const fmt = new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-GB', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const tick = () => {
+      timeEl.textContent = fmt.format(new Date());
+    };
+    tick();
+    setInterval(tick, 1000);
+
+    const codes: Record<number, [string, string]> = {
+      0: ['Clear', '晴'], 1: ['Mostly clear', '晴间多云'], 2: ['Partly cloudy', '多云'], 3: ['Overcast', '阴'],
+      45: ['Fog', '雾'], 48: ['Fog', '雾'], 51: ['Drizzle', '小雨'], 53: ['Drizzle', '小雨'], 55: ['Drizzle', '小雨'],
+      61: ['Rain', '雨'], 63: ['Rain', '雨'], 65: ['Heavy rain', '大雨'], 71: ['Snow', '雪'], 73: ['Snow', '雪'],
+      75: ['Heavy snow', '大雪'], 80: ['Showers', '阵雨'], 81: ['Showers', '阵雨'], 82: ['Heavy showers', '强阵雨'],
+      95: ['Thunderstorm', '雷雨'], 96: ['Thunderstorm', '雷雨'], 99: ['Thunderstorm', '雷雨'],
+    };
+
+    const paint = (temp: number, code: number, place: string) => {
+      placeEl.textContent = place;
+      tempEl.textContent = `${Math.round(temp)}${mark}`;
+      const [en, cn] = codes[code] ?? ['', ''];
+      condEl.textContent = zh ? cn : en;
+      sep.hidden = !place;
+    };
+
+    const cacheKey = 'inkfolio:wx';
+    try {
+      const hit = sessionStorage.getItem(cacheKey);
+      if (hit) {
+        const c = JSON.parse(hit);
+        if (Date.now() - c.at < 30 * 60_000) paint(c.temp, c.code, c.place);
+      }
+    } catch {}
+
+    const fixedMode = root.dataset.mode === 'fixed';
+    if (fixedMode) placeEl.textContent = root.dataset.label || '';
+
+    // Zero is treated as "not set": 0,0 is the Gulf of Guinea, never a home.
+    const coord = (value?: string) => {
+      const raw = (value ?? '').trim();
+      const n = raw ? Number(raw) : NaN;
+      return Number.isFinite(n) && n !== 0 ? n : NaN;
+    };
+    const fixedLat = coord(root.dataset.lat);
+    const fixedLon = coord(root.dataset.lon);
+    const hasFixed = Number.isFinite(fixedLat) && Number.isFinite(fixedLon);
+
+    // Geolocation providers, tried in order. Any one of them can be blocked by an
+    // extension, a corporate network or a country-level filter, which is why one
+    // endpoint is not enough: three unrelated ones cover most of it.
+    const geoEndpoints = [
+      root.dataset.geo,
+      'https://ipwho.is/',
+      'https://get.geojs.io/v1/ip/geo.json',
+      'https://ipapi.co/json/',
+    ].filter(Boolean) as string[];
+
+    const getJson = async (url: string) => {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 4000);
+      try {
+        const r = await fetch(url, { headers: { Accept: 'application/json' }, signal: ac.signal });
+        return r.ok ? await r.json() : null;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    const readGeo = (g: any) => {
+      const lat = Number(g?.latitude ?? g?.lat);
+      const lon = Number(g?.longitude ?? g?.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      const city = typeof g.city === 'string' ? g.city : '';
+      const cc =
+        typeof g.country_code === 'string' ? g.country_code : typeof g.country === 'string' ? g.country : '';
+      const place = [city, cc].filter(Boolean).join(', ');
+      return { lat, lon, place: place || (zh ? '你所在的位置' : 'Your location') };
+    };
+
+    const locate = async (): Promise<{ lat: number; lon: number; place: string } | null> => {
+      if (fixedMode && hasFixed) {
+        return { lat: fixedLat, lon: fixedLon, place: root.dataset.label || '' };
+      }
+      for (const endpoint of geoEndpoints) {
+        try {
+          const hit = readGeo(await getJson(endpoint));
+          if (hit) return hit;
+        } catch {}
+      }
+      if (hasFixed) return { lat: fixedLat, lon: fixedLon, place: root.dataset.label || '' };
+      return null;
+    };
+
+    locate().then(async (loc) => {
+      if (!loc) {
+        sep.hidden = true;
+        return;
+      }
+      try {
+        const url =
+          `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}` +
+          `&current=temperature_2m,weather_code&temperature_unit=${units}&timezone=auto`;
+        const r = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!r.ok) throw new Error(String(r.status));
+        const data = await r.json();
+        const temp = data.current?.temperature_2m;
+        const code = Number(data.current?.weather_code);
+        if (typeof temp !== 'number') throw new Error('no temp');
+        paint(temp, code, loc.place);
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({ temp, code, place: loc.place, at: Date.now() }));
+        } catch {}
+      } catch {
+        sep.hidden = true;
+      }
+    });
+  }
+</script>
+
+<style>
+  .wc {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .wc-place {
+    font-weight: 550;
+  }
+  .wc-temp,
+  .wc-cond,
+  .wc-sep {
+    color: var(--muted);
+  }
+  [data-wc-place]:empty,
+  [data-wc-temp]:empty,
+  [data-wc-cond]:empty {
+    display: none;
+  }
+</style>

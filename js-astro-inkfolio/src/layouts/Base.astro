@@ -1,0 +1,412 @@
+---
+import { siteText, icons } from '../lib/config';
+import Banner from '../components/Banner.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import BackToTop from '../components/BackToTop.astro';
+import CookieConsent from '../components/CookieConsent.astro';
+import 'katex/dist/katex.min.css';
+import { site, theme, seo, analytics, consent, titleFor, type Lang } from '../lib/config';
+import '../styles/global.css';
+import '@fortawesome/fontawesome-free/css/all.min.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  lang?: Lang;
+  /** counterpart page in the other language — only pass this when the page really exists */
+  alt?: string;
+  /** pass this on article pages so structured data carries the real dates */
+  article?: { published: Date; updated?: Date; tags?: string[]; section?: string };
+  /** keep a page out of search engines (used when a feature is disabled) */
+  noindex?: boolean;
+  /** widen the content column, e.g. "1200px" for docs */
+  maxWidth?: string;
+  /** per-page social image; falls back to seo.ogImage */
+  ogImage?: string;
+}
+
+const { title, description, lang = 'en', alt, article, noindex = false, maxWidth, ogImage: ogImageProp } = Astro.props;
+const i18nCfg = ((site as any).i18n ?? {}) as { enabled?: boolean; detectBrowserLanguage?: boolean; defaultLanguage?: string };
+const defaultLang = i18nCfg.defaultLanguage ?? 'en';
+const i18nDisabledForLang = i18nCfg.enabled === false && lang !== defaultLang;
+
+let pageTitle = titleFor(title, lang);
+const isHomeTitle = title === site.name || pageTitle === site.name;
+if (isHomeTitle) pageTitle = `${site.name} — ${siteText('tagline', lang)}`;
+const pageDescription =
+  description ||
+  [title, lang !== 'en' ? site.descriptionZh : site.description].filter(Boolean).join(' — ').slice(0, 158) ||
+  seo.defaultDescription;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const altPath = alt ? new URL(alt, Astro.site).pathname : null;
+const hasAlt = !!altPath && altPath !== Astro.url.pathname;
+const altUrl = hasAlt ? new URL(alt as string, Astro.site) : canonical;
+const selfHreflang = lang === 'en' ? 'en' : 'zh-CN';
+const ogImage = ogImageProp || seo.ogImage ? new URL(ogImageProp ?? seo.ogImage, Astro.site).href : undefined;
+const locale = lang !== 'en' ? seo.localeZh : seo.locale;
+
+const accentVars = `--accent:${theme.accent};--u:${theme.accent};--radius:${theme.radius};${maxWidth ? `--max-w:${maxWidth};` : ''}`;
+const person = {
+  '@type': 'Person',
+  name: lang !== 'en' ? site.authorZh : site.author,
+  url: site.url,
+};
+const jsonLd = seo.structuredData
+  ? article
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: title,
+        description: pageDescription,
+        datePublished: new Date(article.published).toISOString(),
+        ...(article.updated ? { dateModified: new Date(article.updated).toISOString() } : {}),
+        ...(article.tags?.length ? { keywords: article.tags.join(', ') } : {}),
+        ...(article.section ? { articleSection: article.section } : {}),
+        inLanguage: lang !== 'en' ? 'zh-CN' : 'en',
+        mainEntityOfPage: canonical.href,
+        ...(ogImage ? { image: ogImage } : {}),
+        author: person,
+        publisher: person,
+      }
+    : {
+        '@context': 'https://schema.org',
+        '@type': 'WebSite',
+        name: siteText('name', lang),
+        url: site.url,
+        description: pageDescription,
+        inLanguage: lang !== 'en' ? 'zh-CN' : 'en',
+        author: person,
+      }
+  : null;
+
+const umamiOn = analytics.umami.enabled && analytics.umami.scriptUrl && analytics.umami.websiteId;
+const gaOn = analytics.googleAnalytics.enabled && analytics.googleAnalytics.measurementId;
+const clarityOn = analytics.clarity.enabled && analytics.clarity.projectId;
+// Umami sets no cookies, so it loads regardless. GA4 and Clarity wait for consent.
+const requireConsent = consent.enabled && (gaOn || clarityOn);
+---
+
+<!doctype html>
+<html lang={lang !== 'en' ? 'zh-CN' : 'en'} data-theme-mode={theme.defaultMode} style={accentVars}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={pageDescription} />
+    {i18nDisabledForLang && <meta name="robots" content="noindex, follow" />}
+    {i18nDisabledForLang && <meta http-equiv="refresh" content="0;url=/" />}
+    <meta name="robots" content={noindex ? 'noindex,follow' : seo.robots} />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="/site.webmanifest" />
+    {hasAlt && <link rel="alternate" hreflang={selfHreflang} href={canonical} />}
+    {hasAlt && <link rel="alternate" hreflang={lang === 'en' ? 'zh-CN' : 'en'} href={altUrl} />}
+    {hasAlt && <link rel="alternate" hreflang="x-default" href={lang === 'en' ? canonical : altUrl} />}
+
+    <meta property="og:type" content={article ? 'article' : 'website'} />
+    <meta property="og:site_name" content={siteText('name', lang)} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDescription} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={locale} />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+    {ogImage && <meta property="og:image:width" content="1200" />}
+    {ogImage && <meta property="og:image:height" content="630" />}
+    <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDescription} />
+    {seo.twitterHandle && <meta name="twitter:site" content={`@${seo.twitterHandle}`} />}
+    {ogImage && <meta name="twitter:image" content={ogImage} />}
+    {seo.keywords.length > 0 && <meta name="keywords" content={seo.keywords.join(', ')} />}
+
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={siteText('name', lang)}
+      href={new URL(lang !== 'en' ? '/zh/rss.xml' : '/rss.xml', Astro.site)}
+    />
+    {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
+
+    <script is:inline>
+      // Theme is resolved before paint so there is no flash of the wrong mode.
+      (function () {
+        try {
+          var stored = localStorage.getItem('inkfolio-theme');
+          var mode = stored || document.documentElement.getAttribute('data-theme-mode') || 'auto';
+          var dark = mode === 'dark' || (mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+        } catch {}
+      })();
+    </script>
+
+    {umamiOn && (
+      <script is:inline defer src={analytics.umami.scriptUrl} data-website-id={analytics.umami.websiteId}></script>
+    )}
+
+    {gaOn && !requireConsent && (
+      <>
+        <script
+          is:inline
+          async
+          src={`https://www.googletagmanager.com/gtag/js?id=${analytics.googleAnalytics.measurementId}`}
+        ></script>
+        <script
+          is:inline
+          set:html={`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${analytics.googleAnalytics.measurementId}');`}
+        ></script>
+      </>
+    )}
+
+    {clarityOn && !requireConsent && (
+      <script
+        is:inline
+        set:html={`(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window,document,"clarity","script","${analytics.clarity.projectId}");`}
+      ></script>
+    )}
+
+    {requireConsent && <script
+      is:inline
+      define:vars={{
+        ga: analytics.googleAnalytics.measurementId,
+        clarity: analytics.clarity.projectId,
+        consentKey: consent.storageKey,
+      }}
+    >
+      (function () {
+        function granted() {
+          try {
+            return localStorage.getItem(consentKey) === 'accepted';
+          } catch {
+            return false;
+          }
+        }
+        function loadGA() {
+          if (!ga) return;
+          var s = document.createElement('script');
+          s.async = true;
+          s.src = 'https://www.googletagmanager.com/gtag/js?id=' + ga;
+          document.head.appendChild(s);
+          window.dataLayer = window.dataLayer || [];
+          window.gtag = function () {
+            window.dataLayer.push(arguments);
+          };
+          window.gtag('js', new Date());
+          window.gtag('config', ga);
+        }
+        function loadClarity() {
+          if (!clarity) return;
+          (function (c, l, a, r, i, t, y) {
+            c[a] =
+              c[a] ||
+              function () {
+                (c[a].q = c[a].q || []).push(arguments);
+              };
+            t = l.createElement(r);
+            t.async = 1;
+            t.src = 'https://www.clarity.ms/tag/' + i;
+            y = l.getElementsByTagName(r)[0];
+            y.parentNode.insertBefore(t, y);
+          })(window, document, 'clarity', 'script', clarity);
+        }
+        function run() {
+          loadGA();
+          loadClarity();
+        }
+        if (granted()) run();
+        window.addEventListener('inkfolio:consent', function (e) {
+          if (e.detail === 'accepted') run();
+        });
+      })();
+    </script>}
+  {icons.mode === 'iconfont' && icons.iconfont?.jsUrl && (
+      <script is:inline src={icons.iconfont.jsUrl}></script>
+    )}
+  </head>
+  <body>
+    <Banner lang={lang} />
+    <Nav lang={lang} alt={hasAlt ? (altPath as string) : undefined} />
+    <main class="page" data-pagefind-body>
+      <slot />
+    </main>
+    <Footer lang={lang} />
+    <BackToTop lang={lang} />
+    {consent.enabled && <CookieConsent lang={lang} />}
+  <!-- Code blocks are wrapped at build time by rehype-code-shell.mjs; the copy and
+       tab behaviour lives in the inline script at the end of <body>. -->
+<script is:inline define:vars={{ detect: i18nCfg.detectBrowserLanguage === true, dflt: defaultLang }}>
+  if (detect) {
+    try {
+      if (!localStorage.getItem('inkfolio:lang-choice') && (dflt === 'en' ? location.pathname === '/' : false)) {
+        const p = (navigator.languages || [navigator.language]).map((x) => String(x).toLowerCase());
+        const wantsHant = p.some((x) => /zh-(hant|tw|hk|mo)/.test(x));
+        const wantsHans = p.some((x) => /^zh(-|$)/.test(x)) && !wantsHant;
+        const target = wantsHant ? '/zh-Hant/' : wantsHans ? '/zh/' : null;
+        if (target) location.replace(target);
+      }
+    } catch {}
+  }
+  document.addEventListener('click', (e) => {
+    const a = e.target && e.target.closest ? e.target.closest('[data-switch-lang]') : null;
+    if (a) { try { localStorage.setItem('inkfolio:lang-choice', a.getAttribute('data-switch-lang')); } catch {} }
+  }, true);
+</script>
+<script is:inline>
+  // Code shell: copy button + tab panels. Delegated once, idempotent on navigation.
+  (function () {
+    function init() {
+      document.querySelectorAll('.cb').forEach(function (fig) {
+        if (fig.dataset.ready) return;
+        fig.dataset.ready = '1';
+
+        var btn = fig.querySelector('.cb-copy');
+        if (btn) {
+          btn.addEventListener('click', function () {
+            var panel = fig.querySelector('.cb-panel.is-active') || fig;
+            var code = panel.querySelector('pre code') || panel.querySelector('pre');
+            var text = code ? code.innerText : '';
+            var done = function () {
+              var label = btn.textContent;
+              btn.textContent = 'Copied';
+              btn.classList.add('is-done');
+              setTimeout(function () { btn.textContent = label; btn.classList.remove('is-done'); }, 1600);
+            };
+            if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, done);
+          });
+        }
+
+        fig.querySelectorAll('.cb-tab').forEach(function (tab) {
+          tab.addEventListener('click', function () {
+            var index = tab.dataset.tab;
+            fig.querySelectorAll('.cb-tab').forEach(function (t) {
+              var on = t === tab;
+              t.classList.toggle('is-active', on);
+              t.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+            fig.querySelectorAll('.cb-panel').forEach(function (panel) {
+              panel.classList.toggle('is-active', panel.dataset.panel === index);
+            });
+          });
+        });
+      });
+    }
+    init();
+    document.addEventListener('astro:page-load', init);
+  })();
+</script>
+<script is:inline>
+  // Image lightbox: click any prose image to view it full size, arrows walk the article.
+  (function () {
+    var overlay = null, list = [], index = 0;
+    function ensure() {
+      if (overlay) return overlay;
+      overlay = document.createElement('div');
+      overlay.className = 'lb';
+      overlay.hidden = true;
+      overlay.innerHTML =
+        '<button class="lb-close" type="button" aria-label="Close">×</button>' +
+        '<button class="lb-prev" type="button" aria-label="Previous image">‹</button>' +
+        '<img alt="" />' +
+        '<button class="lb-next" type="button" aria-label="Next image">›</button>';
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+      overlay.querySelector('.lb-close').addEventListener('click', close);
+      overlay.querySelector('.lb-prev').addEventListener('click', function () { step(-1); });
+      overlay.querySelector('.lb-next').addEventListener('click', function () { step(1); });
+      document.addEventListener('keydown', function (e) {
+        if (overlay.hidden) return;
+        if (e.key === 'Escape') close();
+        else if (e.key === 'ArrowLeft') step(-1);
+        else if (e.key === 'ArrowRight') step(1);
+      });
+      return overlay;
+    }
+    function show() {
+      var img = overlay.querySelector('img');
+      img.src = list[index].currentSrc || list[index].src;
+      img.alt = list[index].alt || '';
+      var single = list.length < 2;
+      overlay.querySelector('.lb-prev').hidden = single;
+      overlay.querySelector('.lb-next').hidden = single;
+    }
+    function open(i) {
+      list = Array.prototype.slice.call(document.querySelectorAll('.prose img'));
+      index = i;
+      ensure().hidden = false;
+      document.documentElement.style.overflow = 'hidden';
+      show();
+    }
+    function step(d) {
+      if (list.length < 2) return;
+      index = (index + d + list.length) % list.length;
+      show();
+    }
+    function close() {
+      if (overlay) overlay.hidden = true;
+      document.documentElement.style.overflow = '';
+    }
+    document.addEventListener('click', function (e) {
+      var img = e.target && e.target.closest ? e.target.closest('.prose img') : null;
+      if (!img || img.hasAttribute('data-no-lightbox')) return;
+      var all = Array.prototype.slice.call(document.querySelectorAll('.prose img'));
+      var i = all.indexOf(img);
+      if (i < 0) return;
+      e.preventDefault();
+      open(i);
+    });
+  })();
+</script>
+<script>
+  // Mermaid: render ```mermaid blocks in place, once per block, following the theme.
+  async function paintMermaid() {
+    const pending = ([...document.querySelectorAll('pre[data-lang="mermaid"]')] as HTMLElement[]).filter(
+      (el) => !el.dataset.mmdDone,
+    );
+    if (!pending.length) return;
+    const mermaid = (await import('mermaid')).default;
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: dark ? 'dark' : 'neutral',
+      fontFamily: 'inherit',
+      securityLevel: 'loose',
+    });
+    let i = 0;
+    for (const node of pending) {
+      const codeEl = node.querySelector('code');
+      const code = (codeEl ? codeEl.textContent : node.textContent) || '';
+      node.dataset.mmdDone = '1';
+      try {
+        const { svg } = await mermaid.render('mmd-' + Date.now() + '-' + i++, code);
+        const figure = document.createElement('figure');
+        figure.className = 'mmd';
+        figure.dataset.src = code;
+        figure.innerHTML = svg;
+        const shell = node.closest('.cb');
+        if (shell) shell.replaceWith(figure);
+        else node.replaceWith(figure);
+      } catch (err) {
+        console.warn('mermaid render failed', err);
+      }
+    }
+  }
+  paintMermaid();
+  document.addEventListener('astro:page-load', paintMermaid);
+  // Re-render from source when the theme flips, so diagrams are not stuck in one palette.
+  new MutationObserver(() => {
+    const figures = [...document.querySelectorAll('.mmd')] as HTMLElement[];
+    if (!figures.length) return;
+    figures.forEach((fig: HTMLElement) => {
+      const pre = document.createElement('pre');
+      pre.setAttribute('data-lang', 'mermaid');
+      pre.textContent = fig.dataset.src || '';
+      fig.replaceWith(pre);
+    });
+    paintMermaid();
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+</script>
+</body>
+</html>

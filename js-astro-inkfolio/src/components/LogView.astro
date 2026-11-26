@@ -1,0 +1,328 @@
+---
+import { pickTrad } from '../lib/trad';
+import Base from '../layouts/Base.astro';
+import { log } from '../lib/data';
+import notesRaw from '../data/log-notes.yaml?raw';
+import { parse } from 'yaml';
+import { t } from '../i18n/ui';
+import type { Lang } from '../lib/config';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const zh = lang !== 'en';
+const altHref = zh ? '/log/' : '/zh/log/';
+
+// Manual entries, newest first — the heatmap stays machine-generated.
+const notes = (
+  parse(notesRaw) as { date: string; title: string; titleZh?: string; items: { en: string[]; zh: string[] } }[]
+)
+  .slice()
+  .sort((a, b) => b.date.localeCompare(a.date));
+
+// day map, same shape the activity grid expects
+const days: Record<string, number> = Object.fromEntries(log.days.map((d: any) => [d.date, d.count]));
+const total = log.days.reduce((sum, d) => sum + d.count, 0);
+
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const today = new Date(`${log.updated}T00:00:00Z`);
+const mondayOf = (d: Date) => {
+  const x = new Date(d);
+  x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7));
+  return x;
+};
+const firstDay = Object.keys(days).sort()[0];
+const earliestMon = mondayOf(new Date(today.getTime() - 52 * 7 * 864e5));
+const startMon =
+  firstDay && mondayOf(new Date(firstDay + 'T00:00:00Z')) > earliestMon
+    ? mondayOf(new Date(firstDay + 'T00:00:00Z'))
+    : earliestMon;
+const endMon = mondayOf(today);
+const maxN = Math.max(1, ...Object.values(days));
+const level = (n: number) => (n === 0 ? 0 : n <= maxN * 0.25 ? 1 : n <= maxN * 0.5 ? 2 : n <= maxN * 0.75 ? 3 : 4);
+const monthShort = (m: number) =>
+  zh ? `${m + 1}月` : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m];
+
+const cols: { label: string; cells: { key: string; n: number; future: boolean; level: number }[] }[] = [];
+let prevMonth = -1;
+for (let c = new Date(startMon); c <= endMon; c.setUTCDate(c.getUTCDate() + 7)) {
+  const weekStart = new Date(c);
+  const cells = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setUTCDate(d.getUTCDate() + i);
+    const key = iso(d);
+    const n = days[key] ?? 0;
+    cells.push({ key, n, future: d > today, level: level(n) });
+  }
+  const m = weekStart.getUTCMonth();
+  cols.push({ label: m !== prevMonth ? monthShort(m) : '', cells });
+  prevMonth = m;
+}
+
+// a streak survives the start of a new day: count back from yesterday until a commit lands today
+let streak = 0;
+const streakStart = new Date(today);
+if (!((days[iso(streakStart)] ?? 0) > 0)) streakStart.setUTCDate(streakStart.getUTCDate() - 1);
+for (let d = streakStart; (days[iso(d)] ?? 0) > 0; d.setUTCDate(d.getUTCDate() - 1)) streak++;
+const aria = zh
+  ? `${cols.length} 周内共 ${total} 次提交，当前连续 ${streak} 天`
+  : `${total} commits across ${cols.length} weeks, current streak ${streak} days`;
+---
+
+<Base title={t(lang, 'log')} lang={lang} alt={altHref}>
+  <article class="log">
+    <section class="post-head">
+      <h1>{t(lang, 'log')}</h1>
+      <p class="post-lede">{t(lang, 'logLede')}</p>
+    </section>
+
+    <section class="act" aria-label={zh ? pickTrad(lang, '提交活跃度') : 'Commit activity'}>
+      <div class="act-head">
+        <span class="act-kicker">{zh ? pickTrad(lang, '提交活跃度') : 'Commit activity'}</span>
+        <span class="act-meta">
+          <b>{total}</b> {zh ? pickTrad(lang, '次提交') : 'commits'}
+          {streak > 1 && (
+            <span class="act-streak">
+              <i></i>
+              {streak} {zh ? pickTrad(lang, '天连续') : 'day streak'}
+            </span>
+          )}
+          <span class="act-weeks">
+            {cols.length} {zh ? pickTrad(lang, '周') : 'weeks'}
+          </span>
+        </span>
+      </div>
+      <div class="act-months" aria-hidden="true">
+        {cols.map((c: any) => (
+          <span>{c.label}</span>
+        ))}
+      </div>
+      <div class="act-grid" role="img" aria-label={aria}>
+        {cols.map((c: any) => (
+          <div class="act-col">
+            {c.cells.map((cell: any) =>
+              cell.future ? (
+                <span class="act-cell act-future"></span>
+              ) : (
+                <span
+                  class="act-cell"
+                  data-l={cell.level}
+                  title={`${cell.key} · ${cell.n} ${zh ? pickTrad(lang, '次提交') : cell.n === 1 ? 'commit' : 'commits'}`}
+                ></span>
+              ),
+            )}
+          </div>
+        ))}
+      </div>
+      <div class="act-foot">
+        <span class="act-legend">
+          {zh ? pickTrad(lang, '少') : 'Less'}
+          <i data-l="0"></i>
+          <i data-l="1"></i>
+          <i data-l="2"></i>
+          <i data-l="3"></i>
+          <i data-l="4"></i>
+          {zh ? pickTrad(lang, '多') : 'More'}
+        </span>
+        <span class="act-note">{zh ? pickTrad(lang, '来自公开仓库的提交记录') : 'From public commit history'}</span>
+      </div>
+    </section>
+
+    <section class="sec" style="padding-top:56px">
+      <div class="sec-head">
+        <h2>{zh ? pickTrad(lang, '更新日志') : 'Changelog'}</h2>
+      </div>
+      <div class="sec-body">
+        <ol class="log-notes">
+          {notes.map((note) => (
+            <li>
+              <p class="ln-date"><time datetime={note.date}>{note.date}</time></p>
+              <h3 class="ln-title">{zh ? note.titleZh ?? note.title : note.title}</h3>
+              <ul class="ln-items">
+                {(zh ? note.items.zh : note.items.en).map((item) => <li>{item}</li>)}
+              </ul>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+
+    <p class="reach-note">{zh ? `更新于 ${log.updated}` : `Updated ${log.updated}`}</p>
+  </article>
+</Base>
+
+<style>
+  :global(html) {
+    --act: #ff6b01;
+  }
+  :global(html[data-theme='dark']) {
+    --act: #ff7b1a;
+  }
+  .act {
+    margin: 38px 0 4px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 15px 17px 12px;
+  }
+  .act-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .act-kicker {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .act-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .act-meta b {
+    color: var(--ink);
+    font-weight: 620;
+  }
+  .act-streak {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--accent);
+  }
+  .act-streak i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .act-weeks {
+    padding-left: 10px;
+    border-left: 1px solid var(--line);
+  }
+  .act-months {
+    display: flex;
+    gap: 4px;
+    margin: 13px 0 6px;
+  }
+  .act-months span {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 1;
+    color: var(--faint);
+    white-space: nowrap;
+  }
+  .act-grid {
+    display: flex;
+    gap: 4px;
+  }
+  .act-col {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+  }
+  .act-cell {
+    aspect-ratio: 1 / 1;
+    border-radius: 2px;
+    background: var(--act);
+    opacity: 0.07;
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease,
+      outline-color 0.15s ease;
+  }
+  .act-cell[data-l='0'],
+  .act-future {
+    background: color-mix(in srgb, var(--ink) 9%, transparent);
+    opacity: 1;
+  }
+  .act-cell[data-l='1'] {
+    opacity: 0.3;
+  }
+  .act-cell[data-l='2'] {
+    opacity: 0.55;
+  }
+  .act-cell[data-l='3'] {
+    opacity: 0.78;
+  }
+  .act-cell[data-l='4'] {
+    opacity: 1;
+  }
+  .act-cell:not(.act-future):hover {
+    opacity: 1;
+    transform: scale(1.18);
+    outline: 1.5px solid var(--act);
+    outline-offset: 1px;
+  }
+  .act-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--faint);
+    flex-wrap: wrap;
+  }
+  .act-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .act-legend i {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--act);
+    opacity: 0.07;
+  }
+  .act-legend i[data-l='0'] {
+    background: color-mix(in srgb, var(--ink) 9%, transparent);
+    opacity: 1;
+  }
+  .act-legend i[data-l='1'] {
+    opacity: 0.3;
+  }
+  .act-legend i[data-l='2'] {
+    opacity: 0.55;
+  }
+  .act-legend i[data-l='3'] {
+    opacity: 0.78;
+  }
+  .act-legend i[data-l='4'] {
+    opacity: 1;
+  }
+  .repo-name {
+    font-family: var(--mono);
+    font-size: 15px;
+  }
+  @media (max-width: 560px) {
+    .act {
+      padding: 13px 13px 11px;
+      margin-top: 30px;
+    }
+    .act-grid,
+    .act-months {
+      gap: 3px;
+    }
+    .act-col {
+      gap: 3px;
+    }
+    .act-note {
+      display: none;
+    }
+  }
+</style>

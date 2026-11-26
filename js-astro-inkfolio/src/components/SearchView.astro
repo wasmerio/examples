@@ -1,0 +1,198 @@
+---
+import { pickTrad } from '../lib/trad';
+import Base from '../layouts/Base.astro';
+import Icon from './Icon.astro';
+import type { Lang } from '../lib/config';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const zh = lang !== 'en';
+const altHref = zh ? '/search/' : '/zh/search/';
+---
+
+<Base title={zh ? pickTrad(lang, '搜索') : 'Search'} lang={lang} alt={altHref}>
+  <section class="art-head">
+    <h1>{zh ? pickTrad(lang, '搜索') : 'Search'}</h1>
+    <p class="meta">
+      {zh
+        ? '全文搜索，结果按当前语言过滤。索引在构建时生成，无后端。'
+        : 'Full-text search, filtered to the language you are reading. The index is built at deploy time, no backend.'}
+    </p>
+  </section>
+
+  <section class="search-box" id="search-root" data-lang={lang}>
+    <label class="sr-only" for="search-input">
+      {zh ? pickTrad(lang, '搜索关键词') : 'Search query'}
+    </label>
+    <div class="search-field">
+      <Icon name="magnifying-glass" size={16} />
+      <input
+        id="search-input"
+        type="search"
+        autocomplete="off"
+        placeholder={zh ? pickTrad(lang, '输入关键词…') : 'Type a few words…'}
+      />
+    </div>
+    <p class="search-hint" id="search-hint" hidden></p>
+    <ul class="search-results" id="search-results"></ul>
+  </section>
+
+  <script is:inline>
+    (function () {
+      var lang = document.getElementById('search-root').getAttribute('data-lang') || 'en';
+      var input = document.getElementById('search-input');
+      var list = document.getElementById('search-results');
+      var hint = document.getElementById('search-hint');
+      var pf = null;
+      var timer;
+
+      function esc(s) {
+        var d = document.createElement('div');
+        d.textContent = s || '';
+        return d.innerHTML;
+      }
+      function inLang(url) {
+        return lang !== 'en' ? url.indexOf('/zh/') === 0 : url.indexOf('/zh/') !== 0;
+      }
+
+      async function ensure() {
+        if (!pf) pf = await import('/pagefind/pagefind.js');
+        return pf;
+      }
+
+      function render(items) {
+        list.innerHTML = items
+          .map(function (r) {
+            return (
+              '<li class="sr-item"><h2><a href="' +
+              r.url +
+              '">' +
+              esc(r.meta && r.meta.title ? r.meta.title : r.url) +
+              '</a></h2>' +
+              '<p>' +
+              (r.excerpt || '') +
+              '</p></li>'
+            );
+          })
+          .join('');
+        hint.hidden = false;
+        hint.textContent = items.length ? '' : lang !== 'en' ? '没有匹配的内容。' : 'No matches.';
+        if (items.length) hint.hidden = true;
+      }
+
+      input.addEventListener('input', function () {
+        clearTimeout(timer);
+        var q = input.value.trim();
+        timer = setTimeout(async function () {
+          if (q.length < 2) {
+            list.innerHTML = '';
+            hint.hidden = true;
+            return;
+          }
+          try {
+            var pagefind = await ensure();
+            var search = await pagefind.search(q);
+            var data = await Promise.all(
+              search.results.slice(0, 20).map(function (r) {
+                return r.data();
+              }),
+            );
+            render(
+              data
+                .filter(function (r) {
+                  return inLang(r.url);
+                })
+                .slice(0, 10),
+            );
+          } catch {
+            hint.hidden = false;
+            hint.textContent =
+              lang === 'zh'
+                ? '搜索索引还没生成，先跑一次构建。'
+                : 'Search index is missing — run a production build first.';
+          }
+        }, 180);
+      });
+    })();
+  </script>
+</Base>
+
+<style is:global>
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .search-box {
+    margin-top: 32px;
+    max-width: 680px;
+  }
+  .search-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    height: 46px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    color: var(--muted);
+  }
+  .search-field:focus-within {
+    border-color: var(--ink);
+    color: var(--ink);
+  }
+  .search-field input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 16px;
+    color: var(--ink);
+    outline: none;
+  }
+  .search-hint {
+    margin: 14px 0 0;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .search-results {
+    margin: 24px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sr-item {
+    border-top: 1px solid var(--line);
+    padding: 18px 0;
+  }
+  .sr-item:last-child {
+    border-bottom: 1px solid var(--line);
+  }
+  .sr-item h2 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.35;
+    font-weight: 620;
+  }
+  .sr-item p {
+    margin: 6px 0 0;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--body);
+  }
+  .sr-item mark {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: inherit;
+    padding: 0 2px;
+    border-radius: 3px;
+  }
+</style>

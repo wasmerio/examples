@@ -1,0 +1,33 @@
+---
+import { getCollection } from 'astro:content';
+import TaxonomyTerm from '../../components/TaxonomyTerm.astro';
+import { categoryAliases } from '../../data/taxonomy';
+
+export async function getStaticPaths() {
+  const entries = (await getCollection('posts')) as any[];
+  const terms = new Set<string>();
+  for (const post of entries) for (const term of post.data.tags ?? []) terms.add(term);
+  return [...terms].map(term => ({ params: { term }, props: { term } }));
+}
+
+const { term } = Astro.props;
+const entries = (await getCollection('posts')) as any[];
+
+// Language toggle only when the same term exists in the other language.
+const otherEntries = (await getCollection('postsZh')) as any[];
+const names = new Set([term, ...(categoryAliases[term] ?? [])]);
+const hasAlt = otherEntries.some(p => (p.data.tags ?? []).some((x: string) => names.has(x)));
+const altHref = hasAlt ? '/zh/tags/' + encodeURIComponent(term) + '/' : undefined;
+
+const posts = entries
+  .filter(post => (post.data.tags ?? []).includes(term))
+  .sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime())
+  .map(post => ({
+    id: post.id,
+    title: post.data.title,
+    description: post.data.description ?? '',
+    date: post.data.date,
+    cover: post.data.cover,
+  }));
+---
+<TaxonomyTerm lang="en" kind="tags" term={term} posts={posts} alt={altHref} />

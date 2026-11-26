@@ -1,0 +1,185 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import { existsSync } from 'node:fs';
+import Base from '../layouts/Base.astro';
+import { covers } from '../lib/config';
+import { langPath, site, type Lang } from '../lib/config';
+import { t } from '../i18n/ui';
+
+interface Props {
+  entry: CollectionEntry<'posts'> | CollectionEntry<'postsZh'>;
+  lang: Lang;
+}
+const { entry, lang } = Astro.props;
+const { Content, headings } = await render(entry);
+
+// The other language is only linked when a file with the same name exists there.
+const otherCollection = lang !== 'en' ? 'posts' : 'postsZh';
+const other = (await getCollection(otherCollection as 'posts' | 'postsZh')).find((e: any) => e.id === entry.id);
+const alt = other ? langPath(`/posts/${entry.id}/`, lang !== 'en' ? 'en' : 'zh') : undefined;
+
+const fmt = (d: Date) =>
+  new Date(d).toLocaleDateString(lang !== 'en' ? 'zh-CN' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+const words = (entry.body ?? '').split(/\s+/).filter(Boolean).length;
+const readMin = Math.max(1, Math.round(words / 220));
+
+// Only h2 get their own TOC entry — h3 makes long lists unreadable in a 200px rail.
+const tocItems = headings.filter((h: any) => h.depth === 2);
+const showToc = entry.data.toc !== false && tocItems.length >= 3;
+
+// scripts/build-og.mjs writes one image per post; fall back to the site default.
+const ogPath = `/og/posts/${lang}/${entry.id}.png`;
+const ogImage = existsSync(`public${ogPath}`) ? ogPath : undefined;
+---
+
+<Base
+  title={entry.data.title}
+  description={entry.data.description}
+  lang={lang}
+  alt={alt}
+  ogImage={ogImage}
+  article={{
+    published: new Date(entry.data.date),
+    updated: entry.data.updated ? new Date(entry.data.updated) : undefined,
+    tags: entry.data.tags,
+  }}
+>
+  <article>
+    <header class="post-head">
+      <div class="crumbs">
+        <a href={langPath('/posts/', lang)}>{t(lang, 'posts')}</a>
+      </div>
+      <h1>{entry.data.title}</h1>
+      {entry.data.description && <p class="post-lede">{entry.data.description}</p>}
+      {covers.article && entry.data.cover && (
+        <img class="post-cover" src={entry.data.cover} alt={entry.data.coverAlt ?? ''} loading="eager" decoding="async" />
+      )}
+      <div class="byline">
+        <div class="who">
+          <span class="who-name">{lang !== 'en' ? site.authorZh : site.author}</span>
+        </div>
+        <div class="when">
+          <time datetime={new Date(entry.data.date).toISOString()}>{fmt(new Date(entry.data.date))}</time>
+          {entry.data.updated && (
+            <div>
+              {t(lang, 'updated')} {fmt(new Date(entry.data.updated))}
+            </div>
+          )}
+          <div>
+            {readMin} {t(lang, 'minRead')}
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class:list={['post-body', { 'no-toc': !showToc }]}>
+      <div class="post-main">
+        {showToc && (
+          <details class="toc-m">
+            <summary>
+              {t(lang, 'toc')} <span>· {tocItems.length}</span>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                aria-hidden="true"
+              >
+                <path d="m6 9 6 6 6-6"></path>
+              </svg>
+            </summary>
+            <ol>
+              {tocItems.map((h: any) => (
+                <li>
+                  <a href={`#${h.slug}`}>{h.text}</a>
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
+        <div class="prose post-prose">
+          <Content />
+        </div>
+      </div>
+
+      {showToc && (
+        <aside class="toc" aria-label={t(lang, 'toc')}>
+          <p class="toc-label">{t(lang, 'toc')}</p>
+          <ol>
+            {tocItems.map((h: any) => (
+              <li>
+                <a href={`#${h.slug}`} data-toc-link>
+                  {h.text}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </aside>
+      )}
+    </div>
+
+    <div class="post-end">
+      {((entry.data.categories?.length ?? 0) > 0 || entry.data.tags.length > 0) && (
+        <div class="post-tax">
+          {(entry.data.categories?.length ?? 0) > 0 && (
+            <div class="tags">
+              <span class="tax-label">{t(lang, 'categories')}</span>
+              {entry.data.categories.map((c: string) => (
+                <a class="tag" href={langPath(`/categories/${encodeURIComponent(c)}/`, lang)}>{c}</a>
+              ))}
+            </div>
+          )}
+          {entry.data.tags.length > 0 && (
+            <div class="tags">
+              <span class="tax-label">{t(lang, 'tags')}</span>
+              {entry.data.tags.map((tag: string) => (
+                <a class="tag" href={langPath(`/tags/${encodeURIComponent(tag)}/`, lang)}>#{tag}</a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <a class="backlink" href={langPath('/posts/', lang)}>
+        ← {t(lang, 'backToPosts')}
+      </a>
+    </div>
+  </article>
+</Base>
+
+{showToc && <script is:inline>
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll('.toc a[data-toc-link]'));
+    if (!links.length) return;
+    var targets = links
+      .map(function (a) {
+        return document.getElementById(a.getAttribute('href').slice(1));
+      })
+      .filter(Boolean);
+    var ticking = false;
+    function spy() {
+      var y = window.scrollY + 140;
+      var idx = 0;
+      for (var i = 0; i < targets.length; i++) {
+        if (targets[i].getBoundingClientRect().top + window.scrollY <= y) idx = i;
+      }
+      links.forEach(function (a, i) {
+        a.classList.toggle('on', i === idx);
+      });
+      ticking = false;
+    }
+    window.addEventListener(
+      'scroll',
+      function () {
+        if (!ticking) {
+          ticking = true;
+          requestAnimationFrame(spy);
+        }
+      },
+      { passive: true },
+    );
+    spy();
+  })();
+</script>}

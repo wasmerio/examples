@@ -1,0 +1,432 @@
+---
+import Base from '../layouts/Base.astro';
+import toolsData from '../data/tools.yaml?raw';
+import { parse } from 'yaml';
+import { readdirSync } from 'node:fs';
+import { t } from '../i18n/ui';
+import type { Lang } from '../lib/config';
+
+interface Note {
+  en: string;
+  zh: string;
+}
+interface Link {
+  name: string;
+  url: string;
+  note: Note;
+  icon?: string;
+  own?: boolean;
+}
+interface Category {
+  id: string;
+  en: string;
+  zh: string;
+  note: Note;
+  links: Link[];
+}
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const zh = lang !== 'en';
+const altHref = zh ? '/nav/' : '/zh/nav/';
+
+const categories = parse(toolsData) as Category[];
+const total = categories.reduce((n, c) => n + c.links.length, 0);
+// Any SVG dropped into public/icons/ is available by filename, no code change.
+const availableIcons = new Set(
+  readdirSync('public/icons')
+    .filter((f: any) => f.endsWith('.svg'))
+    .map((f: any) => f.replace(/\.svg$/, '')),
+);
+const ownLabel = zh ? '自建' : 'own';
+const initial = (name: string) =>
+  name
+    .replace(/^Example\s+/i, '')
+    .trim()
+    .slice(0, 1)
+    .toUpperCase();
+---
+
+<Base title={t(lang, 'tools')} lang={lang} alt={altHref}>
+  <article class="navpage">
+    <section class="hero">
+      <h1>{zh ? '导航' : 'Nav'}</h1>
+      <div class="lede">
+        <p>{t(lang, 'toolsLede')}</p>
+      </div>
+      <p class="nav-count">
+        {total} <span>{zh ? '个工具' : 'tools'}</span> · {categories.length} <span>{zh ? '类' : 'categories'}</span>
+      </p>
+    </section>
+
+    <div class="nav-grid">
+      <aside class="nav-index" aria-label={zh ? '分类' : 'Categories'}>
+        <ol>
+          {categories.map((c: any, i: any) => (
+            <li>
+              <a href={`#${c.id}`} aria-current={i === 0 ? 'true' : undefined}>
+                <span class="num">{String(i + 1).padStart(2, '0')}</span>
+                <span>{zh ? c.zh : c.en}</span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </aside>
+
+      <div class="nav-sections">
+        {categories.map((c: any, i: any) => (
+          <section class="cat" id={c.id}>
+            <div class="cat-head">
+              <span class="cat-num">{String(i + 1).padStart(2, '0')}</span>
+              <h2>{zh ? c.zh : c.en}</h2>
+            </div>
+            <p class="cat-note">{zh ? c.note.zh : c.note.en}</p>
+            <ul class="links">
+              {c.links.map((l: any) => (
+                <li>
+                  <a class="link" href={l.url} target="_blank" rel="noopener">
+                    {l.icon && availableIcons.has(l.icon) ? (
+                      <span class="ico" aria-hidden="true">
+                        <img
+                          src={`/icons/${l.icon}.svg`}
+                          alt=""
+                          width="18"
+                          height="18"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </span>
+                    ) : (
+                      <span class="ico ico-letter" aria-hidden="true">
+                        {initial(l.name)}
+                      </span>
+                    )}
+                    <span class="link-body">
+                      <span class="link-name">
+                        {l.name}
+                        {l.own && <span class="own">{ownLabel}</span>}
+                      </span>
+                      <span class="link-note">{zh ? l.note.zh : l.note.en}</span>
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </div>
+
+    <p class="nav-tail">
+      {zh ? '少了我该用的？' : 'Something missing that I should be using?'}{' '}
+      <a href={zh ? '/zh/contact/' : '/contact/'}>{zh ? '告我一声' : 'Tell me'}</a>.
+    </p>
+  </article>
+
+  <script is:inline>
+    (function () {
+      var links = Array.prototype.slice.call(document.querySelectorAll('.nav-index a[href^="#"]'));
+      var sections = links.map(function (a) {
+        return document.getElementById(a.getAttribute('href').slice(1));
+      });
+      if (
+        !links.length ||
+        sections.some(function (s) {
+          return !s;
+        })
+      )
+        return;
+      var current = -1;
+      function setActive(i) {
+        if (current === i) return;
+        current = i;
+        links.forEach(function (a, j) {
+          if (j === i) a.setAttribute('aria-current', 'true');
+          else a.removeAttribute('aria-current');
+        });
+      }
+      function update() {
+        var y = window.scrollY + 130,
+          idx = 0;
+        for (var i = 0; i < sections.length; i++) {
+          if (sections[i].getBoundingClientRect().top + window.scrollY <= y) idx = i;
+        }
+        if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 40) idx = sections.length - 1;
+        setActive(idx);
+      }
+      var ticking = false;
+      window.addEventListener(
+        'scroll',
+        function () {
+          if (!ticking) {
+            ticking = true;
+            requestAnimationFrame(function () {
+              update();
+              ticking = false;
+            });
+          }
+        },
+        { passive: true },
+      );
+      window.addEventListener('resize', update);
+      links.forEach(function (a, i) {
+        a.addEventListener('click', function () {
+          setActive(i);
+        });
+      });
+      update();
+    })();
+  </script>
+</Base>
+
+<style>
+  .navpage {
+    width: 100%;
+    max-width: 1120px;
+    padding: 0 24px;
+  }
+  .hero {
+    padding-top: 56px;
+  }
+  .hero h1 {
+    font-size: clamp(40px, 6vw, 56px);
+    letter-spacing: -0.03em;
+    line-height: 1.02;
+    margin: 0;
+  }
+  .lede {
+    max-width: 646px;
+    margin-top: 14px;
+    font-size: 19px;
+    line-height: 1.6;
+    color: var(--body);
+  }
+  .lede p {
+    margin: 0;
+  }
+  .nav-count {
+    margin: 18px 0 0;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    letter-spacing: 0.02em;
+    color: var(--muted);
+  }
+  .nav-count span {
+    color: var(--faint);
+  }
+
+  .nav-grid {
+    display: grid;
+    grid-template-columns: 196px minmax(0, 1fr);
+    gap: 56px;
+    align-items: start;
+    margin-top: 44px;
+  }
+  .nav-index {
+    position: sticky;
+    top: 96px;
+  }
+  .nav-index ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 2px;
+  }
+  .nav-index a {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 6px 0 6px 12px;
+    font-size: 14px;
+    color: var(--muted);
+    text-decoration: none;
+    position: relative;
+  }
+  .nav-index a:hover {
+    color: var(--ink);
+  }
+  .nav-index a[aria-current='true'] {
+    color: var(--ink);
+  }
+  .nav-index a[aria-current='true'] .num {
+    color: var(--accent);
+  }
+  .nav-index a[aria-current='true']::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 5px;
+    bottom: 5px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .nav-index .num {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--faint);
+  }
+
+  .cat {
+    scroll-margin-top: 92px;
+    padding-top: 30px;
+    border-top: 1px solid var(--line);
+  }
+  .cat + .cat {
+    margin-top: 46px;
+  }
+  .cat-head {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+  }
+  .cat-num {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+  }
+  .cat h2 {
+    margin: 0;
+    font-size: 25px;
+    letter-spacing: -0.015em;
+  }
+  .cat-note {
+    margin: 8px 0 16px;
+    font-size: 14.5px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+
+  .links {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 40px;
+  }
+  .link {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px 0 13px;
+    border-top: 1px solid var(--line);
+    text-decoration: none;
+    color: inherit;
+  }
+  .ico {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: #fff;
+    border: 1px solid rgba(20, 20, 19, 0.1);
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    margin-top: 1px;
+  }
+  .ico-letter {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+  }
+  :global(:root[data-theme='dark']) .ico {
+    background: var(--chip);
+    border-color: var(--line);
+  }
+  .ico-own {
+    background: transparent;
+    border-color: transparent;
+  }
+  .ico-own svg {
+    display: block;
+  }
+  .link-body {
+    display: block;
+    min-width: 0;
+  }
+  .link-name {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 16px;
+    font-weight: 560;
+    letter-spacing: -0.005em;
+    color: var(--ink);
+  }
+  .own {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .link-note {
+    display: block;
+    margin-top: 3px;
+    font-size: 13.5px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+  .link:hover .link-name {
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 4px;
+  }
+
+  .nav-tail {
+    margin: 56px 0 0;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+    font-size: 14.5px;
+    color: var(--muted);
+  }
+
+  @media (max-width: 900px) {
+    .navpage {
+      padding: 0 20px;
+    }
+    .hero {
+      padding-top: 40px;
+    }
+    .nav-grid {
+      grid-template-columns: 1fr;
+      gap: 32px;
+      margin-top: 32px;
+    }
+    .nav-index {
+      position: static;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 14px;
+    }
+    .nav-index ol {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 18px;
+    }
+    .nav-index a {
+      padding: 4px 0;
+    }
+    .nav-index a[aria-current='true']::before {
+      display: none;
+    }
+    .nav-index a[aria-current='true'] {
+      text-decoration: underline;
+      text-decoration-color: var(--accent);
+      text-decoration-thickness: 1.5px;
+      text-underline-offset: 4px;
+    }
+    .cat + .cat {
+      margin-top: 36px;
+    }
+    .links {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

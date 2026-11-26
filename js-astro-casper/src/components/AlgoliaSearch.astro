@@ -1,0 +1,211 @@
+---
+import { getCollection } from 'astro:content';
+import { SITE_CONFIG } from '../config';
+
+const { algolia } = SITE_CONFIG;
+
+// Fetch all authors to build a map of author IDs to picture URLs
+const authors = await getCollection('authors');
+const authorPicturesMap = Object.fromEntries(
+  authors.map(author => [author.id.toLowerCase(), author.data.picture || ''])
+);
+---
+
+{algolia && (
+  <style>
+    .ais-SearchBox { margin: 0; display: none; position: relative; }
+    .ais-SearchBox.open { display: block; }
+    .ais-SearchBox-form { background: transparent; margin: 0; padding: 0; box-shadow: none; display: flex; align-items: center; }
+    .ais-SearchBox-input {
+      padding: 5px 10px; font-size: 1.6rem; border: none !important;
+      border-bottom: 1px solid rgba(255,255,255,0.3) !important;
+      border-radius: 0 !important; background: transparent !important;
+      color: #fff; box-shadow: none !important; width: 200px;
+      height: 35px; margin: 0; outline: none !important;
+    }
+    .ais-SearchBox-input::placeholder { color: rgba(255,255,255,0.7); }
+    .ais-SearchBox-input:focus { border-bottom-color: #fff !important; }
+    .ais-SearchBox-submit, .ais-SearchBox-reset, .ais-SearchBox-loadingIndicator { display: none !important; }
+    .ais-Hits { width: 100%; display: flex; }
+    .ais-Hits-list {
+      display: flex; flex-wrap: wrap; margin: 0; padding: 0;
+      list-style: none; width: 100%;
+    }
+    .ais-Hits-item {
+      flex: 1 1 300px; display: flex; margin: 0; padding: 0;
+      box-shadow: none !important; background: transparent !important;
+      border: none !important; max-width: 100%;
+    }
+    .ais-Hits-item .post-card { width: 100%; }
+  </style>
+  <script is:inline src="https://cdn.jsdelivr.net/npm/algoliasearch@4/dist/algoliasearch-lite.umd.js"></script>
+  <script is:inline src="https://cdn.jsdelivr.net/npm/instantsearch.js@4"></script>
+
+  <script is:inline define:vars={{ appId: algolia.applicationId, apiKey: algolia.searchOnlyApiKey, indexName: algolia.indexName, baseUrl: import.meta.env.BASE_URL, authorPicturesMap }}>
+    // Initialize Algolia search once DOM loaded
+    const initAlgoliaSearch = () => {
+      const searchContainer = document.getElementById('search-searchbar');
+      const hitsContainer = document.getElementById('search-hits');
+      const postsContainer = document.getElementById('posts');
+      const searchButton = document.querySelector('.social-link-search');
+
+      if (!searchContainer || !hitsContainer || !postsContainer || !searchButton) return;
+
+      if (typeof algoliasearch === 'undefined' || typeof instantsearch === 'undefined') {
+        console.error('Algolia InstantSearch script not loaded.');
+        return;
+      }
+
+      const searchClient = algoliasearch(appId, apiKey);
+
+      const search = instantsearch({
+        indexName: indexName,
+        searchClient,
+        routing: false
+      });
+
+      const hitTemplate = function(hit) {
+        let isCover = hit.cover;
+        let articleClass = "post-card";
+        if (!isCover) articleClass += " no-image";
+
+        const title = hit._highlightResult?.title?.value || hit.title || '';
+        const content = hit._highlightResult?.content?.value || hit.content?.substring(0, 150) || '';
+        const authorName = hit.author || 'Author';
+        const authorSlug = (hit.author || '').toLowerCase();
+
+        let cleanUrl = hit.url || '';
+        if (cleanUrl.startsWith('/')) {
+          cleanUrl = cleanUrl.substring(1);
+        }
+        const fullUrl = `${baseUrl}${cleanUrl}`;
+        const authorUrl = `${baseUrl}author/${hit.author}/`;
+
+        let template = `<article class="${articleClass}">`;
+        
+        if (isCover) {
+          let coverUrl = hit.cover;
+          if (coverUrl.startsWith('/')) {
+            coverUrl = coverUrl.substring(1);
+          }
+          template += `
+            <a class="post-card-image-link" href="${fullUrl}">
+                <div class="post-card-image" style="background-image: url(${baseUrl}${coverUrl})"></div>
+            </a>`;
+        }
+
+        const authorPicturePath = authorPicturesMap[authorSlug] || '';
+        const authorPicture = authorPicturePath ? baseUrl + authorPicturePath.replace(/^\//, '') : '';
+
+        template += `
+            <div class="post-card-content">
+            <a class="post-card-content-link" href="${fullUrl}">
+              <header class="post-card-header">`;
+
+        if ('tags' in hit && hit.tags && hit.tags.length) {
+            hit.tags.forEach((tag) => {
+                template += `<span class="post-card-tags">${tag}</span>`;
+            });
+        }
+
+        template += `
+          <h2 class="post-card-title">${title}</h2>
+          </header>
+          <section class="post-card-excerpt">                    
+              <p>${content}...</p>
+          </section>
+          </a>
+          <footer class="post-card-meta">
+              ${authorPicture ? `<img class="author-profile-image" src="${authorPicture}" alt="${authorName}" loading="lazy" />` : ''}
+              <span class="post-card-author">
+                  <a href="${authorUrl}">${authorName}</a>
+              </span>
+          </footer>
+          </div>
+        </article>`;
+
+        return template;
+      };
+
+      search.addWidgets([
+        instantsearch.widgets.searchBox({
+          container: '#search-searchbar',
+          placeholder: 'Search posts...',
+          showReset: false,
+          showSubmit: false,
+        }),
+        instantsearch.widgets.hits({
+          container: '#search-hits',
+          templates: {
+            item: hitTemplate,
+            empty(results) {
+              return `<div class="text-center" style="width: 100%; margin-top: 40px; font-size: 2rem; color: #738a94; text-align: center;">No results found for <strong>${results.query}</strong>.</div>`;
+            }
+          }
+        })
+      ]);
+
+      search.start();
+
+      const searchBoxForm = document.querySelector('.ais-SearchBox');
+      
+      const toggleSearch = (e) => {
+        if (e) e.preventDefault();
+        if (!searchBoxForm) return;
+
+        if (searchBoxForm.classList.contains('open')) {
+          searchBoxForm.classList.remove('open');
+          hitsContainer.style.display = 'none';
+          postsContainer.style.display = 'flex';
+          const inputEl = document.querySelector('.ais-SearchBox-input');
+          if (inputEl) {
+            inputEl.value = '';
+            inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        } else {
+          searchBoxForm.classList.add('open');
+          const inputEl = document.querySelector('.ais-SearchBox-input');
+          if (inputEl) inputEl.focus();
+        }
+      };
+
+      searchButton.addEventListener('click', toggleSearch);
+
+      // Listen for typing input
+      const inputListener = (e) => {
+        if (e.target && e.target.classList.contains('ais-SearchBox-input')) {
+          if (e.target.value.trim().length > 0) {
+            postsContainer.style.display = 'none';
+            hitsContainer.style.display = 'flex';
+          } else {
+            hitsContainer.style.display = 'none';
+            postsContainer.style.display = 'flex';
+          }
+        }
+      };
+      document.addEventListener('input', inputListener);
+
+      // Handle redirect search focus
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('search') === 'true') {
+        if (searchBoxForm) searchBoxForm.classList.add('open');
+        const inputEl = document.querySelector('.ais-SearchBox-input');
+        if (inputEl) inputEl.focus();
+        // remove URL parameter cleanly
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
+      const cleanup = () => {
+        searchButton.removeEventListener('click', toggleSearch);
+        document.removeEventListener('input', inputListener);
+        if (search && typeof search.dispose === 'function') {
+          search.dispose();
+        }
+        document.removeEventListener('astro:before-swap', cleanup);
+      };
+      document.addEventListener('astro:before-swap', cleanup);
+    };
+
+    document.addEventListener('astro:page-load', initAlgoliaSearch);
+  </script>
+)}

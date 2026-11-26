@@ -1,0 +1,96 @@
+---
+import { getCollection, getEntry } from 'astro:content';
+import Layout from '../../../layouts/Layout.astro';
+import SiteNav from '../../../components/SiteNav.astro';
+import PostCard from '../../../components/PostCard.astro';
+import { SITE_CONFIG, getAssetUrl } from '../../../config';
+
+export async function getStaticPaths({ paginate }: any) {
+  const allPosts = await getCollection('posts');
+  const tagSlugs = new Set<string>();
+  
+  allPosts.forEach(post => {
+    post.data.tags.forEach(t => {
+      if (t) {
+        tagSlugs.add(t.toLowerCase().replace(/\s+/g, '-'));
+      }
+    });
+  });
+  
+  const paths: any[] = [];
+  
+  for (const tag of Array.from(tagSlugs)) {
+    const filteredPosts = allPosts.filter(post => 
+      post.data.tags.some(t => t.toLowerCase().replace(/\s+/g, '-') === tag)
+    );
+    filteredPosts.sort((a, b) => new Date(b.data.date).getTime() - new Date(a.data.date).getTime());
+    
+    const pages = paginate(filteredPosts, { 
+      pageSize: SITE_CONFIG.pageSize,
+      params: { tag }
+    });
+    
+    pages.forEach((p: any) => {
+      paths.push({
+        params: { 
+          tag, 
+          page: p.params.page === 1 || p.params.page === '1' || !p.params.page ? undefined : `page${p.params.page}`
+        },
+        props: {
+          pageProps: p.props,
+          maxPages: pages.length
+        }
+      });
+    });
+  }
+  
+  return paths;
+}
+
+const { tag } = Astro.params;
+const { pageProps, maxPages } = Astro.props;
+const { page } = pageProps;
+
+// Look up tag metadata from the data collection
+const tagEntry = tag ? await getEntry('tags', tag) : null;
+const tagInfo = tagEntry ? tagEntry.data : null;
+const tagName = tagInfo?.name || tag.replace(/-/g, ' ');
+const tagDescription = tagInfo?.description || `A collection of ${page.total} posts`;
+const tagCover = tagInfo?.cover ? getAssetUrl(tagInfo.cover as string) : null;
+
+// Capitalize tag helper
+const capitalize = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
+const title = capitalize(tagName);
+---
+
+<Layout title={title} description={tagDescription} image={tagCover} current="tag">
+    <!-- Header -->
+    <header class={`site-header outer ${tagCover ? '' : 'no-cover'}`} style={tagCover ? `background-image: url(${tagCover})` : ''}>
+        <div class="inner">
+            <SiteNav current="tag" />
+            <div class="site-header-content">
+                <h1 class="site-title">{title}</h1>
+                <h2 class="site-description">{tagDescription}</h2>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main id="site-main" class="site-main outer" role="main">
+        <div class="inner">
+            <div class="post-feed" data-max-pages={maxPages} data-base-url={getAssetUrl(`/tag/${tag}/`)}>
+                {page.data.map((post: any) => (
+                    <PostCard post={post} />
+                ))}
+            </div>
+        </div>
+    </main>
+</Layout>
+
+<script>
+  import { initInfiniteScroll } from '../../../utils/infinite-scroll';
+  document.addEventListener('astro:page-load', () => {
+    initInfiniteScroll('.post-feed');
+  });
+</script>
+

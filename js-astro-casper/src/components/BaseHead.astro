@@ -1,0 +1,146 @@
+---
+import { SITE_CONFIG, getAssetUrl } from '../config';
+import { Font } from 'astro:assets';
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string | null;
+  type?: 'website' | 'article';
+  articleDate?: string | Date;
+  tags?: string[];
+  author?: string;
+}
+
+const {
+  title = SITE_CONFIG.title,
+  description = SITE_CONFIG.description,
+  image = SITE_CONFIG.cover,
+  type = 'website',
+  articleDate,
+  tags = [],
+  author,
+} = Astro.props;
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site || Astro.url);
+const displayTitle = title === SITE_CONFIG.title ? title : `${title} - ${SITE_CONFIG.title}`;
+const ogImage = image ? getAssetUrl(image) : getAssetUrl(SITE_CONFIG.cover);
+const absoluteOgImageUrl = new URL(ogImage, Astro.site || Astro.url).toString();
+
+// Format dates
+const isoDate = articleDate ? new Date(articleDate).toISOString() : undefined;
+---
+
+<!-- Global Metadata -->
+<meta charset="utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="HandheldFriendly" content="True" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="shortcut icon" href={getAssetUrl(SITE_CONFIG.favicon)} type="image/png" />
+<meta name="referrer" content="no-referrer-when-downgrade" />
+
+<!-- Fonts -->
+<Font cssVariable="--font-inter" preload />
+
+<!-- LCP Image Preloads -->
+{type === 'article' && image && (
+  <link rel="preload" as="image" href={getAssetUrl(image)} fetchpriority="high" />
+)}
+{type === 'website' && SITE_CONFIG.cover && (
+  <link rel="preload" as="image" href={getAssetUrl(SITE_CONFIG.cover)} fetchpriority="high" />
+)}
+
+{SITE_CONFIG.googleAnalytics && (
+  <>
+    <script is:inline async src={`https://www.googletagmanager.com/gtag/js?id=${SITE_CONFIG.googleAnalytics}`}></script>
+    <script is:inline define:vars={{ gaId: SITE_CONFIG.googleAnalytics }}>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', gaId);
+
+      document.addEventListener('astro:page-load', () => {
+        if (typeof window.gtag === 'function') {
+          window.gtag('config', gaId, {
+            page_path: window.location.pathname
+          });
+        }
+      });
+    </script>
+  </>
+)}
+
+<!-- Canonical URL -->
+<link rel="canonical" href={canonicalURL} />
+
+<!-- Primary Meta Tags -->
+<title>{displayTitle}</title>
+<meta name="title" content={displayTitle} />
+<meta name="description" content={description} />
+<meta name="generator" content={Astro.generator} />
+
+<!-- Open Graph / Facebook -->
+<meta property="og:site_name" content={SITE_CONFIG.title} />
+<meta property="og:type" content={type} />
+<meta property="og:url" content={canonicalURL} />
+<meta property="og:title" content={displayTitle} />
+<meta property="og:description" content={description} />
+<meta property="og:image" content={absoluteOgImageUrl} />
+
+{type === 'article' && (
+  <>
+    {SITE_CONFIG.facebook && <meta property="article:publisher" content={`https://www.facebook.com/${SITE_CONFIG.facebook}`} />}
+    {SITE_CONFIG.facebook && <meta property="article:author" content={`https://www.facebook.com/${SITE_CONFIG.facebook}`} />}
+    {isoDate && <meta property="article:published_time" content={isoDate} />}
+    {isoDate && <meta property="article:modified_time" content={isoDate} />}
+    {tags.length > 0 && <meta property="article:tag" content={tags[0]} />}
+  </>
+)}
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:url" content={canonicalURL} />
+<meta name="twitter:title" content={displayTitle} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={absoluteOgImageUrl} />
+<meta name="twitter:label1" content="Written by" />
+<meta name="twitter:data1" content={author || SITE_CONFIG.title} />
+{tags.length > 0 && (
+  <>
+    <meta name="twitter:label2" content="Filed under" />
+    <meta name="twitter:data2" content={tags[0]} />
+  </>
+)}
+{SITE_CONFIG.twitter && <meta name="twitter:site" content={`@${SITE_CONFIG.twitter}`} />}
+{SITE_CONFIG.twitter && <meta name="twitter:creator" content={`@${SITE_CONFIG.twitter}`} />}
+
+<!-- Structured Data -->
+<script type="application/ld+json" is:inline set:html={JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": type === 'article' ? "Article" : "WebSite",
+  "publisher": {
+    "@type": "Organization",
+    "name": SITE_CONFIG.title,
+    "logo": {
+      "@type": "ImageObject",
+      "url": new URL(getAssetUrl(SITE_CONFIG.logo), Astro.site || Astro.url).toString()
+    }
+  },
+  "url": canonicalURL.toString(),
+  "image": {
+    "@type": "ImageObject",
+    "url": absoluteOgImageUrl,
+    "width": 2000,
+    "height": 666
+  },
+  ...(type === 'article' ? {
+    "headline": title,
+    "datePublished": isoDate,
+    "dateModified": isoDate,
+    "author": {
+      "@type": "Person",
+      "name": author || SITE_CONFIG.title
+    }
+  } : {}),
+  "description": description
+})} />

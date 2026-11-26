@@ -1,0 +1,194 @@
+---
+import "@/styles/post.css";
+import IconLeft from "@/assets/icons/chevron-left.svg";
+import IconRight from "@/assets/icons/chevron-right.svg";
+import IconMenu from "@/assets/icons/menu-2.svg";
+import Disqus from "@/components/comments/Disqus.astro";
+import Giscus from "@/components/comments/Giscus.astro";
+import FormattedDate from "@/components/FormattedDate.astro";
+import KatexStyles from "@/components/KatexStyles.astro";
+import TagPill from "@/components/TagPill.astro";
+import TocScript from "@/components/TocScript.astro";
+import TocStyles from "@/components/TocStyles.astro";
+import { _t, SITE } from "@/config";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import type { BlogPost } from "@/utils/getPosts";
+import { getCanonicalURL, getMarkdownPath } from "@/utils/getURL";
+import { getPostOgHash } from "@/utils/ogImage";
+import { slugifyStr } from "@/utils/slugify";
+
+type Props = BlogPost["data"] & {
+  slug: string;
+  prevPost: BlogPost | null;
+  nextPost: BlogPost | null;
+};
+
+const {
+  title,
+  description,
+  categories,
+  date,
+  updated,
+  toc,
+  comments,
+  math,
+  tags,
+  slug,
+  prevPost,
+  nextPost,
+} = Astro.props;
+const ogImage = `/og-images/posts/${slug}.${getPostOgHash(title, date, tags)}.png`;
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  ogType="article"
+  image={ogImage}
+  pubDate={date}
+  updatedDate={updated}
+>
+  {math && <KatexStyles slot="head" />}
+  {toc && <TocStyles slot="head" />}
+  <main id="main-content">
+    <div class="post-layout">
+      <article class="prose">
+        <header class="title">
+          <h1>{title}</h1>
+          <p class="meta">
+            <span class="date">
+              <FormattedDate date={updated ?? date} />
+              {updated && <span>, {_t.date.postedOn(_t.date.shortFormat(date))}</span>}
+            </span>
+            {
+              categories.length > 0 && (
+                <span class="categories">
+                  {categories.map((category, index) => (
+                    <>
+                      {index > 0 && ", "}
+                      <a href={`/categories/${slugifyStr(category)}`} data-astro-prefetch>
+                        {category}
+                      </a>
+                    </>
+                  ))}
+                </span>
+              )
+            }
+            {
+              SITE.viewAsMD && SITE.postMdUrl && (
+                <a class="markdown-link" href={getMarkdownPath(Astro.url)} title="View as Markdown">
+                  Markdown
+                </a>
+              )
+            }
+          </p>
+        </header>
+        <div class="main-content" data-pagefind-body>
+          <slot />
+        </div>
+      </article>
+      <aside class="sidebar">
+        {toc && <nav class="toc" aria-label="Table of contents" />}
+        <button class="back-to-top" id="back-to-top" type="button">{_t.common.backToTop}</button>
+      </aside>
+    </div>
+    <div class="article-footer">
+      <hr />
+      <ul class="tag-list">
+        {
+          tags &&
+            tags.map((tag) => (
+              <li>
+                <TagPill id={slugifyStr(tag)} name={tag} />
+              </li>
+            ))
+        }
+      </ul>
+      <nav class="post-nav" aria-label="Post navigation">
+        {
+          nextPost && (
+            <a href={`/posts/${nextPost.id}`} class="post-nav-next" data-astro-prefetch>
+              <span class="post-nav-label">
+                <IconLeft />
+              </span>
+              <span class="post-nav-title">{nextPost.data.title}</span>
+            </a>
+          )
+        }
+        {
+          prevPost && (
+            <a href={`/posts/${prevPost.id}`} class="post-nav-prev" data-astro-prefetch>
+              <span class="post-nav-title">{prevPost.data.title}</span>
+              <span class="post-nav-label">
+                <IconRight />
+              </span>
+            </a>
+          )
+        }
+      </nav>
+    </div>
+    <div class="sidebar-overlay" aria-hidden="true"></div>
+    <button class="sidebar-fab" aria-label="Toggle sidebar" type="button">
+      <IconMenu />
+    </button>
+    {
+      comments && (
+        <section id="comments" aria-label="Comments">
+          {SITE.disqusShortname && (
+            <Disqus url={getCanonicalURL(Astro.url, Astro.site)} identifier={title} />
+          )}
+          {SITE.giscusRepo && <Giscus />}
+        </section>
+      )
+    }
+  </main>
+</BaseLayout>
+
+<script is:inline define:vars={{ __DEV__: import.meta.env.DEV }}>
+  (function () {
+    function initSidebar() {
+      if (__DEV__) console.debug("init sidebar");
+
+      const fab = document.querySelector(".sidebar-fab");
+      const sidebar = document.querySelector(".sidebar");
+      const overlay = document.querySelector(".sidebar-overlay");
+      if (!fab || !sidebar || !overlay) return;
+      if (fab.dataset.sidebarInit) return;
+      fab.dataset.sidebarInit = "1";
+
+      function toggle() {
+        if (__DEV__) console.debug("toggle sidebar");
+        sidebar.classList.toggle("open");
+        overlay.classList.toggle("open");
+      }
+      fab.addEventListener("click", toggle);
+      overlay.addEventListener("click", toggle);
+    }
+    if (window.__sidebarListener) {
+      document.removeEventListener("astro:page-load", window.__sidebarListener);
+    }
+    window.__sidebarListener = initSidebar;
+    document.addEventListener("astro:page-load", initSidebar);
+
+    function initBackToTop() {
+      if (__DEV__) console.debug("init back to top button");
+
+      const backToTop = document.getElementById("back-to-top");
+      const sidebar = document.querySelector(".sidebar");
+      const overlay = document.querySelector(".sidebar-overlay");
+      if (!backToTop || !sidebar || !overlay) return;
+
+      backToTop.addEventListener("click", () => {
+        if (__DEV__) console.debug("back to top");
+        sidebar.classList.remove("open");
+        overlay.classList.remove("open");
+
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+      });
+    }
+    document.addEventListener("astro:page-load", initBackToTop);
+  })();
+</script>
+
+{toc && <TocScript />}

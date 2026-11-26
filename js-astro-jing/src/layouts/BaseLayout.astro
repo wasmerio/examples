@@ -1,0 +1,158 @@
+---
+import { Font } from "astro:assets";
+import "@/styles/global.css";
+import { ClientRouter } from "astro:transitions";
+import Footer from "@/components/Footer.astro";
+import Header from "@/components/Header.astro";
+import { _t, SITE } from "@/config";
+import { getCanonicalURL, getMarkdownURL } from "@/utils/getURL";
+import { SITE_OG_HASH } from "@/utils/ogImage";
+
+interface Props {
+  title: string;
+  description: string;
+  ogType?: "website" | "article";
+  image?: string;
+  pubDate?: Date;
+  updatedDate?: Date;
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description,
+  ogType = "website",
+  image = `/og-images/site.${SITE_OG_HASH}.png`,
+  pubDate,
+  updatedDate,
+  noindex = false,
+} = Astro.props;
+
+const canonicalURL = getCanonicalURL(Astro.url, Astro.site);
+const markdownURL = getMarkdownURL(canonicalURL);
+const showTitle = title === SITE.title ? title : `${title} | ${SITE.title}`;
+const googleSiteVerification = import.meta.env.PUBLIC_GOOGLE_SITE_VERIFICATION;
+---
+
+<!doctype html>
+<html lang={_t.lang}>
+  <head>
+    <!-- Global Metadata -->
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" sizes="any" />
+    <link rel="canonical" href={canonicalURL} />
+    {noindex && <meta name="robots" content="noindex, follow" />}
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    {
+      SITE.postMdUrl && ogType === "article" && (
+        <link rel="alternate" type="text/markdown" href={markdownURL} title="Markdown Version" />
+      )
+    }
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={SITE.title}
+      href={new URL("rss.xml", Astro.site)}
+    />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Primary Meta Tags -->
+    <title>{showTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={SITE.author} />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#fcfcfc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#191919" media="(prefers-color-scheme: dark)" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content={ogType} />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:title" content={showTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:locale" content={_t.langOg} />
+    {pubDate && <meta property="article:published_time" content={pubDate.toISOString()} />}
+    {updatedDate && <meta property="article:modified_time" content={updatedDate.toISOString()} />}
+    {image && <meta property="og:image" content={new URL(image, Astro.url)} />}
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content={image ? "summary_large_image" : "summary"} />
+    <meta name="twitter:url" content={canonicalURL} />
+    <meta name="twitter:title" content={showTitle} />
+    <meta name="twitter:description" content={description} />
+    {image && <meta name="twitter:image" content={new URL(image, Astro.url)} />}
+
+    <!-- Google JSON-LD https://json-ld.org/ -->
+    <script
+      is:inline
+      type="application/ld+json"
+      set:html={JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": ogType === "article" ? "BlogPosting" : "WebSite",
+        headline: title,
+        description: description,
+        mainEntityOfPage: {
+          "@type": "WebPage",
+          "@id": canonicalURL,
+        },
+        author: {
+          "@type": "Person",
+          name: SITE.author,
+          url: `${new URL("/about", Astro.site).toString()}`,
+        },
+        publisher: {
+          "@type": "Organization",
+          name: SITE.title,
+        },
+        ...(pubDate && { datePublished: pubDate.toISOString() }),
+        ...(updatedDate && { dateModified: updatedDate.toISOString() }),
+        ...(image && { image: new URL(image, Astro.url).toString() }),
+      })}
+    />
+
+    <!-- Font -->
+    <Font cssVariable="--font-body" preload />
+    <Font cssVariable="--font-mono" />
+
+    <!-- Google Search Console https://support.google.com/webmasters/answer/9008080#meta_tag_verification -->
+    {
+      googleSiteVerification && (
+        <meta name="google-site-verification" content={googleSiteVerification} />
+      )
+    }
+
+    <!-- CSP -->
+    <!-- <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'" /> -->
+
+    {SITE.transitions && <ClientRouter />}
+
+    <!-- Custom head content -->
+    <slot name="head" />
+
+    <!-- Theme toggle -->
+    <script is:inline>
+      (function () {
+        function applyTheme() {
+          var theme =
+            localStorage.getItem("theme") ||
+            (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+          if (theme === "dark") {
+            document.documentElement.setAttribute("data-theme", "dark");
+          } else {
+            document.documentElement.removeAttribute("data-theme");
+          }
+        }
+        applyTheme();
+        document.addEventListener("astro:after-swap", applyTheme);
+      })();
+    </script>
+  </head>
+
+  <body transition:animate="none">
+    <a href="#main-content" class="skip-link">{_t.common.skipToMain}</a>
+    <Header />
+    <slot />
+    <Footer />
+  </body>
+</html>

@@ -1,0 +1,528 @@
+---
+import { getCollection, getEntry, render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+import Base from '../../layouts/Base.astro';
+import Prose from '../../components/Prose.astro';
+import Figure from '../../components/Figure.astro';
+import VenueBadge from '../../components/pub/VenueBadge.astro';
+import ScholarMeta from '../../components/pub/ScholarMeta.astro';
+import CopyButton from '../../components/CopyButton.astro';
+import DoiMark from '../../components/DoiMark.astro';
+import PdfMark from '../../components/PdfMark.astro';
+import ScholarMark from '../../components/ScholarMark.astro';
+import { FEATURES } from '../../features.ts';
+import { PAPERS, projectPath } from '../../lib/paths.ts';
+import { citationsFor, scholarPaperUrl } from '../../lib/citations.ts';
+import { formatCount } from '../../lib/format.ts';
+import { isSelfName } from '../../lib/authors.ts';
+import {
+  linkLabel,
+  paperByline,
+  paperDescription,
+  paperPublication,
+  paperVenue,
+  paperVenueShort,
+  paperYear,
+} from '../../lib/papers.ts';
+import { getPage } from '../../lib/pages.ts';
+
+export const getStaticPaths = (async () => {
+  /* getStaticPaths runs whatever the page's own guard says, and getCollection()
+     on an emptied collection warns on every build. */
+  if (!FEATURES.papers) return [];
+  const papers = await getCollection('papers');
+  return papers.map((paper) => ({ params: { slug: paper.id }, props: { paper } }));
+}) satisfies GetStaticPaths;
+
+const { paper } = Astro.props;
+const { Content } = await render(paper);
+
+/*
+ * Everything bibliographic comes from the BibTeX entry, never from the front
+ * matter. `pub` is undefined for a talk at a venue that publishes nothing,
+ * which is why every read below is optional; a declared entry that does not
+ * resolve still throws (see paperPublication()).
+ */
+const pub = await paperPublication(paper);
+const record = pub?.data;
+
+const venue = paperVenue(paper);
+const year = paperYear(paper, pub);
+// The breadcrumb's leaf; undefined when there is nothing true to put there.
+const leaf = paperVenueShort(paper, pub);
+
+const authors = FEATURES.authors
+  ? await Promise.all(paper.data.authors.map((ref) => getEntry(ref)))
+  : [];
+
+/*
+ * The projects this paper came out of; the reverse edge is computed on
+ * /projects/<slug>/. A project with `redirect` has no page of its own, and
+ * reference() proves the entry exists, not that a page was generated for it.
+ */
+const projects = FEATURES.projects
+  ? (await Promise.all(paper.data.projects.map((ref) => getEntry(ref)))).map((project) => ({
+      title: project.data.title,
+      href: project.data.redirect ?? projectPath(project.id),
+      external: Boolean(project.data.redirect),
+    }))
+  : [];
+
+/* The words: src/content/pages/site/publication.md. Its `linkLabels` are the
+   pretty names for the link keys in front matter; a key with no row renders
+   as typed, and `<venue>_<kind>` is derived — see linkLabel(). */
+const words = await getPage('site/publication');
+const label = (key: string) => linkLabel(key, words.data.linkLabels ?? {});
+
+// Lowercase because the column heads are set in mono and read as keys, not as
+// sentences — the same voice as every other `.mono` label in the theme.
+const linkRows = [
+  { title: 'paper', map: paper.data.links.paper },
+  { title: 'replication', map: paper.data.links.replication },
+  { title: 'slides', map: paper.data.links.slides },
+].filter((row) => row.map && Object.keys(row.map).length > 0);
+
+const inParts = [
+  record?.booktitle ?? record?.journal ?? record?.school ?? record?.institution,
+  record?.location,
+].filter(Boolean);
+
+/* 0, not undefined: a count of zero already means no count below. */
+const cites = FEATURES.citations ? citationsFor(record?.googleScholarId) : 0;
+const scholarUrl = scholarPaperUrl(record?.googleScholarId);
+const Cites = scholarUrl ? 'a' : 'span';
+const hasIcons = Boolean(record?.pdfUrl || record?.doi || cites > 0);
+
+// The citation and the id CopyButton copies from; one object so the Cite
+// section has one thing to test.
+const cite = pub ? { id: `bib-${pub.id}`, bibtex: pub.data.bibtex } : undefined;
+
+// Not the same in the derived and the stated case — see paperByline().
+const { connector, separator } = paperByline(venue, authors.length);
+
+/* Whether the Links section exists at all. One source per line, not
+   `projects.length > 0 || …` inline: a fence takes whole lines. */
+let hasLinkSection = linkRows.length > 0;
+hasLinkSection ||= projects.length > 0;
+---
+
+<Base title={paper.data.title} description={paperDescription(paper, pub)} section="papers">
+  {pub && (
+    <Fragment slot="head">
+      <ScholarMeta pub={pub} />
+    </Fragment>
+  )}
+
+  <article class="wrap section">
+    <header class="head">
+      {/* Breadcrumb and venue kicker in one line: the path's leaf is the
+           venue's short name (see paperVenueShort()), and the slug, which the
+           reader just clicked, is not repeated. No leaf when there is nothing
+           true to put there. */}
+      <p class="kicker" data-sigil="none">
+        <a href={PAPERS}>papers</a>
+        {leaf && (
+          <>
+            <span aria-hidden="true">/</span>
+            {` ${leaf}`}
+          </>
+        )}
+      </p>
+
+      <h1>
+        {paper.data.title}
+        {hasIcons && (
+          <span class="title-icons">
+            {record?.pdfUrl && (
+              <a
+                class="title-icon"
+                href={record.pdfUrl}
+                title={words.label('pdf')}
+                aria-label={`${words.label('pdf')}: ${paper.data.title}`}
+              >
+                <PdfMark />
+              </a>
+            )}
+            {record?.doi && (
+              <a
+                class="title-icon"
+                href={`https://doi.org/${record.doi}`}
+                rel="noopener"
+                title={words.label('doi')}
+                aria-label={`${words.label('doi')}: ${paper.data.title}`}
+              >
+                <DoiMark />
+              </a>
+            )}
+            {cites > 0 && (
+              <Cites
+                class="title-icon cites"
+                title="Citations according to Google Scholar"
+                {...(scholarUrl ? { href: scholarUrl, rel: 'noopener' } : {})}
+              >
+                <ScholarMark />
+                <span class="count mono" aria-hidden="true">
+                  {formatCount(cites)}
+                </span>
+                <span class="sr-only">
+                  {words.plural('citations', cites, formatCount(cites))} on Google Scholar
+                </span>
+              </Cites>
+            )}
+          </span>
+        )}
+      </h1>
+
+      {authors.length > 0 && (
+        <p class="byline">
+          {/* The trailing space is in the string: a space between two
+                expressions is whitespace between markup nodes, and which of
+                those survive is not something to bet a byline on. */}
+          {connector && `${connector} `}
+          {authors.map((author, index) => (
+            <>
+              {index > 0 && <span aria-hidden="true">{separator(index)}</span>}
+              <span class:list={['author', { self: isSelfName(author.data.name) }]}>
+                {author.data.name}
+                {/* The badge is the link, not the name: a linked name promises
+                      the person's page, and this goes to a registry record. */}
+                {author.data.orcid && (
+                  <a
+                    class="orcid"
+                    href={`https://orcid.org/${author.data.orcid}`}
+                    rel="noopener"
+                    aria-label={`ORCID record for ${author.data.name}`}
+                    title={`ORCID ${author.data.orcid}`}
+                  >
+                    iD
+                  </a>
+                )}
+              </span>
+            </>
+          ))}
+        </p>
+      )}
+
+      {/* Badge, year and the venue sentence on one flex row: they are one
+           fact — where this was published — and stacking them as three lines
+           made the header read as a form with three fields. */}
+      <p class="venue-line">
+        <VenueBadge abbr={record?.abbr} />
+        {year !== undefined && <span class="mono year">{year}</span>}
+        {
+          /* Plain text, not a pill. The sentence beside it already says
+             "Published at X" or "To appear at X", and a pill repeating that is
+             the same fact twice in one row. This only covers the case where
+             there is no venue sentence to carry it — then the status has
+             nowhere else to be said, and only the unpublished state is worth
+             saying. */
+          paper.data.status === 'to-appear' && !venue && <span>{words.label('toAppearAlone')}</span>
+        }
+        {
+          /* One sentence, two sources: "Published at <conference>" derived from
+             the paper's BibTeX entry, or the label the page states itself —
+             which is already a whole sentence, in its own language, and so gets
+             no English prefix in front of it. See paperVenue(). */
+          venue && (
+            <span>
+              {venue.mark && `${venue.mark} `}
+              {venue.prefix && `${words.label(venue.prefix)} `}
+              {venue.url ? (
+                <a href={venue.url} rel="noopener">
+                  {venue.label}
+                </a>
+              ) : (
+                venue.label
+              )}
+            </span>
+          )
+        }
+      </p>
+
+      {inParts.length > 0 && <p class="imprint">{inParts.join(', ')}</p>}
+
+      {paper.data.additionalPresentations.length > 0 && (
+        <p class="also">
+          {words.label('alsoPresented')}{' '}
+          {paper.data.additionalPresentations.map((presentation, index) => (
+            <>
+              {/* `additionalPresentations.length`, not `authors.length` —
+                    this list is not the byline, and the two happening to be
+                    the same length in the demo is what hid it. */}
+              {index > 0 && (
+                <span aria-hidden="true">
+                  {index === paper.data.additionalPresentations.length - 1 ? ', and ' : ', '}
+                </span>
+              )}
+              <a
+                href={presentation.url}
+                rel="noopener"
+                title={presentation.shortName ? presentation.name : undefined}
+              >
+                {presentation.shortName ?? presentation.name}
+              </a>
+            </>
+          ))}
+        </p>
+      )}
+    </header>
+
+    {paper.data.figure && (
+      <Figure
+        src={paper.data.figure.src}
+        alt={paper.data.figure.alt}
+        plate={paper.data.figure.plate}
+        frame={paper.data.figure.frame}
+      />
+    )}
+
+    <Prose>
+      <Content />
+    </Prose>
+
+    {hasLinkSection && (
+      <section class="links" aria-labelledby="links-h">
+        <h2 class="mono" id="links-h">
+          Links
+        </h2>
+        {/* One column per group, plain links rather than chips: a chip reads
+              as an action, and this section is an index of everywhere the work
+              lives. */}
+        <div class="link-grid">
+          {/* A column like any other: their own row of chips made the
+                section look like two sections. */}
+          {projects.length > 0 && (
+            <div>
+              <h3 class="mono">projects</h3>
+              <ul>
+                {projects.map((project) => (
+                  <li>
+                    <a href={project.href} rel={project.external ? 'noopener' : undefined}>
+                      {project.title}
+                      {project.external && <span aria-hidden="true">↗</span>}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {linkRows.map((row) => (
+            <div>
+              <h3 class="mono">{row.title}</h3>
+              <ul>
+                {Object.entries(row.map!).map(([key, href]) => (
+                  <li>
+                    <a href={href} rel="noopener">
+                      {label(key)}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </section>
+    )}
+
+    <section class="cite" aria-labelledby="cite-h">
+      <h2 class="mono" id="cite-h">
+        Cite
+      </h2>
+      {/* BibTeX alone, deliberately: a full <PubEntry> here repeats the
+           header a screen further down and buries the record behind a
+           disclosure. Both source sites tried it and moved back. */}
+      {cite ? (
+        <div class="cite-body">
+          <CopyButton target={cite.id} />
+          <pre id={cite.id}>{cite.bibtex}</pre>
+        </div>
+      ) : (
+        /* The section STAYS, with a sentence in place of the record: a
+             missing heading reads as "this site does not offer citations".
+             The absence is a fact about the venue, so say it. */
+        <p class="uncited">
+          This was a talk at a venue that publishes no proceedings, so there is no bibliographic
+          record of it and nothing to cite — that is a fact about the venue rather than a gap in
+          this page.
+          {linkRows.length > 0 && ' What it did leave behind is under Links, above.'}
+        </p>
+      )}
+    </section>
+  </article>
+</Base>
+
+<style>
+  /* Header, figure, prose, links and the cite block all size to --measure, so
+     their left and right edges line up the whole way down the page instead of
+     each block picking its own width. */
+  .kicker a {
+    color: inherit;
+  }
+  .kicker a:hover {
+    color: var(--sec-strong);
+  }
+
+  .head,
+  .links,
+  .cite {
+    max-width: var(--measure);
+  }
+
+  .head {
+    margin-bottom: 1.75rem;
+  }
+
+  /* Its own clamp rather than the global --fs-h1: a paper title is a sentence,
+     not a page name, and at display size it becomes a wall four lines deep. */
+  h1 {
+    font-size: clamp(1.6rem, 1.1rem + 2.2vw, 2.5rem);
+    margin-bottom: 0.75rem;
+  }
+
+  /* 1.8 because the ORCID badges sit above the baseline: at the default
+     line-height they touch the names on the line above. */
+  .byline {
+    margin: 0 0 0.65rem;
+    color: var(--text-muted);
+    line-height: 1.8;
+  }
+
+  .venue-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    margin: 0 0 0.5rem;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+  }
+  .year {
+    color: var(--text-faint);
+  }
+
+  /* The imprint: proceedings and place, the part a reader copies into a
+     footnote rather than clicks. Italic, and below the badge row, because it
+     is bibliography, not navigation. */
+  .imprint,
+  .also {
+    margin: 0 0 0.35rem;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+  }
+  .imprint {
+    font-style: italic;
+  }
+  .also {
+    color: var(--text-faint);
+  }
+  /* The site's own author reads at full strength; the co-authors are context.
+     Which one is "own" comes from SELF.surnames in src/consts.ts, so a group
+     site that deletes SELF loses the emphasis and nothing else. */
+  .author.self {
+    color: var(--text);
+    font-weight: 600;
+  }
+  /* The ORCID badge: the registry's own "iD" mark, small enough to read as a
+     superscript on the name rather than as a second word in the author list.
+     3px rather than --radius-s, because at this size the token's 8px is a pill. */
+  .orcid {
+    display: inline-block;
+    margin-left: 0.35ch;
+    padding: 0 0.3em;
+    border: 1px solid var(--sec-line);
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    vertical-align: 0.15em;
+    color: var(--sec);
+    text-decoration: none;
+  }
+  .orcid:hover {
+    background: var(--sec-dim);
+  }
+
+  /* Beside the title, scaled to the heading; the group does not break. */
+  .title-icons {
+    font-size: 0.8em;
+    white-space: nowrap;
+  }
+  .title-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    margin-inline-start: 0.4em;
+    vertical-align: -0.1em;
+    transition:
+      translate var(--dur) var(--ease),
+      filter var(--dur) var(--ease);
+  }
+  a.title-icon:hover,
+  a.title-icon:focus-visible {
+    translate: 0 -1px;
+    filter: brightness(1.12);
+  }
+  /* Scholar blue, lifted for the dark theme; the mark itself is currentColor. */
+  .cites {
+    color: #5b9bff;
+    text-decoration: none;
+  }
+  .count {
+    font-size: 0.5em;
+    line-height: 1;
+    color: #a9c7ff;
+  }
+
+  .links {
+    margin-top: 2.5rem;
+  }
+  /* auto-fit rather than a fixed column count: three or four groups sit side by
+     side on a wide page and collapse to one column on a phone, no media query. */
+  .link-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+    gap: 1.25rem;
+  }
+  .link-grid h3 {
+    margin: 0 0 0.5rem;
+    font-size: var(--fs-mono);
+    color: var(--text-faint);
+    text-transform: lowercase;
+  }
+  .link-grid ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .link-grid a {
+    font-size: var(--fs-small);
+  }
+
+  .cite {
+    margin-top: 2.5rem;
+  }
+  /* A statement, not a warning: the same muted grey as the imprint line, at the
+     small size the rest of the header apparatus uses. Anything louder — a
+     border, a colour — would read as an error on a page where nothing is
+     wrong. */
+  .uncited {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+  }
+  /* Both section headings are labels, not titles: this page's one h1 is the
+     paper, and a display-size "Links" would compete with it. */
+  .links h2,
+  .cite h2 {
+    font-size: var(--fs-mono);
+    font-weight: 500;
+    color: var(--text-faint);
+    margin-bottom: 0.5rem;
+  }
+  .bare {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+</style>

@@ -1,0 +1,544 @@
+---
+import { FEATURES, disabled } from '../../features.ts';
+import { Image } from 'astro:assets';
+import Base from '../../layouts/Base.astro';
+import Contact from '../../components/Contact.astro';
+import SocialRow from '../../components/SocialRow.astro';
+import {
+  cv,
+  dateRange,
+  formatDate,
+  isCurrent,
+  layoutOf,
+  countLabel,
+  splitMinor,
+  groupCourses,
+  parseDetail,
+} from '../../lib/cv.ts';
+import { portrait, PORTRAIT_SIZE } from '../../lib/portrait.ts';
+import { fill, getPage, need, selfName } from '../../lib/pages.ts';
+
+if (!FEATURES.cv) return disabled();
+
+/* Each section picks its shape from its data unless `layout:` says otherwise
+   (see layoutOf()), so adding a section to cv.yml needs no code here. */
+const shaped = cv.sections.map((section) => ({ ...section, layout: layoutOf(section) }));
+
+/* The words around the data: src/content/pages/cv.md. */
+const page = await getPage('cv');
+const { label } = page;
+const present = label('present');
+const since = (date: string) => fill(label('since'), { date });
+const more = (count: number) => fill(label('more'), { count });
+---
+
+<Base title={need(page.data.title, 'cv.title')} description={cv.summary} section="cv">
+  <section class="wrap section">
+    <div class="profile">
+      <div>
+        <p class="kicker" data-sigil="##">
+          cv
+        </p>
+        <h1>Curriculum Vitae</h1>
+        {cv.summary && <p class="summary">{cv.summary}</p>}
+        {cv.interests && cv.interests.length > 0 && (
+          <ul class="interests">
+            {cv.interests.map((interest) => (
+              <li class="chip">{interest}</li>
+            ))}
+          </ul>
+        )}
+        <p class="who mono">{selfName}</p>
+        {/* The same rows as the entry page's contact block, from
+            src/data/contact.yml, so a handle added there shows up here too. */}
+        <Contact layout="inline" />
+        {FEATURES.socials && <SocialRow />}
+      </div>
+      <Image class="portrait" src={portrait} alt="" width={PORTRAIT_SIZE} height={PORTRAIT_SIZE} />
+    </div>
+
+    {shaped.map((section) => {
+      const { main, minor } = splitMinor(section.entries);
+      const courses = section.layout === 'courses' ? groupCourses(section.entries) : undefined;
+      const count = countLabel(section);
+      return (
+        <section class="block" id={section.id}>
+          <h2>
+            {section.heading}
+            {count && <span class="count mono">{count}</span>}
+          </h2>
+
+          {section.layout === 'cards' && (
+            <>
+              <ul class="cards">
+                {main.map((entry) => (
+                  <li>
+                    <h3>
+                      {entry.url ? <a href={entry.url}>{entry.title}</a> : entry.title}
+                      {entry.start && (
+                        <span class="since mono">{since(formatDate(entry.start))}</span>
+                      )}
+                    </h3>
+                    {entry.note && <p class="detail">{entry.note}</p>}
+                    {entry.highlights && entry.highlights.length > 0 && (
+                      <p class="hl">
+                        {entry.highlights.map((highlight) => (
+                          <span class="chip">{highlight}</span>
+                        ))}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {minor.length > 0 && (
+                <details class="more">
+                  <summary>{more(minor.length)}</summary>
+                  <ul class="cards">
+                    {minor.map((entry) => (
+                      <li>
+                        <h3>
+                          {entry.url ? <a href={entry.url}>{entry.title}</a> : entry.title}
+                          {entry.start && (
+                            <span class="since mono">{since(formatDate(entry.start))}</span>
+                          )}
+                        </h3>
+                        {entry.note && <p class="detail">{entry.note}</p>}
+                        {entry.highlights && entry.highlights.length > 0 && (
+                          <p class="hl">
+                            {entry.highlights.map((highlight) => (
+                              <span class="chip">{highlight}</span>
+                            ))}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
+          )}
+
+          {section.layout === 'courses' && courses && (
+            <>
+              <ul class="courses">
+                {courses.current.map((course) => (
+                  <li class="course now">
+                    <span class="sem mono">{course.semester}</span>
+                    <span class="cname">
+                      {course.url ? (
+                        <a href={course.url} rel="noopener">
+                          {course.title}
+                        </a>
+                      ) : (
+                        course.title
+                      )}
+                    </span>
+                    {course.type && <span class="ctype mono">{course.type}</span>}
+                  </li>
+                ))}
+              </ul>
+              {courses.past.length > 0 && (
+                <details class="more">
+                  <summary>{page.plural('earlierCourses', courses.past.length)}</summary>
+                  <ul class="courses">
+                    {courses.past.map((course) => (
+                      <li class="course">
+                        <span class="sem mono">{course.semester}</span>
+                        <span class="cname">
+                          {course.url ? (
+                            <a href={course.url} rel="noopener">
+                              {course.title}
+                            </a>
+                          ) : (
+                            course.title
+                          )}
+                        </span>
+                        {course.type && <span class="ctype mono">{course.type}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
+          )}
+
+          {(section.layout === 'timeline' || section.layout === 'rows') && (
+            <>
+              <ol class:list={['entries', section.layout]}>
+                {main.map((entry) => (
+                  <li>
+                    <span class="when mono">{dateRange(entry, present)}</span>
+                    <div class="what">
+                      <h3>
+                        {entry.title}
+                        {isCurrent(entry) && <span class="now mono">{label('now')}</span>}
+                      </h3>
+                      {entry.org && (
+                        <p class="where">
+                          {entry.url ? (
+                            <a href={entry.url} rel="noopener">
+                              {entry.org}
+                            </a>
+                          ) : (
+                            entry.org
+                          )}
+                          {entry.location && <span class="muted">, {entry.location}</span>}
+                        </p>
+                      )}
+                      {entry.note && <p class="detail note">{entry.note}</p>}
+                      {entry.details && entry.details.length > 0 && (
+                        <ul class="details">
+                          {entry.details.map((detail) => (
+                            <li>
+                              {parseDetail(detail).map((part) =>
+                                part.url ? (
+                                  <a href={part.url} rel="noopener">
+                                    {part.text}
+                                  </a>
+                                ) : (
+                                  part.text
+                                ),
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              {minor.length > 0 && (
+                <details class="more">
+                  <summary>{more(minor.length)}</summary>
+                  <ol class:list={['entries', section.layout, 'compact']}>
+                    {minor.map((entry) => (
+                      <li>
+                        <span class="when mono">{dateRange(entry, present)}</span>
+                        <div class="what">
+                          <h3>
+                            {entry.title}
+                            {isCurrent(entry) && <span class="now mono">{label('now')}</span>}
+                          </h3>
+                          {entry.org && (
+                            <p class="where">
+                              {entry.url ? (
+                                <a href={entry.url} rel="noopener">
+                                  {entry.org}
+                                </a>
+                              ) : (
+                                entry.org
+                              )}
+                              {entry.location && <span class="muted">, {entry.location}</span>}
+                            </p>
+                          )}
+                          {entry.note && <p class="detail note">{entry.note}</p>}
+                          {entry.details && entry.details.length > 0 && (
+                            <ul class="details">
+                              {entry.details.map((detail) => (
+                                <li>
+                                  {parseDetail(detail).map((part) =>
+                                    part.url ? (
+                                      <a href={part.url} rel="noopener">
+                                        {part.text}
+                                      </a>
+                                    ) : (
+                                      part.text
+                                    ),
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              )}
+            </>
+          )}
+        </section>
+      );
+    })}
+  </section>
+</Base>
+
+<style>
+  /* No box: the lede reads as prose, closed off by the usual hairline. */
+  .profile {
+    display: grid;
+    /* Same as the home page hero: cap the text so the portrait sits beside it. */
+    grid-template-columns: minmax(0, 64ch) auto;
+    justify-content: start;
+    gap: 2.5rem;
+    align-items: center;
+    margin-bottom: 3rem;
+    padding-bottom: 1.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  /* Matches the home page hero portrait exactly. */
+  .profile :global(.portrait) {
+    width: 11rem;
+    height: 11rem;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 1px solid var(--sec-line);
+    box-shadow: 0 0 0 6px var(--sec-dim);
+  }
+  /* No cap of its own: `.profile`'s column is already 64ch, and a tighter one
+     would pull the summary's right edge in from the chips beside it. */
+  .summary {
+    color: var(--text-muted);
+  }
+  .interests {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    list-style: none;
+    margin: 1rem 0;
+    padding: 0;
+  }
+  .who {
+    margin: 0 0 0.35rem;
+    color: var(--text-faint);
+  }
+
+  .block {
+    margin-top: 3rem;
+  }
+  .block h2 {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .count {
+    font-size: var(--fs-mono);
+    color: var(--text-faint);
+    font-weight: 400;
+  }
+
+  .entries,
+  .courses {
+    list-style: none;
+    margin: 1.25rem 0 0;
+    padding: 0;
+  }
+
+  /* A date rail on the left, content on the right. One custom property
+     positions both the dot and the line, so they cannot drift apart. */
+  .timeline > li {
+    --rail: 10.25rem;
+    display: grid;
+    grid-template-columns: 10.5rem 1fr;
+    gap: 0 1.25rem;
+    padding-bottom: 1.5rem;
+    position: relative;
+  }
+  .timeline > li::before {
+    content: '';
+    position: absolute;
+    left: var(--rail);
+    top: 0.45rem;
+    margin-left: -3.5px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--sec);
+    box-shadow: 0 0 0 4px var(--sec-dim);
+  }
+  .timeline > li:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    left: var(--rail);
+    top: 1.15rem;
+    bottom: 0;
+    margin-left: -0.5px;
+    width: 1px;
+    background: var(--border);
+  }
+  .timeline.compact > li {
+    padding-bottom: 1rem;
+  }
+
+  /* Rows: for entries with no dates, where a rail would be dots against nothing. */
+  .rows > li {
+    display: grid;
+    grid-template-columns: 10.5rem 1fr;
+    gap: 0 1.25rem;
+    padding: 0.6rem 0;
+    border-top: 1px solid var(--border);
+  }
+
+  .when {
+    color: var(--text-faint);
+    padding-top: 0.15rem;
+  }
+  .what h3 {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin: 0 0 0.15rem;
+    font-size: 1.0625rem;
+  }
+  /* Scoped: `.course.now` marks a current-semester row, not a badge. */
+  .what .now {
+    padding: 0.1em 0.5em;
+    border: 1px solid var(--sec-line);
+    border-radius: 999px;
+    background: var(--sec-dim);
+    color: var(--sec);
+    font-size: var(--fs-mono);
+    font-weight: 400;
+  }
+  .where {
+    margin: 0 0 0.3rem;
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+  .detail {
+    margin: 0;
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+    max-width: 68ch;
+  }
+  .note {
+    font-style: italic;
+  }
+  .details {
+    margin: 0.4rem 0 0;
+    padding-left: 1.1rem;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+    max-width: 68ch;
+  }
+  .details li {
+    margin-bottom: 0.2rem;
+  }
+  .details li::marker {
+    color: var(--sec);
+  }
+  .muted {
+    color: var(--text-faint);
+  }
+
+  /* One disclosure style for both the collapsed tail and the past-semester run. */
+  .more {
+    margin-top: 0.5rem;
+  }
+  .more summary {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono);
+    color: var(--sec);
+    cursor: pointer;
+    padding: 0.35rem 0.7rem;
+    border: 1px solid var(--sec-line);
+    border-radius: 999px;
+    background: var(--sec-dim);
+  }
+  .more summary:hover {
+    background: color-mix(in srgb, var(--sec-dim) 160%, transparent);
+  }
+
+  /* A semester column, the course name and its kind: none of `timeline`,
+     `rows` or `cards` has a place for a term that is not a date. */
+  .course {
+    display: grid;
+    grid-template-columns: 6.5rem 1fr auto;
+    gap: 0 1rem;
+    padding: 0.55rem 0;
+    border-top: 1px solid var(--border);
+    font-size: var(--fs-small);
+    align-items: baseline;
+  }
+  .course .sem {
+    color: var(--text-faint);
+  }
+  .course.now .sem {
+    color: var(--sec);
+  }
+  .ctype {
+    color: var(--text-faint);
+    font-size: 0.6875rem;
+  }
+
+  /* The one grid of tiles on the site: a name, a "since" date and a row of
+     chips need more room than a rail-and-row shape has. Still no filled box. */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+    gap: 1.4rem 1.6rem;
+    list-style: none;
+    margin: 1.25rem 0 0;
+    padding: 0;
+  }
+  .cards > li {
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--border);
+  }
+  .cards h3 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 0 0 0.4rem;
+    font-size: 1rem;
+  }
+  .since {
+    color: var(--text-faint);
+    font-weight: 400;
+    font-size: 0.6875rem;
+  }
+  .hl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0.6rem 0 0;
+  }
+
+  @media (max-width: 44rem) {
+    .profile {
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+    .profile :global(.portrait) {
+      order: -1;
+      width: 7rem;
+      height: 7rem;
+    }
+    /* The rail has nowhere to live once the date is above the entry. */
+    .timeline > li,
+    .rows > li {
+      grid-template-columns: 1fr;
+      gap: 0.25rem;
+    }
+    .timeline > li::before,
+    .timeline > li::after {
+      display: none;
+    }
+    .course {
+      grid-template-columns: 5rem 1fr;
+    }
+    .ctype {
+      grid-column: 2;
+    }
+  }
+
+  /* The CV is the one page people print, and a collapsed disclosure prints as
+     collapsed: force every one open and hide the toggle. */
+  @media print {
+    .more[open] summary,
+    .more summary {
+      display: none;
+    }
+    .more {
+      display: block;
+    }
+    .more > *:not(summary) {
+      display: block !important;
+    }
+  }
+</style>

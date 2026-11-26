@@ -1,0 +1,297 @@
+---
+import { getEntry } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import { FEATURES } from '../../features.ts';
+import VenueBadge from '../pub/VenueBadge.astro';
+import DoiMark from '../DoiMark.astro';
+import LinkMark from '../LinkMark.astro';
+import PdfMark from '../PdfMark.astro';
+import ScholarMark from '../ScholarMark.astro';
+import { citationsFor, scholarPaperUrl } from '../../lib/citations.ts';
+import { formatCount } from '../../lib/format.ts';
+import { isSelfName } from '../../lib/authors.ts';
+import { paperPath } from '../../lib/paths.ts';
+import { paperByline, paperVenue, paperYear } from '../../lib/papers.ts';
+import { getPage } from '../../lib/pages.ts';
+
+/*
+ * One row of an entry page's paper block: a PAPER PAGE, in the shape PubEntry
+ * uses for a publication. A sibling of PubEntry rather than a mode of it: the
+ * two render the same rows and share not one field to read them from (a
+ * stated venue has no BibTeX entry at all), and teaching PubEntry both would
+ * fork it inside every row on the one page with forty entries. Nothing below
+ * asks which kind of paper it is; each part renders when its source has
+ * something to say.
+ */
+interface Props {
+  paper: CollectionEntry<'papers'>;
+  /**
+   * Its BibTeX entry, already resolved by the caller — undefined for a talk at
+   * a venue that publishes nothing. Passed in rather than looked up here so the
+   * list can be sorted by year before anything is rendered; see
+   * featuredPapers().
+   */
+  pub?: CollectionEntry<'publications'>;
+}
+
+const { paper, pub } = Astro.props;
+const record = pub?.data;
+/* The words on every entry: src/content/pages/site/publication.md. */
+const words = await getPage('site/publication');
+
+const venue = paperVenue(paper);
+const year = paperYear(paper, pub);
+/* 0, not undefined: a count of zero already means no count below. */
+const cites = FEATURES.citations ? citationsFor(record?.googleScholarId) : 0;
+const scholarUrl = scholarPaperUrl(record?.googleScholarId);
+const Cites = scholarUrl ? 'a' : 'span';
+
+/*
+ * The byline comes from authors.yml, not from the BibTeX author list, for the
+ * same reason the paper page's does: it is the one source that exists in both
+ * cases. Resolved here, per row, which would be wrong on /publications/ and is
+ * fine here — this block is a handful of pages an author picked by hand, not a
+ * bibliography.
+ */
+const authors = FEATURES.authors
+  ? await Promise.all(paper.data.authors.map((ref) => getEntry(ref)))
+  : [];
+const { connector, separator } = paperByline(venue, authors.length);
+
+// Where the entry says it was printed. Empty for a page with no entry, which is
+// why the venue sentence above it is that page's only answer.
+const inParts = [
+  record?.booktitle ?? record?.journal ?? record?.school ?? record?.institution,
+  record?.location,
+].filter(Boolean);
+---
+
+<li class="entry reveal">
+  <div class="badge">
+    <VenueBadge abbr={record?.abbr} />
+  </div>
+
+  <div class="body">
+    <h3 class="title">
+      {/* Always a link: every paper in this collection HAS a page — that is what
+          being in it means. PubEntry has to ask, because most publications
+          do not. */}
+      <a class="title-link" href={paperPath(paper.id)}>
+        {paper.data.title}
+      </a>
+      <span class="title-icons">
+        {record?.pdfUrl && (
+          <a
+            class="title-icon"
+            href={record.pdfUrl}
+            title={words.label('pdf')}
+            aria-label={`${words.label('pdf')}: ${paper.data.title}`}
+          >
+            <PdfMark />
+          </a>
+        )}
+        {record?.doi && (
+          <a
+            class="title-icon"
+            href={`https://doi.org/${record.doi}`}
+            rel="noopener"
+            title={words.label('doi')}
+            aria-label={`${words.label('doi')}: ${paper.data.title}`}
+          >
+            <DoiMark />
+          </a>
+        )}
+        {!record?.doi && record?.url && (
+          /* The DOI icon is the better permalink; this is the fallback. */
+          <a
+            class="title-icon link-icon"
+            href={record.url}
+            rel="noopener"
+            title={words.label('link')}
+            aria-label={`${words.label('link')}: ${paper.data.title}`}
+          >
+            <LinkMark />
+          </a>
+        )}
+        {cites > 0 && (
+          <Cites
+            class="title-icon cites"
+            title="Citations according to Google Scholar"
+            {...(scholarUrl ? { href: scholarUrl, rel: 'noopener' } : {})}
+          >
+            <ScholarMark />
+            <span class="count mono" aria-hidden="true">
+              {formatCount(cites)}
+            </span>
+            <span class="sr-only">
+              {words.plural('citations', cites, formatCount(cites))} on Google Scholar
+            </span>
+          </Cites>
+        )}
+      </span>
+    </h3>
+
+    {authors.length > 0 && (
+      <p class="authors">
+        {/* The trailing space is inside the string: whitespace between two
+              markup expressions is not something to bet a byline on. */}
+        {connector && `${connector} `}
+        {authors.map((author, index) => (
+          <>
+            {index > 0 && <span aria-hidden="true">{separator(index)}</span>}
+            {isSelfName(author.data.name) ? (
+              <strong>{author.data.name}</strong>
+            ) : (
+              <span>{author.data.name}</span>
+            )}
+          </>
+        ))}
+      </p>
+    )}
+
+    {venue && (
+      <p class="venue-line">
+        {venue.mark && `${venue.mark} `}
+        {venue.prefix && `${words.label(venue.prefix)} `}
+        {venue.url ? (
+          <a href={venue.url} rel="noopener">
+            {venue.label}
+          </a>
+        ) : (
+          venue.label
+        )}
+      </p>
+    )}
+
+    {(inParts.length > 0 || year !== undefined) && (
+      <p class="venue-line">
+        {inParts.length > 0 && <em>{inParts.join(', ')}</em>}
+        {year !== undefined && <span>{inParts.length > 0 ? `, ${year}` : year}</span>}
+        {/* The one thing about a paper that changes after it is written, so a
+              reader scanning the block for what is new wants it here. Only when
+              the venue sentence has not already said it. */}
+        {paper.data.status === 'to-appear' && !venue && <span> · {words.label('toAppear')}</span>}
+      </p>
+    )}
+
+    {
+      /* The work's other outings, in the paper page's own words and with its
+         serial separator: "A, B, and C". ardoco.de shows these on its entry
+         page too, and a row that hid them made a paper presented three times
+         look like one presented once. */
+      paper.data.additionalPresentations.length > 0 && (
+        <p class="also">
+          {words.label('alsoPresented')}{' '}
+          {paper.data.additionalPresentations.map((presentation, index) => (
+            <>
+              {index > 0 && (
+                <span aria-hidden="true">
+                  {index === paper.data.additionalPresentations.length - 1 ? ', and ' : ', '}
+                </span>
+              )}
+              <a
+                href={presentation.url}
+                rel="noopener"
+                title={presentation.shortName ? presentation.name : undefined}
+              >
+                {presentation.shortName ?? presentation.name}
+              </a>
+            </>
+          ))}
+        </p>
+      )
+    }
+  </div>
+</li>
+
+<style>
+  /* The same row as a publication entry, to the pixel: the two lists are one
+     kind of thing to a reader, and a paper block that sat on a different grid
+     from /publications/ would read as a different site. The values are repeated
+     rather than shared because this theme keeps its layout in scoped styles per
+     component — see PubEntry.astro, /papers/ and a project page, which all set
+     their own badge column. */
+  .entry {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: 0 1.1rem;
+    padding: 1.1rem 0;
+    border-top: 1px solid var(--border);
+  }
+  .badge {
+    padding-top: 0.2rem;
+  }
+  .title {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    margin: 0 0 0.2rem;
+    line-height: 1.35;
+  }
+  .title-link {
+    color: inherit;
+    text-decoration: none;
+  }
+  .title-link:hover {
+    color: var(--sec-strong);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .authors,
+  .venue-line {
+    margin: 0 0 0.3rem;
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+  .authors strong {
+    color: var(--text);
+  }
+  .venue-line em {
+    color: var(--text-muted);
+  }
+  /* Fainter than the venue line, as on the paper page: a second outing is
+     context for the row, not the row's own fact. */
+  .also {
+    margin: 0 0 0.3rem;
+    font-size: var(--fs-small);
+    color: var(--text-faint);
+  }
+  /* Beside the title, not inside its link. The group does not break. */
+  .title-icons {
+    white-space: nowrap;
+  }
+  .title-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    margin-inline-start: 0.4em;
+    vertical-align: -0.1em;
+    transition:
+      translate var(--dur) var(--ease),
+      filter var(--dur) var(--ease);
+  }
+  a.title-icon:hover,
+  a.title-icon:focus-visible {
+    translate: 0 -1px;
+    filter: brightness(1.12);
+  }
+  .link-icon {
+    color: var(--text-muted);
+  }
+  /* Scholar blue, lifted for the dark theme; the mark itself is currentColor. */
+  .cites {
+    color: #5b9bff;
+    text-decoration: none;
+  }
+  .count {
+    font-size: 0.78rem;
+    line-height: 1;
+    color: #a9c7ff;
+  }
+
+  @media (max-width: 34rem) {
+    .entry {
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+    }
+  }
+</style>

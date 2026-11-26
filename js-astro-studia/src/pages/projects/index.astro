@@ -1,0 +1,129 @@
+---
+import { FEATURES, disabled } from '../../features.ts';
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import ProjectCard from '../../components/project/ProjectCard.astro';
+import { fill, getPage, need } from '../../lib/pages.ts';
+
+if (!FEATURES.projects) return disabled();
+
+const projects = (await getCollection('projects')).sort(
+  (first, second) =>
+    first.data.order - second.data.order || first.data.title.localeCompare(second.data.title),
+);
+
+/* The groups are src/data/project-groups.yml, in their `order`: a project's
+   `category` references one, so every category has a group. The words for
+   the uncategorised are src/content/pages/projects.md. */
+const groups = (await getCollection('projectGroups')).sort(
+  (first, second) => first.data.order - second.data.order,
+);
+const page = await getPage('projects');
+const other = need(page.data.other, 'projects.other');
+
+/* Grouped when anything is categorised, flat when nothing is; entries without
+   a category gather under a final "Other" group rather than vanishing. */
+type Group = { id: string; label: string; blurb: string; items: typeof projects };
+const grouped: Group[] = groups
+  .map((group) => ({
+    id: group.id,
+    label: group.data.label,
+    blurb: group.data.blurb,
+    items: projects.filter((project) => project.data.category?.id === group.id),
+  }))
+  .filter((group) => group.items.length > 0);
+const rest = projects.filter((project) => project.data.category === undefined);
+if (grouped.length > 0 && rest.length > 0) {
+  grouped.push({ id: 'other', ...other, items: rest });
+}
+const flat = grouped.length === 0;
+---
+
+<Base {...page.meta()} section="projects">
+  <section class="wrap section">
+    <p class="kicker" data-sigil="##">
+      projects
+    </p>
+    <h1>Projects</h1>
+    {/* The count, then the body, as one paragraph: the body renders its own
+         <p>, set inline here. */}
+    <div class="lede">
+      {fill(need(page.data.count, 'projects.count'), { count: projects.length })} <page.Content />
+    </div>
+
+    {
+      /* One flat grid when nothing is categorised, otherwise a section per group. */
+      flat ? (
+        <ul class="grid flat">
+          {projects.map((project) => (
+            <ProjectCard project={project} />
+          ))}
+        </ul>
+      ) : (
+        <>
+          <nav class="jump mono" aria-label="Jump to a group">
+            {grouped.map((group) => (
+              <a class="chip" href={`#${group.id}`}>
+                {group.label.toLowerCase()} <span>{group.items.length}</span>
+              </a>
+            ))}
+          </nav>
+
+          {grouped.map((group) => (
+            <section class="group" id={group.id}>
+              <h2>{group.label}</h2>
+              <p class="blurb">{group.blurb}</p>
+              <ul class="grid">
+                {group.items.map((project) => (
+                  <ProjectCard project={project} />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </>
+      )
+    }
+  </section>
+</Base>
+
+<style>
+  .lede {
+    max-width: 62ch;
+    /* What the paragraph it replaces had from base.css: the body's own <p>
+       is inline here, so the block that wraps the lines is this one. */
+    margin-bottom: 1em;
+    text-wrap: pretty;
+    color: var(--text-muted);
+  }
+  .lede :global(p) {
+    display: inline;
+  }
+  .jump span {
+    color: var(--sec);
+  }
+
+  .group {
+    margin-top: 3rem;
+  }
+  .group h2 {
+    margin-bottom: 0.25rem;
+  }
+  .blurb {
+    max-width: 60ch;
+    color: var(--text-faint);
+    font-size: var(--fs-small);
+    margin-bottom: 1.25rem;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+    gap: 0.9rem;
+    margin: 0;
+    padding: 0;
+  }
+  /* The flat list has no group heading to space it from the lede. */
+  .grid.flat {
+    margin-top: 2rem;
+  }
+</style>

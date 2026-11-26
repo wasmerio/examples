@@ -1,0 +1,130 @@
+---
+import { FEATURES, disabled } from '../../features.ts';
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import VenueBadge from '../../components/pub/VenueBadge.astro';
+import { paperPath } from '../../lib/paths.ts';
+import { paperPublication, paperVenue, paperVenueShort, paperYear } from '../../lib/papers.ts';
+import { getPage } from '../../lib/pages.ts';
+
+if (!FEATURES.papers) return disabled();
+
+/* The words: src/content/pages/papers.md, and site/publication.md for a row. */
+const page = await getPage('papers');
+const words = await getPage('site/publication');
+
+const papers = (await getCollection('papers')).sort(
+  (first, second) =>
+    first.data.order - second.data.order || first.data.title.localeCompare(second.data.title),
+);
+
+/* Venue and year through the same helpers the detail page uses, so the two
+   cannot disagree. `tag` names the venue in words, only for rows with no
+   badge. */
+const rows = await Promise.all(
+  papers.map(async (paper) => {
+    const pub = await paperPublication(paper);
+    const venue = paperVenue(paper);
+    return {
+      paper,
+      pub,
+      year: paperYear(paper, pub),
+      tag: pub?.data.abbr
+        ? undefined
+        : [venue?.mark, paperVenueShort(paper, pub)].filter(Boolean).join(' '),
+    };
+  }),
+);
+---
+
+<Base {...page.meta()} section="papers">
+  <section class="wrap section">
+    <p class="kicker" data-sigil="##">
+      papers
+    </p>
+    <h1>Papers</h1>
+    <div class="lede">
+      <page.Content />
+    </div>
+
+    <ul class="list">
+      {rows.map(({ paper, pub, year, tag }) => (
+        <li class="item reveal">
+          <div class="badge">
+            <VenueBadge abbr={pub?.data.abbr} />
+          </div>
+          <div class="body">
+            <h2>
+              <a href={paperPath(paper.id)}>{paper.data.title}</a>
+            </h2>
+            {paper.data.description && <p class="desc">{paper.data.description}</p>}
+            {year !== undefined && (
+              <p class="mono meta">
+                {year}
+                {tag && <span> · {tag}</span>}
+                {/* The one thing about a paper that changes after it is
+                      written, so it belongs in the list and not only on the
+                      page: a reader scanning for what is new wants it here. */}
+                {paper.data.status === 'to-appear' && (
+                  <span class="soon"> · {words.label('toAppear')}</span>
+                )}
+              </p>
+            )}
+          </div>
+        </li>
+      ))}
+    </ul>
+  </section>
+</Base>
+
+<style>
+  .lede {
+    max-width: 60ch;
+    color: var(--text-muted);
+  }
+
+  .list {
+    list-style: none;
+    margin: 0;
+  }
+  .item {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: 0 1.1rem;
+    padding: 1.25rem 0;
+    border-top: 1px solid var(--border);
+  }
+  .badge {
+    padding-top: 0.3rem;
+  }
+  h2 {
+    font-size: var(--fs-h3);
+    margin: 0 0 0.35rem;
+  }
+  h2 a {
+    color: var(--text);
+    text-decoration: none;
+  }
+  h2 a:hover {
+    color: var(--sec-strong);
+  }
+  .desc {
+    margin: 0 0 0.35rem;
+    color: var(--text-muted);
+    max-width: 62ch;
+  }
+  .meta {
+    margin: 0;
+    color: var(--text-faint);
+  }
+  .soon {
+    color: var(--sec);
+  }
+
+  @media (max-width: 34rem) {
+    .item {
+      grid-template-columns: 1fr;
+      gap: 0.6rem;
+    }
+  }
+</style>

@@ -1,0 +1,214 @@
+---
+import { getCollection } from 'astro:content';
+
+import { FEATURES } from '../../features.ts';
+import { SITE } from '../../consts.ts';
+import { intrinsic } from '../../lib/images.ts';
+import { PROJECTS, PUBLICATIONS, PEOPLE } from '../../lib/paths.ts';
+import ScholarMark from '../ScholarMark.astro';
+import { formatUpdatedShort, scholarMetrics } from '../../lib/citations.ts';
+import { formatCount } from '../../lib/format.ts';
+import { fill, getPage, need, siteText } from '../../lib/pages.ts';
+
+/*
+ * The hero for a project or group site: a mark, a name, a tagline, and the
+ * actions a visitor is most likely to want. See PersonHero.astro for the
+ * other shape; HOME_SHAPE picks between them.
+ */
+
+/*
+ * The same mark as the nav, from SITE.brandLogo. The site icon is the
+ * fallback: a centred hero still needs something above the title, and the icon
+ * is the one image every site here is guaranteed to have. The 180px
+ * apple-touch-icon, because the hero draws it at most 96px tall, so that is
+ * enough for a 2x screen.
+ */
+const logo = SITE.brandLogo?.src ?? '/apple-touch-icon.png';
+const { width: logoWidth, height: logoHeight } = intrinsic(logo);
+
+/* A switched-off collection loads empty, so these would return [] anyway; the
+   flags are here so a reader can see which row depends on what. */
+const pubs = FEATURES.publications ? await getCollection('publications') : [];
+const people = FEATURES.people ? await getCollection('people') : [];
+/* The words: the title in src/content/pages/site/site.md, the line under it
+   in site/tagline.md, the stat labels in home.md, the buttons in
+   home/project.md. */
+const { title } = await siteText();
+const home = await getPage('home');
+const { label } = await getPage('home/project');
+const { Content: Tagline } = await getPage('site/tagline');
+const statLabel = (key: string) => home.text('statLabels', key);
+
+const metrics = FEATURES.citations ? scholarMetrics() : undefined;
+const updated = metrics
+  ? fill(need(home.data.statNote, 'home.statNote'), {
+      date: formatUpdatedShort(metrics.lastUpdated),
+    })
+  : undefined;
+
+/* Typed because `primary` is on the projects row alone: an inferred type
+   would lose the field the markup reads if that entry were spread away. */
+type Action = { label: string; href: string; primary?: boolean };
+
+const actions: Action[] = [
+  ...(FEATURES.projects ? [{ label: label('projects'), href: PROJECTS, primary: true }] : []),
+  ...(FEATURES.publications ? [{ label: label('publications'), href: PUBLICATIONS }] : []),
+  { label: label('github'), href: SITE.repo },
+];
+
+/*
+ * Counted, never typed in: a hardcoded count is wrong the day you add the
+ * next one. A stat of 0 is dropped, which is most of what the flags would do
+ * here anyway — see PersonHero.astro.
+ */
+/** `note` dates a figure that came from somewhere else and goes stale. */
+type Stat = { value: number; label: string; href: string; note?: string; scholar?: boolean };
+
+const rows: Stat[] = [
+  { value: pubs.length, label: statLabel('publications'), href: PUBLICATIONS },
+  ...(metrics
+    ? [
+        {
+          value: metrics.total,
+          label: statLabel('citations'),
+          href: PUBLICATIONS,
+          note: updated,
+          scholar: true,
+        },
+        {
+          value: metrics.hIndex,
+          label: statLabel('hIndex'),
+          href: PUBLICATIONS,
+          note: updated,
+          scholar: true,
+        },
+      ]
+    : []),
+  { value: people.length, label: statLabel('people'), href: PEOPLE },
+];
+const stats = rows.filter((stat) => stat.value > 0);
+---
+
+<section class="wrap hero">
+  <img class="logo" src={logo} alt="" width={logoWidth} height={logoHeight} />
+  <h1>{title}</h1>
+  {/* Markdown, so it can carry links; a div, since it brings its own paragraph. */}
+  <div class="tagline">
+    <Tagline />
+  </div>
+  <p class="actions">
+    {actions.map((action) => (
+      <a
+        class:list={['chip', action.primary && 'primary']}
+        href={action.href}
+        rel={action.href.startsWith('http') ? 'noopener' : undefined}
+      >
+        {action.label}
+      </a>
+    ))}
+  </p>
+
+  {stats.length > 0 && (
+    <ul class="stats">
+      {stats.map((stat) => (
+        <li>
+          <a href={stat.href}>
+            <span class="stat-value">{formatCount(stat.value)}</span>
+            <span class="stat-label mono">
+              {stat.scholar && <ScholarMark />}
+              {stat.label}
+              {stat.scholar && <span class="sr-only"> (Google Scholar)</span>}
+              {stat.note && <span class="stat-note">{stat.note}</span>}
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )}
+</section>
+
+<style>
+  .hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding-block: clamp(2.5rem, 7vw, 5rem) 0;
+  }
+  .logo {
+    width: auto;
+    height: clamp(4.5rem, 10vw, 6rem);
+    margin-bottom: 1.5rem;
+  }
+  h1 {
+    margin-bottom: 0.35rem;
+  }
+  .tagline {
+    max-width: 42ch;
+    margin: 0 0 1.5rem;
+    color: var(--text-muted);
+  }
+  .tagline :global(p) {
+    margin: 0;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.6rem;
+    margin: 0;
+  }
+  .chip.primary {
+    border-color: var(--sec-line);
+    background: var(--sec-dim);
+    color: var(--sec-strong);
+  }
+
+  /* Same hairline idiom as PersonHero.astro's stats row — a rule over each
+     figure rather than a boxed tile, centred here to match the hero above it. */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    gap: 0.75rem;
+    list-style: none;
+    margin: 2.75rem 0 0;
+    padding: 0;
+    max-width: 40rem;
+    width: 100%;
+  }
+  .stats a {
+    display: grid;
+    gap: 0.1rem;
+    padding: 0.85rem 0 0;
+    border-top: 1px solid var(--border);
+    text-decoration: none;
+    transition: border-color var(--dur) var(--ease);
+  }
+  .stats a:hover {
+    border-top-color: var(--sec-line);
+  }
+  .stats a:hover .stat-label {
+    color: var(--sec);
+  }
+  .stat-value {
+    font-family: var(--font-head);
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--sec);
+  }
+  .stat-label {
+    color: var(--text-faint);
+    font-size: 0.6875rem;
+  }
+  .stat-label :global(svg) {
+    margin-right: 0.3em;
+    vertical-align: -0.15em;
+  }
+  /* Inline after the label, not a row of its own: the margin carries the gap,
+     so the markup needs no whitespace expression between the two. */
+  .stat-note {
+    margin-left: 0.35em;
+    opacity: 0.7;
+  }
+</style>

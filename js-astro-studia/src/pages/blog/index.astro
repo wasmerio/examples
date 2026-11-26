@@ -1,0 +1,211 @@
+---
+import { FEATURES, disabled } from '../../features.ts';
+import Base from '../../layouts/Base.astro';
+import {
+  publishedPosts,
+  permalink,
+  formatPostDate,
+  groupByTag,
+  slugifyTag,
+} from '../../lib/blog.ts';
+import { tagPath } from '../../lib/paths.ts';
+import { fill, getPage, need } from '../../lib/pages.ts';
+
+if (!FEATURES.blog) return disabled();
+
+/* The words: src/content/pages/blog.md. */
+const page = await getPage('blog');
+const { label } = page;
+
+const posts = await publishedPosts();
+const tags = groupByTag(posts);
+const featured = posts.filter((post) => post.data.featured);
+---
+
+<Base {...page.meta()} section="blog">
+  <section class="wrap section">
+    <p class="kicker" data-sigil="##">
+      blog
+    </p>
+    <h1>Blog</h1>
+    <p class="lede">
+      {fill(label(featured.length > 0 ? 'postsFeatured' : 'posts'), {
+        posts: posts.length,
+        featured: featured.length,
+      })}{' '}
+      {need(page.data.lede, 'blog.lede')}
+    </p>
+
+    {tags.length > 0 && (
+      <ul class="tags">
+        {tags.map(([tag, items]) => (
+          <li>
+            <a
+              class="chip tag-pill"
+              href={tagPath(slugifyTag(tag))}
+              data-tag={slugifyTag(tag)}
+              aria-pressed="false"
+            >
+              {tag} <span>{items.length}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    )}
+    <p class="no-posts mono" hidden>
+      {label('noPosts')}
+    </p>
+
+    <ol class="posts">
+      {posts.map((post) => (
+        <li class="reveal" data-tags={post.data.tags.map(slugifyTag).join(' ')}>
+          <a class="post" href={permalink(post.id)}>
+            <time class="date mono" datetime={post.data.date.toISOString().slice(0, 10)}>
+              {formatPostDate(post.data.date)}
+            </time>
+            <span class="ptext">
+              <span class="ptitle">
+                {post.data.title}
+                {post.data.featured && (
+                  <span class="star mono" title="Featured">
+                    ★
+                  </span>
+                )}
+              </span>
+              {post.data.description && <span class="pdesc">{post.data.description}</span>}
+            </span>
+          </a>
+        </li>
+      ))}
+    </ol>
+  </section>
+</Base>
+
+<script>
+  /* Imported, not written out, so the URL this pushes into the history cannot
+     drift from the one the pills link to. */
+  import { BLOG, tagPath } from '../../lib/paths.ts';
+
+  // The pills stay real links to /blog/tag/<slug>/, so they work with JS off
+  // and stay shareable; with JS they filter in place instead.
+  const pills = Array.from(document.querySelectorAll<HTMLAnchorElement>('.tag-pill'));
+  const posts = Array.from(document.querySelectorAll<HTMLElement>('.posts > li'));
+  const empty = document.querySelector<HTMLElement>('.no-posts');
+
+  const apply = (tag: string | null) => {
+    let visible = 0;
+    for (const item of posts) {
+      const hit = !tag || (item.dataset.tags ?? '').split(' ').includes(tag);
+      item.hidden = !hit;
+      if (hit) {
+        visible++;
+        // A post never scrolled into view is still at opacity 0, and filtering
+        // pulls it up the page — so reveal it.
+        if (tag) item.classList.add('is-in');
+      }
+    }
+    for (const pill of pills) {
+      const on = pill.dataset.tag === tag;
+      pill.classList.toggle('is-on', on);
+      pill.setAttribute('aria-pressed', String(on));
+    }
+    if (empty) empty.hidden = visible !== 0;
+    // The base, by hand: this is the one URL built at runtime, out of reach of
+    // src/integrations/base-paths.ts, which rewrites the built bytes.
+    const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+    const url = base + (tag ? tagPath(tag) : BLOG);
+    history.replaceState({ tag }, '', url);
+  };
+
+  for (const pill of pills) {
+    pill.addEventListener('click', (event) => {
+      // Let modified clicks (new tab, download) fall through to the real page.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0)
+        return;
+      event.preventDefault();
+      apply(pill.classList.contains('is-on') ? null : (pill.dataset.tag ?? null));
+    });
+  }
+</script>
+
+<style>
+  .lede {
+    max-width: 62ch;
+    color: var(--text-muted);
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    list-style: none;
+    margin: 1.5rem 0 2rem;
+    padding: 0;
+  }
+  .tags span {
+    color: var(--sec);
+  }
+  .tag-pill.is-on {
+    border-color: var(--sec-line);
+    background: var(--sec-dim);
+    color: var(--sec-strong);
+  }
+  .no-posts {
+    margin: 0 0 2rem;
+    color: var(--text-faint);
+  }
+
+  .posts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  /* The same 11rem label column as the home page's post list and contact rows,
+     so the three line up with one another. */
+  .post {
+    display: grid;
+    grid-template-columns: 11rem 1fr;
+    gap: 0 1.25rem;
+    padding: 0.95rem 0.5rem;
+    border-top: 1px solid var(--border);
+    text-decoration: none;
+    color: inherit;
+    border-radius: var(--radius-s);
+  }
+  .post:hover {
+    background: var(--sec-dim);
+  }
+  .post:hover .ptitle {
+    color: var(--sec-strong);
+  }
+  .date {
+    color: var(--text-faint);
+    padding-top: 0.2rem;
+  }
+  .ptext {
+    display: grid;
+    gap: 0.2rem;
+  }
+  .ptitle {
+    font-family: var(--font-head);
+    font-weight: 600;
+    font-size: 1.0625rem;
+  }
+  .star {
+    margin-left: 0.5ch;
+    color: var(--amber);
+    font-size: 0.75rem;
+    vertical-align: 0.15em;
+  }
+  .pdesc {
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 38rem) {
+    .post {
+      grid-template-columns: 1fr;
+      gap: 0.25rem;
+    }
+  }
+</style>

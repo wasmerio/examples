@@ -1,0 +1,244 @@
+---
+import { getCollection, render } from 'astro:content';
+import type { GetStaticPaths } from 'astro';
+import { Image } from 'astro:assets';
+import Base from '../../../layouts/Base.astro';
+import Prose from '../../../components/Prose.astro';
+import Figure from '../../../components/Figure.astro';
+import { FEATURES } from '../../../features.ts';
+import { PROJECTS, paperPath } from '../../../lib/paths.ts';
+import VenueBadge from '../../../components/pub/VenueBadge.astro';
+import { paperPublication, paperVenueShort, paperYear } from '../../../lib/papers.ts';
+import { getPage } from '../../../lib/pages.ts';
+
+export const getStaticPaths = (async () => {
+  /* getStaticPaths runs whatever the page's own guard says, and getCollection()
+     on an emptied collection warns on every build. */
+  if (!FEATURES.projects) return [];
+  const projects = await getCollection('projects');
+  return (
+    projects
+      // An entry with `redirect` lives somewhere else; a page here would be a
+      // second, worse copy for search engines to choose between.
+      .filter((entry) => !entry.data.redirect)
+      .map((project) => ({ params: { slug: project.id }, props: { project } }))
+  );
+}) satisfies GetStaticPaths;
+
+const { project } = Astro.props;
+const { Content } = await render(project);
+const frontmatter = project.data;
+
+/* The words: src/content/pages/projects.md, and site/publication.md for the
+   related papers (read only while `papers` is on, which owns them). */
+const page = await getPage('projects');
+const words = FEATURES.papers ? await getPage('site/publication') : undefined;
+
+/* Every paper whose front matter names this project. By collection id, not
+   title: a title match silently empties the list the first time one is edited. */
+const papers = FEATURES.papers
+  ? await getCollection('papers', (paper) =>
+      paper.data.projects.some((ref) => ref.id === project.id),
+    )
+  : [];
+const related = (
+  await Promise.all(
+    papers.map(async (paper) => {
+      const pub = await paperPublication(paper);
+      return {
+        paper,
+        pub,
+        // Not `pub.data.year`: a page with no entry carries its own, and would
+        // otherwise be parked at the bottom of the list.
+        year: paperYear(paper, pub),
+        // Only used when there is no badge; see /papers/ for the same rule.
+        tag: pub?.data.abbr ? undefined : paperVenueShort(paper, pub),
+      };
+    }),
+  )
+)
+  // Newest edition first, then the order /papers/ uses, so two works from the
+  // same year keep the sequence a reader has already seen.
+  .sort(
+    (first, second) =>
+      (second.year ?? 0) - (first.year ?? 0) || first.paper.data.order - second.paper.data.order,
+  );
+---
+
+<Base title={frontmatter.title} description={frontmatter.description} section="projects">
+  <article class="wrap section">
+    <header class="head">
+      {frontmatter.logo && (
+        <Image
+          class="logo"
+          src={frontmatter.logo}
+          alt=""
+          width={64}
+          height={64}
+          densities={[1, 2]}
+        />
+      )}
+      <div>
+        <h1>{frontmatter.title}</h1>
+        <p class="lede">{frontmatter.description}</p>
+      </div>
+    </header>
+
+    {
+      /* The overview diagram, when the front matter names one. Above the prose
+         because "what is this, in one picture" is what a reader wants first. */
+      frontmatter.figure && (
+        <Figure
+          src={frontmatter.figure.src}
+          alt={frontmatter.figure.alt}
+          plate={frontmatter.figure.plate}
+          frame={frontmatter.figure.frame}
+        />
+      )
+    }
+
+    <Prose>
+      <Content />
+    </Prose>
+
+    {
+      /* This project's own repositories, not the site-wide /repositories/ page. */
+      frontmatter.repositories.length > 0 && (
+        <section class="block" aria-labelledby="code-h">
+          <h2 class="mono" id="code-h">
+            Code
+          </h2>
+          <ul class="chips">
+            {frontmatter.repositories.map((repository) => (
+              <li>
+                <a class="chip" href={repository.url} rel="noopener">
+                  {repository.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )
+    }
+
+    {related.length > 0 && (
+      <section class="block" aria-labelledby="papers-h">
+        <h2 class="mono" id="papers-h">
+          {related.length === 1 ? 'Related paper' : 'Related papers'}
+        </h2>
+        <ul class="papers">
+          {related.map(({ paper, pub, year, tag }) => (
+            <li>
+              <div class="badge">
+                <VenueBadge abbr={pub?.data.abbr} />
+              </div>
+              <div>
+                <a class="title" href={paperPath(paper.id)}>
+                  {paper.data.title}
+                </a>
+                <p class="mono year">
+                  {year}
+                  {tag && <span> · {tag}</span>}
+                  {paper.data.status === 'to-appear' && words && (
+                    <span> · {words.label('toAppear')}</span>
+                  )}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+
+    <p class="back">
+      <a class="chip" href={PROJECTS}>
+        {page.label('back')}
+      </a>
+    </p>
+  </article>
+</Base>
+
+<style>
+  /* Header, prose and every block share one measure, so their edges line up. */
+  .head,
+  .block {
+    max-width: var(--measure);
+  }
+
+  .head {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.1rem;
+    margin-bottom: 2rem;
+  }
+  .logo {
+    flex: none;
+    width: 64px;
+    height: 64px;
+    border-radius: var(--radius-m);
+  }
+  h1 {
+    margin-bottom: 0.4rem;
+  }
+  .lede {
+    margin: 0;
+    color: var(--text-muted);
+  }
+
+  .block {
+    margin-top: 2.5rem;
+  }
+  .block h2 {
+    font-size: var(--fs-mono);
+    font-weight: 500;
+    color: var(--text-faint);
+    margin-bottom: 0.6rem;
+  }
+
+  .chips,
+  .papers {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  /* The same two-column rail as /publications/: badge, then the entry. */
+  .papers li {
+    display: grid;
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: 0 1.1rem;
+    padding: 0.85rem 0;
+    border-top: 1px solid var(--border);
+  }
+  .badge {
+    padding-top: 0.15rem;
+  }
+  .title {
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .title:hover {
+    color: var(--sec-strong);
+  }
+  .year {
+    margin: 0.2rem 0 0;
+    color: var(--text-faint);
+  }
+
+  .back {
+    margin-top: 2.5rem;
+  }
+
+  @media (max-width: 34rem) {
+    .papers li {
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+    }
+  }
+</style>

@@ -1,0 +1,75 @@
+---
+import { FEATURES } from '../features.ts';
+import { SITE } from '../consts.ts';
+import { routePath } from '../lib/paths.ts';
+import { fill, selfName, siteText } from '../lib/pages.ts';
+
+interface Props {
+  title?: string;
+  description?: string;
+  /** A page with no address of its own (the 404 page): no canonical, no
+      og:url, and a robots noindex. */
+  noindex?: boolean;
+}
+
+const { title, description, noindex = false } = Astro.props;
+
+// The page title, or the site's own on the home page — never "Home · Site".
+// Both from src/content/pages/; a page's description may say {name} too.
+const site = await siteText();
+const pageTitle = title ? `${title} · ${site.title}` : site.title;
+const desc = description ? fill(description, { name: selfName }) : site.description;
+
+/* Astro.site, not SITE.url: it is the origin this build was made for, so a
+   SITE_URL override reaches the canonical too. Resolving a root-absolute path
+   against it replaces the path wholesale, and Astro.url.pathname already
+   carries the base — which is what makes both hosts come out right.
+
+   Through routePath(): under URL_POLICY 'preserve' Astro.url.pathname is the
+   FILE path ("/papers/sosp67.html"). The audit checks the result names this
+   page's own file. */
+const origin = Astro.site ?? new URL(SITE.url);
+const canonical = noindex ? undefined : new URL(routePath(Astro.url.pathname), origin);
+
+/* Concatenated, not new URL(): a root-absolute path resolved against an origin
+   that ends "/astro-studia" drops it, and the card image 404s. publicPdfs() in
+   astro.config.ts says the same thing. */
+const ogImage = SITE.ogImage && `${origin.href.replace(/\/$/, '')}${SITE.ogImage}`;
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{pageTitle}</title>
+<meta name="description" content={desc} />
+{canonical ? <link rel="canonical" href={canonical} /> : <meta name="robots" content="noindex" />}
+
+{/* PNGs only: the 32px one for tabs, apple-touch-icon for iOS. All three in
+    public/ are resized copies of one square image — `npm run icons -- <image>`
+    writes all three. */}
+<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+<link rel="manifest" href="/site.webmanifest" />
+
+{FEATURES.feed && (
+  <link rel="alternate" type="application/rss+xml" title={site.title} href="/feed.xml" />
+)}
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content={site.title} />
+<meta property="og:title" content={pageTitle} />
+<meta property="og:description" content={desc} />
+{canonical && <meta property="og:url" content={canonical} />}
+
+{/* summary_large_image with no image renders as a blank rectangle, so
+    SITE.ogImage: null gets the small card. */}
+{ogImage ? (
+  <>
+    <meta property="og:image" content={ogImage} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:card" content="summary_large_image" />
+  </>
+) : (
+  <meta name="twitter:card" content="summary" />
+)}
+
+<meta name="generator" content={Astro.generator} />

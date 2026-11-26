@@ -1,0 +1,335 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { FEATURES } from '../../features.ts';
+import VenueBadge from './VenueBadge.astro';
+import CopyButton from '../CopyButton.astro';
+import BibMark from '../BibMark.astro';
+import DoiMark from '../DoiMark.astro';
+import LinkMark from '../LinkMark.astro';
+import PdfMark from '../PdfMark.astro';
+import ScholarMark from '../ScholarMark.astro';
+import { citationsFor, scholarPaperUrl } from '../../lib/citations.ts';
+import { formatCount } from '../../lib/format.ts';
+import { truncateAuthors, fullName, isSelf, surnameKey } from '../../lib/authors.ts';
+import { paperPath } from '../../lib/paths.ts';
+import { fill, getPage } from '../../lib/pages.ts';
+
+interface Props {
+  pub: CollectionEntry<'publications'>;
+  /**
+   * Trim the entry to its citation: no BibTeX block.
+   * For places that list a few publications alongside other things — a home
+   * page — where the full apparatus would drown the rest of the page.
+   */
+  compact?: boolean;
+  /** Surname → /people/#anchor, from peopleLinks(), built once per page by
+      the caller. Optional, so removing /people/ does not break /publications/. */
+  links?: Map<string, string>;
+}
+
+const { pub, compact = false, links } = Astro.props;
+const record = pub.data;
+/* The words on every entry: src/content/pages/site/publication.md. */
+const words = await getPage('site/publication');
+
+const { shown, hidden } = truncateAuthors(record.authors);
+/* 0, not undefined: a count of zero already means no count below. */
+const cites = FEATURES.citations ? citationsFor(record.googleScholarId) : 0;
+const scholarUrl = scholarPaperUrl(record.googleScholarId);
+const Cites = scholarUrl ? 'a' : 'span';
+
+/* Resolved here rather than in the two places it is rendered: a site with no
+   paper pages has nothing to link to — `undefined` then renders the title as
+   text. */
+const pagePath = FEATURES.papers && record.pageSlug ? paperPath(record.pageSlug) : undefined;
+
+// Where it appeared: proceedings, journal, or the awarding institution.
+const inParts = [
+  record.booktitle ?? record.journal ?? record.school ?? record.institution,
+  record.location,
+].filter(Boolean);
+
+// The id is the anchor — /publications/#cicero_de_officiis_1913 highlights
+// this entry — and `data-search` is what the filter on that page matches
+// against. Both live here rather than on a wrapper the pages have to remember
+// to add, so an entry is filterable wherever it is rendered.
+const bibId = `bib-${pub.id}`;
+---
+
+<li class="entry reveal" id={pub.id} data-search={record.searchText}>
+  <div class="badge">
+    <VenueBadge abbr={record.abbr} />
+  </div>
+
+  <div class="body">
+    <h3 class="title">
+      {pagePath ? (
+        <a class="title-link" href={pagePath}>
+          {record.title}
+          <span class="sr-only"> ({words.label('hasPage')})</span>
+        </a>
+      ) : (
+        record.title
+      )}
+      <span class="title-icons">
+        {record.pdfUrl && (
+          <a
+            class="title-icon"
+            href={record.pdfUrl}
+            title={words.label('pdf')}
+            aria-label={`${words.label('pdf')}: ${record.title}`}
+          >
+            <PdfMark />
+          </a>
+        )}
+        {record.doi && (
+          <a
+            class="title-icon"
+            href={`https://doi.org/${record.doi}`}
+            rel="noopener"
+            title={words.label('doi')}
+            aria-label={`${words.label('doi')}: ${record.title}`}
+          >
+            <DoiMark />
+          </a>
+        )}
+        {!record.doi && record.url && (
+          /* The DOI icon is the better permalink; this is the fallback. */
+          <a
+            class="title-icon link-icon"
+            href={record.url}
+            rel="noopener"
+            title={words.label('link')}
+            aria-label={`${words.label('link')}: ${record.title}`}
+          >
+            <LinkMark />
+          </a>
+        )}
+        {!compact && (
+          <button
+            class="title-icon bib-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls={bibId}
+            aria-label={`BibTeX: ${record.title}`}
+            title={words.label('bibtex')}
+            hidden
+          >
+            <BibMark />
+          </button>
+        )}
+        {cites > 0 && (
+          <Cites
+            class="title-icon cites"
+            title="Citations according to Google Scholar"
+            {...(scholarUrl ? { href: scholarUrl, rel: 'noopener' } : {})}
+          >
+            <ScholarMark />
+            <span class="count mono" aria-hidden="true">
+              {formatCount(cites)}
+            </span>
+            <span class="sr-only">
+              {words.plural('citations', cites, formatCount(cites))} on Google Scholar
+            </span>
+          </Cites>
+        )}
+      </span>
+    </h3>
+
+    <p class="authors">
+      {shown.map((person, index) => {
+        const href = links?.get(surnameKey(person.last));
+        const name = isSelf(person) ? <strong>{fullName(person)}</strong> : fullName(person);
+        return (
+          <>
+            {index > 0 && <span aria-hidden="true">, </span>}
+            {href ? (
+              <a class="who" href={href}>
+                {name}
+              </a>
+            ) : (
+              <span>{name}</span>
+            )}
+          </>
+        );
+      })}
+      {hidden > 0 && (
+        <span class="more"> {fill(words.label('moreAuthors'), { count: hidden })}</span>
+      )}
+    </p>
+
+    {inParts.length > 0 && (
+      <p class="venue-line">
+        <em>{inParts.join(', ')}</em>
+        {record.year ? <span>, {record.year}</span> : null}
+      </p>
+    )}
+
+    {!compact && (
+      <div class="bib-body" id={bibId}>
+        <CopyButton target={`${bibId}-text`} />
+        <pre id={`${bibId}-text`}>{record.bibtex}</pre>
+      </div>
+    )}
+  </div>
+</li>
+
+<script>
+  // Without JS the BibTeX stays open and the button stays hidden.
+  for (const btn of document.querySelectorAll<HTMLButtonElement>('button.bib-toggle')) {
+    const panel = document.getElementById(btn.getAttribute('aria-controls')!);
+    if (!panel) continue;
+    panel.hidden = true;
+    btn.hidden = false;
+    btn.addEventListener('click', () => {
+      const open = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', String(open));
+      panel.hidden = !open;
+    });
+  }
+</script>
+
+<style>
+  .entry {
+    display: grid;
+    /* minmax(0, 1fr) rather than 1fr: a plain `1fr` track has `min-width: auto`,
+       so the wide BibTeX block would stretch the column past the viewport. */
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    gap: 0 1.1rem;
+    padding: 1.1rem 0;
+    border-top: 1px solid var(--border);
+  }
+  /* Arriving from /publications/#<key> — or from a citation elsewhere — should
+     say which of forty near-identical rows you were sent to. */
+  .entry:target {
+    background: var(--sec-dim);
+    border-radius: var(--radius-m);
+    padding-inline: 0.75rem;
+  }
+
+  .badge {
+    padding-top: 0.2rem;
+  }
+
+  .title {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    margin: 0 0 0.2rem;
+    line-height: 1.35;
+  }
+
+  .authors,
+  .venue-line {
+    margin: 0 0 0.3rem;
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+  .authors strong {
+    color: var(--text);
+  }
+  /* An author who has an entry on /people/. Underlined only on hover: in a
+     list of forty papers, a permanent underline under half of every author
+     line is louder than the titles. */
+  .who {
+    color: inherit;
+    text-decoration: none;
+  }
+  .who:hover {
+    color: var(--sec-strong);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .more {
+    color: var(--text-faint);
+    font-style: italic;
+  }
+  .venue-line em {
+    color: var(--text-muted);
+  }
+
+  /* Underlined at rest: the one cue that a title leads to a page of ours. */
+  .title-link {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-decoration-color: color-mix(in srgb, var(--sec) 70%, transparent);
+    text-decoration-skip-ink: auto;
+    text-underline-offset: 0.18em;
+  }
+  .title-link:hover {
+    color: var(--sec-strong);
+    text-decoration-color: var(--sec-strong);
+    text-decoration-thickness: 2.5px;
+  }
+
+  /* Beside the title, not inside its link, so the underline stops at the text.
+     The group does not break, so the icons never split across lines. */
+  .title-icons {
+    white-space: nowrap;
+  }
+  .title-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    margin-inline-start: 0.4em;
+    vertical-align: -0.1em;
+    transition:
+      translate var(--dur) var(--ease),
+      filter var(--dur) var(--ease);
+  }
+  a.title-icon:hover,
+  a.title-icon:focus-visible,
+  button.title-icon:hover,
+  button.title-icon:focus-visible {
+    translate: 0 -1px;
+    filter: brightness(1.12);
+  }
+  /* The BibTeX control is a button: strip the UA chrome. */
+  .bib-toggle {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+  .title-icon[hidden] {
+    display: none;
+  }
+  .bib-toggle[aria-expanded='true'] {
+    filter: brightness(1.25);
+  }
+  .link-icon {
+    color: var(--text-muted);
+  }
+  /* Scholar blue, lifted for the dark theme; the mark itself is currentColor. */
+  .cites {
+    color: #5b9bff;
+    text-decoration: none;
+  }
+  .count {
+    font-size: 0.78rem;
+    line-height: 1;
+    color: #a9c7ff;
+  }
+
+  /* Copy sits in the corner of the block it copies rather than floating above
+     it, overlaying the code instead of reserving a gutter — reserving one via
+     padding pushes the block past its basis and off the screen. */
+  .bib-body {
+    position: relative;
+    margin-top: 0.5rem;
+  }
+  .bib-body pre {
+    margin: 0;
+    max-width: 100%;
+    font-size: 0.75rem;
+  }
+
+  @media (max-width: 34rem) {
+    .entry {
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+    }
+  }
+</style>

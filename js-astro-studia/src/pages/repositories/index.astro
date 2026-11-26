@@ -1,0 +1,317 @@
+---
+import { FEATURES, disabled } from '../../features.ts';
+import Base from '../../layouts/Base.astro';
+import { SITE } from '../../consts.ts';
+import { repositories, languageColors, github, socials } from '../../lib/data.ts';
+import { fill, getPage, need } from '../../lib/pages.ts';
+
+if (!FEATURES.repositories) return disabled();
+
+/*
+ * Everything here comes from the committed github-metadata.json; no API call
+ * happens during the build. A repo in repositories.yml but not yet in the
+ * metadata still renders by name.
+ */
+const repos = (repositories.github_repos ?? [])
+  .map((full) => ({ full, meta: github.repos[full] }))
+  // Most-starred first: the YAML order is nobody's deliberate choice.
+  .sort((first, second) => (second.meta?.stars ?? 0) - (first.meta?.stars ?? 0));
+
+const zenodo = repositories.zenodo_repos ?? [];
+const user = socials.github_username ? github.users[socials.github_username] : undefined;
+const stale = repos.filter((repo) => !repo.meta).length;
+
+/* The words: src/content/pages/repositories.md. */
+const page = await getPage('repositories');
+const { label } = page;
+
+const fmt = new Intl.NumberFormat(SITE.locale);
+const fetched = new Intl.DateTimeFormat(SITE.locale, {
+  dateStyle: 'medium',
+  timeZone: 'UTC',
+}).format(new Date(github.fetched));
+---
+
+<Base section="repositories" {...page.meta()}>
+  <section class="wrap section">
+    <p class="kicker" data-sigil="##">
+      repositories
+    </p>
+    <h1>Repositories</h1>
+    <p class="lede">{need(page.data.lede, 'repositories.lede')}</p>
+
+    {user && (
+      /* This one IS a filled card, unlike the repo cells below: a single
+           summary panel, not one item in a list, and a rule above it would read
+           as a divider between things that are not a series. */
+      <div class="ghuser card">
+        <div class="ghuser-main">
+          <p class="ghname mono">
+            <a href={user.htmlUrl} rel="noopener me">
+              @{user.login}
+            </a>
+          </p>
+          {user.bio && <p class="ghbio">{user.bio}</p>}
+        </div>
+        <dl class="stats">
+          <div>
+            <dt class="mono">{label('repos')}</dt>
+            <dd>{fmt.format(user.publicRepos)}</dd>
+          </div>
+          <div>
+            <dt class="mono">{label('followers')}</dt>
+            <dd>{fmt.format(user.followers)}</dd>
+          </div>
+          <div>
+            <dt class="mono">{label('replication')}</dt>
+            <dd>{fmt.format(zenodo.length)}</dd>
+          </div>
+        </dl>
+      </div>
+    )}
+
+    {repos.length > 0 && (
+      <section class="block">
+        <h2>
+          Maintained code <span class="count mono">{repos.length}</span>
+        </h2>
+        <ul class="grid">
+          {repos.map(({ full, meta }) => (
+            <li class="reveal">
+              <a class="repo" href={meta?.htmlUrl ?? `https://github.com/${full}`} rel="noopener">
+                <p class="repo-name mono">
+                  <span class="owner">{full.split('/')[0]}/</span>
+                  <strong>{full.split('/')[1]}</strong>
+                </p>
+                {meta?.description && (
+                  <p class="repo-desc" title={meta.description}>
+                    {meta.description}
+                  </p>
+                )}
+                <p class="repo-meta mono">
+                  {meta?.language && (
+                    <span class="lang">
+                      <span
+                        class="dot"
+                        style={`background:${languageColors[meta.language] ?? 'var(--text-faint)'}`}
+                        aria-hidden="true"
+                      />
+                      {meta.language}
+                    </span>
+                  )}
+                  {meta && <span>★ {fmt.format(meta.stars)}</span>}
+                  {meta && meta.forks > 0 && <span>⑂ {fmt.format(meta.forks)}</span>}
+                  {meta?.license && <span>{meta.license}</span>}
+                  {meta?.archived && <span class="archived">{label('archived')}</span>}
+                  {!meta && <span class="archived">no metadata yet</span>}
+                </p>
+              </a>
+            </li>
+          ))}
+        </ul>
+        <p class="fresh mono">
+          {fill(label('captured'), { date: fetched })}
+          {stale > 0 && (
+            <>
+              {' '}
+              · {stale} without metadata — run <code>npm run data:github</code>
+            </>
+          )}
+        </p>
+      </section>
+    )}
+
+    {zenodo.length > 0 && (
+      <section class="block">
+        <h2>
+          Replication packages <span class="count mono">{zenodo.length}</span>
+        </h2>
+        <p class="blurb">{label('replicationIntro')}</p>
+        <ul class="doi-list">
+          {zenodo.map((deposit) => (
+            <li>
+              <a class="doi" href={`https://doi.org/${deposit.doi}`} rel="noopener">
+                <span class="doi-name">{deposit.name}</span>
+                <span class="doi-id mono">{deposit.doi}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
+  </section>
+</Base>
+
+<style>
+  .lede,
+  .blurb {
+    max-width: 62ch;
+    color: var(--text-muted);
+  }
+  .blurb {
+    font-size: var(--fs-small);
+    color: var(--text-faint);
+  }
+
+  .ghuser {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    margin: 1.75rem 0 0;
+  }
+  .ghname {
+    margin: 0 0 0.2rem;
+    font-size: 1rem;
+  }
+  .ghname a {
+    text-decoration: none;
+  }
+  .ghbio {
+    margin: 0;
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+  }
+  .stats {
+    display: flex;
+    gap: 1.75rem;
+    margin: 0;
+  }
+  .stats dt {
+    color: var(--text-faint);
+    font-size: var(--fs-mono);
+  }
+  .stats dd {
+    margin: 0;
+    font-family: var(--font-head);
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sec);
+    line-height: 1.2;
+  }
+
+  .block {
+    margin-top: 3rem;
+  }
+  .block h2 {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .count {
+    font-size: var(--fs-mono);
+    font-weight: 400;
+    color: var(--text-faint);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+    gap: 0.9rem;
+    list-style: none;
+    margin: 1.25rem 0 0;
+    padding: 0;
+  }
+  /* Flat, like the rest of the site: a hairline rule instead of a filled tile. */
+  .repo {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    height: 100%;
+    padding: 0.9rem 0 0;
+    border-top: 1px solid var(--border);
+    text-decoration: none;
+    color: inherit;
+    transition: border-color var(--dur) var(--ease);
+  }
+  .repo:hover {
+    border-top-color: var(--sec-line);
+  }
+  .repo:hover .repo-name,
+  .repo:hover strong {
+    color: var(--sec-strong);
+  }
+  .repo-name {
+    margin: 0;
+    font-size: 0.875rem;
+    /* A repo name has no spaces to break at, and this cell is only 18rem wide. */
+    overflow-wrap: anywhere;
+  }
+  .owner {
+    color: var(--text-faint);
+  }
+  /* Clamped, so one wordy repo cannot dominate the row; the full text is in
+     the title attribute. */
+  .repo-desc {
+    margin: 0;
+    font-size: var(--fs-small);
+    color: var(--text-muted);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+  }
+  .repo-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.9rem;
+    /* `auto` top margin pins this line to the bottom of the cell, so the stats
+       rows line up across columns whatever length the descriptions are. */
+    margin: auto 0 0;
+    color: var(--text-faint);
+    font-size: 0.6875rem;
+  }
+  .lang {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4ch;
+  }
+  .dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .archived {
+    color: var(--warn);
+  }
+  .fresh {
+    margin: 1rem 0 0;
+    color: var(--text-faint);
+    font-size: 0.6875rem;
+  }
+
+  .doi-list {
+    list-style: none;
+    margin: 1.25rem 0 0;
+    padding: 0;
+  }
+  .doi {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    padding: 0.65rem 0.25rem;
+    border-top: 1px solid var(--border);
+    text-decoration: none;
+    color: inherit;
+  }
+  .doi:hover {
+    background: var(--sec-dim);
+  }
+  .doi-name {
+    font-size: var(--fs-small);
+  }
+  .doi:hover .doi-name {
+    color: var(--sec-strong);
+  }
+  .doi-id {
+    color: var(--text-faint);
+    font-size: 0.6875rem;
+  }
+</style>

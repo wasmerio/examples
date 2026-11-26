@@ -1,0 +1,177 @@
+---
+import Email from './Email.astro';
+import { contactRows, type ResolvedRow } from '../lib/contact.ts';
+import { FEATURES } from '../features.ts';
+import { keyId } from '../lib/pgp.ts';
+import { currentPosition, dateRange } from '../lib/cv.ts';
+import { CV, PGP_KEY } from '../lib/paths.ts';
+import { getPage } from '../lib/pages.ts';
+
+/**
+ * How people reach you, from `src/data/contact.yml`. Rows the site can DERIVE
+ * sit behind the feature that owns the fact, so no second copy can disagree.
+ */
+interface Props {
+  /** `rows`: a <dl> on hairline rules. `inline`: one wrapping line of pairs,
+      for a lede where the <dl> would be too tall. */
+  layout?: 'rows' | 'inline';
+}
+const { layout = 'rows' } = Astro.props;
+
+/* The words for the rows derived below, and the link under the block:
+   src/content/pages/site/contact.md. */
+const contact = await getPage('site/contact');
+
+// Listed first, derived after: a derived row above the listed ones would be
+// the template overruling a choice.
+const rows: ResolvedRow[] = [...contactRows];
+
+/* From `pgp_fingerprint` in socials.yml, so it cannot disagree with /pgp-key/. */
+const pgp = FEATURES.pgp ? keyId() : null;
+if (pgp) {
+  rows.push({
+    label: contact.label('pgp'),
+    text: pgp,
+    href: PGP_KEY,
+    mono: true,
+    note: contact.label('pgpNote'),
+  });
+}
+
+/* Read from cv.yml rather than written twice, so this cannot disagree with
+   /cv/'s own Experience section. */
+const position = FEATURES.cv ? currentPosition() : undefined;
+if (position) {
+  const { label } = await getPage('cv');
+  rows.push({
+    label: contact.label('where'),
+    text: position.org ?? position.title,
+    href: position.url,
+    mono: false,
+    note: dateRange(position, label('present')),
+  });
+}
+
+/*
+ * A row's value is the same object in both layouts — an address through
+ * Email.astro, a link, or plain text — so the two layouts below differ only in
+ * the box around it, never in what a row is allowed to be.
+ */
+
+/** `href` is either a full URL or a site-relative path; only the first is external. */
+const external = (href?: string) => (href?.startsWith('http') ? 'noopener' : undefined);
+---
+
+{layout === 'inline' ? (
+  <p class="inline mono">
+    {rows.map((row) => (
+      <span class="pair">
+        <span class="ilabel">{row.label}</span>
+        {row.address ? (
+          <Email address={row.address} />
+        ) : row.href ? (
+          <a href={row.href} rel={external(row.href)}>
+            {row.text}
+          </a>
+        ) : (
+          <span>{row.text}</span>
+        )}
+      </span>
+    ))}
+  </p>
+) : (
+  <dl class="contact">
+    {rows.map((row) => (
+      <div class="line">
+        <dt class="mono">{row.label}</dt>
+        <dd class:list={[row.mono && 'mono']}>
+          {row.address ? (
+            <Email address={row.address} />
+          ) : row.href ? (
+            <a href={row.href} rel={external(row.href)}>
+              {row.text}
+            </a>
+          ) : (
+            row.text
+          )}
+          {row.note && <span class="muted"> — {row.note}</span>}
+        </dd>
+      </div>
+    ))}
+  </dl>
+)}
+
+{FEATURES.cv && layout === 'rows' && (
+  <p class="more mono">
+    <a href={CV}>{contact.text('more', 'cv')}</a>
+  </p>
+)}
+
+<style>
+  .contact {
+    margin: 1.25rem 0 0;
+    max-width: 46rem;
+  }
+  /* The label column is --label-col, the same token src/pages/index.astro's
+     post list uses, so the two lists line up where they sit on one page. */
+  .contact .line {
+    display: grid;
+    grid-template-columns: var(--label-col) 1fr;
+    gap: 0 1.25rem;
+    padding: 0.6rem 0.5rem;
+    border-top: 1px solid var(--border);
+    align-items: baseline;
+    font-size: var(--fs-small);
+    transition: border-color var(--dur) var(--ease);
+  }
+  .contact .line:hover {
+    border-top-color: var(--sec-line);
+  }
+  .contact dt {
+    color: var(--text-faint);
+  }
+  .contact dd {
+    margin: 0;
+    color: var(--text-muted);
+    /* Addresses, handles and fingerprints have no spaces to break at. */
+    overflow-wrap: anywhere;
+  }
+  .muted {
+    color: var(--text-faint);
+  }
+
+  .more {
+    margin: 1.25rem 0 0;
+  }
+  .more a {
+    text-decoration: none;
+  }
+
+  /* The inline layout: pairs on one wrapping line, each label a faint prefix
+     to the value it belongs to. `.pair` is what keeps a label from being left
+     at the end of a line with its value on the next one. */
+  .inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 1.1rem;
+    align-items: baseline;
+    margin: 0;
+    color: var(--text-muted);
+  }
+  .pair {
+    display: inline-flex;
+    gap: 0.5ch;
+    align-items: baseline;
+    overflow-wrap: anywhere;
+  }
+  .ilabel {
+    color: var(--text-faint);
+  }
+
+  @media (max-width: 44rem) {
+    .contact .line {
+      grid-template-columns: 1fr;
+      gap: 0.15rem;
+    }
+  }
+</style>

@@ -1,0 +1,345 @@
+---
+import { getCollection } from 'astro:content';
+
+import { FEATURES, HOME_SHAPE } from '../features.ts';
+import Base from '../layouts/Base.astro';
+import DemoNotice from '../components/DemoNotice.astro';
+import DemoSwitch from '../components/DemoSwitch.astro';
+import Contact from '../components/Contact.astro';
+import PersonHero from '../components/hero/PersonHero.astro';
+import ProjectHero from '../components/hero/ProjectHero.astro';
+import PaperEntry from '../components/paper/PaperEntry.astro';
+import ProjectCard from '../components/project/ProjectCard.astro';
+import PersonCard from '../components/people/PersonCard.astro';
+
+import { featuredPapers } from '../lib/papers.ts';
+import { publishedPosts, permalink, formatPostDate } from '../lib/blog.ts';
+import { members } from '../lib/people.ts';
+import { BLOG, PEOPLE, PROJECTS, PUBLICATIONS } from '../lib/paths.ts';
+import { fill, getPage } from '../lib/pages.ts';
+
+/*
+ * The entry page, in both shapes: one person, or one project and its people.
+ * HOME_SHAPE picks which renders at `/`, and with `demo` on its second URL
+ * renders the other. Both stay here whatever the flags say.
+ */
+type Shape = 'profile' | 'project';
+interface Props {
+  /** Which shape to render. Only the demo's second URL ever passes it. */
+  shape?: Shape;
+}
+const shape: Shape = (FEATURES.demo && Astro.props.shape) || HOME_SHAPE;
+const isProfile = shape === 'profile';
+const isProject = shape === 'project';
+
+/* ── data the sections below read ─────────────────────────────────── */
+
+/* A switched-off collection loads empty, so each of these would come back []
+   on its own; the flag is stated so the dependency is readable here. */
+const pubs = FEATURES.publications ? await getCollection('publications') : [];
+const latestYear = pubs.length > 0 ? Math.max(...pubs.map((pub) => pub.data.year)) : undefined;
+
+/* From the `papers` collection, not `publications.filter(pageSlug)`: a page
+   whose venue is stated rather than cited has no row there. */
+const papers = FEATURES.papers ? await featuredPapers() : [];
+
+const posts = FEATURES.blog ? (await publishedPosts()).slice(0, 3) : [];
+
+const subProjects = FEATURES.projects
+  ? (await getCollection('projects')).sort(
+      (first, second) =>
+        first.data.order - second.data.order || first.data.title.localeCompare(second.data.title),
+    )
+  : [];
+
+const team = FEATURES.people ? await members() : [];
+
+/* ── page text ─────────────────────────────────────────────────────── */
+
+/* The words are src/content/pages/home.md, plus one file per shape —
+   home/profile.md and home/project.md — read only for the shape rendering. */
+const home = await getPage('home');
+const profile = isProfile ? await getPage('home/profile') : undefined;
+const project = isProject ? await getPage('home/project') : undefined;
+const involvement = isProfile ? await getPage('home/involvement') : undefined;
+---
+
+<Base section="home">
+  <DemoNotice />
+
+  {FEATURES.demo && <DemoSwitch current={shape} />}
+
+  <!-- Each section carries its own data-section, so the accent changes down the page. -->
+
+  {profile && (
+    <>
+      <PersonHero />
+
+      {FEATURES.publications && (
+        <section class="wrap section" id="research" data-section="publications">
+          <p class="kicker" data-sigil="##">
+            research
+          </p>
+          <h2>What I work on</h2>
+          <ul class="interests">
+            {(profile.data.interests ?? []).map((interest) => (
+              <li class="chip">{interest}</li>
+            ))}
+          </ul>
+
+          {papers.length > 0 && (
+            <>
+              <h3 class="sub">Paper pages</h3>
+              <p class="blurb">{profile.text('intros', 'papers')}</p>
+              <ul class="bare">
+                {papers.map(({ paper, pub }) => (
+                  <PaperEntry paper={paper} pub={pub} />
+                ))}
+              </ul>
+            </>
+          )}
+
+          <p class="more mono">
+            <a href={PUBLICATIONS}>
+              {latestYear
+                ? fill(profile.text('more', 'publications'), {
+                    count: pubs.length,
+                    year: latestYear,
+                  })
+                : fill(profile.text('more', 'publicationsUndated'), { count: pubs.length })}
+            </a>
+          </p>
+        </section>
+      )}
+
+      {(FEATURES.projects || involvement?.hasBody) && (
+        <section class="wrap section" id="building" data-section="projects">
+          <p class="kicker" data-sigil="##">
+            building
+          </p>
+          <h2>Also involved in</h2>
+          <div class="involve">{involvement && <involvement.Content />}</div>
+          {FEATURES.projects && (
+            <p class="more mono">
+              <a href={PROJECTS}>{profile.text('more', 'projects')}</a>
+            </p>
+          )}
+        </section>
+      )}
+
+      {posts.length > 0 && (
+        <section class="wrap section" id="writing" data-section="blog">
+          <p class="kicker" data-sigil="##">
+            writing
+          </p>
+          <h2>Recent posts</h2>
+          <ul class="postlist">
+            {posts.map((post) => (
+              <li>
+                <a href={permalink(post.id)}>
+                  <time class="mono" datetime={post.data.date.toISOString().slice(0, 10)}>
+                    {formatPostDate(post.data.date)}
+                  </time>
+                  <span>{post.data.title}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+          <p class="more mono">
+            <a href={BLOG}>{profile.text('more', 'posts')}</a>
+          </p>
+        </section>
+      )}
+    </>
+  )}
+
+  {project && (
+    <>
+      <ProjectHero />
+
+      {FEATURES.projects && (
+        <section class="wrap section" id="subprojects" data-section="projects">
+          <p class="kicker" data-sigil="##">
+            sub-projects
+          </p>
+          <h2>What the programme runs on</h2>
+          <p class="blurb">{project.text('intros', 'subProjects')}</p>
+
+          <ul class="grid">
+            {subProjects.map((project) => (
+              <ProjectCard project={project} />
+            ))}
+          </ul>
+
+          <p class="more mono">
+            <a href={PROJECTS}>
+              {fill(project.text('more', 'subProjects'), { count: subProjects.length })}
+            </a>
+          </p>
+        </section>
+      )}
+
+      {FEATURES.publications && (
+        <section class="wrap section" id="treatises" data-section="publications">
+          <p class="kicker" data-sigil="##">
+            treatises
+          </p>
+          <h2>The works themselves</h2>
+          {papers.length > 0 && (
+            <>
+              <p class="blurb">
+                {fill(project.text('intros', 'papers'), { count: papers.length })}
+              </p>
+
+              <ul class="bare">
+                {papers.map(({ paper, pub }) => (
+                  <PaperEntry paper={paper} pub={pub} />
+                ))}
+              </ul>
+            </>
+          )}
+
+          <p class="more mono">
+            <a href={PUBLICATIONS}>
+              {fill(project.text('more', 'publications'), { count: pubs.length })}
+            </a>
+          </p>
+        </section>
+      )}
+
+      {FEATURES.people && (
+        <section class="wrap section" id="circle" data-section="people">
+          <p class="kicker" data-sigil="##">
+            circle
+          </p>
+          <h2>Who it passed through</h2>
+          <p class="blurb">{fill(project.text('intros', 'people'), { count: team.length })}</p>
+
+          <ul class="grid people">
+            {team.map((member) => (
+              <PersonCard member={member} />
+            ))}
+          </ul>
+
+          <p class="more mono">
+            <a href={PEOPLE}>{fill(project.text('more', 'people'), { count: team.length })}</a>
+          </p>
+        </section>
+      )}
+    </>
+  )}
+
+  <section class="wrap section" id="contact" data-section="contact">
+    <p class="kicker" data-sigil="##">
+      contact
+    </p>
+    <h2>Get in touch</h2>
+    <p class="blurb">{home.text('intros', 'contact')}</p>
+
+    <Contact />
+  </section>
+</Base>
+
+<style>
+  .interests {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    list-style: none;
+    margin: 0 0 2.25rem;
+    padding: 0;
+  }
+
+  .sub {
+    margin: 2.5rem 0 0.5rem;
+    font-size: 1rem;
+    color: var(--text-faint);
+    font-family: var(--font-mono);
+    font-weight: 500;
+    text-transform: lowercase;
+  }
+
+  .bare {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .blurb {
+    max-width: 60ch;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+  }
+
+  .more {
+    margin: 1.25rem 0 0;
+  }
+  .more a {
+    text-decoration: none;
+  }
+
+  /* A Markdown list; an _emphasised_ tail reads as fainter follow-up text. */
+  .involve :global(ul) {
+    margin: 1rem 0 0;
+    padding-left: 1.1rem;
+    max-width: 68ch;
+  }
+  .involve :global(li) {
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+  }
+  .involve :global(li::marker) {
+    color: var(--sec);
+  }
+  .involve :global(em) {
+    font-style: normal;
+    color: var(--text-faint);
+  }
+
+  .grid {
+    list-style: none;
+    margin: 1.5rem 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+    gap: 0.9rem;
+  }
+  /* PersonCard rows read better wide than square; /people/ uses the same minimum. */
+  .grid.people {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+    gap: 0.75rem 2rem;
+  }
+
+  .postlist {
+    list-style: none;
+    margin: 1.25rem 0 0;
+    padding: 0;
+  }
+  /* The same object as the contact rows in Contact.astro: a label column on a
+     hairline rule, sharing --label-col so the two cannot drift apart. */
+  .postlist a {
+    display: grid;
+    grid-template-columns: var(--label-col) 1fr;
+    gap: 0 1.25rem;
+    padding: 0.6rem 0.5rem;
+    border-top: 1px solid var(--border);
+    font-size: var(--fs-small);
+    text-decoration: none;
+    color: inherit;
+    border-radius: var(--radius-s);
+  }
+  .postlist a:hover {
+    background: var(--sec-dim);
+    color: var(--sec-strong);
+  }
+  .postlist time {
+    color: var(--text-faint);
+  }
+
+  @media (max-width: 44rem) {
+    .postlist a {
+      grid-template-columns: 1fr;
+      gap: 0.15rem;
+    }
+  }
+</style>

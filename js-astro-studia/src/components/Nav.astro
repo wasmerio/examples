@@ -1,0 +1,183 @@
+---
+import { SITE, type Section } from '../consts.ts';
+import { intrinsic } from '../lib/images.ts';
+import { navLinks, siteText } from '../lib/pages.ts';
+
+interface Props {
+  section?: Section;
+}
+
+const { section } = Astro.props;
+
+// The rows are src/content/pages/site/nav.md, the wordmark site/site.md.
+const nav = await navLinks();
+const { brand, brandPrompt } = await siteText();
+
+/* The height is set here; the width follows from the file's aspect ratio, read
+   off disk, so both attributes the audit requires are always present. */
+const LOGO_HEIGHT = 24;
+const logo = SITE.brandLogo;
+const natural = logo ? intrinsic(logo.src) : undefined;
+const logoWidth = natural ? Math.round((natural.width / natural.height) * LOGO_HEIGHT) : undefined;
+---
+
+<header class="nav">
+  <div class="wrap inner">
+    <a class="brand mono" href="/">
+      {
+        /* alt is derived: beside the wordmark the mark is decoration, and in
+           place of it the mark IS the name. */
+        logo && (
+          <img
+            class="brand-logo"
+            src={logo.src}
+            alt={logo.replacesWordmark ? brand : ''}
+            width={logoWidth}
+            height={LOGO_HEIGHT}
+          />
+        )
+      }
+      {
+        /* One span, so the flex gap separates mark from wordmark, not `~/` from
+           the name it is a prompt for. */
+        !logo?.replacesWordmark && (
+          <span>
+            {brandPrompt && <span class="brand-prompt">{brandPrompt}</span>}
+            {brand}
+          </span>
+        )
+      }
+    </a>
+
+    <nav aria-label="Primary">
+      <ul>
+        {nav.map((item) => (
+          <li>
+            <a
+              href={item.href}
+              data-section={item.section}
+              aria-current={item.section === section ? 'page' : undefined}
+            >
+              {item.label}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<script>
+  // On a phone the links scroll sideways; start with the current one in view.
+  for (const row of document.querySelectorAll<HTMLElement>('nav')) {
+    const current = row.querySelector<HTMLElement>('[aria-current="page"]');
+    if (current && row.scrollWidth > row.clientWidth) {
+      row.scrollLeft = current.offsetLeft - (row.clientWidth - current.offsetWidth) / 2;
+    }
+  }
+</script>
+
+<style>
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--bg) 78%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .inner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-height: 3.5rem;
+  }
+
+  /* inline-flex unconditionally: a one-item flex row lays out exactly like the
+     inline text it replaces. */
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text);
+    text-decoration: none;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .brand-logo {
+    /* Square corners against a square-cornered bar look pasted on. */
+    border-radius: var(--radius-s);
+  }
+  .brand-prompt {
+    color: var(--text-faint);
+  }
+  .brand:hover {
+    color: var(--sec-strong);
+  }
+
+  /* No hamburger: short items simply wrap onto a second line. margin-left:auto
+     plus flex-end is what keeps them at the right edge once they do. */
+  nav {
+    margin-left: auto;
+  }
+  ul {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.25rem 1.1rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  ul a {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: var(--fs-mono);
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid transparent;
+  }
+
+  /* Each item previews its destination's accent: the link's own `data-section`
+     has already re-pointed --sec inside this element, so one rule covers all. */
+  ul a:hover,
+  ul a[aria-current='page'] {
+    color: var(--sec);
+    border-bottom-color: var(--sec-line);
+  }
+
+  /* Phones: the brand gets its own row and the links one scrollable row under
+     it, edge to edge, so the sticky bar stays two rows high however many
+     items there are. The fade on the right says there is more. */
+  @media (max-width: 48rem) {
+    .inner {
+      gap: 0.25rem;
+      padding-block: 0.6rem 0;
+    }
+    nav {
+      position: relative;
+      flex: 1 0 100%;
+      margin: 0 calc(-1 * var(--gutter));
+      padding-inline: var(--gutter);
+      overflow-x: auto;
+      scrollbar-width: none;
+      mask-image: linear-gradient(to right, #000 calc(100% - var(--gutter)), transparent);
+    }
+    nav::-webkit-scrollbar {
+      display: none;
+    }
+    nav ul {
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+      width: max-content;
+    }
+    nav a {
+      white-space: nowrap;
+    }
+  }
+</style>

@@ -1,0 +1,160 @@
+---
+import { Image } from "astro:assets";
+import type { ImageMetadata } from "astro:assets";
+import { getEventData } from "../data/eventData";
+
+const { gallery: galleryContent } = getEventData();
+
+const imageModules = import.meta.glob("../assets/**/*", {
+    eager: true,
+    import: "default",
+}) as Record<string, ImageMetadata>;
+
+const resolveImage = (filename: string) => {
+    const normalized = filename.replace(/^\.?\//, "").replace(/^assets\//, "");
+
+    const match = Object.entries(imageModules).find(([path]) => {
+        const withoutPrefix = path.replace("../assets/", "");
+        return (
+            withoutPrefix === normalized ||
+            withoutPrefix.endsWith(`/${normalized}`) ||
+            path.endsWith(`/${normalized}`)
+        );
+    });
+
+    return match?.[1];
+};
+
+const galleryImages = (galleryContent.images ?? [])
+    .map((image) => {
+        const src = resolveImage(image.asset);
+        if (!src) {
+            return null;
+        }
+
+        return { src, alt: image.alt };
+    })
+    .filter((image): image is { src: ImageMetadata; alt: string } =>
+        Boolean(image),
+    );
+---
+
+<section
+    style="
+        background-color: var(--color-primary);
+        color: var(--color-secondary);
+    "
+>
+    <div class="mx-auto w-full max-w-6xl px-6 pt-24">
+        <header class="mb-16 max-w-3xl">
+            <p
+                class="text-sm uppercase tracking-[0.35em]"
+                style="color: var(--color-secondary); opacity: 0.6;"
+            >
+                {galleryContent.eyebrow}
+            </p>
+            <h2
+                class="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl"
+                style="color: var(--color-secondary);"
+            >
+                {galleryContent.title}
+            </h2>
+            <p
+                class="mt-6 text-lg"
+                style="color: var(--color-secondary); opacity: 0.75;"
+            >
+                {galleryContent.description}
+            </p>
+        </header>
+    </div>
+
+    <div
+        id="gallery-scroll"
+        class="relative flex min-h-screen w-full items-center overflow-hidden px-6"
+    >
+        <div class="gallery-track flex items-center gap-8">
+            {
+                galleryImages.map((image) => (
+                    <figure
+                        class="relative aspect-square w-60 sm:w-75 lg:w-100 flex-none overflow-hidden rounded-4xl"
+                        style="
+                            background: color-mix(in srgb, var(--color-secondary) 5%, transparent);
+                        "
+                    >
+                        <Image
+                            src={image.src}
+                            alt={image.alt}
+                            loading="lazy"
+                            format="webp"
+                            width={800}
+                            height={800}
+                            fit="cover"
+                            class="block h-full w-full"
+                        />
+                        <figcaption
+                            class="absolute inset-x-0 bottom-0 bg-linear-to-t px-6 py-4 text-sm"
+                            style="
+                                background: linear-gradient(to top, var(--color-text) 50%, transparent);
+                                color: var(--color-secondary);
+                                opacity: 0.8;
+                            "
+                        >
+                            {image.alt}
+                        </figcaption>
+                    </figure>
+                ))
+            }
+        </div>
+    </div>
+</section>
+
+<script>
+    import { gsap } from "gsap";
+    import { ScrollTrigger } from "gsap/ScrollTrigger";
+    gsap.registerPlugin(ScrollTrigger);
+
+    requestAnimationFrame(() => {
+        const gallery = document.getElementById("gallery-scroll");
+        if (!gallery) return;
+
+        const track = gallery.querySelector(".gallery-track");
+        if (!track) return;
+
+        const applyCenterPadding = () => {
+            const firstCard = track.querySelector("figure");
+            if (!firstCard) return;
+
+            const viewportWidth = gallery.clientWidth;
+            const cardWidth = firstCard.getBoundingClientRect().width;
+            const padding = Math.max((viewportWidth - cardWidth) / 2, 24);
+
+            track.style.paddingLeft = `${padding}px`;
+            track.style.paddingRight = `${padding}px`;
+        };
+
+        const getScrollLength = () => track.scrollWidth - gallery.clientWidth;
+
+        applyCenterPadding();
+
+        gsap.to(track, {
+            x: () => -getScrollLength(),
+            ease: "none",
+            scrollTrigger: {
+                trigger: gallery,
+                start: "top top",
+                end: () => "+=" + getScrollLength(),
+                pin: true,
+                scrub: 0.6,
+                invalidateOnRefresh: true,
+                onRefresh: applyCenterPadding,
+            },
+        });
+
+        ScrollTrigger.addEventListener("refreshInit", () => {
+            track.style.removeProperty("transform");
+            applyCenterPadding();
+        });
+
+        window.addEventListener("resize", () => ScrollTrigger.refresh());
+    });
+</script>

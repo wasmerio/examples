@@ -1,0 +1,112 @@
+---
+// Maison piece record — static for SEO, printed-ledger layout.
+// Save / Add to bag talk to the Layout stores via the maison:toggle event.
+import Layout from '../../layouts/Layout.astro';
+import { commerce } from '../../lib/commerce';
+import catalog from '../../data/mock-catalog.json';
+
+export async function getStaticPaths() {
+  const products = await commerce.listProducts();
+  return products.map((p) => ({ params: { handle: p.handle }, props: { product: p } }));
+}
+
+const { product } = Astro.props;
+const p = product as any;
+const meta = p.meta ?? {};
+const house = (catalog.collections as any[]).find((c) => c.handle === product.collectionHandles[0]);
+const img = product.images[0];
+const related = (await commerce.listProducts())
+  .filter((x) => x.collectionHandles[0] === product.collectionHandles[0] && (x as any).meta?.material === meta.material && x.handle !== product.handle)
+  .slice(0, 3);
+
+const availability = meta.bespoke ? 'Bespoke commission only' : meta.stock ? 'Held in the vault' : 'On request from the keeper';
+const productLd = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'Product',
+  name: product.title,
+  brand: { '@type': 'Brand', name: p.vendor },
+  image: new URL(img?.src ?? '', Astro.site ?? 'https://astro-njx-maison.pages.dev').href,
+  description: product.description,
+  offers: {
+    '@type': 'Offer',
+    price: product.price.amount,
+    priceCurrency: 'USD',
+    availability: meta.stock ? 'https://schema.org/InStock' : 'https://schema.org/PreOrder',
+  },
+  aggregateRating: { '@type': 'AggregateRating', ratingValue: meta.rating, reviewCount: 24 },
+});
+
+const specs: [string, string][] = [
+  ['Reference', meta.ref],
+  ['Material', meta.material],
+  ['Era', meta.epoch],
+  ['Origin', meta.origin],
+  ['Specification', meta.spec],
+  ['Availability', availability],
+  ['Patron rating', Number(meta.rating).toFixed(1) + '★'],
+];
+---
+
+<Layout title={`${product.title} · ${meta.ref} — ${house?.name}`} description={`${p.vendor} — ${product.description} ${meta.spec}`} ogImage={img?.src}>
+  <main class="mx-auto max-w-[1100px] px-6">
+    <nav class="eti flex flex-wrap gap-x-2.5 gap-y-1 pt-10 text-faint" style="font-size:10.5px">
+      <a href="/" class="text-faint transition hover:text-acc">{house?.short}</a>
+      <span>/</span><span>{meta.epoch}</span><span>/</span>
+      <span class="text-ink">{meta.ref}</span>
+    </nav>
+
+    <section class="flex flex-wrap items-start gap-x-14 gap-y-9 pb-16 pt-8">
+      <div class="min-w-0 flex-[1_1_380px]">
+        <div class="hatch flex aspect-[4/5] items-end border border-line bg-cover bg-center p-3.5" style={`background-image:url('${img?.src}')`}>
+          <span class="bg-card px-1.5 py-[3px] font-mono text-[10px] tracking-[0.08em] text-faint">{meta.kind}</span>
+        </div>
+      </div>
+
+      <div class="flex min-w-0 flex-[1_1_380px] flex-col gap-5 md:pt-2">
+        <span class="eti text-faint">{p.vendor}</span>
+        <h1 class="font-sf m-0 text-[clamp(28px,4vw,42px)] leading-[1.12] tracking-[-0.01em]">{product.title}</h1>
+        <p class="m-0 text-[14.5px] leading-[1.75] text-soft">{product.description}</p>
+        <div class="flex flex-col">
+          {specs.map(([k, v]) => (
+            <div class="flex flex-wrap gap-x-[18px] gap-y-1 border-t border-line py-3">
+              <span class="eti w-[140px] flex-none text-faint" style="font-size:10.5px">{k}</span>
+              <span class="min-w-0 flex-1 text-[13.5px] text-ink">{v}</span>
+            </div>
+          ))}
+        </div>
+        <div class="flex flex-wrap items-center gap-x-[14px] gap-y-3.5 border-t border-rule pt-5">
+          <span class="font-mono text-[19px]" data-usd={product.price.amount}>${product.price.amount.toLocaleString('en-US')}</span>
+          <span class="flex-1"></span>
+          <button data-card-save={product.handle} title="Save to vault" class="pin-btn" style="width:42px;height:42px">
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+          </button>
+          <button data-card-bag={product.handle} class="btn-keeper flex items-center gap-2 px-[22px] py-[13px]">
+            <svg class="ico-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+            <span>Add to bag</span>
+          </button>
+        </div>
+        <p class="m-0 text-[12.5px] leading-[1.6] text-muted">{meta.bespoke ? 'Book the atelier' : 'Request this piece'} — the keeper replies within one business day.</p>
+      </div>
+    </section>
+
+    {related.length > 0 && (
+      <section class="border-t border-line pb-10 pt-10">
+        <h2 class="eti m-0 mb-6 text-muted" style="letter-spacing:0.16em">Also in {meta.material}</h2>
+        <div class="grid gap-x-[30px] gap-y-10" style="grid-template-columns:repeat(auto-fill,minmax(210px,1fr))">
+          {related.map((r) => (
+            <a href={`/products/${r.handle}`} class="flex flex-col gap-3.5">
+              <span class="hatch flex aspect-[4/5] items-end border border-line bg-cover bg-center p-3" style={`background-image:url('${r.images[0]?.src}')`}>
+                <span class="bg-card px-1.5 py-[3px] font-mono text-[10px] tracking-[0.08em] text-faint">{(r as any).meta?.kind}</span>
+              </span>
+              <span class="eti text-faint" style="font-size:10px">{(r as any).vendor}</span>
+              <span class="font-sf text-[18px] leading-[1.25]">{r.title}</span>
+              <span class="font-mono text-[13px]" data-usd={r.price.amount}>${r.price.amount.toLocaleString('en-US')}</span>
+            </a>
+          ))}
+        </div>
+      </section>
+    )}
+  </main>
+
+  <script type="application/ld+json" set:html={productLd} />
+</Layout>

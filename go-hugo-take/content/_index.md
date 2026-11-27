@@ -1,6 +1,0 @@
----
-title: "Início"
-author : "Autor"
----
-
-

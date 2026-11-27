@@ -1,6 +1,0 @@
-+++
-title = "Photos"
-type = "gallery"
-+++
-
-

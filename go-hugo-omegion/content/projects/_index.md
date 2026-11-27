@@ -1,6 +1,0 @@
----
-title: "Work"
-description: "Projects."
----
-
-

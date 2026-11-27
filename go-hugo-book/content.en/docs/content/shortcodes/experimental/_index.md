@@ -1,6 +1,0 @@
----
-params:
-  bookCollapseSection: true
----
-
-

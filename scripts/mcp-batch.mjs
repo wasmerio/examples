@@ -219,6 +219,12 @@ export function evaluateRow(row, meta, ctx) {
     report.reason = ctx.folders.has(folder) ? `folder ${folder} exists` : `template mcp-${slug} exists`;
     return report;
   }
+  if (meta.nativeBinary) {
+    report.status = 'blocked';
+    report.blocker = { where: 'edgejs', what: 'npm package wraps a native binary', evidence: meta.nativeBinary };
+    report.reason = `${report.blocker.what}: ${meta.nativeBinary}`;
+    return report;
+  }
   const blocked = blockedDependency({ ...meta, pkgType: row.pkgType });
   if (blocked) {
     report.status = 'blocked';
@@ -253,6 +259,11 @@ export function evaluateRow(row, meta, ctx) {
   if (!choice.adapter) {
     report.status = 'needs-review';
     report.reason = 'adapter unknown';
+    return report;
+  }
+  if (choice.adapter === 'stdio-bridge' && (meta.launchMissing || []).length) {
+    report.status = 'needs-review';
+    report.reason = `launch argument needs a value: ${meta.launchMissing.join(', ')}`;
     return report;
   }
   if (choice.adapter === 'in-process' && !meta.importSymbol) {
@@ -520,7 +531,7 @@ const entry = path.join(here, 'node_modules', ${JSON.stringify(row.pkg)}, ${JSON
 startMcpHttp({
   ...${JSON.stringify(fields, null, 2)},
   command: process.execPath,
-  args: [entry],
+  args: [entry, ...${JSON.stringify(meta.launchArgs || [])}],
 });
 `;
     } else if (report.adapter === 'in-process') {
@@ -782,6 +793,21 @@ export async function checkMcpUrl(url, token) {
   }
 }
 
+// mcp-template-check exits 1 when the call fails but still prints its JSON report.
+function parseCheck(error) {
+  try {
+    return JSON.parse(error.out || '');
+  } catch {
+    return { ok: false, error: String(error.message || error).slice(0, 300) };
+  }
+}
+
+// The sample call uses made-up minimal arguments, so an MCP error result (isError) for them
+// still proves the server answers tool calls over HTTP. A crash, timeout or HTTP error does not.
+export function toolAnswered(result) {
+  return Boolean(result && (result.ok || (result.tool && result.tool.isError)));
+}
+
 async function waitHealth(url, ms) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
@@ -816,8 +842,11 @@ export function ensureLocalJsShared(dir) {
   cpSync(path.join(ROOT, '_shared/mcp-http/js/wasmer-starter-ui.js'), path.join(dest, 'wasmer-starter-ui.js'));
 }
 
-function localError(logs) {
+export function localError(logs) {
   const text = String(logs || '');
+  // The bridge prefixes the child server's stderr with "stdio: "; that says why the child exited.
+  const child = text.split('\n').filter((line) => line.startsWith('stdio: ')).slice(-3).join(' ');
+  if (child) return child.slice(0, 280);
   const match = text.match(/(?:Cannot find module|Error:)[^\n]{0,220}/);
   if (match) return match[0].slice(0, 280);
   return text.slice(-280);
@@ -848,7 +877,10 @@ export async function runLocalCheck(folder, token) {
   try {
     const ready = await waitHealth(`http://127.0.0.1:${port}/healthz`, 30000);
     if (!ready) return { ok: false, tools: [], error: `healthz did not answer: ${localError(logs)}` };
-    return await checkMcpUrl(`http://127.0.0.1:${port}/mcp`, token);
+    const result = await checkMcpUrl(`http://127.0.0.1:${port}/mcp`, token);
+    // "stdio server exited" alone doesn't say why; keep the child's own output in the reason.
+    if (!result.ok) result.error = `${String(result.error).slice(0, 100)} | ${localError(logs)}`;
+    return result;
   } finally {
     killGroup(child);
   }
@@ -1086,6 +1118,14 @@ async function fetchJson(url) {
   return response.json();
 }
 
+// npm wrappers that ship a per-platform native binary (e.g. deja-vu-linux-amd64, @fallow-cli/darwin-x64)
+// pass the local check on macOS but can't run on Edge, which only runs WebAssembly.
+export function nativeBinary(body) {
+  const platform = Object.keys((body && body.optionalDependencies) || {})
+    .find((name) => /(linux|darwin|win32|windows)-(x64|x86_64|amd64|arm64|aarch64|ia32|arm)\b/.test(name));
+  return platform ? `optional dependency ${platform}` : '';
+}
+
 export function binFile(body) {
   const bin = body && body.bin;
   if (!bin) return '';
@@ -1104,6 +1144,35 @@ function entryFromPackage(body) {
   return typeof file === 'string' ? file.replace(/^\.\//, '') : 'dist/index.js';
 }
 
+// Launch arguments from the package's official MCP Registry entry (server.json `packageArguments`),
+// e.g. repomix needs `--mcp` and many CLIs need an `mcp` subcommand. Fixed values are passed through;
+// a required argument that needs the user's own value can't run unattended.
+export function launchArgs(registryPackage) {
+  const args = [];
+  const missing = [];
+  for (const item of (registryPackage && registryPackage.packageArguments) || []) {
+    const value = item.value ?? item.default;
+    if (value == null || String(value).includes('${')) {
+      if (item.isRequired) missing.push(item.name || item.description || 'argument');
+      continue;
+    }
+    if (item.type === 'named') args.push(item.name, String(value));
+    else args.push(String(value));
+  }
+  return { args, missing };
+}
+
+async function registryPackage(row) {
+  if (!row.name) return null;
+  try {
+    const body = await fetchJson(`https://registry.modelcontextprotocol.io/v0/servers/${encodeURIComponent(row.name)}/versions/${row.version}`);
+    const packages = (body.server && body.server.packages) || [];
+    return packages.find((item) => item.identifier === row.pkg) || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchMetadata(row) {
   if (row.pkgType === 'npm') {
     const spec = row.pkg.startsWith('@') ? row.pkg.replace('/', '%2f') : row.pkg;
@@ -1119,8 +1188,12 @@ export async function fetchMetadata(row) {
       readme: body.readme || '',
       entryFile: entryFromPackage(body),
       binFile: binFile(body),
+      nativeBinary: nativeBinary(body),
       entryExcerpt: '',
     };
+    const launch = launchArgs(await registryPackage(row));
+    meta.launchArgs = launch.args;
+    meta.launchMissing = launch.missing;
     try {
       const fileUrl = `https://cdn.jsdelivr.net/npm/${row.pkg}@${row.version}/${meta.entryFile}`;
       const response = await fetch(fileUrl, { signal: AbortSignal.timeout(15000) });
@@ -1174,12 +1247,21 @@ async function probeHttp(url, options = {}) {
 
 async function deployBuilt(row, report, owner, token) {
   const appName = report.catalog.slug;
-  const built = await withBackoff(report, () => deployAutobuild({
+  const deploy = () => withBackoff(report, () => deployAutobuild({
     folder: report.folder,
     appName,
     owner,
     token,
   }));
+  let built;
+  try {
+    built = await deploy();
+  } catch (error) {
+    // An autobuild sometimes fails once and then builds the same commit (seen with repomix), so retry once.
+    if (!/ FAILED$/.test(String(error.message))) throw error;
+    built = await deploy();
+    if (error.existed === false) built.existed = false;
+  }
   if (!built.existed) report.createdApp = `${owner}/${appName}`;
   report.tests.setup503 = 'not run';
   report.demo = built.appUrl.replace(/\/$/, '');
@@ -1202,16 +1284,16 @@ async function deployBuilt(row, report, owner, token) {
       const tool = readOnlyTool(listed.toolSchemas || []);
       if (tool) {
         const args = minimalArgs(tool.schema);
-        const called = await run(process.execPath, [
+        const result = await run(process.execPath, [
           path.join(ROOT, 'scripts/mcp-template-check.mjs'),
           '--url', `${report.demo}/mcp`,
           '--token', token,
           '--tool', tool.name,
           '--args', JSON.stringify(args),
-        ]);
-        const result = JSON.parse(called.out);
-        report.tests.edge = result.ok ? 'passed' : 'failed';
-        if (!result.ok) report.reason = result.error || 'tool call failed';
+        ]).then((called) => JSON.parse(called.out), (error) => parseCheck(error));
+        const answered = toolAnswered(result);
+        report.tests.edge = answered ? 'passed' : 'failed';
+        if (!answered) report.reason = result.error || 'tool call failed';
       }
     }
     await run(process.execPath, [

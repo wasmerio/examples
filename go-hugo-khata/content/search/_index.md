@@ -1,5 +1,0 @@
----
-title: "Search"
-hidefrommenu: true
----
-
